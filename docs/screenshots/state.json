@@ -1,6 +1,6 @@
 {
   "now": "2026-10-02T12:00:00.000Z",
-  "version": "0.8.1",
+  "version": "v0.11.3",
   "owner_asks": [
     {
       "id": 41,
@@ -147,6 +147,10 @@
         {
           "key": "hub",
           "value": "http://hub.example.ts.net:7788"
+        },
+        {
+          "key": "release",
+          "value": "v0.11.3"
         }
       ],
       "decisions": [
@@ -194,6 +198,48 @@
       },
       "root_id": 1,
       "root_name": "orch-release"
+    },
+    {
+      "id": 39,
+      "kind": "note",
+      "summary": "Implementation and docs are ready for focused review.",
+      "at": "2026-10-02T11:55:00.000Z",
+      "age_ms": 300000,
+      "task": {
+        "id": 1,
+        "name": "orch-release",
+        "role": "orchestrator"
+      },
+      "root_id": 1,
+      "root_name": "orch-release"
+    },
+    {
+      "id": 33,
+      "kind": "ref",
+      "summary": "release=v0.11.3",
+      "at": "2026-10-02T11:52:00.000Z",
+      "age_ms": 480000,
+      "task": {
+        "id": 1,
+        "name": "orch-release",
+        "role": "orchestrator"
+      },
+      "root_id": 1,
+      "root_name": "orch-release"
+    },
+    {
+      "id": 31,
+      "kind": "decision",
+      "summary": "Review each lane before merging.",
+      "at": "2026-10-02T11:50:00.000Z",
+      "age_ms": 600000,
+      "task": {
+        "id": 1,
+        "name": "orch-release",
+        "role": "orchestrator"
+      },
+      "root_id": 1,
+      "root_name": "orch-release"
     }
   ],
   "closed": [],
@@ -202,7 +248,52 @@
     "at": "2026-10-02T12:00:00.000Z",
     "age_ms": 0
   },
-  "milestones": [],
+  "milestones": [
+    {
+      "id": 42,
+      "kind": "ready",
+      "at": "2026-10-02T11:57:00.000Z",
+      "age_ms": 180000,
+      "root_id": 1,
+      "text": "Quick start examples checked; report ready.",
+      "orchestrator": "orch-release",
+      "machine": "host-a",
+      "lane_id": 3,
+      "lane": "impl-docs",
+      "role": "implementer"
+    },
+    {
+      "id": 39,
+      "kind": "note",
+      "at": "2026-10-02T11:55:00.000Z",
+      "age_ms": 300000,
+      "root_id": 1,
+      "text": "Implementation and docs are ready for focused review.",
+      "orchestrator": "orch-release",
+      "machine": "host-a"
+    },
+    {
+      "id": 33,
+      "kind": "ref",
+      "at": "2026-10-02T11:52:00.000Z",
+      "age_ms": 480000,
+      "root_id": 1,
+      "text": "release=v0.11.3",
+      "orchestrator": "orch-release",
+      "machine": "host-a",
+      "key": "release"
+    },
+    {
+      "id": 31,
+      "kind": "decision",
+      "at": "2026-10-02T11:50:00.000Z",
+      "age_ms": 600000,
+      "root_id": 1,
+      "text": "Review each lane before merging.",
+      "orchestrator": "orch-release",
+      "machine": "host-a"
+    }
+  ],
   "attention": [
     {
       "kind": "owner_ask",
@@ -303,7 +394,7 @@
       "stale": false,
       "state": {
         "now": "2026-10-02T12:00:00.000Z",
-        "version": "0.8.1",
+        "version": "v0.11.3",
         "owner_asks": [
           {
             "id": 41,
@@ -450,6 +541,10 @@
               {
                 "key": "hub",
                 "value": "http://hub.example.ts.net:7788"
+              },
+              {
+                "key": "release",
+                "value": "v0.11.3"
               }
             ],
             "decisions": [
@@ -497,6 +592,48 @@
             },
             "root_id": 1,
             "root_name": "orch-release"
+          },
+          {
+            "id": 39,
+            "kind": "note",
+            "summary": "Implementation and docs are ready for focused review.",
+            "at": "2026-10-02T11:55:00.000Z",
+            "age_ms": 300000,
+            "task": {
+              "id": 1,
+              "name": "orch-release",
+              "role": "orchestrator"
+            },
+            "root_id": 1,
+            "root_name": "orch-release"
+          },
+          {
+            "id": 33,
+            "kind": "ref",
+            "summary": "release=v0.11.3",
+            "at": "2026-10-02T11:52:00.000Z",
+            "age_ms": 480000,
+            "task": {
+              "id": 1,
+              "name": "orch-release",
+              "role": "orchestrator"
+            },
+            "root_id": 1,
+            "root_name": "orch-release"
+          },
+          {
+            "id": 31,
+            "kind": "decision",
+            "summary": "Review each lane before merging.",
+            "at": "2026-10-02T11:50:00.000Z",
+            "age_ms": 600000,
+            "task": {
+              "id": 1,
+              "name": "orch-release",
+              "role": "orchestrator"
+            },
+            "root_id": 1,
+            "root_name": "orch-release"
           }
         ],
         "closed": [],
@@ -505,7 +642,52 @@
           "at": "2026-10-02T12:00:00.000Z",
           "age_ms": 0
         },
-        "milestones": [],
+        "milestones": [
+          {
+            "id": 42,
+            "kind": "ready",
+            "at": "2026-10-02T11:57:00.000Z",
+            "age_ms": 180000,
+            "root_id": 1,
+            "text": "Quick start examples checked; report ready.",
+            "orchestrator": "orch-release",
+            "machine": "host-a",
+            "lane_id": 3,
+            "lane": "impl-docs",
+            "role": "implementer"
+          },
+          {
+            "id": 39,
+            "kind": "note",
+            "at": "2026-10-02T11:55:00.000Z",
+            "age_ms": 300000,
+            "root_id": 1,
+            "text": "Implementation and docs are ready for focused review.",
+            "orchestrator": "orch-release",
+            "machine": "host-a"
+          },
+          {
+            "id": 33,
+            "kind": "ref",
+            "at": "2026-10-02T11:52:00.000Z",
+            "age_ms": 480000,
+            "root_id": 1,
+            "text": "release=v0.11.3",
+            "orchestrator": "orch-release",
+            "machine": "host-a",
+            "key": "release"
+          },
+          {
+            "id": 31,
+            "kind": "decision",
+            "at": "2026-10-02T11:50:00.000Z",
+            "age_ms": 600000,
+            "root_id": 1,
+            "text": "Review each lane before merging.",
+            "orchestrator": "orch-release",
+            "machine": "host-a"
+          }
+        ],
         "attention": [
           {
             "kind": "owner_ask",
@@ -606,7 +788,7 @@
       "stale": false,
       "state": {
         "now": "2026-10-02T12:00:00.000Z",
-        "version": "0.8.1",
+        "version": "v0.11.3",
         "owner_asks": [],
         "orchestrators": [],
         "activity": [],

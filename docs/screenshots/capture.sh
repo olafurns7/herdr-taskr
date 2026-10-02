@@ -11,7 +11,7 @@ for theme in light dark; do
     rm -f "$output"
     python3 - "$output" "$chrome" --user-data-dir="$profile" --headless=new --hide-scrollbars \
         --no-first-run --no-default-browser-check --disable-extensions --disable-gpu \
-        --disable-background-networking $dark_mode --window-size=1440,900 \
+        --disable-background-networking $dark_mode --window-size=1440,700 \
         --force-device-scale-factor=2 --virtual-time-budget=2000 \
         --screenshot="$output" http://127.0.0.1:7799/ <<'PY'
 import os
