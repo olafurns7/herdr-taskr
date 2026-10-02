@@ -44,7 +44,7 @@ sequenceDiagram
     Orchestrator->>Herdr: herdr agent start (with launch IDs)
     Orchestrator->>Ledger: prompt WORKER --file brief.md
     Ledger->>Herdr: Deliver prompt with receipt attempt
-    Herdr->>Worker: First taskr got ATTEMPT; read brief
+    Herdr->>Worker: First taskr got ATTEMPT, read brief
     Worker->>Ledger: got ATTEMPT (prompt hook receipt)
     Orchestrator->>Ledger: wait --as ORCH --for ready,ask,done,herdr
     alt Worker reports
