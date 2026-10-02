@@ -65,7 +65,7 @@ Paste this into Claude Code or Codex running inside Herdr:
 Install taskr for Herdr: fetch https://raw.githubusercontent.com/olafurns7/herdr-taskr/master/docs/install.md and follow it step by step. Ask me before changing any hook or agent settings.
 ```
 
-Prefer to do it by hand? The runbook is plain shell.
+Prefer to do it by hand? The [runbook](docs/install.md) is plain shell.
 
 ## Status and license
 

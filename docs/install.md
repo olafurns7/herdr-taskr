@@ -35,6 +35,7 @@ gh api repos/olafurns7/herdr-taskr/contents/install.sh \
   TASKR_LINK_SKILLS=1 sh taskr-install.sh &&
   PATH="$HOME/.local/bin:$PATH" taskr version
 ```
+Then remove taskr-install.sh.
 Expect checksum verification for the binary, skill archive, and plugin archive, then a release version. On checksum or download failure, stop; do not run the partial installer.
 
 | Option | Effect |
@@ -58,12 +59,12 @@ Expect the installed binary and the release version. Persist the PATH line in th
 
 The installer may already have linked the plugin. Run inside Herdr:
 ```sh
-herdr plugin link "$HOME/.local/share/taskr/plugin"
+herdr plugin list --json | grep -q '"olafurns7.taskr"' || herdr plugin link "$HOME/.local/share/taskr/plugin"
 taskr version
 taskr daemon --status
 ```
 Expect plugin registration and daemon fields `running: true`, the installed `running_version`, and a dashboard URL, normally http://127.0.0.1:7788/. A successful status exit alone does not prove the daemon is running.
-If it is absent, tell the user to run `taskr daemon` in a separate terminal, then verify status again. For upgrades, have the owner run `taskr daemon --restart` outside the agent session. This restarts taskr, never Herdr.
+If status does not show `running: true`, run `taskr daemon --restart`, then re-check with `taskr daemon --status`. It starts the daemon detached with only HOME, PATH, and HERDR_SOCKET_PATH; a fresh plugin link otherwise waits until the next agent detection or Herdr start. For upgrades, re-run step 2, then `taskr daemon --restart` and re-check status. This restarts taskr, never Herdr.
 
 ## 5. Verify skills
 
@@ -93,11 +94,11 @@ Verify `taskr hook --help` succeeds and inspect the merged entries against the e
 Only configure this if the user asks. Require running Tailscale with untagged nodes owned by the same user; identity checks reject tagged nodes and other users. HTTP traffic stays inside the encrypted tailnet.
 On the hub, write `tailnet` to `$HOME/.local/state/taskr/dashboard.addr`. On a fresh client, write the hub URL (for example http://hub.example.ts.net:7788) to `server.url` in that directory; leave TASKR_DB unset. There is no local fallback when the hub is unreachable.
 For independent ledgers and a combined read-only dashboard, use `hub.url` instead; do not combine it with server.url. Before migrating an existing ledger, back it up and read https://raw.githubusercontent.com/olafurns7/herdr-taskr/master/references/recovery.md.
-Have the owner apply changes with `taskr daemon --restart`; verify `taskr daemon --status` shows the selected mode/listeners and fresh connection or push health. On write exit 5, rerun the exact printed `retry with:` command, preserving its request key.
+Apply changes with `taskr daemon --restart`; verify `taskr daemon --status` shows the selected mode/listeners and fresh connection or push health. On write exit 5, rerun the exact printed `retry with:` command, preserving its request key.
 
 ## 8. Uninstall
 
-Only uninstall if requested. Run `herdr plugin unlink olafurns7.taskr`, then `taskr daemon --status`; have the owner stop the reported daemon PID outside the agent session (or Ctrl-C its foreground terminal).
+Only uninstall if requested. Run `herdr plugin unlink olafurns7.taskr`, then `taskr daemon --status`; use the reported PID to check `ps -p <pid> -o command=` shows `taskr daemon`, then stop that daemon with `kill <pid>`. Stop and report if the command does not match.
 Remove only skill symlinks that resolve to the installed skill, then the installed taskr binary, `$HOME/.local/share/taskr/plugin`, and the installed skill directory. Use custom paths if configured. Preserve `$HOME/.local/state/taskr` and all reports.
 Verify `herdr plugin list --json` lacks olafurns7.taskr and `test ! -e "${TASKR_INSTALL_DIR:-$HOME/.local/bin}/taskr"` succeeds. Expect the plugin and binary removed, with ledger history intact. Report removal and stop here; step 9 applies to installation.
 
