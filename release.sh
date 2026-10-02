@@ -73,4 +73,4 @@ git merge-base --is-ancestor HEAD origin/master || { printf '%s\n' 'release.sh: 
 
 git tag -a "$tag" -m "$tag"
 git push origin "$tag"
-gh release create "$tag" dist/* --repo olafurns7/herdr-taskr --title "$tag" --notes "Prebuilt taskr binaries for macOS and Linux (arm64 and amd64), checksums, install script, skill, and plugin. See README for installation."
+gh release create "$tag" dist/* --repo olafurns7/herdr-taskr --title "$tag" --notes "Prebuilt taskr binaries for macOS and Linux (arm64 and amd64), checksums, install script, skill, and plugin. See https://github.com/olafurns7/herdr-taskr/blob/master/docs/install.md for agent-guided installation."
