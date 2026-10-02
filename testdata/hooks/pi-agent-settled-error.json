@@ -1,0 +1,1 @@
+{"type":"agent_settled","sessionId":"pi-session","sessionFile":"/tmp/taskr-hooks/pi.jsonl","message":{"stopReason":"error","diagnostics":[{"type":"provider_transport_failure","error":{"name":"Error","code":"ECONNRESET"}}]}}

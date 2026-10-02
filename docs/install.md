@@ -76,7 +76,7 @@ for config in "$HOME/.claude" "$HOME/.codex" "$HOME/.config/opencode"; do
   if [ -d "$config" ]; then readlink "$config/skills/taskr" && test "$config/skills/taskr" -ef "$skill_dir" || exit 1; fi
 done
 ```
-Expect the installed skill and each applicable link to resolve to it. If configs do not exist, report no links; if a conflict exists, report it and leave it unchanged. Tell the orchestrator agent to load the installed taskr skill before coordinating workers.
+Expect the installed skill and each applicable link to resolve to it. If configs do not exist, report no links; if a conflict exists, report it and leave it unchanged. pi reads `$HOME/.agents/skills` itself and needs no link. Tell the orchestrator agent to load the installed taskr skill before coordinating workers.
 
 ## 6. Agent hooks
 
@@ -87,6 +87,7 @@ After approval, merge command entries into existing Claude Code settings.json or
 ```
 For Claude Code, an entry is `{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"[ -n \"${TASKR_LAUNCH:-}\" ] && taskr hook claude UserPromptSubmit >/dev/null 2>&1; true","async":true}]}]}}`; add the other events with matching arguments.
 OpenCode needs a custom plugin invoking `taskr hook opencode EVENT`, writing one JSON object to stdin, then closing it. Forward session.created/session.idle/session.error objects; for chat.message use `{"input": input, "output": output}`. No OpenCode hook plugin is shipped.
+pi needs a custom extension invoking `taskr hook pi EVENT` for session_start, input, and agent_settled, writing one JSON object to stdin, then closing it. Each object is `{"type": EVENT, "sessionId": ctx.sessionManager.getSessionId(), "sessionFile": ctx.sessionManager.getSessionFile()}` (omit sessionFile unless absolute) plus `reason` for session_start, `text` and `source` for input, and for agent_settled `"message": {"stopReason", "diagnostics"}` from the branch's last assistant message (a stopReason of `error` records an error stall). Spawn it detached from the event handlers only when TASKR_LAUNCH is set, and never throw. No pi hook extension is shipped.
 Verify `taskr hook --help` succeeds and inspect the merged entries against the event list. Expect valid harness config; runtime receipts require HERDR_ENV=1 and a registered TASKR_LAUNCH, configured before worker startup. Workers still run got and ready/done/fail explicitly. A receipt is acknowledgment, not completion; a stall is a signal to investigate.
 
 ## 7. Multiple machines

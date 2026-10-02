@@ -36,6 +36,8 @@ func hookPromptFixture(t *testing.T, name string, attempt int64, suffix string) 
 		output := root["output"].(map[string]any)
 		parts := output["parts"].([]any)
 		parts[0].(map[string]any)["text"] = prompt
+	} else if root["type"] == "input" {
+		root["text"] = prompt
 	} else {
 		root["prompt"] = prompt
 	}
@@ -124,6 +126,7 @@ func TestHookFixtureFlowsAndReceipts(t *testing.T) {
 		{"claude", "claude", "claude-session-start.json", "SessionStart", "claude-user-prompt-submit.json", "UserPromptSubmit", "claude-stop-failure.json", "StopFailure", "claude-session", "/tmp/taskr-hooks/claude.jsonl", "rate_limit"},
 		{"codex", "codex", "codex-session-start.json", "SessionStart", "codex-user-prompt-submit.json", "UserPromptSubmit", "codex-stop.json", "Stop", "codex-session", "/tmp/taskr-hooks/codex.jsonl", ""},
 		{"opencode", "opencode", "opencode-session-created.json", "session.created", "opencode-chat-message.json", "chat.message", "opencode-session-error.json", "session.error", "opencode-session", "", "server_overloaded"},
+		{"pi", "pi", "pi-session-start.json", "session_start", "pi-input.json", "input", "pi-agent-settled-error.json", "agent_settled", "pi-session", "/tmp/taskr-hooks/pi.jsonl", "ECONNRESET"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -161,6 +164,9 @@ func TestHookFixtureFlowsAndReceipts(t *testing.T) {
 			runHookPayload(t, h, env, tc.name, tc.stopEvent, hookFixture(t, tc.stopFile))
 			if tc.name == "opencode" {
 				runHookPayload(t, h, env, tc.name, "session.idle", hookFixture(t, "opencode-session-idle.json"))
+			}
+			if tc.name == "pi" {
+				runHookPayload(t, h, env, tc.name, "agent_settled", hookFixture(t, "pi-agent-settled.json"))
 			}
 			stall := hookStall(t, h, a1)["data"].(map[string]any)
 			if stall["reason"] != "stall" || stall["error"] != nil && stall["error"] != tc.errorCode {
@@ -341,6 +347,8 @@ func TestHookSilentNoopsAndPanic(t *testing.T) {
 		{env, "unknown", "SessionStart", hookFixture(t, "claude-session-start.json")},
 		{env, "claude", "SessionEnd", hookFixture(t, "claude-session-start.json")},
 		{env, "opencode", "session.status", hookFixture(t, "opencode-session-status.json")},
+		{env, "pi", "agent_start", hookFixture(t, "pi-agent-start.json")},
+		{env, "pi", "input", hookFixture(t, "pi-agent-start.json")},
 	} {
 		runHookPayload(t, h, tc.env, tc.harness, tc.event, tc.payload)
 	}
@@ -846,6 +854,74 @@ func TestHookOpenCodeUncodedErrorStalls(t *testing.T) {
 	}
 	if data := hookStall(t, h, a)["data"].(map[string]any); data["error"] != "unknown" {
 		t.Fatalf("OpenCode uncoded error stall data = %v", data)
+	}
+}
+
+func TestHookPiErrorCodes(t *testing.T) {
+	for _, tc := range []struct {
+		name, message, want string
+	}{
+		{"code", `{"stopReason":"error","diagnostics":[{"type":"provider_transport_failure","error":{"name":"Error","code":"ECONNRESET"}}]}`, "ECONNRESET"},
+		{"numeric code", `{"stopReason":"error","diagnostics":[{"type":"old","error":{"code":1}},{"type":"provider_transport_failure","error":{"code":529}}]}`, "529"},
+		{"type", `{"stopReason":"error","diagnostics":[{"type":"bedrock_response_failure","details":{}}]}`, "bedrock_response_failure"},
+		{"uncoded", `{"stopReason":"error","errorMessage":"API Error: 529 overloaded"}`, "unknown"},
+		{"aborted", `{"stopReason":"aborted","diagnostics":[{"type":"provider_transport_failure"}]}`, ""},
+		{"stop", `{"stopReason":"stop"}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := `{"type":"agent_settled","sessionId":"pi-session","message":` + tc.message + `}`
+			h, ok := parseHookPayload("pi", "agent_settled", strings.NewReader(payload))
+			if !ok || h.Session != "pi-session" || h.Error != tc.want {
+				t.Fatalf("pi agent_settled = %+v %v, want error %q", h, ok, tc.want)
+			}
+		})
+	}
+	if _, ok := parseHookPayload("pi", "session_start", strings.NewReader(`{"type":"session_start","sessionId":"pi-session","sessionFile":"pi.jsonl"}`)); ok {
+		t.Fatal("pi relative sessionFile was accepted")
+	}
+}
+
+func TestHookPiUncodedErrorStalls(t *testing.T) {
+	h := newHarness(t)
+	_, w, l := hookLane(t, h, "pi", "w9:p1")
+	env := hookLaneEnv(w, l, "w9:p1")
+	runHookPayload(t, h, env, "pi", "session_start", hookFixture(t, "pi-session-start.json"))
+	a := num(h.ok(nil, "prompt", id(w), "--text", "work", "--receipt-timeout", "0"), "attempt_id")
+	runHookPayload(t, h, env, "pi", "input", hookPromptFixture(t, "pi-input.json", a, " Continue."))
+	var root map[string]any
+	if err := json.Unmarshal(hookFixture(t, "pi-agent-settled-error.json"), &root); err != nil {
+		t.Fatal(err)
+	}
+	root["message"] = map[string]any{"stopReason": "error", "errorMessage": "API Error: 529 overloaded"}
+	payload, err := json.Marshal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runHookPayload(t, h, env, "pi", "agent_settled", payload)
+	if n := hookStallCount(t, h, a); n != 1 {
+		t.Fatalf("pi uncoded error stall count = %d, want 1", n)
+	}
+	if data := hookStall(t, h, a)["data"].(map[string]any); data["error"] != "unknown" {
+		t.Fatalf("pi uncoded error stall data = %v", data)
+	}
+}
+
+func TestPiWorkerIgnoresInheritedCodexThread(t *testing.T) {
+	h := newHarness(t)
+	_, w, l := hookLane(t, h, "pi", "w9:p1")
+	env := hookLaneEnv(w, l, "w9:p1")
+	env["CODEX_THREAD_ID"] = "inherited-thread"
+	if start := h.ok(env, "start"); start["session_ref"] != nil {
+		t.Fatalf("pi start = %v, want no inherited Codex thread", start)
+	}
+	runHookPayload(t, h, env, "pi", "session_start", hookFixture(t, "pi-session-start.json"))
+	var session, kind, source string
+	if err := h.openDB().QueryRow(`select coalesce(session_ref, ''), coalesce(session_kind, ''), coalesce(session_source, '') from launches where id = ?`, l).
+		Scan(&session, &kind, &source); err != nil {
+		t.Fatal(err)
+	}
+	if session != "pi-session" || kind != "id" || source != "hook:session_start" {
+		t.Fatalf("pi launch session = %q %q %q", session, kind, source)
 	}
 }
 
