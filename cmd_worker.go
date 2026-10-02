@@ -276,7 +276,7 @@ func mergeIdentity(c *ctx, tx *sql.Tx, launchID int64) (map[string]any, error) {
 		home = claudeHome
 	}
 	var sessRef, sessKind, sessSource string
-	if thread := c.env("CODEX_THREAD_ID"); thread != "" && provider.String != "claude" {
+	if thread := c.env("CODEX_THREAD_ID"); thread != "" && provider.String == "codex" {
 		sessRef, sessKind, sessSource = thread, "thread_id", "env:CODEX_THREAD_ID"
 	}
 	acct, pane := accountLabel(home), c.env("HERDR_PANE_ID")

@@ -2,6 +2,9 @@ package main
 
 // OpenCode stdin contract: chat.message receives {"input": <input>, "output": <output>}; session.created, session.idle, and session.error receive the event object itself.
 // OpenCode: write one JSON object, then close stdin; a payload whose stdin stays open is dropped at the deadline.
+// pi stdin contract: {"type": <event>, "sessionId": ..., "sessionFile": <absolute or omitted>} from ctx.sessionManager, plus the
+// event's own fields: session_start {"reason"}, input {"text", "source"}, agent_settled {"message": {"stopReason", "diagnostics"}}
+// for the branch's last assistant message. Same one-object, close-stdin rule.
 // The hook does nothing unless both TASKR_LAUNCH and HERDR_ENV=1 are set, so the plugin must pass that env through.
 
 import (
@@ -46,20 +49,22 @@ func hookEventSupported(harness, event string) bool {
 		return event == "SessionStart" || event == "UserPromptSubmit" || event == "Stop"
 	case "opencode":
 		return event == "chat.message" || event == "session.created" || event == "session.idle" || event == "session.error"
+	case "pi":
+		return event == "session_start" || event == "input" || event == "agent_settled"
 	}
 	return false
 }
 
 func hookSessionStart(event string) bool {
-	return event == "SessionStart" || event == "session.created"
+	return event == "SessionStart" || event == "session.created" || event == "session_start"
 }
 
 func hookPromptEvent(event string) bool {
-	return event == "UserPromptSubmit" || event == "chat.message"
+	return event == "UserPromptSubmit" || event == "chat.message" || event == "input"
 }
 
 func hookStallEvent(event string) bool {
-	return event == "Stop" || event == "StopFailure" || event == "session.idle" || event == "session.error"
+	return event == "Stop" || event == "StopFailure" || event == "session.idle" || event == "session.error" || event == "agent_settled"
 }
 
 func hookErrorCode(v any) string {
@@ -87,6 +92,32 @@ func hookErrorCode(v any) string {
 		}
 	}
 	return ""
+}
+
+// piErrorCode reads an errored assistant message: the newest diagnostic's
+// error code (pi allows a string or a number), else that diagnostic's type.
+func piErrorCode(message map[string]any) string {
+	diagnostics, _ := message["diagnostics"].([]any)
+	for i := len(diagnostics) - 1; i >= 0; i-- {
+		d := hookObject(diagnostics[i])
+		if d == nil {
+			continue
+		}
+		switch code := hookObject(d["error"])["code"].(type) {
+		case string:
+			if hookCodeRE.MatchString(code) {
+				return code
+			}
+		case float64:
+			if code == float64(int64(code)) {
+				return strconv.FormatInt(int64(code), 10)
+			}
+		}
+		if typ := hookText(d, "type"); hookCodeRE.MatchString(typ) {
+			return typ
+		}
+	}
+	return "unknown"
 }
 
 func hookObject(v any) map[string]any {
@@ -162,6 +193,20 @@ func parseHookPayload(harness, event string, r io.Reader) (hookRecord, bool) {
 				if h.Error == "" {
 					h.Error = "unknown"
 				}
+			}
+		}
+	case "pi":
+		if hookText(root, "type") != event {
+			return hookRecord{}, false
+		}
+		h.Session = hookText(root, "sessionId")
+		h.Transcript = hookText(root, "sessionFile")
+		switch event {
+		case "input":
+			h.Attempt = receiptAttempt(hookText(root, "text"))
+		case "agent_settled":
+			if message := hookObject(root["message"]); hookText(message, "stopReason") == "error" {
+				h.Error = piErrorCode(message)
 			}
 		}
 	}
