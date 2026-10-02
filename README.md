@@ -5,6 +5,13 @@ delegate work to worker agents in [Herdr](https://herdr.dev) panes. Herdr is
 required. taskr ships as a Go binary, stores work in SQLite, and includes a
 Herdr plugin that runs its event bridge and dashboard.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/dashboard-dark.png">
+  <img src="docs/img/dashboard-light.png" alt="Mock taskr dashboard with an owner question, a stalled lane, waiting work, and a five-lane release campaign across two hosts.">
+</picture>
+
+Mock data.
+
 ## Why use it?
 
 An orchestrator that starts workers in other panes needs to learn when each
@@ -24,6 +31,36 @@ taskr provides:
 If you run one agent at a time, you probably do not need taskr. If you do not
 use Herdr, this workflow is not for you. taskr records and delivers coordination
 state; your agents still do the work and write their reports to files.
+
+## How it works
+
+Herdr runs the agents; taskr records their coordination state and wakes the
+orchestrator when there is something to handle. Hook receipts and stall signals
+require the optional agent hooks.
+
+```mermaid
+sequenceDiagram
+    participant Orchestrator
+    participant Ledger as taskr (ledger)
+    participant Herdr
+    participant Worker
+    Orchestrator->>Ledger: new worker --parent ORCH
+    Orchestrator->>Ledger: launch WORKER (record identity)
+    Orchestrator->>Herdr: herdr agent start (with launch IDs)
+    Orchestrator->>Ledger: prompt WORKER --file brief.md
+    Ledger->>Herdr: Deliver prompt with receipt attempt
+    Herdr->>Worker: First taskr got ATTEMPT; read brief
+    Worker->>Ledger: got ATTEMPT (prompt hook receipt)
+    Orchestrator->>Ledger: wait --as ORCH --for ready,ask,done,herdr
+    alt Worker reports
+        Worker->>Ledger: ready / ask / done
+        Ledger-->>Orchestrator: wait wakes with event
+        Orchestrator->>Ledger: answer ASK_ID TEXT / ack EVENT --as ORCH
+    else Turn ends while still owing work
+        Worker->>Ledger: Stop hook records herdr event (reason=stall)
+        Ledger-->>Orchestrator: wait wakes with stall signal
+    end
+```
 
 ## Quick start: one machine
 

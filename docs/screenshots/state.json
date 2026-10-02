@@ -1,0 +1,648 @@
+{
+  "now": "2026-10-02T12:00:00.000Z",
+  "version": "0.8.1",
+  "owner_asks": [
+    {
+      "id": 41,
+      "text": "Should the guide cover both supported platforms?",
+      "at": "2026-10-02T11:56:00.000Z",
+      "age_ms": 240000,
+      "blocking": true,
+      "asker": {
+        "id": 6,
+        "name": "rev-docs",
+        "role": "reviewer"
+      },
+      "root": {
+        "id": 1,
+        "name": "orch-release",
+        "role": "orchestrator"
+      },
+      "asker_is_root": false,
+      "asker_waiting": true
+    }
+  ],
+  "orchestrators": [
+    {
+      "id": 1,
+      "name": "orch-release",
+      "role": "orchestrator",
+      "status": "open",
+      "created_at": "2026-10-02T11:30:00.000Z",
+      "waiting": false,
+      "unacked": 2,
+      "open_asks": 2,
+      "note": {
+        "text": "Release preparation: implementation, docs, and review.",
+        "at": "2026-10-02T11:59:00.000Z",
+        "age_ms": 60000
+      },
+      "next": {
+        "text": "Read the docs report, answer questions, and collect the retry review.",
+        "at": "2026-10-02T11:59:00.000Z",
+        "age_ms": 60000
+      },
+      "tasks": [
+        {
+          "id": 2,
+          "parent_id": 1,
+          "depth": 1,
+          "name": "impl-retry",
+          "role": "implementer",
+          "status": "open",
+          "waiting": false,
+          "open_asks": 0,
+          "present": true,
+          "mark": "working",
+          "agent_name": "Codex",
+          "last_event": {
+            "kind": "note",
+            "summary": "Checking retry backoff and cancellation.",
+            "at": "2026-10-02T11:59:00.000Z",
+            "age_ms": 60000
+          }
+        },
+        {
+          "id": 3,
+          "parent_id": 1,
+          "depth": 1,
+          "name": "impl-docs",
+          "role": "implementer",
+          "status": "ready",
+          "waiting": false,
+          "open_asks": 0,
+          "present": true,
+          "mark": "ready",
+          "agent_name": "Codex",
+          "last_event": {
+            "kind": "ready",
+            "summary": "Quick start examples checked; report ready.",
+            "at": "2026-10-02T11:57:00.000Z",
+            "age_ms": 180000
+          },
+          "report_path": "/reports/docs.md"
+        },
+        {
+          "id": 4,
+          "parent_id": 1,
+          "depth": 1,
+          "name": "rev-retry",
+          "role": "reviewer",
+          "status": "open",
+          "waiting": true,
+          "open_asks": 1,
+          "present": true,
+          "mark": "working",
+          "agent_name": "Claude",
+          "last_event": {
+            "kind": "note",
+            "summary": "Which timeout should the retry test cover?",
+            "at": "2026-10-02T11:58:00.000Z",
+            "age_ms": 120000
+          }
+        },
+        {
+          "id": 5,
+          "parent_id": 1,
+          "depth": 1,
+          "name": "research-cache",
+          "role": "researcher",
+          "status": "open",
+          "waiting": false,
+          "open_asks": 0,
+          "present": true,
+          "mark": "blocked",
+          "agent_name": "Claude",
+          "last_event": {
+            "kind": "note",
+            "summary": "Turn ended before the cache findings were reported.",
+            "at": "2026-10-02T11:54:00.000Z",
+            "age_ms": 360000
+          },
+          "agent_status": "blocked"
+        },
+        {
+          "id": 6,
+          "parent_id": 1,
+          "depth": 1,
+          "name": "rev-docs",
+          "role": "reviewer",
+          "status": "open",
+          "waiting": true,
+          "open_asks": 1,
+          "present": true,
+          "mark": "working",
+          "agent_name": "Claude",
+          "last_event": {
+            "kind": "note",
+            "summary": "Should the guide cover both supported platforms?",
+            "at": "2026-10-02T11:56:00.000Z",
+            "age_ms": 240000
+          }
+        }
+      ],
+      "closed_tasks": 0,
+      "tally": "red",
+      "refs": [
+        {
+          "key": "hub",
+          "value": "http://hub.example.ts.net:7788"
+        }
+      ],
+      "decisions": [
+        {
+          "id": 31,
+          "kind": "decision",
+          "text": "Review each lane before merging.",
+          "at": "2026-10-02T11:50:00.000Z",
+          "age_ms": 600000
+        }
+      ],
+      "unread_work": [
+        {
+          "event_id": 42,
+          "kind": "ready",
+          "summary": "Quick start examples checked; report ready.",
+          "at": "2026-10-02T11:57:00.000Z",
+          "age_ms": 180000,
+          "count": 1,
+          "recipient": {
+            "id": 1,
+            "name": "orch-release",
+            "role": "orchestrator"
+          },
+          "from": {
+            "id": 3,
+            "name": "impl-docs",
+            "role": "implementer"
+          }
+        }
+      ]
+    }
+  ],
+  "activity": [
+    {
+      "id": 42,
+      "kind": "ready",
+      "summary": "Quick start examples checked; report ready.",
+      "at": "2026-10-02T11:57:00.000Z",
+      "age_ms": 180000,
+      "task": {
+        "id": 3,
+        "name": "impl-docs",
+        "role": "implementer"
+      },
+      "root_id": 1,
+      "root_name": "orch-release"
+    }
+  ],
+  "closed": [],
+  "daemon": {
+    "state": "fresh",
+    "at": "2026-10-02T12:00:00.000Z",
+    "age_ms": 0
+  },
+  "milestones": [],
+  "attention": [
+    {
+      "kind": "owner_ask",
+      "severity": 3,
+      "machine": "host-a",
+      "local": true,
+      "orchestrator": {
+        "id": 1,
+        "name": "orch-release",
+        "role": "orchestrator"
+      },
+      "lane": {
+        "id": 6,
+        "name": "rev-docs",
+        "role": "reviewer"
+      },
+      "since": "2026-10-02T11:56:00.000Z",
+      "age_ms": 240000,
+      "text": "Should the guide cover both supported platforms?",
+      "action": "Answer in orch-release's pane",
+      "ask_id": 41,
+      "blocking": true,
+      "asker_waiting": true,
+      "command": "taskr answer 41 \"Cover both platforms.\""
+    },
+    {
+      "kind": "lane_blocked",
+      "severity": 3,
+      "machine": "host-a",
+      "local": true,
+      "orchestrator": {
+        "id": 1,
+        "name": "orch-release",
+        "role": "orchestrator"
+      },
+      "lane": {
+        "id": 5,
+        "name": "research-cache",
+        "role": "researcher"
+      },
+      "since": "2026-10-02T11:54:00.000Z",
+      "age_ms": 360000,
+      "text": "Turn ended while a cache findings report was still owed.",
+      "action": "Read the lane before sending a follow-up prompt.",
+      "command": "taskr log 5"
+    },
+    {
+      "kind": "work_waiting",
+      "severity": 2,
+      "machine": "host-a",
+      "local": true,
+      "orchestrator": {
+        "id": 1,
+        "name": "orch-release",
+        "role": "orchestrator"
+      },
+      "lane": {
+        "id": 4,
+        "name": "rev-retry",
+        "role": "reviewer"
+      },
+      "since": "2026-10-02T11:58:00.000Z",
+      "age_ms": 120000,
+      "text": "Which timeout should the retry test cover?",
+      "action": "Answer the reviewer\u2019s blocking question.",
+      "command": "taskr answer 40 \"Cover the 30-second timeout.\""
+    },
+    {
+      "kind": "work_waiting",
+      "severity": 2,
+      "machine": "host-a",
+      "local": true,
+      "orchestrator": {
+        "id": 1,
+        "name": "orch-release",
+        "role": "orchestrator"
+      },
+      "lane": {
+        "id": 3,
+        "name": "impl-docs",
+        "role": "implementer"
+      },
+      "since": "2026-10-02T11:57:00.000Z",
+      "age_ms": 180000,
+      "text": "Quick start examples checked; report ready.",
+      "action": "Read /reports/docs.md, then acknowledge the event.",
+      "report": "/reports/docs.md",
+      "command": "taskr ack 42 --as 1"
+    }
+  ],
+  "machine": "host-a",
+  "hub": true,
+  "machines": [
+    {
+      "machine": "host-a",
+      "local": true,
+      "last_push_age_ms": 0,
+      "stale": false,
+      "state": {
+        "now": "2026-10-02T12:00:00.000Z",
+        "version": "0.8.1",
+        "owner_asks": [
+          {
+            "id": 41,
+            "text": "Should the guide cover both supported platforms?",
+            "at": "2026-10-02T11:56:00.000Z",
+            "age_ms": 240000,
+            "blocking": true,
+            "asker": {
+              "id": 6,
+              "name": "rev-docs",
+              "role": "reviewer"
+            },
+            "root": {
+              "id": 1,
+              "name": "orch-release",
+              "role": "orchestrator"
+            },
+            "asker_is_root": false,
+            "asker_waiting": true
+          }
+        ],
+        "orchestrators": [
+          {
+            "id": 1,
+            "name": "orch-release",
+            "role": "orchestrator",
+            "status": "open",
+            "created_at": "2026-10-02T11:30:00.000Z",
+            "waiting": false,
+            "unacked": 2,
+            "open_asks": 2,
+            "note": {
+              "text": "Release preparation: implementation, docs, and review.",
+              "at": "2026-10-02T11:59:00.000Z",
+              "age_ms": 60000
+            },
+            "next": {
+              "text": "Read the docs report, answer questions, and collect the retry review.",
+              "at": "2026-10-02T11:59:00.000Z",
+              "age_ms": 60000
+            },
+            "tasks": [
+              {
+                "id": 2,
+                "parent_id": 1,
+                "depth": 1,
+                "name": "impl-retry",
+                "role": "implementer",
+                "status": "open",
+                "waiting": false,
+                "open_asks": 0,
+                "present": true,
+                "mark": "working",
+                "agent_name": "Codex",
+                "last_event": {
+                  "kind": "note",
+                  "summary": "Checking retry backoff and cancellation.",
+                  "at": "2026-10-02T11:59:00.000Z",
+                  "age_ms": 60000
+                }
+              },
+              {
+                "id": 3,
+                "parent_id": 1,
+                "depth": 1,
+                "name": "impl-docs",
+                "role": "implementer",
+                "status": "ready",
+                "waiting": false,
+                "open_asks": 0,
+                "present": true,
+                "mark": "ready",
+                "agent_name": "Codex",
+                "last_event": {
+                  "kind": "ready",
+                  "summary": "Quick start examples checked; report ready.",
+                  "at": "2026-10-02T11:57:00.000Z",
+                  "age_ms": 180000
+                },
+                "report_path": "/reports/docs.md"
+              },
+              {
+                "id": 4,
+                "parent_id": 1,
+                "depth": 1,
+                "name": "rev-retry",
+                "role": "reviewer",
+                "status": "open",
+                "waiting": true,
+                "open_asks": 1,
+                "present": true,
+                "mark": "working",
+                "agent_name": "Claude",
+                "last_event": {
+                  "kind": "note",
+                  "summary": "Which timeout should the retry test cover?",
+                  "at": "2026-10-02T11:58:00.000Z",
+                  "age_ms": 120000
+                }
+              },
+              {
+                "id": 5,
+                "parent_id": 1,
+                "depth": 1,
+                "name": "research-cache",
+                "role": "researcher",
+                "status": "open",
+                "waiting": false,
+                "open_asks": 0,
+                "present": true,
+                "mark": "blocked",
+                "agent_name": "Claude",
+                "last_event": {
+                  "kind": "note",
+                  "summary": "Turn ended before the cache findings were reported.",
+                  "at": "2026-10-02T11:54:00.000Z",
+                  "age_ms": 360000
+                },
+                "agent_status": "blocked"
+              },
+              {
+                "id": 6,
+                "parent_id": 1,
+                "depth": 1,
+                "name": "rev-docs",
+                "role": "reviewer",
+                "status": "open",
+                "waiting": true,
+                "open_asks": 1,
+                "present": true,
+                "mark": "working",
+                "agent_name": "Claude",
+                "last_event": {
+                  "kind": "note",
+                  "summary": "Should the guide cover both supported platforms?",
+                  "at": "2026-10-02T11:56:00.000Z",
+                  "age_ms": 240000
+                }
+              }
+            ],
+            "closed_tasks": 0,
+            "tally": "red",
+            "refs": [
+              {
+                "key": "hub",
+                "value": "http://hub.example.ts.net:7788"
+              }
+            ],
+            "decisions": [
+              {
+                "id": 31,
+                "kind": "decision",
+                "text": "Review each lane before merging.",
+                "at": "2026-10-02T11:50:00.000Z",
+                "age_ms": 600000
+              }
+            ],
+            "unread_work": [
+              {
+                "event_id": 42,
+                "kind": "ready",
+                "summary": "Quick start examples checked; report ready.",
+                "at": "2026-10-02T11:57:00.000Z",
+                "age_ms": 180000,
+                "count": 1,
+                "recipient": {
+                  "id": 1,
+                  "name": "orch-release",
+                  "role": "orchestrator"
+                },
+                "from": {
+                  "id": 3,
+                  "name": "impl-docs",
+                  "role": "implementer"
+                }
+              }
+            ]
+          }
+        ],
+        "activity": [
+          {
+            "id": 42,
+            "kind": "ready",
+            "summary": "Quick start examples checked; report ready.",
+            "at": "2026-10-02T11:57:00.000Z",
+            "age_ms": 180000,
+            "task": {
+              "id": 3,
+              "name": "impl-docs",
+              "role": "implementer"
+            },
+            "root_id": 1,
+            "root_name": "orch-release"
+          }
+        ],
+        "closed": [],
+        "daemon": {
+          "state": "fresh",
+          "at": "2026-10-02T12:00:00.000Z",
+          "age_ms": 0
+        },
+        "milestones": [],
+        "attention": [
+          {
+            "kind": "owner_ask",
+            "severity": 3,
+            "machine": "host-a",
+            "local": true,
+            "orchestrator": {
+              "id": 1,
+              "name": "orch-release",
+              "role": "orchestrator"
+            },
+            "lane": {
+              "id": 6,
+              "name": "rev-docs",
+              "role": "reviewer"
+            },
+            "since": "2026-10-02T11:56:00.000Z",
+            "age_ms": 240000,
+            "text": "Should the guide cover both supported platforms?",
+            "action": "Answer in orch-release's pane",
+            "ask_id": 41,
+            "blocking": true,
+            "asker_waiting": true,
+            "command": "taskr answer 41 \"Cover both platforms.\""
+          },
+          {
+            "kind": "lane_blocked",
+            "severity": 3,
+            "machine": "host-a",
+            "local": true,
+            "orchestrator": {
+              "id": 1,
+              "name": "orch-release",
+              "role": "orchestrator"
+            },
+            "lane": {
+              "id": 5,
+              "name": "research-cache",
+              "role": "researcher"
+            },
+            "since": "2026-10-02T11:54:00.000Z",
+            "age_ms": 360000,
+            "text": "Turn ended while a cache findings report was still owed.",
+            "action": "Read the lane before sending a follow-up prompt.",
+            "command": "taskr log 5"
+          },
+          {
+            "kind": "work_waiting",
+            "severity": 2,
+            "machine": "host-a",
+            "local": true,
+            "orchestrator": {
+              "id": 1,
+              "name": "orch-release",
+              "role": "orchestrator"
+            },
+            "lane": {
+              "id": 4,
+              "name": "rev-retry",
+              "role": "reviewer"
+            },
+            "since": "2026-10-02T11:58:00.000Z",
+            "age_ms": 120000,
+            "text": "Which timeout should the retry test cover?",
+            "action": "Answer the reviewer\u2019s blocking question.",
+            "command": "taskr answer 40 \"Cover the 30-second timeout.\""
+          },
+          {
+            "kind": "work_waiting",
+            "severity": 2,
+            "machine": "host-a",
+            "local": true,
+            "orchestrator": {
+              "id": 1,
+              "name": "orch-release",
+              "role": "orchestrator"
+            },
+            "lane": {
+              "id": 3,
+              "name": "impl-docs",
+              "role": "implementer"
+            },
+            "since": "2026-10-02T11:57:00.000Z",
+            "age_ms": 180000,
+            "text": "Quick start examples checked; report ready.",
+            "action": "Read /reports/docs.md, then acknowledge the event.",
+            "report": "/reports/docs.md",
+            "command": "taskr ack 42 --as 1"
+          }
+        ]
+      }
+    },
+    {
+      "machine": "host-b",
+      "node_id": "showcase-host-b",
+      "local": false,
+      "last_push_age_ms": 2000,
+      "stale": false,
+      "state": {
+        "now": "2026-10-02T12:00:00.000Z",
+        "version": "0.8.1",
+        "owner_asks": [],
+        "orchestrators": [],
+        "activity": [],
+        "closed": [],
+        "daemon": {
+          "state": "fresh",
+          "at": "2026-10-02T12:00:00.000Z",
+          "age_ms": 0
+        },
+        "milestones": [],
+        "attention": []
+      }
+    }
+  ],
+  "needs_you": [
+    {
+      "id": 41,
+      "text": "Should the guide cover both supported platforms?",
+      "at": "2026-10-02T11:56:00.000Z",
+      "age_ms": 240000,
+      "blocking": true,
+      "asker": {
+        "id": 6,
+        "name": "rev-docs",
+        "role": "reviewer"
+      },
+      "root": {
+        "id": 1,
+        "name": "orch-release",
+        "role": "orchestrator"
+      },
+      "asker_is_root": false,
+      "asker_waiting": true,
+      "machine": "host-a",
+      "local": true,
+      "stale": false
+    }
+  ]
+}
