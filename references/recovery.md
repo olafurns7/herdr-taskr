@@ -27,7 +27,7 @@ Load this when a taskr command fails, a `no_receipt`, `model_capacity`, quota or
 
 `herdr` events with `reason=model_capacity`, `reason=stall` or a `quota` field pass every `--for`/`--from` and replay until acked.
 
-- `stall` (hooked lanes): the lane's turn ended while it owed a result (no done, fail or ask after the newest prompt). `last` is the newest report code (`r`, `d`, `f`, `q`); `error` gives the turn error code, or `unknown` if the harness gave none. Read the report path and the pane, then prompt or resume. One per attempt. Plain stalls are skipped for orchestrator and sub-orchestrator lanes; error stalls always emit. On the server host a Codex error turn also yields `stall` from its rollout tail; client-host lanes get none (README, Hooks).
+- `stall` (hooked lanes): the lane's turn ended while it owed a result (no done, fail or ask after the newest prompt). `last` is the newest report code (`r`, `d`, `f`, `q`); `error` gives the turn error code, or `unknown` if the harness gave none. Read the report path and the pane, then prompt or resume. One per attempt. Plain stalls are skipped for orchestrator and sub-orchestrator lanes; error stalls always emit. On the server host a Codex error turn also yields `stall` from its rollout tail; client-host lanes get none (see [agent hooks](../docs/install.md#6-agent-hooks)).
 - `quota` (`--scan-quota`): `quota` is `limit` or `low`, with `percent`. Follow the host's quota policy for new work.
 - `model_capacity` (Codex lanes): a historical observation. Verify the current launch, provider/name/pane/terminal/session and the pane tail, record a disposition, then ack. Recovered: ack it as stale. Still halted: report model capacity and take only owner-authorized next steps. Never automatically prompt, retry, switch model, rotate account or notify the phone. `model` is registered launch metadata and can be stale after a manual switch.
 
@@ -46,5 +46,5 @@ The owner restarts daemons; a worker never does. `taskr daemon --status` reports
 - `taskr daemon --restart` (local and client mode) stops only the daemon whose recorded pid, executable, argv, start time and uid match, waits ≤10 s, and starts this binary detached with only HOME/PATH/HERDR_SOCKET_PATH. An unknown identity exits 6 and signals nothing.
 - Client mode (server.url): `--status` shows `mode: client`, `server`, `last_call_at`, `last_error`, `pid`, `running_version`, `stale`.
 - Upgrade from v0.10, once per client host: the old client daemon has no identity record, so `--restart` exits 6 and `--status` shows `running_version: unknown`. Stop it by its `pid` from `--status` (`kill PID`); the Herdr plugin starts the new one.
-- The Herdr plugin restarts a killed daemon within seconds. To move a host to client mode, write `server.url` before you stop its local daemon (see README).
+- The Herdr plugin restarts a killed daemon within seconds. To move a host to client mode, write `server.url` before you stop its local daemon (see [multiple machines](../docs/install.md#7-multiple-machines)).
 - No Herdr server running: `wait` skips observations; `daemon --once` exits 5. Log: ~/.local/state/taskr/daemon.log, capped at 1 MB.

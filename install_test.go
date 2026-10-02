@@ -703,24 +703,29 @@ func TestInstallSkillLinks(t *testing.T) {
 	}
 }
 
-func TestInstallReadmeBootstrap(t *testing.T) {
+func TestInstallRunbookBootstrap(t *testing.T) {
 	readme, err := os.ReadFile("README.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	quickParts := strings.SplitN(string(readme), "## Quick start", 2)
-	if len(quickParts) != 2 {
-		t.Fatal("README is missing the quick start")
+	if !strings.Contains(string(readme), "https://raw.githubusercontent.com/olafurns7/herdr-taskr/master/docs/install.md") {
+		t.Fatal("README is missing the raw install runbook URL")
 	}
-	headingAndQuickStart := strings.SplitN(quickParts[1], "\n", 2)
-	if len(headingAndQuickStart) != 2 {
-		t.Fatal("README quick start is empty")
+	runbook, err := os.ReadFile("docs/install.md")
+	if err != nil {
+		t.Fatal(err)
 	}
-	quick := headingAndQuickStart[1]
-	quick = strings.SplitN(quick, "\nReceipts:", 2)[0]
-	parts := strings.Split(quick, "```sh\n")
-	if len(parts) < 4 {
-		t.Fatal("quick start is missing its curl and gh api snippets")
+	installParts := strings.SplitN(string(runbook), "## 2. Install\n", 2)
+	if len(installParts) != 2 {
+		t.Fatal("runbook is missing the install heading")
+	}
+	sectionParts := strings.SplitN(installParts[1], "\n## 3. Set PATH\n", 2)
+	if len(sectionParts) != 2 {
+		t.Fatal("runbook is missing the PATH heading")
+	}
+	parts := strings.Split(sectionParts[0], "```sh\n")
+	if len(parts) != 3 {
+		t.Fatal("install section must contain its curl and gh api snippets")
 	}
 	snippet := func(part string) string { return strings.SplitN(part, "\n```", 2)[0] }
 	for _, tc := range []struct {
