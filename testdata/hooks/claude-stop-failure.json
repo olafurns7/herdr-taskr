@@ -1,0 +1,1 @@
+{"session_id":"claude-session","transcript_path":"/tmp/taskr-hooks/claude.jsonl","hook_event_name":"StopFailure","error":"rate_limit","last_assistant_message":"API error"}

@@ -1,0 +1,1 @@
+{"id":"event-error","type":"session.error","properties":{"sessionID":"opencode-session","error":{"code":"server_overloaded","message":"temporary failure"}}}

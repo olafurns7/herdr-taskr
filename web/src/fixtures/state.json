@@ -1,0 +1,1746 @@
+{
+  "activity": [
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 18,
+      "kind": "fail",
+      "root_id": 5,
+      "root_name": "camp-b",
+      "summary": "tests red",
+      "task": {
+        "id": 10,
+        "name": "impl-fail",
+        "role": "implementer"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 17,
+      "kind": "ready",
+      "root_id": 5,
+      "root_name": "camp-b",
+      "summary": "slice b",
+      "task": {
+        "id": 6,
+        "name": "impl-b",
+        "role": "implementer"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 16,
+      "kind": "next",
+      "root_id": 1,
+      "root_name": "camp-a",
+      "summary": "run after the merge",
+      "task": {
+        "id": 9,
+        "name": "gate-a",
+        "role": "gate"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 15,
+      "kind": "adopt",
+      "root_id": 1,
+      "root_name": "camp-a",
+      "summary": "adopt note",
+      "task": {
+        "id": 1,
+        "name": "camp-a",
+        "role": "orchestrator"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 14,
+      "kind": "handover",
+      "root_id": 1,
+      "root_name": "camp-a",
+      "summary": "handover note",
+      "task": {
+        "id": 1,
+        "name": "camp-a",
+        "role": "orchestrator"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 13,
+      "kind": "decision",
+      "root_id": 1,
+      "root_name": "camp-a",
+      "summary": "Review before merging.",
+      "task": {
+        "id": 1,
+        "name": "camp-a",
+        "role": "orchestrator"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 12,
+      "kind": "ref",
+      "root_id": 1,
+      "root_name": "camp-a",
+      "summary": "commit=6c85fa1",
+      "task": {
+        "id": 3,
+        "name": "impl-a",
+        "role": "implementer"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 11,
+      "kind": "ref",
+      "root_id": 1,
+      "root_name": "camp-a",
+      "summary": "pr=3712",
+      "task": {
+        "id": 3,
+        "name": "impl-a",
+        "role": "implementer"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 10,
+      "kind": "next",
+      "root_id": 1,
+      "root_name": "camp-a",
+      "summary": "post the verdict",
+      "task": {
+        "id": 4,
+        "name": "rev-a",
+        "role": "reviewer"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 9,
+      "kind": "next",
+      "root_id": 1,
+      "root_name": "camp-a",
+      "summary": "merge after the review",
+      "task": {
+        "id": 1,
+        "name": "camp-a",
+        "role": "orchestrator"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 5,
+      "kind": "ask",
+      "root_id": 5,
+      "root_name": "camp-b",
+      "summary": "Which branch?",
+      "task": {
+        "id": 5,
+        "name": "camp-b",
+        "role": "orchestrator"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 4,
+      "kind": "note",
+      "root_id": 1,
+      "root_name": "camp-a",
+      "summary": "\u003cscript\u003ealert(1)\u003c/script\u003e",
+      "task": {
+        "id": 3,
+        "name": "impl-a",
+        "role": "implementer"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 3,
+      "kind": "ask",
+      "root_id": 1,
+      "root_name": "camp-a",
+      "summary": "not for the owner",
+      "task": {
+        "id": 3,
+        "name": "impl-a",
+        "role": "implementer"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 2,
+      "kind": "ask",
+      "root_id": 1,
+      "root_name": "camp-a",
+      "summary": "Ship \u003cb\u003enow\u003c/b\u003e?\nOr wait?",
+      "task": {
+        "id": 3,
+        "name": "impl-a",
+        "role": "implementer"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 1,
+      "kind": "note",
+      "root_id": 1,
+      "root_name": "camp-a",
+      "summary": "phase 2: reviewing",
+      "task": {
+        "id": 1,
+        "name": "camp-a",
+        "role": "orchestrator"
+      }
+    }
+  ],
+  "attention": [
+    {
+      "action": "Answer in camp-a's pane w1:p1",
+      "age_ms": 60000,
+      "also": [
+        {
+          "action": "Have camp-a relaunch or close it",
+          "age_ms": 60000,
+          "command": "taskr log 3",
+          "kind": "lane_missing",
+          "since": "2026-09-29T12:00:00.000Z",
+          "text": "pane w1:p3 is gone; last: \u003cscript\u003ealert(1)\u003c/script\u003e"
+        }
+      ],
+      "ask_id": 2,
+      "blocking": true,
+      "kind": "owner_ask",
+      "lane": {
+        "id": 3,
+        "name": "impl-a",
+        "role": "implementer"
+      },
+      "local": true,
+      "machine": "hub",
+      "orchestrator": {
+        "id": 1,
+        "name": "camp-a",
+        "role": "orchestrator"
+      },
+      "pane_id": "w1:p1",
+      "severity": 0,
+      "since": "2026-09-29T12:00:00.000Z",
+      "text": "Ship \u003cb\u003enow\u003c/b\u003e?\nOr wait?"
+    },
+    {
+      "action": "Answer in camp-b's pane",
+      "age_ms": 60000,
+      "ask_id": 5,
+      "kind": "owner_ask",
+      "local": true,
+      "machine": "hub",
+      "orchestrator": {
+        "id": 5,
+        "name": "camp-b",
+        "role": "orchestrator"
+      },
+      "severity": 0,
+      "since": "2026-09-29T12:00:00.000Z",
+      "text": "Which branch?"
+    },
+    {
+      "action": "Answer in host-a-orch's pane",
+      "age_ms": 60000,
+      "ask_id": 7,
+      "kind": "owner_ask",
+      "local": false,
+      "machine": "host-a",
+      "node_id": "nHOSTA1CNTRL",
+      "orchestrator": {
+        "id": 1,
+        "name": "host-a-orch",
+        "role": "orchestrator"
+      },
+      "severity": 0,
+      "since": "2026-09-29T12:00:00.000Z",
+      "text": "Ship it?"
+    },
+    {
+      "action": "Answer the dialog in its pane",
+      "age_ms": 60000,
+      "command": "herdr agent read rev-a --source recent-unwrapped --lines 60",
+      "kind": "lane_blocked",
+      "lane": {
+        "id": 4,
+        "name": "rev-a",
+        "role": "reviewer"
+      },
+      "local": true,
+      "machine": "hub",
+      "orchestrator": {
+        "id": 1,
+        "name": "camp-a",
+        "role": "orchestrator"
+      },
+      "pane_id": "w1:p4",
+      "severity": 1,
+      "since": "2026-09-29T12:00:00.000Z",
+      "text": "Herdr sees an approval or question dialog in its pane"
+    },
+    {
+      "action": "Read its report; relaunch or close the lane",
+      "age_ms": 60000,
+      "command": "herdr agent read impl-fail --source recent-unwrapped --lines 60",
+      "kind": "lane_failed",
+      "lane": {
+        "id": 10,
+        "name": "impl-fail",
+        "role": "implementer"
+      },
+      "local": true,
+      "machine": "hub",
+      "orchestrator": {
+        "id": 5,
+        "name": "camp-b",
+        "role": "orchestrator"
+      },
+      "pane_id": "w2:p3",
+      "report": "/ledger/r/fail.md",
+      "severity": 2,
+      "since": "2026-09-29T12:00:00.000Z",
+      "text": "tests red"
+    },
+    {
+      "action": "Have camp-b relaunch or close it",
+      "age_ms": 60000,
+      "command": "taskr log 11",
+      "kind": "lane_missing",
+      "lane": {
+        "id": 11,
+        "name": "rs-lost",
+        "role": "researcher"
+      },
+      "local": true,
+      "machine": "hub",
+      "orchestrator": {
+        "id": 5,
+        "name": "camp-b",
+        "role": "orchestrator"
+      },
+      "pane_id": "w2:p4",
+      "severity": 3,
+      "since": "2026-09-29T12:00:00.000Z",
+      "text": "pane w2:p4 is gone; last: nothing reported"
+    },
+    {
+      "action": "Check the taskr daemon on host-b",
+      "age_ms": 60000,
+      "command": "taskr daemon --status",
+      "kind": "machine_stale",
+      "local": false,
+      "machine": "host-b",
+      "node_id": "nLNX1CNTRL",
+      "severity": 4,
+      "since": "2026-09-29T12:00:00.000Z",
+      "text": "host-b has not pushed its state to the hub"
+    },
+    {
+      "action": "Check the taskr daemon on hub",
+      "age_ms": 60000,
+      "command": "taskr daemon --status",
+      "kind": "daemon_unhealthy",
+      "local": true,
+      "machine": "hub",
+      "severity": 5,
+      "since": "2026-09-29T12:00:00.000Z",
+      "text": "the taskr daemon's heartbeat stopped; Herdr events are not arriving"
+    },
+    {
+      "action": "Check camp-b's pane",
+      "age_ms": 60000,
+      "kind": "work_waiting",
+      "lane": {
+        "id": 6,
+        "name": "impl-b",
+        "role": "implementer"
+      },
+      "local": true,
+      "machine": "hub",
+      "orchestrator": {
+        "id": 5,
+        "name": "camp-b",
+        "role": "orchestrator"
+      },
+      "severity": 6,
+      "since": "2026-09-29T12:00:00.000Z",
+      "text": "camp-b has not taken impl-b's ready (2 unread): slice b"
+    }
+  ],
+  "closed": [
+    {
+      "age_ms": 60000,
+      "closed_at": "2026-09-29T12:00:00.000Z",
+      "id": 7,
+      "name": "camp-c",
+      "note": {
+        "age_ms": 60000,
+        "at": "2026-09-29T12:00:00.000Z",
+        "text": "all done"
+      }
+    }
+  ],
+  "daemon": {
+    "age_ms": 60000,
+    "at": "2026-09-29T12:00:00.000Z",
+    "state": "stale"
+  },
+  "hub": true,
+  "machine": "hub",
+  "machines": [
+    {
+      "last_push_age_ms": 60000,
+      "local": true,
+      "machine": "hub",
+      "stale": false,
+      "state": {
+        "activity": [
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 18,
+            "kind": "fail",
+            "root_id": 5,
+            "root_name": "camp-b",
+            "summary": "tests red",
+            "task": {
+              "id": 10,
+              "name": "impl-fail",
+              "role": "implementer"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 17,
+            "kind": "ready",
+            "root_id": 5,
+            "root_name": "camp-b",
+            "summary": "slice b",
+            "task": {
+              "id": 6,
+              "name": "impl-b",
+              "role": "implementer"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 16,
+            "kind": "next",
+            "root_id": 1,
+            "root_name": "camp-a",
+            "summary": "run after the merge",
+            "task": {
+              "id": 9,
+              "name": "gate-a",
+              "role": "gate"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 15,
+            "kind": "adopt",
+            "root_id": 1,
+            "root_name": "camp-a",
+            "summary": "adopt note",
+            "task": {
+              "id": 1,
+              "name": "camp-a",
+              "role": "orchestrator"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 14,
+            "kind": "handover",
+            "root_id": 1,
+            "root_name": "camp-a",
+            "summary": "handover note",
+            "task": {
+              "id": 1,
+              "name": "camp-a",
+              "role": "orchestrator"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 13,
+            "kind": "decision",
+            "root_id": 1,
+            "root_name": "camp-a",
+            "summary": "Review before merging.",
+            "task": {
+              "id": 1,
+              "name": "camp-a",
+              "role": "orchestrator"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 12,
+            "kind": "ref",
+            "root_id": 1,
+            "root_name": "camp-a",
+            "summary": "commit=6c85fa1",
+            "task": {
+              "id": 3,
+              "name": "impl-a",
+              "role": "implementer"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 11,
+            "kind": "ref",
+            "root_id": 1,
+            "root_name": "camp-a",
+            "summary": "pr=3712",
+            "task": {
+              "id": 3,
+              "name": "impl-a",
+              "role": "implementer"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 10,
+            "kind": "next",
+            "root_id": 1,
+            "root_name": "camp-a",
+            "summary": "post the verdict",
+            "task": {
+              "id": 4,
+              "name": "rev-a",
+              "role": "reviewer"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 9,
+            "kind": "next",
+            "root_id": 1,
+            "root_name": "camp-a",
+            "summary": "merge after the review",
+            "task": {
+              "id": 1,
+              "name": "camp-a",
+              "role": "orchestrator"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 5,
+            "kind": "ask",
+            "root_id": 5,
+            "root_name": "camp-b",
+            "summary": "Which branch?",
+            "task": {
+              "id": 5,
+              "name": "camp-b",
+              "role": "orchestrator"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 4,
+            "kind": "note",
+            "root_id": 1,
+            "root_name": "camp-a",
+            "summary": "\u003cscript\u003ealert(1)\u003c/script\u003e",
+            "task": {
+              "id": 3,
+              "name": "impl-a",
+              "role": "implementer"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 3,
+            "kind": "ask",
+            "root_id": 1,
+            "root_name": "camp-a",
+            "summary": "not for the owner",
+            "task": {
+              "id": 3,
+              "name": "impl-a",
+              "role": "implementer"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 2,
+            "kind": "ask",
+            "root_id": 1,
+            "root_name": "camp-a",
+            "summary": "Ship \u003cb\u003enow\u003c/b\u003e?\nOr wait?",
+            "task": {
+              "id": 3,
+              "name": "impl-a",
+              "role": "implementer"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 1,
+            "kind": "note",
+            "root_id": 1,
+            "root_name": "camp-a",
+            "summary": "phase 2: reviewing",
+            "task": {
+              "id": 1,
+              "name": "camp-a",
+              "role": "orchestrator"
+            }
+          }
+        ],
+        "attention": [
+          {
+            "action": "Answer in camp-a's pane w1:p1",
+            "age_ms": 60000,
+            "also": [
+              {
+                "action": "Have camp-a relaunch or close it",
+                "age_ms": 60000,
+                "command": "taskr log 3",
+                "kind": "lane_missing",
+                "since": "2026-09-29T12:00:00.000Z",
+                "text": "pane w1:p3 is gone; last: \u003cscript\u003ealert(1)\u003c/script\u003e"
+              }
+            ],
+            "ask_id": 2,
+            "blocking": true,
+            "kind": "owner_ask",
+            "lane": {
+              "id": 3,
+              "name": "impl-a",
+              "role": "implementer"
+            },
+            "local": true,
+            "machine": "hub",
+            "orchestrator": {
+              "id": 1,
+              "name": "camp-a",
+              "role": "orchestrator"
+            },
+            "pane_id": "w1:p1",
+            "severity": 0,
+            "since": "2026-09-29T12:00:00.000Z",
+            "text": "Ship \u003cb\u003enow\u003c/b\u003e?\nOr wait?"
+          },
+          {
+            "action": "Answer in camp-b's pane",
+            "age_ms": 60000,
+            "ask_id": 5,
+            "kind": "owner_ask",
+            "local": true,
+            "machine": "hub",
+            "orchestrator": {
+              "id": 5,
+              "name": "camp-b",
+              "role": "orchestrator"
+            },
+            "severity": 0,
+            "since": "2026-09-29T12:00:00.000Z",
+            "text": "Which branch?"
+          },
+          {
+            "action": "Answer the dialog in its pane",
+            "age_ms": 60000,
+            "command": "herdr agent read rev-a --source recent-unwrapped --lines 60",
+            "kind": "lane_blocked",
+            "lane": {
+              "id": 4,
+              "name": "rev-a",
+              "role": "reviewer"
+            },
+            "local": true,
+            "machine": "hub",
+            "orchestrator": {
+              "id": 1,
+              "name": "camp-a",
+              "role": "orchestrator"
+            },
+            "pane_id": "w1:p4",
+            "severity": 1,
+            "since": "2026-09-29T12:00:00.000Z",
+            "text": "Herdr sees an approval or question dialog in its pane"
+          },
+          {
+            "action": "Read its report; relaunch or close the lane",
+            "age_ms": 60000,
+            "command": "herdr agent read impl-fail --source recent-unwrapped --lines 60",
+            "kind": "lane_failed",
+            "lane": {
+              "id": 10,
+              "name": "impl-fail",
+              "role": "implementer"
+            },
+            "local": true,
+            "machine": "hub",
+            "orchestrator": {
+              "id": 5,
+              "name": "camp-b",
+              "role": "orchestrator"
+            },
+            "pane_id": "w2:p3",
+            "report": "/ledger/r/fail.md",
+            "severity": 2,
+            "since": "2026-09-29T12:00:00.000Z",
+            "text": "tests red"
+          },
+          {
+            "action": "Have camp-b relaunch or close it",
+            "age_ms": 60000,
+            "command": "taskr log 11",
+            "kind": "lane_missing",
+            "lane": {
+              "id": 11,
+              "name": "rs-lost",
+              "role": "researcher"
+            },
+            "local": true,
+            "machine": "hub",
+            "orchestrator": {
+              "id": 5,
+              "name": "camp-b",
+              "role": "orchestrator"
+            },
+            "pane_id": "w2:p4",
+            "severity": 3,
+            "since": "2026-09-29T12:00:00.000Z",
+            "text": "pane w2:p4 is gone; last: nothing reported"
+          },
+          {
+            "action": "Check the taskr daemon on hub",
+            "age_ms": 60000,
+            "command": "taskr daemon --status",
+            "kind": "daemon_unhealthy",
+            "local": true,
+            "machine": "hub",
+            "severity": 5,
+            "since": "2026-09-29T12:00:00.000Z",
+            "text": "the taskr daemon's heartbeat stopped; Herdr events are not arriving"
+          },
+          {
+            "action": "Check camp-b's pane",
+            "age_ms": 60000,
+            "kind": "work_waiting",
+            "lane": {
+              "id": 6,
+              "name": "impl-b",
+              "role": "implementer"
+            },
+            "local": true,
+            "machine": "hub",
+            "orchestrator": {
+              "id": 5,
+              "name": "camp-b",
+              "role": "orchestrator"
+            },
+            "severity": 6,
+            "since": "2026-09-29T12:00:00.000Z",
+            "text": "camp-b has not taken impl-b's ready (2 unread): slice b"
+          }
+        ],
+        "closed": [
+          {
+            "age_ms": 60000,
+            "closed_at": "2026-09-29T12:00:00.000Z",
+            "id": 7,
+            "name": "camp-c",
+            "note": {
+              "age_ms": 60000,
+              "at": "2026-09-29T12:00:00.000Z",
+              "text": "all done"
+            }
+          }
+        ],
+        "daemon": {
+          "age_ms": 60000,
+          "at": "2026-09-29T12:00:00.000Z",
+          "state": "stale"
+        },
+        "milestones": [
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 18,
+            "kind": "fail",
+            "lane": "impl-fail",
+            "lane_id": 10,
+            "machine": "hub",
+            "orchestrator": "camp-b",
+            "role": "implementer",
+            "root_id": 5,
+            "text": "tests red"
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 17,
+            "kind": "ready",
+            "lane": "impl-b",
+            "lane_id": 6,
+            "machine": "hub",
+            "orchestrator": "camp-b",
+            "role": "implementer",
+            "root_id": 5,
+            "text": "slice b"
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 15,
+            "kind": "adopt",
+            "machine": "hub",
+            "orchestrator": "camp-a",
+            "root_id": 1,
+            "text": "adopt note"
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 14,
+            "kind": "handover",
+            "machine": "hub",
+            "orchestrator": "camp-a",
+            "root_id": 1,
+            "text": "handover note"
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 13,
+            "kind": "decision",
+            "machine": "hub",
+            "orchestrator": "camp-a",
+            "root_id": 1,
+            "text": "Review before merging."
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 11,
+            "key": "pr",
+            "kind": "ref",
+            "lane": "impl-a",
+            "lane_id": 3,
+            "machine": "hub",
+            "orchestrator": "camp-a",
+            "role": "implementer",
+            "root_id": 1,
+            "text": "pr=3712"
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 6,
+            "kind": "note",
+            "machine": "hub",
+            "orchestrator": "camp-c",
+            "root_id": 7,
+            "text": "all done"
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 1,
+            "kind": "note",
+            "machine": "hub",
+            "orchestrator": "camp-a",
+            "root_id": 1,
+            "text": "phase 2: reviewing"
+          }
+        ],
+        "now": "2026-09-29T12:00:00.000Z",
+        "orchestrators": [
+          {
+            "closed_tasks": 0,
+            "created_at": "2026-09-29T12:00:00.000Z",
+            "decisions": [
+              {
+                "age_ms": 60000,
+                "at": "2026-09-29T12:00:00.000Z",
+                "id": 13,
+                "kind": "decision",
+                "text": "Review before merging."
+              }
+            ],
+            "id": 1,
+            "last_event": {
+              "age_ms": 60000,
+              "at": "2026-09-29T12:00:00.000Z",
+              "kind": "adopt",
+              "summary": "adopt note"
+            },
+            "last_handover": {
+              "age_ms": 60000,
+              "at": "2026-09-29T12:00:00.000Z",
+              "text": "handover note"
+            },
+            "name": "camp-a",
+            "next": {
+              "age_ms": 60000,
+              "at": "2026-09-29T12:00:00.000Z",
+              "text": "merge after the review"
+            },
+            "note": {
+              "age_ms": 60000,
+              "at": "2026-09-29T12:00:00.000Z",
+              "text": "phase 2: reviewing"
+            },
+            "open_asks": 0,
+            "pane_id": "w1:p1",
+            "role": "orchestrator",
+            "status": "open",
+            "tab_id": "w1:t1",
+            "tally": "red",
+            "tasks": [
+              {
+                "agent_name": "sub-a",
+                "depth": 1,
+                "id": 2,
+                "mark": "working",
+                "name": "sub-a",
+                "open_asks": 0,
+                "pane_id": "w1:p2",
+                "parent_id": 1,
+                "present": true,
+                "role": "sub-orchestrator",
+                "status": "open",
+                "waiting": false
+              },
+              {
+                "agent_name": "impl-a",
+                "depth": 2,
+                "id": 3,
+                "last_event": {
+                  "age_ms": 60000,
+                  "at": "2026-09-29T12:00:00.000Z",
+                  "kind": "note",
+                  "summary": "\u003cscript\u003ealert(1)\u003c/script\u003e"
+                },
+                "mark": "missing",
+                "name": "impl-a",
+                "observed_at": "2026-09-29T12:00:00.000Z",
+                "open_asks": 2,
+                "pane_id": "w1:p3",
+                "parent_id": 2,
+                "present": false,
+                "refs": [
+                  {
+                    "key": "commit",
+                    "value": "6c85fa1"
+                  },
+                  {
+                    "key": "pr",
+                    "value": "3712"
+                  }
+                ],
+                "report_path": "/ledger/r/impl.md",
+                "role": "implementer",
+                "status": "open",
+                "waiting": false
+              },
+              {
+                "agent_name": "rev-a",
+                "agent_status": "blocked",
+                "depth": 1,
+                "id": 4,
+                "mark": "blocked",
+                "name": "rev-a",
+                "next": {
+                  "age_ms": 60000,
+                  "at": "2026-09-29T12:00:00.000Z",
+                  "text": "post the verdict"
+                },
+                "observed_at": "2026-09-29T12:00:00.000Z",
+                "open_asks": 0,
+                "pane_id": "w1:p4",
+                "parent_id": 1,
+                "present": true,
+                "role": "reviewer",
+                "status": "open",
+                "waiting": false
+              },
+              {
+                "depth": 1,
+                "id": 9,
+                "mark": "planned",
+                "name": "gate-a",
+                "next": {
+                  "age_ms": 60000,
+                  "at": "2026-09-29T12:00:00.000Z",
+                  "text": "run after the merge"
+                },
+                "open_asks": 0,
+                "parent_id": 1,
+                "role": "gate",
+                "status": "planned",
+                "waiting": false
+              }
+            ],
+            "unacked": 1,
+            "waiting": false,
+            "workspace_id": "w1"
+          },
+          {
+            "closed_tasks": 0,
+            "created_at": "2026-09-29T12:00:00.000Z",
+            "id": 5,
+            "last_event": {
+              "age_ms": 60000,
+              "at": "2026-09-29T12:00:00.000Z",
+              "kind": "ask",
+              "summary": "Which branch?"
+            },
+            "name": "camp-b",
+            "note": null,
+            "open_asks": 1,
+            "role": "orchestrator",
+            "status": "open",
+            "tally": "red",
+            "tasks": [
+              {
+                "agent_name": "impl-b",
+                "depth": 1,
+                "id": 6,
+                "last_event": {
+                  "age_ms": 60000,
+                  "at": "2026-09-29T12:00:00.000Z",
+                  "kind": "ready",
+                  "summary": "slice b"
+                },
+                "mark": "ready",
+                "name": "impl-b",
+                "open_asks": 0,
+                "pane_id": "w2:p2",
+                "parent_id": 5,
+                "present": true,
+                "role": "implementer",
+                "status": "ready",
+                "waiting": false
+              },
+              {
+                "agent_name": "impl-fail",
+                "depth": 1,
+                "id": 10,
+                "last_event": {
+                  "age_ms": 60000,
+                  "at": "2026-09-29T12:00:00.000Z",
+                  "kind": "fail",
+                  "summary": "tests red"
+                },
+                "mark": "failed",
+                "name": "impl-fail",
+                "open_asks": 0,
+                "pane_id": "w2:p3",
+                "parent_id": 5,
+                "present": true,
+                "report_path": "/ledger/r/fail.md",
+                "role": "implementer",
+                "status": "failed",
+                "waiting": false
+              },
+              {
+                "agent_name": "rs-lost",
+                "depth": 1,
+                "id": 11,
+                "mark": "missing",
+                "name": "rs-lost",
+                "observed_at": "2026-09-29T12:00:00.000Z",
+                "open_asks": 0,
+                "pane_id": "w2:p4",
+                "parent_id": 5,
+                "present": false,
+                "role": "researcher",
+                "status": "open",
+                "waiting": false
+              }
+            ],
+            "unacked": 2,
+            "unread_work": [
+              {
+                "age_ms": 60000,
+                "at": "2026-09-29T12:00:00.000Z",
+                "count": 2,
+                "event_id": 17,
+                "from": {
+                  "id": 6,
+                  "name": "impl-b",
+                  "role": "implementer"
+                },
+                "kind": "ready",
+                "recipient": {
+                  "id": 5,
+                  "name": "camp-b",
+                  "role": "orchestrator"
+                },
+                "summary": "slice b"
+              }
+            ],
+            "waiting": false
+          }
+        ],
+        "owner_asks": [
+          {
+            "age_ms": 60000,
+            "asker": {
+              "id": 3,
+              "name": "impl-a",
+              "role": "implementer"
+            },
+            "asker_is_root": false,
+            "asker_waiting": false,
+            "at": "2026-09-29T12:00:00.000Z",
+            "blocking": true,
+            "id": 2,
+            "pane_id": "w1:p3",
+            "root": {
+              "id": 1,
+              "name": "camp-a",
+              "role": "orchestrator"
+            },
+            "text": "Ship \u003cb\u003enow\u003c/b\u003e?\nOr wait?"
+          },
+          {
+            "age_ms": 60000,
+            "asker": {
+              "id": 5,
+              "name": "camp-b",
+              "role": "orchestrator"
+            },
+            "asker_is_root": true,
+            "asker_waiting": false,
+            "at": "2026-09-29T12:00:00.000Z",
+            "blocking": false,
+            "id": 5,
+            "root": {
+              "id": 5,
+              "name": "camp-b",
+              "role": "orchestrator"
+            },
+            "text": "Which branch?"
+          }
+        ],
+        "version": "dev"
+      }
+    },
+    {
+      "last_push_age_ms": 60000,
+      "local": false,
+      "machine": "host-a",
+      "node_id": "nHOSTA1CNTRL",
+      "stale": false,
+      "state": {
+        "activity": [],
+        "attention": [
+          {
+            "action": "Answer in host-a-orch's pane",
+            "age_ms": 60000,
+            "ask_id": 7,
+            "kind": "owner_ask",
+            "local": false,
+            "machine": "host-a",
+            "node_id": "nHOSTA1CNTRL",
+            "orchestrator": {
+              "id": 1,
+              "name": "host-a-orch",
+              "role": "orchestrator"
+            },
+            "severity": 0,
+            "since": "2026-09-29T12:00:00.000Z",
+            "text": "Ship it?"
+          }
+        ],
+        "closed": [],
+        "milestones": [],
+        "now": "2026-09-29T12:00:00.000Z",
+        "orchestrators": [
+          {
+            "closed_tasks": 0,
+            "created_at": "2026-09-29T12:00:00.000Z",
+            "id": 1,
+            "name": "host-a-orch",
+            "note": null,
+            "open_asks": 0,
+            "role": "orchestrator",
+            "status": "open",
+            "tally": "red",
+            "tasks": [],
+            "unacked": 0,
+            "waiting": false
+          }
+        ],
+        "owner_asks": [
+          {
+            "age_ms": 60000,
+            "asker": {
+              "id": 1,
+              "name": "host-a-orch",
+              "role": "orchestrator"
+            },
+            "asker_is_root": true,
+            "asker_waiting": false,
+            "at": "2026-09-29T12:00:00.000Z",
+            "blocking": false,
+            "id": 7,
+            "root": {
+              "id": 1,
+              "name": "host-a-orch",
+              "role": "orchestrator"
+            },
+            "text": "Ship it?"
+          }
+        ],
+        "version": "v0.6.0"
+      }
+    },
+    {
+      "last_push_age_ms": 60000,
+      "local": false,
+      "machine": "host-b",
+      "node_id": "nLNX1CNTRL",
+      "stale": true,
+      "state": {
+        "activity": [],
+        "attention": [
+          {
+            "action": "Check the taskr daemon on host-b",
+            "age_ms": 60000,
+            "command": "taskr daemon --status",
+            "kind": "machine_stale",
+            "local": false,
+            "machine": "host-b",
+            "node_id": "nLNX1CNTRL",
+            "severity": 4,
+            "since": "2026-09-29T12:00:00.000Z",
+            "text": "host-b has not pushed its state to the hub"
+          }
+        ],
+        "closed": [],
+        "daemon": {
+          "state": "fresh"
+        },
+        "milestones": [
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 41,
+            "key": "release",
+            "kind": "ref",
+            "machine": "host-b",
+            "node_id": "nLNX1CNTRL",
+            "orchestrator": "host-a-orch",
+            "root_id": 1,
+            "text": "release=v0.7.0"
+          }
+        ],
+        "now": "2026-09-29T12:00:00.000Z",
+        "orchestrators": [
+          {
+            "closed_tasks": 0,
+            "created_at": "2026-09-29T12:00:00.000Z",
+            "id": 1,
+            "name": "host-a-orch",
+            "note": {
+              "age_ms": 60000,
+              "at": "2026-09-29T12:00:00.000Z",
+              "text": "on the laptop"
+            },
+            "open_asks": 0,
+            "role": "orchestrator",
+            "status": "open",
+            "tally": "green",
+            "tasks": [],
+            "unacked": 0,
+            "waiting": false
+          }
+        ],
+        "owner_asks": [],
+        "version": "test"
+      }
+    }
+  ],
+  "milestones": [
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 18,
+      "kind": "fail",
+      "lane": "impl-fail",
+      "lane_id": 10,
+      "machine": "hub",
+      "orchestrator": "camp-b",
+      "role": "implementer",
+      "root_id": 5,
+      "text": "tests red"
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 15,
+      "kind": "adopt",
+      "machine": "hub",
+      "orchestrator": "camp-a",
+      "root_id": 1,
+      "text": "adopt note"
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 14,
+      "kind": "handover",
+      "machine": "hub",
+      "orchestrator": "camp-a",
+      "root_id": 1,
+      "text": "handover note"
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 13,
+      "kind": "decision",
+      "machine": "hub",
+      "orchestrator": "camp-a",
+      "root_id": 1,
+      "text": "Review before merging."
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 11,
+      "key": "pr",
+      "kind": "ref",
+      "lane": "impl-a",
+      "lane_id": 3,
+      "machine": "hub",
+      "orchestrator": "camp-a",
+      "role": "implementer",
+      "root_id": 1,
+      "text": "pr=3712"
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 6,
+      "kind": "note",
+      "machine": "hub",
+      "orchestrator": "camp-c",
+      "root_id": 7,
+      "text": "all done"
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 1,
+      "kind": "note",
+      "machine": "hub",
+      "orchestrator": "camp-a",
+      "root_id": 1,
+      "text": "phase 2: reviewing"
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 41,
+      "key": "release",
+      "kind": "ref",
+      "machine": "host-b",
+      "node_id": "nLNX1CNTRL",
+      "orchestrator": "host-a-orch",
+      "root_id": 1,
+      "text": "release=v0.7.0"
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 17,
+      "kind": "ready",
+      "lane": "impl-b",
+      "lane_id": 6,
+      "machine": "hub",
+      "orchestrator": "camp-b",
+      "role": "implementer",
+      "root_id": 5,
+      "text": "slice b"
+    }
+  ],
+  "needs_you": [
+    {
+      "age_ms": 60000,
+      "asker": {
+        "id": 3,
+        "name": "impl-a",
+        "role": "implementer"
+      },
+      "asker_is_root": false,
+      "asker_waiting": false,
+      "at": "2026-09-29T12:00:00.000Z",
+      "blocking": true,
+      "id": 2,
+      "local": true,
+      "machine": "hub",
+      "pane_id": "w1:p3",
+      "root": {
+        "id": 1,
+        "name": "camp-a",
+        "role": "orchestrator"
+      },
+      "stale": false,
+      "text": "Ship \u003cb\u003enow\u003c/b\u003e?\nOr wait?"
+    },
+    {
+      "age_ms": 60000,
+      "asker": {
+        "id": 5,
+        "name": "camp-b",
+        "role": "orchestrator"
+      },
+      "asker_is_root": true,
+      "asker_waiting": false,
+      "at": "2026-09-29T12:00:00.000Z",
+      "blocking": false,
+      "id": 5,
+      "local": true,
+      "machine": "hub",
+      "root": {
+        "id": 5,
+        "name": "camp-b",
+        "role": "orchestrator"
+      },
+      "stale": false,
+      "text": "Which branch?"
+    },
+    {
+      "age_ms": 60000,
+      "asker": {
+        "id": 1,
+        "name": "host-a-orch",
+        "role": "orchestrator"
+      },
+      "asker_is_root": true,
+      "asker_waiting": false,
+      "at": "2026-09-29T12:00:00.000Z",
+      "blocking": false,
+      "id": 7,
+      "local": false,
+      "machine": "host-a",
+      "node_id": "nHOSTA1CNTRL",
+      "root": {
+        "id": 1,
+        "name": "host-a-orch",
+        "role": "orchestrator"
+      },
+      "stale": false,
+      "text": "Ship it?"
+    }
+  ],
+  "now": "2026-09-29T12:00:00.000Z",
+  "orchestrators": [
+    {
+      "closed_tasks": 0,
+      "created_at": "2026-09-29T12:00:00.000Z",
+      "decisions": [
+        {
+          "age_ms": 60000,
+          "at": "2026-09-29T12:00:00.000Z",
+          "id": 13,
+          "kind": "decision",
+          "text": "Review before merging."
+        }
+      ],
+      "id": 1,
+      "last_event": {
+        "age_ms": 60000,
+        "at": "2026-09-29T12:00:00.000Z",
+        "kind": "adopt",
+        "summary": "adopt note"
+      },
+      "last_handover": {
+        "age_ms": 60000,
+        "at": "2026-09-29T12:00:00.000Z",
+        "text": "handover note"
+      },
+      "name": "camp-a",
+      "next": {
+        "age_ms": 60000,
+        "at": "2026-09-29T12:00:00.000Z",
+        "text": "merge after the review"
+      },
+      "note": {
+        "age_ms": 60000,
+        "at": "2026-09-29T12:00:00.000Z",
+        "text": "phase 2: reviewing"
+      },
+      "open_asks": 0,
+      "pane_id": "w1:p1",
+      "role": "orchestrator",
+      "status": "open",
+      "tab_id": "w1:t1",
+      "tally": "red",
+      "tasks": [
+        {
+          "agent_name": "sub-a",
+          "depth": 1,
+          "id": 2,
+          "mark": "working",
+          "name": "sub-a",
+          "open_asks": 0,
+          "pane_id": "w1:p2",
+          "parent_id": 1,
+          "present": true,
+          "role": "sub-orchestrator",
+          "status": "open",
+          "waiting": false
+        },
+        {
+          "agent_name": "impl-a",
+          "depth": 2,
+          "id": 3,
+          "last_event": {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "kind": "note",
+            "summary": "\u003cscript\u003ealert(1)\u003c/script\u003e"
+          },
+          "mark": "missing",
+          "name": "impl-a",
+          "observed_at": "2026-09-29T12:00:00.000Z",
+          "open_asks": 2,
+          "pane_id": "w1:p3",
+          "parent_id": 2,
+          "present": false,
+          "refs": [
+            {
+              "key": "commit",
+              "value": "6c85fa1"
+            },
+            {
+              "key": "pr",
+              "value": "3712"
+            }
+          ],
+          "report_path": "/ledger/r/impl.md",
+          "role": "implementer",
+          "status": "open",
+          "waiting": false
+        },
+        {
+          "agent_name": "rev-a",
+          "agent_status": "blocked",
+          "depth": 1,
+          "id": 4,
+          "mark": "blocked",
+          "name": "rev-a",
+          "next": {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "text": "post the verdict"
+          },
+          "observed_at": "2026-09-29T12:00:00.000Z",
+          "open_asks": 0,
+          "pane_id": "w1:p4",
+          "parent_id": 1,
+          "present": true,
+          "role": "reviewer",
+          "status": "open",
+          "waiting": false
+        },
+        {
+          "depth": 1,
+          "id": 9,
+          "mark": "planned",
+          "name": "gate-a",
+          "next": {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "text": "run after the merge"
+          },
+          "open_asks": 0,
+          "parent_id": 1,
+          "role": "gate",
+          "status": "planned",
+          "waiting": false
+        }
+      ],
+      "unacked": 1,
+      "waiting": false,
+      "workspace_id": "w1"
+    },
+    {
+      "closed_tasks": 0,
+      "created_at": "2026-09-29T12:00:00.000Z",
+      "id": 5,
+      "last_event": {
+        "age_ms": 60000,
+        "at": "2026-09-29T12:00:00.000Z",
+        "kind": "ask",
+        "summary": "Which branch?"
+      },
+      "name": "camp-b",
+      "note": null,
+      "open_asks": 1,
+      "role": "orchestrator",
+      "status": "open",
+      "tally": "red",
+      "tasks": [
+        {
+          "agent_name": "impl-b",
+          "depth": 1,
+          "id": 6,
+          "last_event": {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "kind": "ready",
+            "summary": "slice b"
+          },
+          "mark": "ready",
+          "name": "impl-b",
+          "open_asks": 0,
+          "pane_id": "w2:p2",
+          "parent_id": 5,
+          "present": true,
+          "role": "implementer",
+          "status": "ready",
+          "waiting": false
+        },
+        {
+          "agent_name": "impl-fail",
+          "depth": 1,
+          "id": 10,
+          "last_event": {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "kind": "fail",
+            "summary": "tests red"
+          },
+          "mark": "failed",
+          "name": "impl-fail",
+          "open_asks": 0,
+          "pane_id": "w2:p3",
+          "parent_id": 5,
+          "present": true,
+          "report_path": "/ledger/r/fail.md",
+          "role": "implementer",
+          "status": "failed",
+          "waiting": false
+        },
+        {
+          "agent_name": "rs-lost",
+          "depth": 1,
+          "id": 11,
+          "mark": "missing",
+          "name": "rs-lost",
+          "observed_at": "2026-09-29T12:00:00.000Z",
+          "open_asks": 0,
+          "pane_id": "w2:p4",
+          "parent_id": 5,
+          "present": false,
+          "role": "researcher",
+          "status": "open",
+          "waiting": false
+        }
+      ],
+      "unacked": 2,
+      "unread_work": [
+        {
+          "age_ms": 60000,
+          "at": "2026-09-29T12:00:00.000Z",
+          "count": 2,
+          "event_id": 17,
+          "from": {
+            "id": 6,
+            "name": "impl-b",
+            "role": "implementer"
+          },
+          "kind": "ready",
+          "recipient": {
+            "id": 5,
+            "name": "camp-b",
+            "role": "orchestrator"
+          },
+          "summary": "slice b"
+        }
+      ],
+      "waiting": false
+    }
+  ],
+  "owner_asks": [
+    {
+      "age_ms": 60000,
+      "asker": {
+        "id": 3,
+        "name": "impl-a",
+        "role": "implementer"
+      },
+      "asker_is_root": false,
+      "asker_waiting": false,
+      "at": "2026-09-29T12:00:00.000Z",
+      "blocking": true,
+      "id": 2,
+      "pane_id": "w1:p3",
+      "root": {
+        "id": 1,
+        "name": "camp-a",
+        "role": "orchestrator"
+      },
+      "text": "Ship \u003cb\u003enow\u003c/b\u003e?\nOr wait?"
+    },
+    {
+      "age_ms": 60000,
+      "asker": {
+        "id": 5,
+        "name": "camp-b",
+        "role": "orchestrator"
+      },
+      "asker_is_root": true,
+      "asker_waiting": false,
+      "at": "2026-09-29T12:00:00.000Z",
+      "blocking": false,
+      "id": 5,
+      "root": {
+        "id": 5,
+        "name": "camp-b",
+        "role": "orchestrator"
+      },
+      "text": "Which branch?"
+    }
+  ],
+  "version": "dev"
+}

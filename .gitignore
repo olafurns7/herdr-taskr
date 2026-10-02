@@ -1,0 +1,17 @@
+taskr
+*.db
+*.db-wal
+*.db-shm
+dist/
+/herdr-taskr
+web/node_modules/
+!web/dist/
+.DS_Store
+Thumbs.db
+*.test
+coverage.out
+coverage/
+taskr-install.sh
+.env
+.env.*
+!.env.example

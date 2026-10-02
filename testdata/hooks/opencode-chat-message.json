@@ -1,0 +1,1 @@
+{"input":{"sessionID":"opencode-session","agent":"glm-worker"},"output":{"message":{"id":"message-1","role":"user","sessionID":"opencode-session"},"parts":[{"type":"text","text":"First taskr got 703. Continue."}]}}

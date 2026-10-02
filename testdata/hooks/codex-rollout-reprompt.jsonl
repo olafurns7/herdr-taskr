@@ -1,0 +1,3 @@
+{"timestamp":"2026-10-01T20:00:00.000Z","type":"response_item","payload_type":"message","role":"user","content":"First taskr got 705. Continue."}
+{"timestamp":"2026-10-01T20:00:01.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1","error":{"message":"capacity","codex_error_info":"server_overloaded"}}}
+{"timestamp":"2026-10-01T20:00:02.000Z","type":"response_item","payload_type":"message","role":"user","content":"First taskr got 706. Try again."}

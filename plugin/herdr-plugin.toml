@@ -1,0 +1,21 @@
+# taskr: the event bridge between Herdr and the taskr ledger.
+
+id = "olafurns7.taskr"
+name = "taskr"
+# release.sh writes the release tag's version here when it packs plugin.tar.gz.
+version = "0.3.0"
+min_herdr_version = "0.9.0"
+description = "Wakes taskr waits on agent status changes, notifies the owner of owner asks, and writes taskr_state tokens."
+platforms = ["linux", "macos"]
+
+# run.sh honours TASKR_INSTALL_DIR, falling back to ~/.local/bin/taskr, then
+# starts the daemon detached and exits 0 (manifests cannot expand $HOME, and
+# Herdr awaits hook commands). The daemon is single-instance by lock file, so
+# both entries are idempotent: startup launches it, and the agent_detected hook
+# is the watchdog that brings a stopped daemon back.
+[[startup]]
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "pane.agent_detected"
+command = ["sh", "run.sh"]
