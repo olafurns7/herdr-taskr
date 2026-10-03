@@ -227,7 +227,7 @@ func (cl *rpcClient) callRetry(c *ctx, argv []string, cwd, key, retry string, en
 					as = v
 				}
 				task, _ := strconv.ParseInt(as, 10, 64)
-				tc.emit(map[string]any{"timeout": true, "as": task})
+				tc.emit(map[string]any{"timeout": true, "as": task, "unreachable": true})
 				code := exitOK
 				if tc.json {
 					code = exitTimeout

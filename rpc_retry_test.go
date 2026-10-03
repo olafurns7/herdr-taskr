@@ -186,7 +186,7 @@ func TestRetryDeadline(t *testing.T) {
 	} {
 		start := time.Now()
 		code, out, stderr := retryCLI(dead, args...)
-		if code != exitHerdr || time.Since(start) > 600*time.Millisecond || lastJSON(out)["kind"] != "transport" ||
+		if code != exitHerdr || time.Since(start) > 600*time.Millisecond || lastJSON(out)["kind"] != "transport" || lastJSON(out)["unreachable"] != nil ||
 			!strings.Contains(stderr, "retry with:") || strings.Count(stderr, "retrying until") != 1 {
 			t.Fatalf("deadline = %d %s %s after %v", code, out, stderr, time.Since(start))
 		}
@@ -316,8 +316,12 @@ func TestRetryWaitLostReplyTimeout(t *testing.T) {
 				rpcBudget(requests[1].Argv) >= rpcBudget(requests[0].Argv) || strings.Contains(stderr, "retry with:") {
 				t.Fatalf("connected wait timeout = %d %s %s; requests=%+v", code, out, stderr, requests)
 			}
-			if format != "compact" && lastJSON(out)["timeout"] != true || format == "compact" && out != "x1 3 timeout\n" {
-				t.Fatalf("timeout output %q", out)
+			wantOut := "x1 3 timeout unreachable\n"
+			if format != "compact" {
+				wantOut = "{\"as\":1,\"timeout\":true,\"unreachable\":true}\n"
+			}
+			if out != wantOut {
+				t.Fatalf("timeout output %q, want %q", out, wantOut)
 			}
 		})
 	}
@@ -436,8 +440,7 @@ func TestRetryHealthyWaitTimeout(t *testing.T) {
 			t.Fatalf("healthy timeout = %d %s %s", code, out, stderr)
 		}
 		if jsonFormat {
-			m := lastJSON(out)
-			if m["timeout"] != true || m["owed"] != float64(0) || m["due"] != float64(0) {
+			if out != fmt.Sprintf("{\"as\":%d,\"due\":0,\"owed\":0,\"timeout\":true}\n", top) {
 				t.Fatalf("healthy JSON timeout = %s", out)
 			}
 		} else if out != "w1 {\"owed\":0,\"due\":0}\nx1 3 timeout\n" {

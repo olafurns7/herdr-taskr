@@ -24,7 +24,7 @@ dc1 {e,k,dc}          # decide; k=revoke includes revoked=EVENT
 a1 {a,sent,w,...}     # answer; transported: prompt fields too
 sk1 COUNT            # skipped nonmatches (>0), before result
 w1 {"owed":N,"due":K} # wait timeout counts, before x1 3 timeout
-x1 3 timeout [interrupted]
+x1 3 timeout [interrupted|unreachable]
 x1 EXIT JSON         # error + all partial-write/transport fields
 j1 JSON              # reads, version, daemon
 ```
@@ -32,7 +32,7 @@ Compact wait timeout prints `w1` then `x1 3 timeout` and exits0; the frame's 3 i
 
 Exits: 0 success or compact wait timeout; 2 usage; 3 interruption or legacy JSON wait timeout; 4 DB; 5 transport (server unreachable, Herdr delivery, `--confirm` no_receipt); 6 rejection (stale launch, closed task, launch on a root task, host mismatch, wait `--as` other than TASKR_TASK, second answer, request key reused with other arguments).
 
-Client commands retry transient transport failures: `wait` until its deadline, others for 60 s (or their longer RPC budget) with the same key. Stderr once: `taskr: server unreachable; retrying until <RFC3339 UTC>; if interrupted, retry with: <retry>`; a still-running request says `request still running` instead of `server unreachable`. `<retry>` is the same command and key as the exit-5 `retry with:` line. `wait` keeps `taskr: server unreachable; retrying until <RFC3339 UTC>` without a retry command. The client-host prompt relay, hook and daemon keep their existing behaviour. Transport exit 5 is a transport failure that could not be retried (5xx, non-JSON, too large, unverified), the end of the window, or an interrupted write. A wait deadline returns timeout if any attempt connected, else transport exit 5. During an outage timeout ledger counts are unavailable, so `w1` / JSON `owed` and `due` are omitted.
+Client commands retry transient transport failures: `wait` until its deadline, others for 60 s (or their longer RPC budget) with the same key. Stderr once: `taskr: server unreachable; retrying until <RFC3339 UTC>; if interrupted, retry with: <retry>`; a still-running request says `request still running` instead of `server unreachable`. `<retry>` is the same command and key as the exit-5 `retry with:` line. `wait` keeps `taskr: server unreachable; retrying until <RFC3339 UTC>` without a retry command. The client-host prompt relay, hook and daemon keep their existing behaviour. Transport exit 5 is a transport failure that could not be retried (5xx, non-JSON, too large, unverified), the end of the window, or an interrupted write. A wait deadline returns timeout if any attempt connected, else transport exit 5. A connected-then-lost wait prints `x1 3 timeout unreachable` (exit0), or JSON with `"unreachable":true` next to `"timeout":true` (exit3); ledger counts are unknown, so `w1` / JSON `owed` and `due` are omitted.
 
 Braces above abbreviate actual JSON objects with quoted keys. Result aliases: p=attempt_id,o=outcome,oe=outcome_event_id,g=receipt_event_id,gok=receipt,r=round,e=event_id,dc=decision_id,k=kind,a=answer_id,sent=delivered,w=asker_waiting,err=error,due=receipt_due_ms (armed receipt window; only on activity_observed). Unlisted details unchanged, including delivery_outcome_event_id. Success omits echoed inputs/ok; duplicate/replacement/clear state preserved. Errors retain returned task/target/ask ids. `--confirm` no_receipt: exit5,gok=false; answer may already be committed. Never re-answer/blindly resend. A prompt without `--confirm` reports a missed receipt later, as a `po` event.
 

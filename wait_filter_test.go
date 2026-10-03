@@ -257,7 +257,7 @@ func TestWaitFilterInterruptClearsWaiting(t *testing.T) {
 	}
 	select {
 	case r := <-waited:
-		if r.code != exitTimeout || r.out["interrupted"] != true || h.waitingUntil(top).Valid {
+		if r.code != exitTimeout || r.out["interrupted"] != true || r.out["unreachable"] != nil || h.waitingUntil(top).Valid {
 			t.Fatalf("interrupt = %d %v", r.code, r.out)
 		}
 	case <-time.After(5 * time.Second):

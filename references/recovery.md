@@ -15,6 +15,13 @@ Load this when a taskr command fails, a `no_receipt`, `model_capacity`, quota or
 - `--request-key` is client mode only (exit 2 locally).
 - Errors can follow writes: keep returned ids and inspect `log`/`asks` and the agent before any resend. Never answer twice.
 
+## After the server was unreachable
+
+Arm the wait again, then run `taskr status --tree <root>`.
+For each open lane whose agent is idle or done with no `ready`, `done` or `fail` after the outage began, read its report file and pane: the report command may never have reached the server.
+Rerun a command that printed a `retry with: taskr --request-key …` line exactly as printed, from the lane's own pane.
+Hook records from the outage (session bind, receipt, stall) are not recovered.
+
 ## Receipt alarms
 
 - `prompt_outcome` `no_receipt` (data `outcome`, `window_ms`, `async:true`): the lane did not run `got` within the deadline. It is written on a daemon pass or at your next `wait`. Run `taskr log ID` for that attempt's `got`, then `herdr agent read`. Resend only when the prompt is shown as never received, and never while the pane shows work.
