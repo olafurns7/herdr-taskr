@@ -29,6 +29,7 @@ export function Detail({ item, now, open }: { item: WorkItem; now: number; open:
           <Refs refs={d.lane.refs} />
           <button class="text-button" onClick={() => open(campaignItem(d.machine, d.campaign))}><Mark icon="back" />Open campaign</button>
         </> : <>
+          {d.machine.local && <a class="text-button" href={"#/campaign/" + d.campaign.id}>Campaign page</a>}
           <Section title="Latest update">{d.campaign.note?.text ?? "No status note recorded."}</Section>
           <Section title="Lanes">
             <p class="muted">{umdCounts(d.campaign)}</p>

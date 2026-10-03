@@ -3,6 +3,8 @@
 Handover event 26 (2026\-09\-29T11:40:00\.000Z), re-rendered 2026\-09\-29T12:00:00\.000Z from the taskr ledger for the session that adopted it.
 A new session takes over with `taskr adopt 1`, then `taskr wait --as 1`.
 
+Goal: none recorded; run `taskr doc set 1 goal --file PATH`
+
 ## Identity
 
 - Orchestrator: orch\-a, task 1, orchestrator, status open

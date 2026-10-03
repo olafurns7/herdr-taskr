@@ -68,6 +68,15 @@ func cmdNew(c *ctx, args []string) (any, int, error) {
 		return nil, 0, err
 	}
 	defer closeDB(c, db)
+	var briefInput *documentInput
+	if briefPath != "" {
+		host, err := resolveMachine(c, db, *machine, flagWasSet(fs, "machine"), callerMachine(c))
+		if err != nil {
+			return nil, 0, err
+		}
+		in := fileDocument(briefPath, host.String)
+		briefInput = &in
+	}
 	var id int64
 	status := "open"
 	if *planned {
@@ -110,10 +119,16 @@ func cmdNew(c *ctx, args []string) (any, int, error) {
 			return err
 		}
 		id, err = res.LastInsertId()
-		return err
+		if err != nil {
+			return err
+		}
+		return captureBrief(tx, id, briefInput)
 	})
 	if err != nil {
 		return nil, 0, err
+	}
+	if *parent == 0 && briefPath == "" {
+		fmt.Fprintf(c.errw, "taskr: no goal recorded for root %d; run `taskr doc set %d goal --file PATH`\n", id, id)
 	}
 	return map[string]any{"ok": true, "task_id": id, "name": pos[0], "status": status}, exitOK, nil
 }
@@ -258,6 +273,7 @@ func cmdClose(c *ctx, args []string) (any, int, error) {
 		return nil, 0, err
 	}
 	defer closeDB(c, db)
+	report := prepareReport(db, id, "", false)
 	out := map[string]any{"ok": true, "task_id": id, "status": "closed"}
 	err = withTx(db, func(tx *sql.Tx) error {
 		t, err := loadTask(tx, id)
@@ -279,7 +295,10 @@ func cmdClose(c *ctx, args []string) (any, int, error) {
 		// never clocks.
 		eid, err := insertEvent(tx, event{TaskID: id, Kind: "closed", Data: map[string]any{"from_status": t.Status}})
 		out["event_id"] = eid
-		return err
+		if err != nil {
+			return err
+		}
+		return captureReport(tx, id, eid, report)
 	})
 	if err != nil {
 		return nil, 0, err
@@ -429,7 +448,7 @@ func machineName(m sql.NullString) string {
 // resolveMachine returns the host a --machine flag names, or dflt without
 // one. A host must be the server, the caller, or a client host whose daemon
 // heartbeat is fresh; the server's label is stored as NULL.
-func resolveMachine(c *ctx, tx *sql.Tx, m string, given bool, dflt sql.NullString) (sql.NullString, error) {
+func resolveMachine(c *ctx, tx queryer, m string, given bool, dflt sql.NullString) (sql.NullString, error) {
 	if !given {
 		return dflt, nil
 	}

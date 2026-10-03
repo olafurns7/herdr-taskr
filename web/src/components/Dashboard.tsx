@@ -67,7 +67,7 @@ export function Dashboard({ state: s, now, lost }: { state: StateView | null; no
         <footer class="sidebar-footer"><span><Mark icon="open" />Read-only workspace</span><p>Act in the orchestrator's pane.</p>{s?.version && <p>taskr {s.version}</p>}</footer>
       </aside>
       <main id="main" class="main" ref={main} tabIndex={-1}>
-        <header class="view-header"><h1><Mark icon={NAV.find(([name]) => name === view)![1]} />{view}</h1><span class={"connection" + (lost !== null || stale ? " amber" : "")}><span class="connection-dot" aria-hidden="true" />{connection}</span></header>
+        <header class="view-header"><h1><Mark icon={NAV.find(([name]) => name === view)![1]} />{view}</h1><a class="text-button" href="#/campaigns">All campaigns</a><span class={"connection" + (lost !== null || stale ? " amber" : "")}><span class="connection-dot" aria-hidden="true" />{connection}</span></header>
         <div class="global-summary" role="status" aria-live="polite">
           {s ? <><span class={counts.red ? "red" : "muted"}>{counts.red} need attention</span><span class={counts.amber ? "amber" : "muted"}>{counts.amber} work waiting</span><span class="summary-running">{data.lanes.filter(x => x.status === "working").length} working</span><span class="summary-update">{lost === null ? "Updated just now" : "Last updated " + ago(new Date(lost || Date.now()).toISOString(), Date.now())}</span></> : <span>Waiting for the ledger snapshot</span>}
         </div>
@@ -91,7 +91,7 @@ export function Dashboard({ state: s, now, lost }: { state: StateView | null; no
                   const lanes = filtered(o.tasks.map(t => campaignItem(m, o, t)));
                   const rootMatches = filtered([root]).length > 0;
                   if (!rootMatches && !lanes.length) return null;
-                  return <Group key={root.key} title={o.name} count={lanes.length} subtitle={m.machine}>
+                  return <Group key={root.key} title={o.name} count={lanes.length} subtitle={m.machine} action={m.local ? <a class="text-button" href={"#/campaign/" + o.id}>Campaign page</a> : undefined}>
                     <Row item={root} selected={selected} now={now} open={open} />
                     {lanes.map(x => <Row key={x.key} item={x} selected={selected} now={now} open={open} lane />)}
                     {!!o.tasks_truncated && <li class="truncation">{o.tasks_truncated} additional lanes omitted by the server. Open the campaign for details.</li>}
@@ -127,7 +127,7 @@ function Row({ item: x, selected, now, open, lane = false }: { item: WorkItem; s
     <span class="row-content"><span class="row-title">{x.title}</span><span class="row-preview">{campaign?.next ? <><span class="next-label">Next</span> {x.preview}</> : x.preview || x.context || "Open details"}</span></span>
     <span class="row-meta"><span class="row-status">{x.status}{tags.length > 0 && <span class="folded-tags"> · {tags.join(" · ")}</span>}</span><span class="row-context">{[x.machine, x.context].filter(Boolean).join(" · ")}</span></span>
     <span class="row-age" title={x.at ? ago(x.at, now) : undefined}>{x.at ? short(ageOf(x.at, now)) : ""}</span>
-  </button></li>;
+  </button>{campaign && x.detail.kind === "campaign" && x.detail.machine.local && <a class="campaign-page-link" href={"#/campaign/" + campaign.id}>Campaign page</a>}</li>;
 }
 function Empty({ title, text }: { title: string; text: string }) {
   return <div class="empty"><Mark icon="inbox" /><h2>{title}</h2><p>{text}</p></div>;

@@ -202,3 +202,63 @@ code { font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; overflo
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+/* Full ledger views retain the dashboard's type, rules and OS themes. */
+.ledger-page { min-height: 100dvh; outline: none; }
+.ledger-page a, .campaign-page-link { color: var(--accent); text-underline-offset: 3px; }
+.ledger-page a:hover, .campaign-page-link:hover { color: var(--ink); }
+.ledger-page .view-header { flex-wrap: wrap; }
+.ledger-content { max-width: 1200px; margin-inline: auto; padding: 18px 24px 40px; }
+.ledger-nav, .document-versions { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 18px; }
+.document-versions a[aria-current] { font-weight: 600; color: var(--ink); }
+.ledger-section { margin-top: 24px; }
+.ledger-section > h2 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+.ledger-meta { display: block; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; margin-block: 4px; }
+.ledger-text { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 72ch; }
+.ledger-notes, .archive-list { list-style: none; margin: 0; padding: 0; }
+.ledger-notes > li, .archive-list > li { padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.archive-heading { display: flex; justify-content: space-between; gap: 18px; }
+.archive-heading > a { font-weight: 550; overflow-wrap: anywhere; }
+.archive-goal { margin-block: 8px; max-width: 72ch; overflow-wrap: anywhere; }
+.ledger-paging { display: flex; align-items: center; gap: 18px; margin-top: 18px; font-size: 12px; color: var(--muted); }
+.ledger-paging button { min-height: 36px; }
+.ledger-table-wrap { max-width: 100%; overflow-x: auto; }
+.ledger-table { width: 100%; border-collapse: collapse; min-width: 750px; }
+.ledger-table th, .ledger-table td { padding: 10px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; text-align: left; overflow-wrap: anywhere; }
+.ledger-table thead { background: var(--surface); font-size: 12px; }
+.ledger-table th { font-weight: 550; }
+.ledger-table td { color: var(--secondary); }
+.ledger-table th:first-child { min-width: 150px; }
+.ledger-table td:nth-child(5) { min-width: 180px; }
+.lane-name { display: flex; }
+.lane-indent { flex: none; width: 16px; }
+.document-links { display: grid; gap: 8px; }
+.document-title { font-size: 19px; font-weight: 600; overflow-wrap: anywhere; margin-bottom: 12px; }
+.document-miss { overflow-wrap: anywhere; color: var(--muted); }
+.document-text, .markdown pre { padding: 12px; background: var(--surface); overflow-x: auto; max-width: 100%; white-space: pre; }
+.document-text { font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.markdown { max-width: 72ch; color: var(--secondary); overflow-wrap: anywhere; }
+.markdown > * + * { margin-top: 12px; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6 { color: var(--ink); font-weight: 600; margin: 24px 0 8px; }
+.ledger-page .view-header h1 { font-size: 19px; }
+.markdown h1 { font-size: 19px; }
+.markdown h2 { font-size: 17px; }
+.markdown h3 { font-size: 15px; }
+.markdown h4, .markdown h5, .markdown h6 { font-size: 13px; }
+.markdown ul, .markdown ol { padding-left: 24px; }
+.markdown li + li, .markdown li > p + p { margin-top: 6px; }
+.markdown blockquote { margin-inline: 0; padding-left: 16px; border-left: 1px solid var(--rule); }
+.markdown table { display: block; overflow-x: auto; border-collapse: collapse; }
+.markdown th, .markdown td { padding: 7px 10px; border: 1px solid var(--rule); }
+.markdown th { background: var(--surface); }
+.markdown .align-left { text-align: left; }
+.markdown .align-right { text-align: right; }
+.markdown .align-center { text-align: center; }
+.markdown hr { border: 0; border-top: 1px solid var(--rule); }
+.campaign-page-link { display: inline-block; font-size: 12px; margin: 5px 24px 9px 52px; }
+@media (max-width: 700px) {
+  .ledger-content { padding-inline: 16px; }
+  .ledger-page .view-header { padding-inline: 16px; }
+  .ledger-page .view-header .text-button { min-height: 36px; }
+  .ledger-paging { gap: 12px; }
+  .campaign-page-link { margin-left: 40px; }
+}

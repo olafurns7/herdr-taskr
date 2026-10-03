@@ -30,7 +30,7 @@ func decodeFrame(t *testing.T, raw string) map[string]any {
 func TestCompactDefaultAndJSONPin(t *testing.T) {
 	h := newHarness(t)
 	code, raw, diag := h.compact(nil, "new", "top", "--role", "orchestrator")
-	if code != exitOK || raw != "n1 1\n" || diag != "" {
+	if code != exitOK || raw != "n1 1\n" || diag != "taskr: no goal recorded for root 1; run `taskr doc set 1 goal --file PATH`\n" {
 		t.Fatalf("new = %d %q %q", code, raw, diag)
 	}
 	for _, args := range [][]string{{"--json", "version"}, {"version", "--json"}} {

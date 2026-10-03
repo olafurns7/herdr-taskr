@@ -119,7 +119,7 @@ var (
 // prompts, their outcomes and receipts, and Herdr's own observations (v0.7;
 // a lane's last event is its latest report, so a failed lane shows its
 // reason, not "agent_status done" or a receipt alarm).
-const laneReportSkip = `('next', 'ref', 'herdr', 'got', 'prompt', 'prompt_outcome')`
+const laneReportSkip = `('next', 'ref', 'herdr', 'got', 'prompt', 'prompt_outcome', 'doc')`
 
 // Lane marks, the state a channel strip shows before any colour.
 const (
@@ -217,6 +217,9 @@ func newDashboard(db *sql.DB, lg *daemonLog, addr string) *dashboard {
 	d.mux.HandleFunc("GET /assets/{name}", d.asset)
 	d.mux.HandleFunc("GET /fonts/{name}", d.asset)
 	d.mux.HandleFunc("GET /api/state", d.state)
+	d.mux.HandleFunc("GET /api/campaigns", d.campaigns)
+	d.mux.HandleFunc("GET /api/campaign/{id}", d.campaign)
+	d.mux.HandleFunc("GET /api/doc/{id}", d.doc)
 	d.mux.HandleFunc("POST "+peerPushPath, d.peerPush) // machine to machine; the page writes nothing
 	d.mux.HandleFunc("POST "+rpcPath, d.rpc)           // a remote host's CLI; sets its own write deadline
 	d.srv = &http.Server{Handler: dashboardUsageHandler(d, d.usage), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,

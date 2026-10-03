@@ -170,4 +170,10 @@ Wrapping full text, plain property pairs, native disclosure for decisions, hando
 ### Don't:
 - **Don't** expand long ledger paragraphs into the default work list.
 - **Don't** add ledger-write controls or pretend to focus a remote pane.
-- **Don't** render ledger text as HTML or fetch runtime fonts/assets from a CDN.
+- **Don't** render anything as HTML or fetch remote assets. Ledger strings are shown as plain text; captured documents are rendered from Markdown into DOM nodes through an allow-list.
+
+## Campaign archive and documents
+
+Full ledger views inherit the system font, compact status words, restrained accent links, OS themes and thin rules. Their order is goal, plan, named documents, decisions, handovers, then lanes. Document prose is bounded at 72ch; code and lane tables scroll within their own containers on narrow screens. View titles and Markdown h1 use 19px/600, with document headings stepping down at 17px, 15px and 13px so they never outrank the view title.
+
+Lane rows disclose their task ID and indent descendants. Parent names appear when available on the page, with task IDs as the fallback. Archive paging uses Newer/Older; the ascending lane table uses Previous/Next. Misses and rendering-fallback notices use the muted prose treatment, preserving selectable source paths and complete preformatted text. Version links use the existing accent and visible keyboard focus.
