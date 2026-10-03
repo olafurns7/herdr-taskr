@@ -119,7 +119,7 @@ var (
 // prompts, their outcomes and receipts, and Herdr's own observations (v0.7;
 // a lane's last event is its latest report, so a failed lane shows its
 // reason, not "agent_status done" or a receipt alarm).
-const laneReportSkip = `('next', 'ref', 'herdr', 'got', 'prompt', 'prompt_outcome')`
+const laneReportSkip = `('next', 'ref', 'herdr', 'got', 'prompt', 'prompt_outcome', 'doc')`
 
 // Lane marks, the state a channel strip shows before any colour.
 const (

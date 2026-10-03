@@ -103,3 +103,29 @@ create table if not exists relay_applied (
   applied_at  text not null,
   reported_at text
 );
+
+create table if not exists doc_blobs (
+  sha256 text primary key,
+  bytes integer not null,
+  body text not null
+);
+create table if not exists documents (
+  id integer primary key autoincrement,
+  root_id integer not null references tasks(id),
+  task_id integer not null references tasks(id),
+  kind text not null,
+  name text not null default '',
+  version integer not null,
+  sha256 text,
+  bytes integer,
+  format text,
+  captured integer not null,
+  reason text,
+  source_path text,
+  source_host text,
+  event_id integer references events(id),
+  backfill integer not null default 0,
+  created_at text not null
+);
+create index if not exists documents_task on documents(task_id, kind, name, version);
+create index if not exists documents_root on documents(root_id, kind);

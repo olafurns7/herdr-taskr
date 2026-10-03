@@ -20,7 +20,7 @@ type worker struct {
 // transaction: the task must exist and be open to writes, and the launch must
 // be its current one. A task with no launch (a root orchestrator) accepts
 // writes only without TASKR_LAUNCH.
-func resolveWorker(c *ctx, tx *sql.Tx) (*worker, error) {
+func resolveWorker(c *ctx, tx queryer) (*worker, error) {
 	ts := c.env("TASKR_TASK")
 	if ts == "" {
 		return nil, usageErr("TASKR_TASK is not set")
@@ -95,7 +95,7 @@ func checkTaskHost(c *ctx, q queryer, id int64) error {
 // itself: a task with no parent and no current launch. Orchestrators run in
 // agent shells whose exports do not persist between tool calls, so they name
 // themselves; a launched worker never does.
-func resolveWriter(c *ctx, tx *sql.Tx, as int64) (*worker, error) {
+func resolveWriter(c *ctx, tx queryer, as int64) (*worker, error) {
 	if as == 0 {
 		return resolveWorker(c, tx)
 	}
@@ -153,6 +153,15 @@ func writeWorkerEvent(c *ctx, ww workerWrite) (any, int, error) {
 		return nil, 0, err
 	}
 	defer closeDB(c, db)
+	var report *documentInput
+	if ww.kind == "ready" || ww.kind == "done" || ww.kind == "fail" {
+		w, err := resolveWriter(c, db, ww.as)
+		if err != nil {
+			return nil, 0, err
+		}
+		explicit, _ := ww.data["report"].(string)
+		report = prepareReport(db, w.task.ID, explicit, ww.kind == "ready")
+	}
 	out := map[string]any{"ok": true, "kind": ww.kind}
 	err = withTx(db, func(tx *sql.Tx) error {
 		w, err := resolveWriter(c, tx, ww.as)
@@ -215,7 +224,7 @@ func writeWorkerEvent(c *ctx, ww workerWrite) (any, int, error) {
 		if ww.kind == "ask" {
 			out["ask_id"] = id
 		}
-		return nil
+		return captureReport(tx, w.task.ID, id, report)
 	})
 	if err != nil {
 		return nil, 0, err

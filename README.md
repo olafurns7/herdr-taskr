@@ -17,6 +17,7 @@ Mock data.
 Keep parallel work moving without polling terminal screens or relaying messages:
 
 - Register lanes with brief and report paths.
+- Keep the text of briefs, prompts, reports, and handovers in the ledger, with a goal and a plan for each campaign.
 - Block on `wait` until a report, question, or event arrives.
 - Confirm prompt acknowledgment with receipts.
 - Answer worker questions and route owner decisions.

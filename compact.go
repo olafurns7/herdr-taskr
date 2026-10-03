@@ -9,7 +9,7 @@ var kindCodes = map[string]string{
 	"got": "g", "ready": "r", "ask": "q", "answer": "a", "owner_answer": "oa",
 	"done": "d", "fail": "f", "herdr": "h", "note": "n", "start": "s",
 	"prompt": "p", "prompt_outcome": "po", "decision": "dc", "revoke": "rv",
-	"ref": "rf", "next": "nx", "handover": "ho", "adopt": "ad", "launch": "l", "closed": "c",
+	"doc": "do", "ref": "rf", "next": "nx", "handover": "ho", "adopt": "ad", "launch": "l", "closed": "c",
 }
 
 // Aliases apply only to the CLI envelope. Arbitrary data/kv/refs, hashes and
@@ -132,6 +132,18 @@ func (c *ctx) emitCompact(v any) {
 		suffix = " dup"
 	}
 	switch c.cmd {
+	case "doc":
+		switch m["action"] {
+		case "set":
+			if m["same"] == true {
+				suffix = " same"
+			}
+			fmt.Fprintf(c.out, "ds1 %v %v%s\n", m["doc_id"], m["version"], suffix)
+		case "rm":
+			fmt.Fprintf(c.out, "dr1 %v %v\n", m["doc_id"], m["removed"])
+		default:
+			fmt.Fprint(c.out, readLine(m))
+		}
 	case "new":
 		if m["status"] == "planned" {
 			suffix = " planned"

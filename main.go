@@ -121,7 +121,7 @@ func commandTable() map[string]command {
 		"wait": cmdWait, "ack": cmdAck,
 		"next": cmdNext, "decide": cmdDecide, "set": cmdSet, "handover": cmdHandover, "adopt": cmdAdopt,
 		"status": cmdStatus, "asks": cmdAsks, "log": cmdLog,
-		"daemon": cmdDaemon,
+		"daemon": cmdDaemon, "doc": cmdDoc,
 	}
 }
 
@@ -131,6 +131,7 @@ worker:       start | got ATTEMPT_ID | note TEXT | ready TEXT --report PATH [--k
 orchestrator: new NAME --role ROLE [--parent ID] [--planned] ... | launch ID --provider P --model M --effort E | prompt ID (--file PATH | --text TEXT) [--receipt-timeout MS] [--confirm [--confirm-timeout MS]]
               answer ASK_ID TEXT [--prompt [--confirm [--confirm-timeout MS]]] | close ID
 plan:         next ID TEXT | next ID --clear | set ID KEY=VALUE... (KEY= deletes) | decide --as ID TEXT | decide --as ID --revoke EVENT_ID
+documents:    doc set ID goal|plan [--name NAME] --file PATH | doc ls ID [--tree] [--kind K] [--versions] [--limit N] | doc get DOC_ID | doc rm DOC_ID --purge | doc backfill [--tree ID] [--dry-run]
 handover:     handover --as ID [--note TEXT] [--out PATH] | adopt ID [--workspace W --tab T --pane P]   (Markdown on stdout)
 inbox:        wait [--as ID] [--for KIND[,KIND...]] [--from NAME|ID]... [--ack EVENT_ID] [--timeout MS] [--scan-quota] | ack EVENT_ID --as ID
 hooks:        hook <harness> <event> (JSON on stdin)

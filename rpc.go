@@ -96,6 +96,9 @@ func storedCommand(argv []string) bool {
 	if _, ok := commands[name]; !ok || name == "daemon" || freshCommands[name] {
 		return false
 	}
+	if name == "doc" && len(args) > 0 && (args[0] == "get" || args[0] == "ls" || args[0] == "backfill") {
+		return false
+	}
 	return !wantsHelp(args)
 }
 

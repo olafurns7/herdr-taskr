@@ -17,6 +17,8 @@ f1 EVENT [dup]
 k1 ACKED [already]    # ack, current cursor if already
 c1 TASK [already]     # close
 nx1 EVENT [clear]
+ds1 DOC VERSION [same] # doc set
+dr1 DOC VERSIONS_REMOVED # doc rm --purge
 rf1 [CHANGED_IDS]     # set; []=no changes
 dc1 {e,k,dc}          # decide; k=revoke includes revoked=EVENT
 a1 {a,sent,w,...}     # answer; transported: prompt fields too
@@ -38,7 +40,7 @@ Wait: nine literal TAB fields, one physical line:
 ```text
 e1<TAB>EVENT<TAB>TASK<TAB>LAUNCH|-<TAB>KIND<TAB>REPLAY0|1<TAB>RELATED|-<TAB>JSON_STRING_SUMMARY<TAB>JSON_OBJECT_DATA
 ```
-Kinds: g/r/q/a/oa/d/f/h=got/ready/ask/answer/owner_answer/done/fail/herdr; n/s/p/po/dc/rv/rf/nx/ho/ad/l/c=note/start/prompt/prompt_outcome/decision/revoke/ref/next/handover/adopt/launch/closed. Unknown names pass through. --for takes long names. `po` summaries: activity_observed, rejected, delivery_unknown, no_receipt (async: data `outcome`,`window_ms`,`async:true`; --confirm: `confirm_timeout_ms`), late_receipt (data `outcome`,`got_event_id`,`no_receipt_event_id`,`delay_ms`). Got generated summary empty, data.identity omitted; full log retains identity, frame retains round/related attempt. Missing data={}. Strings JSON escaped, never truncated; tabs/newlines/Unicode safe. data/kv/refs opaque; false != unknown.
+Kinds: g/r/q/a/oa/d/f/h=got/ready/ask/answer/owner_answer/done/fail/herdr; n/s/p/po/dc/rv/rf/nx/ho/ad/l/c=note/start/prompt/prompt_outcome/decision/revoke/ref/next/handover/adopt/launch/closed; do=doc (no wait recipient). Unknown names pass through. --for takes long names. `po` summaries: activity_observed, rejected, delivery_unknown, no_receipt (async: data `outcome`,`window_ms`,`async:true`; --confirm: `confirm_timeout_ms`), late_receipt (data `outcome`,`got_event_id`,`no_receipt_event_id`,`delay_ms`). Got generated summary empty, data.identity omitted; full log retains identity, frame retains round/related attempt. Missing data={}. Strings JSON escaped, never truncated; tabs/newlines/Unicode safe. data/kv/refs opaque; false != unknown.
 
 Read j1 envelopes: i=id,t=task_id,n=task_name|name,k=kind,at=created_at|updated_at,to=recipient_task_id,l=launch_id|current_launch_id,rel=related_event_id,ans=answered_by,s=summary|status,d=data,key=event_key,rec=record,w=workspace_id,tab=tab_id,pane=pane_id,rp=report_path,par=parent_id,ack=acked_event_id,pend=pending_event_id,got=last_receipt,a=open_asks,b=blocking_asks,r=round,wait=waiting,h=observed,nx=next. Inside status h only: s=agent_status,seq=state_change_seq; at/present unchanged. Absent stays absent; unlisted fields unchanged. Context disambiguates aliases. No recursion into payloads/native identity; full log keeps hashes/timestamps/history.
 
@@ -47,3 +49,5 @@ Filtered JSON wait may add `{"as":ID,"skipped":COUNT}` before the usual result. 
 Stall (hooked lanes): `h`, summary `worker turn stalled`, key `stall:PROMPT`, data reason=stall, optional `last` (newest report code r/d/f/q) and `error` (turn error code, `unknown` when the harness gave none). Plain stalls are skipped for orchestrator and sub-orchestrator lanes; error stalls always emit. Quota (`--scan-quota`): `h`, summary `quota limit hit` or `quota N% left`, key `quota:LAUNCH:limit|low:N`, data quota=limit|low, percent, pane_id.
 
 Capacity uses the existing `h` kind and JSON `herdr` envelope: summary `Codex capacity warning observed; inspect helper before retry`, key `capacity:LAUNCH:EPISODE`. Data allowlist: reason=model_capacity, provider=codex, model=registered launch model, model_source=launch, pane_id, agent_name, episode, source=detection, action=inspect_before_retry. No quota/percent or raw pane/prompt/native session/credential fields. Handling: [recovery.md](recovery.md).
+
+Documents: `doc set ID goal|plan [--name NAME] --file PATH`, `doc ls ID [--tree] [--kind K] [--versions] [--limit N]`, `doc get DOC_ID`, `doc rm DOC_ID --purge`, `doc backfill [--tree ID] [--dry-run]`. Get prints exact stored bytes; ls prints j1 document records (doc_id,t,k,n,version,bytes,format,captured,reason,event_id,source_path,source_host,backfill,at), latest per task/kind/name by default. Ls defaults to 100 rows and 32 KiB; m1 gives older count and `--limit 0` to read all. Backfill prints j1 counts captured/too_large/binary/missing/client/unchanged and runs only locally. Goal is root-only; plan may be named. Purge removes every version and unshared blobs; the write-ahead log and earlier backups can still hold the text. RPC get/ls/backfill are fresh; set/rm are stored.

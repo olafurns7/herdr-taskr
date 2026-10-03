@@ -385,6 +385,7 @@ type handoverMark struct {
 }
 
 type handoverData struct {
+	Documents             handoverDocuments
 	Root                  handoverLane
 	Workspace, Tab, Cwd   string
 	Acked, Unacked        int64
@@ -401,7 +402,7 @@ type handoverData struct {
 // loadHandover reads everything a handover shows. since is the handover the
 // closed-lanes list counts from (nil: every closed lane).
 func loadHandover(q queryer, root int64, since *handoverMark) (*handoverData, error) {
-	d := &handoverData{Since: since}
+	d := &handoverData{Since: since, Documents: loadHandoverDocuments(q, root)}
 	var ws, tab, cwd, pane sql.NullString
 	var pending sql.NullInt64
 	err := q.QueryRow(`select id, name, role, status, workspace_id, tab_id, pane_id, cwd, acked_event_id, pending_event_id,
@@ -624,6 +625,7 @@ func renderHandover(d *handoverData, now time.Time) string {
 	}
 	p("A new session takes over with `taskr adopt %d`, then `taskr wait --as %d`.\n\n", r.ID, r.ID)
 
+	renderHandoverDocuments(&b, r.ID, d.Documents)
 	p("## Identity\n\n")
 	p("- Orchestrator: %s, task %d, %s, status %s\n", md(r.Name), r.ID, md(r.Role), md(r.Status))
 	p("- Where: workspace %s, tab %s, pane %s\n", mdOr(d.Workspace, "none"), mdOr(d.Tab, "none"), mdOr(r.Pane, "none"))
@@ -785,7 +787,17 @@ func cmdHandover(c *ctx, args []string) (any, int, error) {
 			data["out"] = out
 		}
 		eid, err = insertEvent(tx, event{TaskID: w.task.ID, Kind: "handover", Summary: d.Note, Data: data})
-		return err
+		if err != nil {
+			return err
+		}
+		return captureDocument(tx, func() error {
+			in := bodyDocument([]byte(text), out)
+			if in.Reason == "" {
+				in.Format = "md"
+			}
+			_, _, err := storeDocument(tx, w.task.ID, "handover", "", in, ptr(eid), 0)
+			return err
+		})
 	})
 	if err != nil {
 		return nil, 0, err
