@@ -1355,7 +1355,7 @@ func TestHubListenerURLsIndependent(t *testing.T) {
 	tailnet("::1", h)
 	h.writeAddr("tailnet:" + freePort(t))
 	db := h.openDB()
-	d := startDashboard(db, openDaemonLog(filepath.Join(h.stateDir(), "daemon.log")), h.stateDir())
+	d := startDashboard(db, openDaemonLog(filepath.Join(h.stateDir(), "daemon.log")), h.stateDir(), false)
 	if d == nil || d.hub.Load() == nil {
 		t.Fatal("hub did not start")
 	}

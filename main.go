@@ -65,7 +65,9 @@ var allowedEnv = map[string]bool{
 	"CODEX_HOME": true, "CODEX_THREAD_ID": true, "CLAUDE_CONFIG_DIR": true, "HOME": true,
 	"HERDR_SOCKET_PATH": true,
 	"TASKR_FORMAT":      true,
-	"PATH":              true, // only daemon --restart reads it, to hand it to the new daemon
+	"PATH":              true, // daemon --restart hands it to the new daemon
+	"INVOCATION_ID":     true, // with the service's own pid, marks supervision; value is never recorded
+	"SYSTEMD_EXEC_PID":  true,
 }
 
 // ctx is one invocation: arguments, a restricted environment, and output streams.
@@ -136,7 +138,7 @@ handover:     handover --as ID [--note TEXT] [--out PATH] | adopt ID [--workspac
 inbox:        wait [--as ID] [--for KIND[,KIND...]] [--from NAME|ID]... [--ack EVENT_ID] [--timeout MS] [--scan-quota] | ack EVENT_ID --as ID
 hooks:        hook <harness> <event> (JSON on stdin)
 read:         status [--tree ID] [--all] | asks [--open] [--tree ID] [--owner] [--limit N] | log ID [--tree] [--since EVENT_ID] [--before EVENT_ID] [--limit N]
-daemon:       daemon [--once] [--status] [--restart]   (the Herdr plugin's event bridge and owner dashboard; one per HOME)
+daemon:       daemon [--stay] [--once] [--status] [--restart]   (the Herdr plugin's event bridge and owner dashboard; one per HOME)
 info:         version | help [CMD]
 client:       --request-key KEY <command> [args]   (with a server.url: retry a command whose answer was lost)
 format:       compact by default; --json or TASKR_FORMAT=json selects legacy JSON (handover/adopt stay Markdown)`

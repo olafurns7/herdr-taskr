@@ -40,7 +40,13 @@ func newFakeSocket(t *testing.T) *fakeSocket {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
-	s := &fakeSocket{t: t, path: filepath.Join(dir, "h.sock"), conns: make(chan net.Conn, 16)}
+	return newFakeSocketAt(t, filepath.Join(dir, "h.sock"))
+}
+
+func newFakeSocketAt(t *testing.T, path string) *fakeSocket {
+	t.Helper()
+	s := &fakeSocket{t: t, path: path, conns: make(chan net.Conn, 16)}
+	var err error
 	s.ln, err = net.ListenUnix("unix", &net.UnixAddr{Name: s.path, Net: "unix"})
 	if err != nil {
 		t.Fatal(err)

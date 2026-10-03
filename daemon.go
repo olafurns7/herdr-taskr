@@ -11,6 +11,7 @@ import (
 	"maps"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"slices"
@@ -156,11 +157,15 @@ func cmdDaemon(c *ctx, args []string) (any, int, error) {
 	once := fs.Bool("once", false, "run one observation pass and exit")
 	status := fs.Bool("status", false, "print heartbeat age, pid and socket path")
 	restart := fs.Bool("restart", false, "stop the running daemon and start this binary's, detached")
+	stay := fs.Bool("stay", false, "keep the local ledger serving without Herdr; wait for the daemon lock")
 	if _, err := parseArgs(c, fs, args, 0, 0); err != nil {
 		return nil, 0, err
 	}
 	if n := btoi(*once) + btoi(*status) + btoi(*restart); n > 1 {
 		return nil, 0, usageErr("daemon: --once, --status and --restart are exclusive")
+	}
+	if *stay && (*once || *status || *restart) {
+		return nil, 0, usageErr("daemon: --stay cannot be combined with --once, --status or --restart")
 	}
 	dir, err := stateDir(c)
 	if err != nil {
@@ -183,14 +188,32 @@ func cmdDaemon(c *ctx, args []string) (any, int, error) {
 	defer db.Close()
 	lg := openDaemonLog(logPath)
 	defer lg.close()
-	d := &daemon{db: db, log: lg, sock: socketPath(c)}
+	d := &daemon{db: db, log: lg, sock: socketPath(c), stay: *stay}
 	if *once {
 		r := d.pass()
 		out := map[string]any{"ok": r.err == nil, "once": true, "observed": r.observed, "notified": r.notified}
 		return out, exitOK, r.err
 	}
 
+	// Stay can wait behind a plugin daemon; signals must also cancel that wait.
+	// Do not undo nohup's inherited SIGHUP ignore from the plugin hook.
+	sigs := []os.Signal{os.Interrupt, syscall.SIGTERM}
+	if !signal.Ignored(syscall.SIGHUP) {
+		sigs = append(sigs, syscall.SIGHUP)
+	}
+	parent := c.cx
+	if parent == nil {
+		parent = context.Background()
+	}
+	sig, stop := signal.NotifyContext(parent, sigs...)
+	defer stop()
 	lock, pid, err := acquireLock(lockPath)
+	for *stay && err == nil && lock == nil {
+		if !sleepCx(sig, daemonRetryBase) {
+			return nil, exitOK, nil
+		}
+		lock, pid, err = acquireLock(lockPath)
+	}
 	if err != nil {
 		return nil, 0, dbErr(fmt.Errorf("daemon lock: %w", err))
 	}
@@ -203,8 +226,27 @@ func cmdDaemon(c *ctx, args []string) (any, int, error) {
 	}()
 	sock := socketPath(c)
 	lg.logf("start pid %d version %s socket %s", os.Getpid(), version, sock)
+	if *stay {
+		if _, err := exec.LookPath("herdr"); err != nil {
+			d.herdrMissing = true
+			lg.logf("herdr missing; PATH=%s", os.Getenv("PATH"))
+		}
+	}
 	rec := selfRecord()
 	rec["daemon_socket"], rec[daemonVersionKey], rec[daemonStartedKey] = sock, version, now()
+	uid := os.Getuid()
+	identity := clientDaemonRecord{PID: os.Getpid(), Executable: rec[daemonExeKey], StartTime: rec[daemonProcStartKey],
+		Argv: append([]string{rec[daemonExeKey], "daemon"}, args...), UID: &uid, Version: version, StartedAt: rec[daemonStartedKey],
+		Stay: *stay, Supervised: c.env("INVOCATION_ID") != "" && c.env("SYSTEMD_EXEC_PID") == strconv.Itoa(os.Getpid()),
+		HerdrMissing: d.herdrMissing}
+	if id, err := procIdentity(os.Getpid()); err == nil && len(id.Argv) >= 2 && id.Argv[1] == "daemon" {
+		identity.Argv = id.Argv
+	}
+	identityPath := filepath.Join(dir, localDaemonRecordFile)
+	if err := writeClientDaemonRecord(identityPath, identity); err != nil {
+		return nil, 0, dbErr(err)
+	}
+	defer os.Remove(identityPath)
 	if err := withTx(db, func(tx *sql.Tx) error {
 		for k, v := range rec {
 			if _, err := tx.Exec(`insert into meta (key, value) values (?, ?)
@@ -223,7 +265,7 @@ func cmdDaemon(c *ctx, args []string) (any, int, error) {
 	}
 	first := map[string]any{"ok": true, "pid": os.Getpid(), "socket": sock, "log": logPath}
 	// The dashboard records each listener's URL in meta itself.
-	dash := startDashboard(db, lg, dir)
+	dash := startDashboard(db, lg, dir, *stay)
 	if dash != nil {
 		d.usage = dash.usage
 		if dash.url != "" {
@@ -244,14 +286,6 @@ func cmdDaemon(c *ctx, args []string) (any, int, error) {
 	}
 	c.emit(first)
 	c.lines = true
-	// run.sh starts the daemon under nohup; notifying SIGHUP would undo that
-	// ignore, so it is only a stop signal when it was not ignored at start.
-	sigs := []os.Signal{os.Interrupt, syscall.SIGTERM}
-	if !signal.Ignored(syscall.SIGHUP) {
-		sigs = append(sigs, syscall.SIGHUP)
-	}
-	sig, stop := signal.NotifyContext(context.Background(), sigs...)
-	defer stop()
 	pushDone := make(chan struct{})
 	pushCx, pushStop := context.WithCancel(sig)
 	if push != nil {
@@ -344,15 +378,20 @@ func daemonStatus(c *ctx, dir, lockPath string) (any, int, error) {
 	pid := lockPID(lockPath)
 	running := pid > 0 && syscall.Kill(pid, 0) == nil
 	out["running"] = running
+	out["stay"], out["supervised"] = false, false
 	if running {
 		out["pid"] = pid
 		// The running daemon's own record, if it wrote one (v0.6+); another
 		// pid's record is a previous daemon's, so the version is unknown.
-		rec, err := runningDaemon(db, pid)
+		rec, err := runningDaemon(db, pid, dir)
 		if err != nil {
 			return nil, 0, dbErr(err)
 		}
 		out["running_version"], out["stale"] = rec.version, rec.version != version
+		out["stay"], out["supervised"] = rec.stay, rec.supervised
+		if rec.herdrMissing {
+			out["herdr_missing"] = true
+		}
 		if rec.started != "" {
 			out["started_at"] = rec.started
 		}
@@ -401,7 +440,8 @@ func daemonStatus(c *ctx, dir, lockPath string) (any, int, error) {
 }
 
 // daemonLog is the daemon's only diagnostic sink. It is truncated when it
-// passes daemonLogMax and never receives pane text or environments.
+// passes daemonLogMax and never receives pane text. The missing-Herdr startup
+// warning includes PATH; no other environment values are logged.
 type daemonLog struct {
 	mu      sync.Mutex
 	f       *os.File
@@ -469,6 +509,9 @@ type workspaceTokenState struct {
 }
 
 type daemon struct {
+	stay            bool
+	herdrMissing    bool
+	attachments     atomic.Uint64
 	db              *sql.DB
 	log             *daemonLog
 	usage           *dashboardUsage
@@ -534,7 +577,7 @@ func (d *daemon) pass() passResult {
 			d.log.logf("receipt expiry failed: %v", err)
 		}
 	}
-	if !serverUp(d.sock) {
+	if d.herdrMissing || !serverUp(d.sock) {
 		d.log.limited("no-server", time.Minute, "no Herdr server accepts on %s; skipping this pass's herdr calls", d.sock)
 		r.err = herdrErr("Herdr server not reachable at %s; no herdr command run", d.sock)
 		return r
@@ -924,6 +967,7 @@ func (d *daemon) run(parent context.Context, sock string) string {
 		usageFlush = ticker.C
 	}
 	var last time.Time
+	var attachment uint64
 	for {
 		select {
 		case <-cx.Done():
@@ -931,7 +975,7 @@ func (d *daemon) run(parent context.Context, sock string) string {
 		case <-gone:
 			return "socket removed"
 		case <-hb.C:
-			if !exists(sock) {
+			if !d.stay && !exists(sock) {
 				return "socket removed"
 			}
 			if d.connected.Load() {
@@ -960,6 +1004,12 @@ func (d *daemon) run(parent context.Context, sock string) string {
 		default:
 		}
 		last = time.Now()
+		if n := d.attachments.Load(); d.stay && n != attachment {
+			// A restarted Herdr may have lost all metadata, even if ledger state stayed the same.
+			attachment = n
+			d.tokens = map[int64]tokenState{}
+			d.workspaceTokens, d.failedWorkspaceWant = nil, nil
+		}
 		d.pass()
 		d.refreshPanes()
 		if d.afterPass != nil {
@@ -973,29 +1023,36 @@ func (d *daemon) run(parent context.Context, sock string) string {
 // when the socket file is gone and false when cx is canceled.
 func (d *daemon) subscribe(cx context.Context, sock string, mark func()) bool {
 	attempts := 0
+	attach := true
 	for {
 		if cx.Err() != nil {
 			return false
 		}
-		if !exists(sock) {
+		if !d.stay && !exists(sock) {
 			return true
 		}
 		var dialer net.Dialer
 		conn, err := dialer.DialContext(cx, "unix", sock)
-		resubscribe := false
+		acked, resubscribe := false, false
 		if err == nil {
-			var acked bool
-			acked, resubscribe = d.stream(cx, conn, mark)
+			acked, resubscribe = d.stream(cx, conn, mark, attach)
 			if acked {
 				attempts = 0
 			}
 		} else {
-			d.log.logf("connect failed: %v", err)
+			if d.stay {
+				d.log.limited("stay-connect", time.Minute, "connect failed: %v", err)
+			} else {
+				d.log.logf("connect failed: %v", err)
+			}
+		}
+		if acked || !resubscribe {
+			attach = !resubscribe
 		}
 		if cx.Err() != nil {
 			return false
 		}
-		if !exists(sock) {
+		if !d.stay && !exists(sock) {
 			return true
 		}
 		if resubscribe {
@@ -1003,7 +1060,12 @@ func (d *daemon) subscribe(cx context.Context, sock string, mark func()) bool {
 		}
 		attempts++
 		delay := min(daemonRetryCap, daemonRetryBase<<min(attempts-1, 6))
-		d.log.logf("disconnected; reconnect in %v", delay)
+		if d.stay {
+			delay = min(delay, 2*time.Second)
+		}
+		if !d.stay {
+			d.log.logf("disconnected; reconnect in %v", delay)
+		}
 		select {
 		case <-cx.Done():
 			return false
@@ -1019,7 +1081,7 @@ func (d *daemon) subscribe(cx context.Context, sock string, mark func()) bool {
 // with a new request (replay on connect and coalescing make that safe), and so
 // does an error reply after the ack (Herdr 0.9.2's events_lost). It returns
 // whether the ack arrived and whether it closed to resubscribe.
-func (d *daemon) stream(cx context.Context, conn net.Conn, mark func()) (acked, resubscribe bool) {
+func (d *daemon) stream(cx context.Context, conn net.Conn, mark func(), attach bool) (acked, resubscribe bool) {
 	panes, err := d.panes()
 	if err != nil {
 		d.log.logf("pane set query failed: %v", err)
@@ -1096,6 +1158,10 @@ func (d *daemon) stream(cx context.Context, conn net.Conn, mark func()) (acked, 
 				if !acked {
 					acked = true
 					d.ackLine(line)
+					if d.connected.Load() && d.stay && attach {
+						d.attachments.Add(1)
+						mark()
+					}
 				} else if !long && d.streamError(line) {
 					// Herdr 0.9.2 reports a reader that fell behind (events_lost)
 					// on the stream itself: resubscribe at once; the mark above

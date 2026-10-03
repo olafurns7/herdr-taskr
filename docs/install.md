@@ -66,6 +66,37 @@ taskr daemon --status
 Expect plugin registration and daemon fields `running: true`, the installed `running_version`, and a dashboard URL, normally http://127.0.0.1:7788/. A successful status exit alone does not prove the daemon is running.
 If status does not show `running: true`, run `taskr daemon --restart`, then re-check with `taskr daemon --status`. It starts the daemon detached with only HOME, PATH, and HERDR_SOCKET_PATH; a fresh plugin link otherwise waits until the next agent detection or Herdr start. For upgrades, re-run step 2, then `taskr daemon --restart` and re-check status. This restarts taskr, never Herdr.
 
+### Start the ledger host at boot (Linux)
+
+On the ledger's host, create `~/.config/systemd/user/taskr.service`:
+```ini
+[Unit]
+Description=taskr ledger
+
+[Service]
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.local/bin/taskr daemon --stay
+Restart=always
+RestartPreventExitStatus=2
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+```
+Use the installed binary's path if it differs. Enable the unit with
+`systemctl --user enable --now taskr.service`. Enable lingering for that user
+(`loginctl enable-linger`) so the user service starts at boot without a login.
+The PATH must hold `herdr` and `tailscale` because a user service manager does
+not read the shell profile; `Environment=HERDR_SOCKET_PATH=...` is needed only
+when Herdr does not use the default socket, `$HOME/.config/herdr/herdr.sock`.
+`--stay` is for the local ledger host; it keeps RPC and the dashboard available
+while Herdr is down and reconnects when Herdr returns. It waits for an existing
+daemon's lock and retries an unavailable dashboard listener.
+If a daemon started by the plugin holds the lock when the unit is first
+enabled, get its pid from `taskr daemon --status` and end it with `kill <pid>`;
+the unit's waiting daemon then takes over.
+Herdr's plugin hook still starts a daemon on hosts without this unit.
+
 ## 5. Verify skills
 
 The installer copies SKILL.md and references/ to `$HOME/.agents/skills/taskr` (or TASKR_SKILL_DIR). With TASKR_LINK_SKILLS=1 it links only existing `$HOME/.claude`, `$HOME/.codex`, and `$HOME/.config/opencode` directories:
