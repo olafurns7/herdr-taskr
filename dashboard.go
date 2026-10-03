@@ -197,8 +197,10 @@ type dashboard struct {
 
 	serverEnv func(string) string // TASKR_DB, HOME and HERDR_SOCKET_PATH for RPC runs; nil is os.Getenv
 
-	stopRetry context.CancelFunc // ends the tailnet retry loop
-	retryDone chan struct{}
+	stopRetry         context.CancelFunc // ends the tailnet retry loop
+	retryDone         chan struct{}
+	stopLoopbackRetry context.CancelFunc
+	loopbackRetryDone chan struct{}
 
 	mu        sync.Mutex
 	listeners []net.Listener // every bound listener, for tests
@@ -233,7 +235,8 @@ func newDashboard(db *sql.DB, lg *daemonLog, addr string) *dashboard {
 // (not a hub) cannot bind. A hub binds loopback and each tailnet address as
 // separate attempts: any one may fail without the others, and tailnet
 // addresses that are unavailable at start are retried in the background.
-func startDashboard(db *sql.DB, lg *daemonLog, dir string) *dashboard {
+// Stay also retries an unavailable loopback listener until stop.
+func startDashboard(db *sql.DB, lg *daemonLog, dir string, stay bool) *dashboard {
 	cfg, err := dashboardConfig(dir)
 	if err != nil {
 		lg.logf("dashboard: %v; not serving", err)
@@ -248,7 +251,7 @@ func startDashboard(db *sql.DB, lg *daemonLog, dir string) *dashboard {
 	ln, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
 		lg.logf("dashboard: listen %s failed: %v; the event bridge carries on without it", cfg.Addr, err)
-		if !cfg.Tailnet {
+		if !cfg.Tailnet && !stay {
 			return nil
 		}
 		d = newDashboard(db, lg, cfg.Addr)
@@ -263,6 +266,27 @@ func startDashboard(db *sql.DB, lg *daemonLog, dir string) *dashboard {
 	}
 	if cfg.Tailnet {
 		d.startTailnet(port)
+	}
+	if ln == nil && stay {
+		cx, cancel := context.WithCancel(context.Background())
+		d.stopLoopbackRetry, d.loopbackRetryDone = cancel, make(chan struct{})
+		go func() {
+			defer close(d.loopbackRetryDone)
+			for sleepCx(cx, 2*time.Second) {
+				ln, err := net.Listen("tcp", cfg.Addr)
+				if err != nil {
+					lg.limited("loopback-retry", time.Minute, "dashboard: listen %s failed: %v; retrying", cfg.Addr, err)
+					continue
+				}
+				url := "http://" + ln.Addr().String() + "/"
+				if err := setMeta(db, dashboardURLKey, url); err != nil {
+					lg.logf("meta write failed: %v", err)
+				}
+				d.serve(ln, func() { db.Exec(`delete from meta where key = ?`, dashboardURLKey) })
+				lg.logf("dashboard at %s", url)
+				return
+			}
+		}()
 	}
 	if d.url != "" {
 		lg.logf("dashboard at %s", d.url)
@@ -284,6 +308,10 @@ func (d *dashboard) serve(ln net.Listener, gone func()) {
 }
 
 func (d *dashboard) stop() {
+	if d.stopLoopbackRetry != nil {
+		d.stopLoopbackRetry()
+		<-d.loopbackRetryDone
+	}
 	if d.stopRetry != nil {
 		d.stopRetry()
 		<-d.retryDone

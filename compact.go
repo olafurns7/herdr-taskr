@@ -96,6 +96,8 @@ func (c *ctx) emitCompact(v any) {
 		fmt.Fprint(c.out, "x1 3 timeout")
 		if m["interrupted"] == true {
 			fmt.Fprint(c.out, " interrupted")
+		} else if m["unreachable"] == true {
+			fmt.Fprint(c.out, " unreachable")
 		}
 		fmt.Fprintln(c.out)
 		return

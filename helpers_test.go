@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -18,11 +19,43 @@ import (
 func TestMain(m *testing.M) {
 	dbPollInterval = 50 * time.Millisecond
 	dashboardDefaultAddr = "127.0.0.1:0" // never the owner's 7788
-	tailscaleFallbacks = nil             // never the real tailscale: every harness puts a fake first on PATH
+	tailscaleFallbacks = nil             // never the real tailscale
+	// These subprocess probes already receive scratch state (or create a harness).
+	// Preserve their deliberately restricted launch environment and PATH.
+	if os.Getenv("TASKR_HOOK_LOCK_CHILD") == "1" || os.Getenv("TASKR_RETRY_SIGNAL_CHILD") == "1" {
+		os.Exit(m.Run())
+	}
+	// Keep Go's shared build/module caches outside the scratch HOME used by every test.
+	cache, err := exec.Command("go", "env", "GOPATH", "GOCACHE").Output()
+	if err != nil {
+		panic(err)
+	}
+	paths := strings.Split(strings.TrimSpace(string(cache)), "\n")
+	os.Setenv("GOPATH", paths[0])
+	os.Setenv("GOCACHE", paths[1])
+	home, err := os.MkdirTemp("", "taskr-tests")
+	if err != nil {
+		panic(err)
+	}
+	bin := filepath.Join(home, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "herdr"), []byte(fakeHerdr), 0o755); err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "tailscale"), []byte(fakeTailscale), 0o755); err != nil {
+		panic(err)
+	}
+	os.Setenv("HOME", home)
+	os.Setenv("TASKR_DB", filepath.Join(home, "taskr.db"))
+	os.Setenv("HERDR_SOCKET_PATH", filepath.Join(home, "absent.sock"))
+	os.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	code := m.Run()
 	if buildDir != "" {
 		os.RemoveAll(buildDir)
 	}
+	os.RemoveAll(home)
 	os.Exit(code)
 }
 
@@ -84,6 +117,9 @@ func newHarness(t *testing.T) *harness {
 	h.setAgents()
 	h.herdrSock = liveHerdrSocket(t)
 	t.Setenv("PATH", h.bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("HOME", h.dir)
+	t.Setenv("TASKR_DB", h.db)
+	t.Setenv("HERDR_SOCKET_PATH", h.herdrSock)
 	return h
 }
 

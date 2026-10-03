@@ -526,3 +526,178 @@ func TestProcIdentitySelf(t *testing.T) {
 		t.Fatal("identity of a pid that cannot exist")
 	}
 }
+
+// startStay starts only a scratch daemon; the shell sets the service's own pid.
+func (r *restartRig) startStay(t *testing.T, supervised bool) (*exec.Cmd, chan struct{}) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(r.lock), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(r.lock), dashboardAddrFile), []byte("127.0.0.1:0"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(r.bin, "daemon", "--stay")
+	if supervised {
+		cmd = exec.Command("/bin/sh", "-c", `export SYSTEMD_EXEC_PID=$$; exec "$@"`, "sh", r.bin, "daemon", "--stay")
+	}
+	cmd.Env = []string{"HOME=" + r.h.dir, "PATH=" + r.env["PATH"], "HERDR_SOCKET_PATH=" + r.s.path}
+	if supervised {
+		cmd.Env = append(cmd.Env, "INVOCATION_ID=test-service")
+	} else if invocation := r.env["INVOCATION_ID"]; invocation != "" {
+		cmd.Env = append(cmd.Env, "INVOCATION_ID="+invocation)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { cmd.Wait(); close(done) }()
+	t.Cleanup(func() {
+		cmd.Process.Signal(syscall.SIGTERM)
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			cmd.Process.Kill()
+			<-done
+		}
+	})
+	return cmd, done
+}
+
+func TestDaemonStayWaitsForLockAndTakesOver(t *testing.T) {
+	r := newRestartRig(t)
+	old, oldDone := r.startOld(t)
+	second, secondDone := r.startStay(t, false)
+	select {
+	case <-secondDone:
+		t.Fatal("stay daemon exited behind held lock")
+	case <-time.After(300 * time.Millisecond):
+	}
+	if lockPID(r.lock) != old.Process.Pid {
+		t.Fatal("stay replaced a live holder")
+	}
+	r.s.shutdown()
+	<-oldDone
+	eventually(t, "stay takeover", func() bool {
+		_, st := r.run(nil, "daemon", "--status")
+		return lockPID(r.lock) == second.Process.Pid && st["stay"] == true && st["dashboard"] == "up"
+	})
+	if code, out := r.run(nil, "daemon"); code != 0 || out["already_running"] != true {
+		t.Fatalf("ordinary daemon behind stay = %d %v", code, out)
+	}
+}
+
+func TestDaemonRestartKeepsStay(t *testing.T) {
+	r := newRestartRig(t)
+	r.s.shutdown()
+	old, _ := r.startStay(t, false)
+	eventually(t, "stay identity", func() bool { _, st := r.run(nil, "daemon", "--status"); return st["stay"] == true })
+	code, out := r.run(nil, "daemon", "--restart")
+	newPID := int(num(out, "new_pid"))
+	if newPID > 0 {
+		stopPID(t, newPID, r.lock)
+	}
+	if code != 0 || newPID == old.Process.Pid {
+		t.Fatalf("stay restart = %d %v", code, out)
+	}
+	_, st := r.run(nil, "daemon", "--status")
+	if st["stay"] != true || st["supervised"] != false || st["dashboard"] != "up" {
+		t.Fatalf("restarted stay status = %v", st)
+	}
+}
+
+func TestDaemonStayLockWaitCanBeStopped(t *testing.T) {
+	r := newRestartRig(t)
+	old, _ := r.startOld(t)
+	second, done := r.startStay(t, false)
+	time.Sleep(100 * time.Millisecond)
+	second.Process.Signal(syscall.SIGTERM)
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("stay lock wait ignored SIGTERM")
+	}
+	if lockPID(r.lock) != old.Process.Pid {
+		t.Fatal("canceled waiter changed holder's lock")
+	}
+}
+
+func TestDaemonSupervisedRestartWaitsForReplacement(t *testing.T) {
+	r := newRestartRig(t)
+	r.s.shutdown()
+	old, _ := r.startStay(t, true)
+	eventually(t, "supervised identity", func() bool { _, st := r.run(nil, "daemon", "--status"); return st["supervised"] == true })
+	replacement, _ := r.startStay(t, true)
+	code, out := r.run(nil, "daemon", "--restart")
+	if code != 0 || int(num(out, "old_pid")) != old.Process.Pid || int(num(out, "new_pid")) != replacement.Process.Pid || out["started_detached"] != false {
+		t.Fatalf("supervised restart = %d %v", code, out)
+	}
+	_, st := r.run(nil, "daemon", "--status")
+	if st["stay"] != true || st["supervised"] != true {
+		t.Fatalf("replacement status = %v", st)
+	}
+}
+
+func TestDaemonSupervisedInheritedInvocationRestartsQuickly(t *testing.T) {
+	setVar(t, &daemonRestartWait, 2*time.Second)
+	r := newRestartRig(t)
+	r.s.shutdown()
+	r.env["INVOCATION_ID"] = "inherited-service"
+	r.startStay(t, false)
+	eventually(t, "stay identity", func() bool { _, st := r.run(nil, "daemon", "--status"); return st["stay"] == true })
+	_, st := r.run(nil, "daemon", "--status")
+	if st["supervised"] != false {
+		t.Errorf("inherited invocation supervised = %v", st["supervised"])
+	}
+	start := time.Now()
+	code, out := r.run(nil, "daemon", "--restart")
+	if pid := int(num(out, "new_pid")); pid > 0 {
+		stopPID(t, pid, r.lock)
+	}
+	if code != 0 || out["started_detached"] != nil || time.Since(start) >= daemonRestartWait {
+		t.Fatalf("inherited invocation restart = %d %v after %v", code, out, time.Since(start))
+	}
+}
+
+func TestDaemonStayRestartStaleIdentityNamesFile(t *testing.T) {
+	r := newRestartRig(t)
+	r.s.shutdown()
+	old, _ := r.startStay(t, false)
+	eventually(t, "stay identity", func() bool { _, st := r.run(nil, "daemon", "--status"); return st["stay"] == true })
+	path := filepath.Join(filepath.Dir(r.lock), localDaemonRecordFile)
+	rec, err := readClientDaemonRecord(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec.PID++
+	if err := writeClientDaemonRecord(path, rec); err != nil {
+		t.Fatal(err)
+	}
+	code, out := r.run(nil, "daemon", "--restart")
+	if code != exitReject || !strings.Contains(out["error"].(string), path) {
+		t.Fatalf("stale identity restart = %d %v", code, out)
+	}
+	if held, err := lockHeld(r.lock); err != nil || !held || lockPID(r.lock) != old.Process.Pid {
+		t.Fatalf("refused restart changed holder: held %v, error %v", held, err)
+	}
+}
+
+func TestDaemonSupervisedRestartFallsBack(t *testing.T) {
+	setVar(t, &daemonRestartWait, 250*time.Millisecond)
+	r := newRestartRig(t)
+	r.s.shutdown()
+	r.startStay(t, true)
+	eventually(t, "supervised identity", func() bool { _, st := r.run(nil, "daemon", "--status"); return st["supervised"] == true })
+	start := time.Now()
+	code, out := r.run(nil, "daemon", "--restart")
+	newPID := int(num(out, "new_pid"))
+	if newPID > 0 {
+		stopPID(t, newPID, r.lock)
+	}
+	if code != 0 || out["started_detached"] != true || time.Since(start) < daemonRestartWait {
+		t.Fatalf("supervised fallback = %d %v", code, out)
+	}
+	_, st := r.run(nil, "daemon", "--status")
+	if st["stay"] != true || st["supervised"] != false {
+		t.Fatalf("fallback status = %v", st)
+	}
+}

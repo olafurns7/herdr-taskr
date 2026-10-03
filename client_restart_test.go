@@ -86,7 +86,7 @@ func TestClientDaemonRestart(t *testing.T) {
 	if st["running_version"] != builtVersion || st["stale"] != true || st["started_at"] == nil {
 		t.Fatalf("client daemon status = %v", st)
 	}
-	if temps, _ := filepath.Glob(filepath.Join(filepath.Dir(path), ".client-daemon-*")); len(temps) != 0 {
+	if temps, _ := filepath.Glob(filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+"-*")); len(temps) != 0 {
 		t.Fatalf("atomic record write left temp files: %v", temps)
 	}
 

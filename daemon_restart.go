@@ -34,14 +34,19 @@ type procIdent struct {
 
 const clientDaemonRecordFile = "client-daemon.json"
 
+const localDaemonRecordFile = "daemon.json"
+
 type clientDaemonRecord struct {
-	PID        int      `json:"pid"`
-	Executable string   `json:"executable"`
-	Argv       []string `json:"argv"`
-	StartTime  string   `json:"start_time"`
-	UID        *int     `json:"uid"`
-	Version    string   `json:"version"`
-	StartedAt  string   `json:"started_at"`
+	PID          int      `json:"pid"`
+	Executable   string   `json:"executable"`
+	Argv         []string `json:"argv"`
+	StartTime    string   `json:"start_time"`
+	UID          *int     `json:"uid"`
+	Version      string   `json:"version"`
+	StartedAt    string   `json:"started_at"`
+	Stay         bool     `json:"stay,omitempty"`
+	Supervised   bool     `json:"supervised,omitempty"`
+	HerdrMissing bool     `json:"herdr_missing,omitempty"`
 }
 
 type daemonIdentityRecord struct {
@@ -115,7 +120,7 @@ func writeClientDaemonRecord(path string, rec clientDaemonRecord) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".client-daemon-*")
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
 	if err != nil {
 		return err
 	}
@@ -182,7 +187,7 @@ func verifyClientDaemon(rec clientDaemonRecord, lockPID int) (int, error) {
 	case lockPID == os.Getpid():
 		return 0, rejectErr("the daemon lock is held by this process %d; nothing signalled", lockPID)
 	case rec.PID != lockPID:
-		return 0, rejectErr("the daemon lock names pid %d but the client record names daemon pid %d; not signalled", lockPID, rec.PID)
+		return 0, rejectErr("the daemon lock names pid %d but the identity record names daemon pid %d; not signalled", lockPID, rec.PID)
 	case rec.Executable == "" || rec.StartTime == "" || len(rec.Argv) < 2 || rec.UID == nil:
 		return 0, rejectErr("the client daemon identity record is incomplete for daemon %d; not signalled", lockPID)
 	}
@@ -230,11 +235,15 @@ func btoi(b bool) int {
 
 type daemonRec struct {
 	version, started string
+	args             []string
+	stay, supervised bool
+	herdrMissing     bool
+	procStart        string
 }
 
 // runningDaemon reads the meta record of the daemon with this pid; version is
 // "unknown" when the record is missing or belongs to another pid.
-func runningDaemon(q queryer, pid int) (daemonRec, error) {
+func runningDaemon(q queryer, pid int, dir string) (daemonRec, error) {
 	rec := daemonRec{version: "unknown"}
 	p, ok, err := getMeta(q, daemonPIDKey)
 	if err != nil || !ok || p != strconv.Itoa(pid) {
@@ -247,6 +256,11 @@ func runningDaemon(q queryer, pid int) (daemonRec, error) {
 	}
 	s, _, err := getMeta(q, daemonStartedKey)
 	rec.started = s
+	if identity, e := readClientDaemonRecord(filepath.Join(dir, localDaemonRecordFile)); e == nil && identity.PID == pid && len(identity.Argv) >= 2 {
+		rec.args = slices.Clone(identity.Argv[2:])
+		rec.stay, rec.supervised, rec.procStart = identity.Stay, identity.Supervised, identity.StartTime
+		rec.herdrMissing = identity.HerdrMissing
+	}
 	return rec, err
 }
 
@@ -292,8 +306,24 @@ func daemonRestart(c *ctx, lockPath string) (any, int, error) {
 			}
 			return sock, nil
 		},
-		func(pid int) (int, error) { return verifyDaemon(db, pid) },
-		func(pid int) (daemonRec, error) { return runningDaemon(db, pid) })
+		func(pid int) (int, error) {
+			verified, err := verifyDaemon(db, pid)
+			if err != nil {
+				return 0, err
+			}
+			path := filepath.Join(filepath.Dir(lockPath), localDaemonRecordFile)
+			if rec, err := readClientDaemonRecord(path); err == nil {
+				verified, err := verifyClientDaemon(rec, pid)
+				if err != nil {
+					return 0, rejectErr("local daemon identity record %s: %v", path, err)
+				}
+				return verified, nil
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return 0, rejectErr("cannot read the local daemon identity record %s; not signalled", path)
+			}
+			return verified, nil // older local daemons recorded only meta
+		},
+		func(pid int) (daemonRec, error) { return runningDaemon(db, pid, filepath.Dir(lockPath)) })
 }
 
 func clientDaemonRestart(c *ctx, dir, lockPath string) (any, int, error) {
@@ -315,16 +345,17 @@ func clientDaemonRestart(c *ctx, dir, lockPath string) (any, int, error) {
 			if err != nil {
 				return daemonRec{}, err
 			}
-			if rec.PID != pid || rec.Version == "" {
+			if rec.PID != pid || rec.Version == "" || len(rec.Argv) < 2 {
 				return daemonRec{version: "unknown"}, nil
 			}
-			return daemonRec{version: rec.Version, started: rec.StartedAt}, nil
+			return daemonRec{version: rec.Version, started: rec.StartedAt, args: slices.Clone(rec.Argv[2:])}, nil
 		})
 }
 
 func daemonRestartWith(c *ctx, lockPath string, socket func() (string, error),
 	verify func(int) (int, error), record func(int) (daemonRec, error)) (any, int, error) {
 	out := map[string]any{"ok": true, "restarted": false}
+	args := []string{"daemon"}
 	held, err := lockHeld(lockPath)
 	if err != nil {
 		return nil, 0, dbErr(err)
@@ -335,12 +366,34 @@ func daemonRestartWith(c *ctx, lockPath string, socket func() (string, error),
 			return map[string]any{"pid": lockPID(lockPath)}, 0, err
 		}
 		old, oldErr := record(pid)
+		if oldErr != nil {
+			return nil, 0, dbErr(oldErr)
+		}
+		args = append(args, old.args...)
 		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
 			return nil, 0, rejectErr("stopping daemon %d: %v", pid, err)
 		}
 		out["old_pid"], out["restarted"] = pid, true
-		if oldErr == nil {
-			out["old_version"] = old.version
+		out["old_version"] = old.version
+		if old.supervised {
+			// The supervisor owns relaunch. Accept only a verified lock holder with a new OS start time.
+			for end := time.Now().Add(daemonRestartWait); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+				newPID := lockPID(lockPath)
+				if held, e := lockHeld(lockPath); e != nil || !held || newPID <= 0 {
+					continue
+				}
+				if _, e := verify(newPID); e != nil {
+					continue
+				}
+				next, e := record(newPID)
+				if e == nil && next.procStart != "" && next.procStart != old.procStart {
+					out["new_pid"], out["version"], out["started_at"] = newPID, next.version, next.started
+					out["supervised"], out["started_detached"] = true, false
+					out["socket"], _ = socket()
+					return out, exitOK, nil
+				}
+			}
+			out["started_detached"] = true
 		}
 		freed := false
 		for end := time.Now().Add(daemonRestartWait); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
@@ -366,7 +419,7 @@ func daemonRestartWith(c *ctx, lockPath string, socket func() (string, error),
 	if p := c.env("PATH"); p != "" {
 		env = append(env, "PATH="+p)
 	}
-	cmd := exec.Command(exe, "daemon")
+	cmd := exec.Command(exe, args...)
 	cmd.Env, cmd.Dir = env, home
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {

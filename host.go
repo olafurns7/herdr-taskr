@@ -366,8 +366,12 @@ func clientDaemon(c *ctx, raw string, args []string) int {
 	once := fs.Bool("once", false, "run one observation pass and exit")
 	status := fs.Bool("status", false, "print the mode, the server and the last call")
 	restart := fs.Bool("restart", false, "restart the client daemon")
+	stay := fs.Bool("stay", false, "local ledger host only")
 	if _, err := parseArgs(c, fs, args, 0, 0); err != nil {
 		return clientFail(c, exitUsage, "usage", err.(*exitErr).msg)
+	}
+	if *stay {
+		return clientFail(c, exitUsage, "usage", "daemon --stay is only available in local mode")
 	}
 	if btoi(*once)+btoi(*status)+btoi(*restart) > 1 {
 		return clientFail(c, exitUsage, "usage", "daemon in client mode: use --once, --status, --restart, or neither")

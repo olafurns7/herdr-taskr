@@ -94,6 +94,40 @@ func TestCompactWaitTimeoutAndJSONPin(t *testing.T) {
 	}
 }
 
+func TestWaitTimeoutOutputForms(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		in      map[string]any
+		compact string
+		json    string
+	}{
+		{"quiet", map[string]any{"as": 1, "timeout": true, "owed": 0, "due": 0},
+			"w1 {\"owed\":0,\"due\":0}\nx1 3 timeout\n",
+			"{\"as\":1,\"due\":0,\"owed\":0,\"timeout\":true}\n"},
+		{"interrupted", map[string]any{"as": 1, "timeout": true, "interrupted": true},
+			"x1 3 timeout interrupted\n",
+			"{\"as\":1,\"interrupted\":true,\"timeout\":true}\n"},
+		{"unreachable", map[string]any{"as": 1, "timeout": true, "unreachable": true},
+			"x1 3 timeout unreachable\n",
+			"{\"as\":1,\"timeout\":true,\"unreachable\":true}\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, jsonFormat := range []bool{false, true} {
+				var out bytes.Buffer
+				c := &ctx{cmd: "wait", out: &out, json: jsonFormat}
+				c.emit(tc.in)
+				want := tc.compact
+				if jsonFormat {
+					want = tc.json
+				}
+				if out.String() != want {
+					t.Fatalf("json=%t output = %q, want %q", jsonFormat, out.String(), want)
+				}
+			}
+		})
+	}
+}
+
 func TestCompactWaitTimeoutCountsOwedAndDue(t *testing.T) {
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
