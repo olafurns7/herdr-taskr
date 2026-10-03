@@ -1067,7 +1067,7 @@ func assertReportRetained(t *testing.T, h *harness, db *sql.DB, lane int64, expe
 	}
 }
 
-func TestR2StaleRead(t *testing.T) {
+func TestDocumentsReportStaleRead(t *testing.T) {
 	h := newHarness(t)
 	_, lane, launch := docLane(t, h)
 	db := h.openDB()
@@ -1089,7 +1089,7 @@ func TestR2StaleRead(t *testing.T) {
 	assertReportRetained(t, h, db, lane, committed, "newer text")
 }
 
-func TestR2PathRace(t *testing.T) {
+func TestDocumentsReportPathRace(t *testing.T) {
 	for _, command := range []string{"done", "close"} {
 		t.Run(command, func(t *testing.T) {
 			h := newHarness(t)
@@ -1118,7 +1118,41 @@ func TestR2PathRace(t *testing.T) {
 	}
 }
 
-func TestR2HostChangeBetween(t *testing.T) {
+func TestDocumentsReportPathOnlyRace(t *testing.T) {
+	for _, command := range []string{"done", "close"} {
+		t.Run(command, func(t *testing.T) {
+			h := newHarness(t)
+			_, lane, launch := docLane(t, h)
+			db := h.openDB()
+			planned := docFile(t, h.dir, "planned.md", "saved report")
+			actual := docFile(t, h.dir, "actual.md", "saved report")
+			h.ok(as(lane, launch), "ready", "r", "--report", planned)
+			committed := docLatest(t, db, lane, "report", "")
+			docFile(t, h.dir, "planned.md", "wrong report")
+			n := 0
+			setVar(t, &readDocumentBody, func(r io.Reader) ([]byte, error) {
+				n++
+				if n == 1 {
+					h.ok(as(lane, launch), "ready", "r", "--report", actual)
+					assertReportRetained(t, h, db, lane, committed, "saved report")
+					path, err := reportDocumentPath(db, lane)
+					if err != nil || path != actual {
+						t.Fatalf("racing ready path: %q %v", path, err)
+					}
+				}
+				return io.ReadAll(r)
+			})
+			if command == "close" {
+				h.ok(nil, "close", id(lane))
+			} else {
+				h.ok(as(lane, launch), "done", "fin")
+			}
+			assertReportRetained(t, h, db, lane, committed, "saved report")
+		})
+	}
+}
+
+func TestDocumentsReportHostChangeBetween(t *testing.T) {
 	h := newHarness(t)
 	_, lane, launch := docLane(t, h)
 	db := h.openDB()
