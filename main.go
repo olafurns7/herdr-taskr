@@ -82,6 +82,7 @@ type ctx struct {
 
 	// Set by the RPC handler for a remote caller; zero for the local CLI.
 	db      *sql.DB         // the daemon's resident ledger
+	log     *daemonLog      // the server daemon's log for remote calls
 	cx      context.Context // ends a wait; nil means the CLI's signal context
 	rpc     bool            // a remote caller: paths come absolute, no file effects here
 	machine string          // the caller's host label; "" is the server host

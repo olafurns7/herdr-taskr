@@ -5,7 +5,7 @@ name = "taskr"
 # release.sh writes the release tag's version here when it packs plugin.tar.gz.
 version = "0.3.0"
 min_herdr_version = "0.9.0"
-description = "Wakes taskr waits on agent status changes, notifies the owner of owner asks, and writes pane taskr_state and taskr_round tokens. On the server host, each task workspace gets taskr_campaign, the campaign's name; it also gets taskr_parent, the id of the workspace of the campaign's orchestrator, when that orchestrator's pane is open on the server host. The orchestrator's own workspace gets neither token. A sidebar plugin can use these tokens to group task workspaces by campaign."
+description = "Wakes taskr waits on agent status changes, notifies the owner of owner asks, and writes pane taskr_state and taskr_round tokens. On each host, each task workspace gets taskr_campaign, the campaign's name; it also gets taskr_parent, the ID of the workspace of the campaign's orchestrator, when that orchestrator's pane is open on the same host. The orchestrator's own workspace gets neither token. A sidebar plugin can use these tokens to group task workspaces by campaign. Client daemons publish these workspace tokens from the server's observation reply. An older or unreachable server leaves the client's tokens unchanged."
 platforms = ["linux", "macos"]
 
 # run.sh honours TASKR_INSTALL_DIR, falling back to ~/.local/bin/taskr, then

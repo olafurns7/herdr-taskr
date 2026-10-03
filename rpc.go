@@ -330,7 +330,7 @@ func (d *dashboard) rpcRun(cx context.Context, machine string, req rpcRequest) (
 	}
 	var out, errw bytes.Buffer
 	c := &ctx{getenv: func(k string) string { return env[k] }, out: &out, errw: &errw,
-		db: d.db, cx: cx, rpc: true, machine: machine, cwd: req.Cwd}
+		db: d.db, log: d.log, cx: cx, rpc: true, machine: machine, cwd: req.Cwd}
 	defer func() {
 		if p := recover(); p != nil {
 			d.log.logf("rpc: machine=%s key=%s panicked: %s", machine, req.RequestKey, truncate(fmt.Sprint(p), 200))

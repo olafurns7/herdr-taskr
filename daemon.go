@@ -768,20 +768,34 @@ func (d *daemon) writeTokens() int {
 // writeCampaignTokens computes workspace ownership after the pane tokens and
 // heartbeat, so no campaign query or Herdr call delays the released path.
 func (d *daemon) writeCampaignTokens() int {
-	rows, err := d.db.Query(`with recursive roots(id, root_id, root_name) as (
-		select id, id, name from tasks where parent_id is null
-		union all select t.id, r.root_id, r.root_name from tasks t join roots r on t.parent_id = r.id
-		)
-		select t.id, case when l.pane_id is not null then l.workspace_id else t.workspace_id end,
-		r.root_id, r.root_name, coalesce(l.present, 1)
-		from tasks t left join launches l on l.id = t.current_launch_id
-		join roots r on r.id = t.id
-		where t.status not in ('closed', 'planned') and coalesce(l.pane_id, t.pane_id) is not null
-		and (case when l.id is null then t.machine else l.machine end) is null order by t.id`)
+	workspaces, err := wantedWorkspaceTokens(d.db, serverHost)
 	if err != nil {
 		d.log.logf("campaign token query failed: %v", err)
 		return 0
 	}
+	return d.writeWorkspaceTokens(workspaces)
+}
+
+// wantedWorkspaceTokens reads this host's active tasks and current launches,
+// then only their ancestors. Closed ancestors still name the campaign.
+func wantedWorkspaceTokens(q queryer, host sql.NullString) (map[string]workspaceTokenState, error) {
+	rows, err := q.Query(`with recursive local_tasks as (
+		select t.id, case when l.pane_id is not null then l.workspace_id else t.workspace_id end as workspace,
+		coalesce(l.present, 1) as present
+		from tasks t left join launches l on l.id = t.current_launch_id
+		where t.status not in ('closed', 'planned') and coalesce(l.pane_id, t.pane_id) is not null
+		and (case when l.id is null then t.machine else l.machine end) is ?
+		), ancestors(id, ancestor) as (
+		select id, id from local_tasks
+		union select a.id, t.parent_id from ancestors a join tasks t on t.id = a.ancestor where t.parent_id is not null
+		)
+		select t.id, t.workspace, r.id, r.name, t.present
+		from local_tasks t join ancestors a on a.id = t.id join tasks r on r.id = a.ancestor
+		where r.parent_id is null order by t.id`, host)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 	workspaces := map[string]workspaceTokenState{}
 	workspaceRoots := map[string]int64{}
 	rootWorkspaces := map[int64]string{}
@@ -791,9 +805,7 @@ func (d *daemon) writeCampaignTokens() int {
 		var workspace sql.NullString
 		var present bool
 		if err := rows.Scan(&id, &workspace, &root, &rootName, &present); err != nil {
-			d.log.logf("campaign token scan failed: %v", err)
-			rows.Close()
-			return 0
+			return nil, err
 		}
 		if !present || workspace.String == "" {
 			continue
@@ -810,11 +822,8 @@ func (d *daemon) writeCampaignTokens() int {
 		}
 	}
 	if err := rows.Err(); err != nil {
-		d.log.logf("campaign token rows failed: %v", err)
-		rows.Close()
-		return 0
+		return nil, err
 	}
-	rows.Close()
 	for workspace, root := range workspaceRoots {
 		if parent := rootWorkspaces[root]; parent != "" {
 			if parent == workspace {
@@ -826,7 +835,7 @@ func (d *daemon) writeCampaignTokens() int {
 			}
 		}
 	}
-	return d.writeWorkspaceTokens(workspaces)
+	return workspaces, nil
 }
 
 // herdrWorkspaceTokens reads only the workspace ids and the two taskr tokens.

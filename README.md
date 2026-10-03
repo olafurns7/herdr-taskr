@@ -35,11 +35,13 @@ Herdr runs the agents; taskr records coordination state and wakes the orchestrat
 Hook receipts and stall signals require the optional agent hooks.
 
 The daemon publishes `taskr_state` and `taskr_round` on server-host panes.
-On the server host, each task workspace gets `taskr_campaign`, the campaign's
+On each host, each task workspace gets `taskr_campaign`, the campaign's
 name; it also gets `taskr_parent`, the ID of the workspace of the campaign's
-orchestrator, when that orchestrator's pane is open on the server host.
+orchestrator, when that orchestrator's pane is open on the same host.
 The orchestrator's own workspace gets neither token. A sidebar plugin can
 use these tokens to group task workspaces by campaign.
+Client daemons publish these workspace tokens from the server's observation
+reply. An older or unreachable server leaves the client's tokens unchanged.
 
 ```mermaid
 sequenceDiagram
