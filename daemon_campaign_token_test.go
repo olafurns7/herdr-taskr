@@ -398,6 +398,60 @@ func TestDaemonFailedWorkspaceListRetriesOnFallback(t *testing.T) {
 	})
 }
 
+func TestDaemonCampaignMissingLaunchDoesNotCount(t *testing.T) {
+	h, d := campaignHarness(t)
+	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
+	lane := campaignTask(h, d, "lane-a", root, "w2", "w2:p1")
+	launch := h.launch(lane, "--pane", "w2:p1")
+	campaignExec(t, d, `update launches set workspace_id = 'w2', present = 0 where id = ?`, launch)
+	campaignWorkspaces(h, map[string]map[string]string{
+		"w1": nil,
+		"w2": {"taskr_campaign": "root-a", "taskr_parent": "w1"},
+	})
+	campaignPass(d)
+	campaignWrites(t, h, campaignWrite("w2", "", ""))
+}
+
+func TestDaemonCampaignPlannedTaskDoesNotCount(t *testing.T) {
+	h, d := campaignHarness(t)
+	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
+	lane := campaignTask(h, d, "lane-a", root, "w2", "w2:p1")
+	campaignExec(t, d, `update tasks set status = 'planned' where id = ?`, lane)
+	campaignWorkspaces(h, map[string]map[string]string{
+		"w1": nil,
+		"w2": {"taskr_campaign": "root-a", "taskr_parent": "w1"},
+	})
+	campaignPass(d)
+	campaignWrites(t, h, campaignWrite("w2", "", ""))
+}
+
+func TestDaemonCampaignGoodListClearsRetryGate(t *testing.T) {
+	h, d := campaignHarness(t)
+	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
+	campaignTask(h, d, "lane-a", root, "w2", "w2:p1")
+	campaignWorkspaces(h, map[string]map[string]string{"w1": nil, "w2": nil})
+	h.write("workspaces.exit", "1", 0o644)
+	campaignPass(d)
+	campaignWrites(t, h)
+
+	campaignExec(t, d, `update tasks set name = 'root-b' where id = ?`, root)
+	h.write("workspaces.exit", "0", 0o644)
+	campaignPass(d)
+	campaignWrites(t, h, campaignWrite("w2", "root-b", "w1"))
+
+	campaignWorkspaces(h, map[string]map[string]string{
+		"w1": nil,
+		"w2": {"taskr_campaign": "root-b", "taskr_parent": "w1"},
+	})
+	campaignExec(t, d, `update tasks set name = 'root-a' where id = ?`, root)
+	campaignPass(d)
+	campaignPass(d)
+	campaignWrites(t, h, campaignWrite("w2", "root-b", "w1"), campaignWrite("w2", "root-a", "w1"))
+	if n := len(h.calls("workspace|list|")); n != 3 {
+		t.Fatalf("list calls after returning to the failed pair = %d, want 3", n)
+	}
+}
+
 // Pane-token compatibility is checked against exact CLI arguments across all
 // campaign transitions above; the existing pane test covers asks and waits.
 func TestDaemonCampaignPaneCompatibility(t *testing.T) {
