@@ -44,6 +44,9 @@ d="$(dirname "$0")"
 printf '%s|' "$@" >> "$d/calls.log"
 echo >> "$d/calls.log"
 case "$1 $2" in
+"workspace list")
+  echo '{"result":{"workspaces":[]}}'
+  exit 0 ;;
 "agent list")
   [ -f "$d/list.sleep" ] && sleep "$(cat "$d/list.sleep")"
   if [ -f "$d/list.hold" ]; then sleep 10 & wait; fi

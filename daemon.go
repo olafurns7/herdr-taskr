@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"os/signal"
@@ -462,12 +463,20 @@ type tokenState struct {
 	round       int64
 }
 
+type workspaceTokenState struct {
+	campaign, parent       string
+	hasCampaign, hasParent bool
+}
+
 type daemon struct {
-	db        *sql.DB
-	log       *daemonLog
-	usage     *dashboardUsage
-	tokens    map[int64]tokenState // nil until the first pass sets the baseline
-	connected atomic.Bool          // the subscription is acked and open
+	db              *sql.DB
+	log             *daemonLog
+	usage           *dashboardUsage
+	tokens          map[int64]tokenState           // nil until the first pass sets the baseline
+	workspaceTokens map[string]workspaceTokenState // nil until the workspace list succeeds
+	connected       atomic.Bool                    // the subscription is acked and open
+
+	failedWorkspaceWant map[string]workspaceTokenState // wanted pairs at the last failed list
 
 	mu         sync.Mutex
 	want       []string      // the pane set the last pass computed
@@ -514,9 +523,9 @@ type passResult struct {
 	err                        error
 }
 
-// pass is one observation pass, then owner notifications, then token writes,
-// then a heartbeat while the subscription is live. Every failure is logged
-// and the later steps still run.
+// pass keeps the released observation, notification, pane-token and heartbeat
+// order, then publishes workspace tokens. Every failure is logged and the later
+// steps still run.
 func (d *daemon) pass() passResult {
 	var r passResult
 	// Receipt deadlines need the ledger, not Herdr.
@@ -540,6 +549,7 @@ func (d *daemon) pass() passResult {
 	if d.connected.Load() {
 		d.heartbeat()
 	}
+	r.tokens += d.writeCampaignTokens()
 	return r
 }
 
@@ -712,6 +722,174 @@ func (d *daemon) writeTokens() int {
 	return n
 }
 
+// writeCampaignTokens computes workspace ownership after the pane tokens and
+// heartbeat, so no campaign query or Herdr call delays the released path.
+func (d *daemon) writeCampaignTokens() int {
+	rows, err := d.db.Query(`with recursive roots(id, root_id, root_name) as (
+		select id, id, name from tasks where parent_id is null
+		union all select t.id, r.root_id, r.root_name from tasks t join roots r on t.parent_id = r.id
+		)
+		select t.id, case when l.pane_id is not null then l.workspace_id else t.workspace_id end,
+		r.root_id, r.root_name, coalesce(l.present, 1)
+		from tasks t left join launches l on l.id = t.current_launch_id
+		join roots r on r.id = t.id
+		where t.status not in ('closed', 'planned') and coalesce(l.pane_id, t.pane_id) is not null
+		and (case when l.id is null then t.machine else l.machine end) is null order by t.id`)
+	if err != nil {
+		d.log.logf("campaign token query failed: %v", err)
+		return 0
+	}
+	workspaces := map[string]workspaceTokenState{}
+	workspaceRoots := map[string]int64{}
+	rootWorkspaces := map[int64]string{}
+	for rows.Next() {
+		var id, root int64
+		var rootName string
+		var workspace sql.NullString
+		var present bool
+		if err := rows.Scan(&id, &workspace, &root, &rootName, &present); err != nil {
+			d.log.logf("campaign token scan failed: %v", err)
+			rows.Close()
+			return 0
+		}
+		if !present || workspace.String == "" {
+			continue
+		}
+		if id == root {
+			rootWorkspaces[root] = workspace.String
+		}
+		if prev, ok := workspaceRoots[workspace.String]; !ok {
+			workspaceRoots[workspace.String] = root
+			workspaces[workspace.String] = workspaceTokenState{campaign: rootName, hasCampaign: true}
+		} else if prev != root {
+			workspaceRoots[workspace.String] = 0 // multiple roots cannot own one workspace
+			workspaces[workspace.String] = workspaceTokenState{}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		d.log.logf("campaign token rows failed: %v", err)
+		rows.Close()
+		return 0
+	}
+	rows.Close()
+	for workspace, root := range workspaceRoots {
+		if parent := rootWorkspaces[root]; parent != "" {
+			if parent == workspace {
+				workspaces[workspace] = workspaceTokenState{}
+			} else {
+				ts := workspaces[workspace]
+				ts.parent, ts.hasParent = parent, true
+				workspaces[workspace] = ts
+			}
+		}
+	}
+	return d.writeWorkspaceTokens(workspaces)
+}
+
+// herdrWorkspaceTokens reads only the workspace ids and the two taskr tokens.
+// Other reporters' tokens are never written or cleared.
+func herdrWorkspaceTokens(sock string) (map[string]workspaceTokenState, error) {
+	cx, cancel := context.WithTimeout(context.Background(), herdrListDeadline)
+	defer cancel()
+	cmd, err := herdrCommand(cx, sock, "workspace", "list")
+	if err != nil {
+		return nil, err
+	}
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.WaitDelay = herdrWaitDelay
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("herdr workspace list failed: %w", err)
+	}
+	var resp struct {
+		Result *struct {
+			Workspaces []struct {
+				ID     string            `json:"workspace_id"`
+				Tokens map[string]string `json:"tokens"`
+			} `json:"workspaces"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
+		return nil, fmt.Errorf("herdr workspace list returned malformed JSON: %w", err)
+	}
+	if resp.Result == nil || resp.Result.Workspaces == nil {
+		return nil, errors.New("herdr workspace list returned no result.workspaces")
+	}
+	workspaces := map[string]workspaceTokenState{}
+	for _, w := range resp.Result.Workspaces {
+		if w.ID == "" {
+			return nil, errors.New("herdr workspace list entry without workspace_id")
+		}
+		ts := workspaceTokenState{}
+		ts.campaign, ts.hasCampaign = w.Tokens["taskr_campaign"]
+		ts.parent, ts.hasParent = w.Tokens["taskr_parent"]
+		workspaces[w.ID] = ts
+	}
+	return workspaces, nil
+}
+
+// writeWorkspaceTokens reconciles on startup, then lists when a pair changes.
+// A failed list waits for a changed wanted pair or the daemon fallback tick.
+func (d *daemon) writeWorkspaceTokens(want map[string]workspaceTokenState) int {
+	if d.failedWorkspaceWant != nil && maps.Equal(want, d.failedWorkspaceWant) {
+		return 0
+	}
+	changed := d.workspaceTokens == nil
+	for workspace, ts := range want {
+		changed = changed || d.workspaceTokens[workspace] != ts
+	}
+	for workspace, ts := range d.workspaceTokens {
+		changed = changed || want[workspace] != ts
+	}
+	if !changed {
+		return 0
+	}
+	listed, err := herdrWorkspaceTokens(d.sock)
+	if err != nil {
+		d.failedWorkspaceWant = maps.Clone(want)
+		d.log.logf("workspace token list failed: %v", err)
+		return 0
+	}
+	d.failedWorkspaceWant = nil
+	d.workspaceTokens = listed
+	var order []string
+	for workspace := range listed {
+		order = append(order, workspace)
+	}
+	for workspace, ts := range want {
+		if _, exists := listed[workspace]; !exists {
+			// An unlisted workspace is satisfied without a metadata call.
+			d.workspaceTokens[workspace] = ts
+		}
+	}
+	slices.Sort(order)
+	n := 0
+	for _, workspace := range order {
+		ts := want[workspace]
+		if d.workspaceTokens[workspace] == ts {
+			continue
+		}
+		args := []string{"workspace", "report-metadata", workspace, "--source", "taskr"}
+		if ts.hasCampaign {
+			args = append(args, "--token", "taskr_campaign="+ts.campaign)
+		} else {
+			args = append(args, "--clear-token", "taskr_campaign")
+		}
+		if ts.hasParent {
+			args = append(args, "--token", "taskr_parent="+ts.parent)
+		} else {
+			args = append(args, "--clear-token", "taskr_parent")
+		}
+		if err := herdrRun(d.sock, args...); err != nil {
+			d.log.logf("workspace token write for %s failed: %v", workspace, err)
+			continue
+		}
+		d.workspaceTokens[workspace] = ts
+		n++
+	}
+	return n
+}
+
 // run is the resident loop: a subscription reader marks the daemon dirty and
 // one worker runs passes. It returns why it stopped.
 func (d *daemon) run(parent context.Context, sock string) string {
@@ -766,6 +944,7 @@ func (d *daemon) run(parent context.Context, sock string) string {
 			}
 			continue
 		case <-fb.C:
+			d.failedWorkspaceWant = nil
 		case <-dirty:
 			wait := max(daemonSettle, time.Until(last.Add(daemonMinGap)))
 			select {
