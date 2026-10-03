@@ -263,7 +263,11 @@ func TestDocumentsCaptureIsolation(t *testing.T) {
 func TestDocumentsRPCCapture(t *testing.T) {
 	r := newTwoHost(t)
 	root := r.newTask("root", "orchestrator", 0)
-	lane := num(r.want(0, "host-b", nil, "new", "remote", "--role", "implementer", "--parent", id(root), "--cwd", r.dir, "--pane", "w1:p1"), "task_id")
+	brief := docFile(t, r.dir, "brief.md", "server brief must not be read")
+	lane := num(r.want(0, "host-b", nil, "new", "remote", "--role", "implementer", "--parent", id(root), "--cwd", r.dir, "--pane", "w1:p1", "--brief", brief), "task_id")
+	if d := docLatest(t, r.openDB(), lane, "brief", ""); d.Captured || d.Reason.String != "client" || d.Path.String != brief || d.Host.String != "host-b" || d.Hash.Valid {
+		t.Fatalf("%+v", d)
+	}
 	launch := num(r.want(0, "host-b", nil, "launch", id(lane), "--provider", "codex", "--model", "gpt-6-luna", "--effort", "max"), "launch_id")
 	path := docFile(t, r.dir, "remote.md", "server bytes must not be read")
 	r.want(0, "host-b", as(lane, launch), "ready", "r", "--report", path)
@@ -732,6 +736,9 @@ func TestDocumentsFixRemovedReportAndGoal(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if miss := docLatest(t, db, root, "goal", ""); miss.Version != 2 || miss.Reason.String != "binary" || miss.Captured {
+		t.Fatalf("%+v", miss)
+	}
 	for _, args := range [][]string{{"handover", "--as", id(root)}, {"adopt", id(root), "--pane", "w2:p1"}} {
 		code, out, _ := h.runText(nil, args...)
 		if code != 0 || !strings.Contains(out, fmt.Sprintf("Goal (doc %d, v1):", captured.ID)) || !strings.Contains(out, "saved goal") {
@@ -1039,6 +1046,148 @@ func TestDocumentsFixPurgeSecureAndCheckpoint(t *testing.T) {
 	code, help, _ := h.compact(nil, "doc", "rm", "--help")
 	if code != 0 || !strings.Contains(help, "write-ahead log") || !strings.Contains(help, "earlier backups") {
 		t.Fatalf("%d %q", code, help)
+	}
+}
+
+func assertReportRetained(t *testing.T, h *harness, db *sql.DB, lane int64, expected document, body string) {
+	t.Helper()
+	if d := docLatest(t, db, lane, "report", ""); d.ID != expected.ID {
+		t.Fatalf("stale capture replaced report: %+v", d)
+	}
+	if n := docCount(t, db, `select count(*) from documents where task_id = ? and kind = 'report'`, lane); n != 1 {
+		t.Fatalf("stored %d report rows", n)
+	}
+	code, rows := h.run(nil, "doc", "ls", id(lane), "--kind", "report")
+	if code != 0 || len(rows) != 1 || num(rows[0], "doc_id") != expected.ID || rows[0]["captured"] != true {
+		t.Fatalf("doc ls: %d %v", code, rows)
+	}
+	code, out, errout := h.runText(nil, "doc", "get", id(expected.ID))
+	if code != 0 || out != body {
+		t.Fatalf("doc get: %d %q %q", code, out, errout)
+	}
+}
+
+func TestR2StaleRead(t *testing.T) {
+	h := newHarness(t)
+	_, lane, launch := docLane(t, h)
+	db := h.openDB()
+	path := docFile(t, h.dir, "report.md", "older text")
+	docExec(t, db, `update tasks set report_path = ? where id = ?`, path, lane)
+	var committed document
+	n := 0
+	setVar(t, &readDocumentBody, func(r io.Reader) ([]byte, error) {
+		n++
+		body, err := io.ReadAll(r)
+		if n == 1 {
+			docFile(t, h.dir, "report.md", "newer text")
+			h.ok(as(lane, launch), "ready", "r")
+			committed = docLatest(t, db, lane, "report", "")
+		}
+		return body, err
+	})
+	h.ok(nil, "close", id(lane))
+	assertReportRetained(t, h, db, lane, committed, "newer text")
+}
+
+func TestR2PathRace(t *testing.T) {
+	for _, command := range []string{"done", "close"} {
+		t.Run(command, func(t *testing.T) {
+			h := newHarness(t)
+			_, lane, launch := docLane(t, h)
+			db := h.openDB()
+			planned := docFile(t, h.dir, "planned.md", "wrong report")
+			actual := docFile(t, h.dir, "actual.md", "actual report")
+			docExec(t, db, `update tasks set report_path = ? where id = ?`, planned, lane)
+			var committed document
+			n := 0
+			setVar(t, &readDocumentBody, func(r io.Reader) ([]byte, error) {
+				n++
+				if n == 1 {
+					h.ok(as(lane, launch), "ready", "r", "--report", actual)
+					committed = docLatest(t, db, lane, "report", "")
+				}
+				return io.ReadAll(r)
+			})
+			if command == "close" {
+				h.ok(nil, "close", id(lane))
+			} else {
+				h.ok(as(lane, launch), "done", "fin")
+			}
+			assertReportRetained(t, h, db, lane, committed, "actual report")
+		})
+	}
+}
+
+func TestR2HostChangeBetween(t *testing.T) {
+	h := newHarness(t)
+	_, lane, launch := docLane(t, h)
+	db := h.openDB()
+	path := docFile(t, h.dir, "report.md", "saved report")
+	h.ok(as(lane, launch), "ready", "r", "--report", path)
+	committed := docLatest(t, db, lane, "report", "")
+	docFile(t, h.dir, "report.md", "wrong server text")
+	setVar(t, &readDocumentBody, func(r io.Reader) ([]byte, error) {
+		docExec(t, db, `update launches set machine = 'host-b' where id = ?`, launch)
+		return io.ReadAll(r)
+	})
+	h.ok(nil, "close", id(lane))
+	assertReportRetained(t, h, db, lane, committed, "saved report")
+}
+
+func TestDocumentsPurgeBusyReader(t *testing.T) {
+	h := newHarness(t)
+	root := h.newTask("root", "orchestrator", 0)
+	path := docFile(t, h.dir, "plan.md", "purge text")
+	out := h.ok(nil, "doc", "set", id(root), "plan", "--file", path)
+	db := h.openDB()
+	db.SetMaxOpenConns(1)
+	docExec(t, db, `pragma busy_timeout = 5000`)
+	readerDB, err := sql.Open("sqlite", "file:"+h.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readerDB.Close()
+	reader, err := readerDB.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	if _, err := reader.ExecContext(context.Background(), `begin`); err != nil {
+		t.Fatal(err)
+	}
+	defer reader.ExecContext(context.Background(), `rollback`)
+	var count int
+	if err := reader.QueryRowContext(context.Background(), `select count(*) from doc_blobs`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("reader snapshot: %d %v", count, err)
+	}
+	var stdout, stderr strings.Builder
+	c := &ctx{getenv: h.getenv(nil), db: db, out: &stdout, errw: &stderr}
+	start := time.Now()
+	if code := runCtx(c, []string{"doc", "rm", id(num(out, "doc_id")), "--purge"}); code != 0 {
+		t.Fatalf("purge: %d %s %s", code, stdout.String(), stderr.String())
+	}
+	if elapsed := time.Since(start); elapsed >= 750*time.Millisecond {
+		t.Errorf("purge waited for reader: %s", elapsed)
+	} else {
+		t.Logf("purge with active reader: %s", elapsed)
+	}
+	start = time.Now()
+	if code := runCtx(c, []string{"note", "after purge", "--as", id(root)}); code != 0 {
+		t.Fatalf("next write: %d %s %s", code, stdout.String(), stderr.String())
+	}
+	if elapsed := time.Since(start); elapsed >= 750*time.Millisecond {
+		t.Errorf("next write delayed: %s", elapsed)
+	} else {
+		t.Logf("next write with active reader: %s", elapsed)
+	}
+	if timeout := docCount(t, db, `pragma busy_timeout`); timeout != 5000 {
+		t.Fatalf("busy timeout not restored: %d", timeout)
+	}
+	if n := docCount(t, db, `select count(*) from documents`); n != 0 {
+		t.Fatalf("purge retained %d rows", n)
+	}
+	if n := docCount(t, db, `select count(*) from events where kind = 'note' and summary = 'after purge'`); n != 1 {
+		t.Fatalf("next write not committed: %d", n)
 	}
 }
 

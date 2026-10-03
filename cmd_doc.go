@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"flag"
@@ -304,8 +305,27 @@ func cmdDocRm(c *ctx, args []string) (any, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	_, _ = db.Exec(`pragma wal_checkpoint(truncate)`)
+	checkpointDocuments(db)
 	return map[string]any{"ok": true, "action": "rm", "doc_id": id, "removed": removed}, exitOK, nil
+}
+
+// Checkpointing is best effort and must not wait for other ledger readers.
+func checkpointDocuments(db *sql.DB) {
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	var timeout int
+	if err := conn.QueryRowContext(ctx, `pragma busy_timeout`).Scan(&timeout); err != nil {
+		return
+	}
+	if _, err := conn.ExecContext(ctx, `pragma busy_timeout = 0`); err != nil {
+		return
+	}
+	defer conn.ExecContext(ctx, fmt.Sprintf("pragma busy_timeout = %d", timeout))
+	_, _ = conn.ExecContext(ctx, `pragma wal_checkpoint(truncate)`)
 }
 
 func cmdDocBackfill(c *ctx, args []string) (any, int, error) {

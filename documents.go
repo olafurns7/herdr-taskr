@@ -234,9 +234,20 @@ func reportDocumentPath(q queryer, taskID int64) (string, error) {
 	return path.String, err
 }
 
+type preparedReport struct {
+	input    documentInput
+	latestID int64
+}
+
+func newestReportID(q queryer, taskID int64) (int64, error) {
+	var id int64
+	err := q.QueryRow(`select coalesce(max(id), 0) from documents where task_id = ? and kind = 'report'`, taskID).Scan(&id)
+	return id, err
+}
+
 // prepareReport reads before the event transaction. Ready uses its explicit path
 // or the task default; terminal commands use the latest ready override.
-func prepareReport(q queryer, taskID int64, explicit string, ready bool) *documentInput {
+func prepareReport(q queryer, taskID int64, explicit string, ready bool) *preparedReport {
 	path := explicit
 	var err error
 	if path == "" {
@@ -255,16 +266,34 @@ func prepareReport(q queryer, taskID int64, explicit string, ready bool) *docume
 	if err != nil {
 		return nil
 	}
-	in := fileDocument(path, host)
-	return &in
+	latestID, err := newestReportID(q, taskID)
+	if err != nil {
+		return nil
+	}
+	return &preparedReport{input: fileDocument(path, host), latestID: latestID}
 }
 
-func captureReport(tx *sql.Tx, taskID, eventID int64, in *documentInput) error {
-	if in == nil {
+func captureReport(tx *sql.Tx, taskID, eventID int64, report *preparedReport) error {
+	if report == nil {
 		return nil
 	}
 	return captureDocument(tx, func() error {
-		_, _, err := storeDocument(tx, taskID, "report", "", *in, ptr(eventID), 0)
+		path, err := reportDocumentPath(tx, taskID)
+		if err != nil {
+			return err
+		}
+		host, err := documentHost(tx, taskID)
+		if err != nil {
+			return err
+		}
+		latestID, err := newestReportID(tx, taskID)
+		if err != nil {
+			return err
+		}
+		if path != report.input.Path || host != report.input.Host || latestID != report.latestID {
+			return nil
+		}
+		_, _, err = storeDocument(tx, taskID, "report", "", report.input, ptr(eventID), 0)
 		return err
 	})
 }

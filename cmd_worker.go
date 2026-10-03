@@ -153,7 +153,7 @@ func writeWorkerEvent(c *ctx, ww workerWrite) (any, int, error) {
 		return nil, 0, err
 	}
 	defer closeDB(c, db)
-	var report *documentInput
+	var report *preparedReport
 	if ww.kind == "ready" || ww.kind == "done" || ww.kind == "fail" {
 		w, err := resolveWriter(c, db, ww.as)
 		if err != nil {
