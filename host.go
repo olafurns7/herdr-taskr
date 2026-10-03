@@ -65,7 +65,7 @@ func hiddenOnly(c *ctx, name string) error {
 
 // cmdHost is a client daemon's pass: `_host observe --agents JSON` records
 // the host's heartbeat, applies its agent listing to its own launches, and
-// returns the panes to watch.
+// returns the panes to watch and wanted workspace tokens.
 func cmdHost(c *ctx, args []string) (any, int, error) {
 	if err := hiddenOnly(c, "_host"); err != nil {
 		return nil, 0, err
@@ -120,11 +120,27 @@ func cmdHost(c *ctx, args []string) (any, int, error) {
 	if panes == nil {
 		panes = []string{}
 	}
+	want, err := wantedWorkspaceTokens(db, host)
+	reply := map[string]any{"ok": true, "observed": n, "watch": panes}
+	if err != nil {
+		if c.log != nil {
+			c.log.logf("campaign token query failed: %v", err)
+		}
+	} else {
+		tokens := map[string]workspaceTokenValues{}
+		for workspace, ts := range want {
+			if ts.hasCampaign {
+				tokens[workspace] = workspaceTokenValues{Campaign: ts.campaign, Parent: ts.parent}
+			}
+		}
+		reply["workspace_tokens"] = tokens
+	}
 	asks, err := claimOwnerAsks(db, host, nil)
 	if err != nil {
 		return nil, 0, dbErr(err)
 	}
-	return map[string]any{"ok": true, "observed": n, "watch": panes, "owner_asks": asks}, exitOK, nil
+	reply["owner_asks"] = asks
+	return reply, exitOK, nil
 }
 
 // cmdPromptPhase is a prompt split for a lane on the caller's host.
@@ -358,9 +374,9 @@ type clientState struct {
 }
 
 // clientDaemon is `taskr daemon` on a client host: no ledger, dashboard,
-// peer push or tokens. Every clientObserveEvery, and after each Herdr pane
+// or peer push. Every clientObserveEvery, and after each Herdr pane
 // change, it sends this host's agent listing to the server, which returns
-// the panes to watch.
+// the panes to watch and workspace tokens to publish locally.
 func clientDaemon(c *ctx, raw string, args []string) int {
 	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
 	once := fs.Bool("once", false, "run one observation pass and exit")
@@ -482,12 +498,18 @@ func clientDaemon(c *ctx, raw string, args []string) int {
 }
 
 // hostRelay is the client daemon's state: the server's last watch list and
-// the subscription that wakes it.
+// the subscription that wakes it, plus the shared workspace token writer.
 type hostRelay struct {
 	raw, sock, statePath string
 	log                  *daemonLog
 	mu                   sync.Mutex
 	watch                []string
+	workspaceWriter      *daemon
+}
+
+type workspaceTokenValues struct {
+	Campaign string `json:"campaign"`
+	Parent   string `json:"parent,omitempty"`
 }
 
 // pass sends one agent listing. Without a listing nothing is sent: an empty
@@ -528,13 +550,17 @@ func (h *hostRelay) observe() error {
 		return e
 	}
 	var r struct {
-		Watch     []string               `json:"watch"`
-		OwnerAsks []ownerAskNotification `json:"owner_asks"`
-		Error     string                 `json:"error"`
+		Watch           []string                        `json:"watch"`
+		OwnerAsks       []ownerAskNotification          `json:"owner_asks"`
+		WorkspaceTokens map[string]workspaceTokenValues `json:"workspace_tokens"`
+		Error           string                          `json:"error"`
 	}
-	json.Unmarshal([]byte(lastLine(rep.Stdout)), &r)
+	parseErr := json.Unmarshal([]byte(lastLine(rep.Stdout)), &r)
 	if rep.Exit != exitOK {
 		return &exitErr{rep.Exit, "rejected", "server: " + r.Error}
+	}
+	if parseErr != nil {
+		return fmt.Errorf("server observe reply: %w", parseErr)
 	}
 	h.mu.Lock()
 	h.watch = r.Watch
@@ -550,6 +576,18 @@ func (h *hostRelay) observe() error {
 			continue
 		}
 		h.log.logf("notified ask %d", a.ID)
+	}
+	// A missing field is an older server or a failed query: preserve tokens.
+	if r.WorkspaceTokens != nil {
+		if h.workspaceWriter == nil {
+			h.workspaceWriter = &daemon{sock: h.sock, log: h.log}
+		}
+		want := map[string]workspaceTokenState{}
+		for workspace, ts := range r.WorkspaceTokens {
+			want[workspace] = workspaceTokenState{campaign: ts.Campaign, parent: ts.Parent,
+				hasCampaign: ts.Campaign != "", hasParent: ts.Parent != ""}
+		}
+		h.workspaceWriter.writeWorkspaceTokens(want)
 	}
 	return notifyErr
 }
@@ -590,6 +628,9 @@ func (h *hostRelay) run(cx context.Context) string {
 		case <-gone:
 			return "socket removed"
 		case <-tick.C:
+			if h.workspaceWriter != nil {
+				h.workspaceWriter.failedWorkspaceWant = nil
+			}
 		case <-dirty:
 			select {
 			case <-cx.Done():
