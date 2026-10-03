@@ -42,7 +42,7 @@ One ledger on one server host. The server daemon (`dashboard.addr` = `tailnet`) 
 - Major checkpoints: lane ready/done; review verdicts and PR/release refs; handovers, adoptions and decisions; orchestrator notes (phase changes).
 - Everything else is the quiet feed.
 - The dashboard is read-only: it shows what needs a person and the next action; owner asks are answered in the orchestrator's pane.
-- Technical constraints: Preact + TypeScript built with Vite and embedded in the Go binary; no runtime CDN or remote assets; webfonts and other assets must be bundled in the binary and served by the daemon; strict CSP with self-only script, style, and font sources; render all ledger text as text, never HTML; light and dark follow the OS setting; support desktop and phone widths. `/api/state` may gain fields, and older hubs ignore unknown peer fields.
+- Technical constraints: Preact + TypeScript built with Vite and embedded in the Go binary; no runtime CDN or remote assets; webfonts and other assets must be bundled in the binary and served by the daemon; strict CSP with self-only script, style, and font sources; ledger strings are shown as plain text; captured documents are rendered from Markdown into DOM nodes through an allow-list; nothing is rendered as HTML and no remote asset is fetched; light and dark follow the OS setting; support desktop and phone widths. `/api/state` may gain fields, and older hubs ignore unknown peer fields.
 
 ## Evidence on Hand
 
@@ -56,3 +56,9 @@ One ledger on one server host. The server daemon (`dashboard.addr` = `tailnet`) 
 3. Compact and readable at a glance: aligned rows and machine/campaign grouping let users scan many lanes; explicit status words and marks carry state alongside restrained colour.
 4. Truthful: every signal comes from the ledger or Herdr's observed state; nothing is inferred beyond what the data says, and staleness is shown honestly.
 5. Read-only and calm: the page informs; actions happen where the agents are.
+
+## Campaign archive and documents
+
+The local ledger archive, complete campaign history, and captured document versions are reachable at `#/campaigns`, `#/campaign/ID`, and `#/doc/ID`; `#/` keeps the dashboard. Other views load once, with Reload and paged lists, while dashboard polling is paused. Peer snapshots have no campaign-page links. Campaigns retain the goal, plan, named documents, decisions, handovers and every lane, including closed work. Goal selection matches the handover, with a notice when a later version was not captured.
+
+Captured Markdown becomes allow-listed DOM nodes; plain text stays preformatted, and rendering failures retain the complete body as plain text with a notice. A link is made only for an absolute `http://`, `https://` or `mailto:` target; HTTP targets require a host. Images remain alt text and a plain URL. A document that was not captured shows its path, host and reason. No document HTML is interpreted and no remote asset is fetched.

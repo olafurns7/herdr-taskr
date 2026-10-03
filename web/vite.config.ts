@@ -10,7 +10,11 @@ export default defineConfig({
     assetsDir: "assets",
     assetsInlineLimit: 0,
     cssCodeSplit: false,
-    modulePreload: { polyfill: false },
+    modulePreload: {
+      polyfill: false,
+      // The renderer imports its parser after crossing the lazy boundary.
+      resolveDependencies: (_filename, dependencies) => dependencies.filter(path => !path.includes("markdown-it-")),
+    },
     sourcemap: false,
     target: "es2022",
     // Preact's runtime keeps its dangerouslySetInnerHTML path (this app never
@@ -19,7 +23,10 @@ export default defineConfig({
     rolldownOptions: {
       output: {
         entryFileNames: "assets/app-[hash].js",
-        codeSplitting: { groups: [{ name: "preact", test: /[\\/]node_modules[\\/]preact[\\/]/ }] },
+        codeSplitting: { groups: [
+          { name: "preact", test: /[\\/]node_modules[\\/]preact[\\/]/ },
+          { name: "markdown-it", test: /[\\/]node_modules[\\/](markdown-it|entities|linkify-it|mdurl|punycode\.js|uc\.micro)[\\/]/ },
+        ] },
       },
     },
   },

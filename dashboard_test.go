@@ -194,10 +194,16 @@ var sinks = regexp.MustCompile(`dangerouslySetInnerHTML|innerHTML|outerHTML|inse
 // bytes, so a sink added to that file fails like one anywhere else. The chunk
 // changes when Preact, Vite or the set of Preact exports the app imports
 // changes: check the new chunk is Preact's own code, then record its sha256.
-const preactRuntimeSHA256 = "6adaf898a767ff6e335c2009c764230a8d469693eabd2321c4de63e8b432c011"
+const preactRuntimeSHA256 = "92fd7803f886985b4350f416dd4b898d162f7046e3fef97d8d586cfe62cf748a"
+
+// The parser's link normalisation names URL schemes and fetches nothing.
+// The page still renders through the allow-list; connect-src stays 'self'.
+// Only these exact vendor bytes may name remote schemes; every HTML/code
+// sink and every remote-asset pattern remains forbidden in this chunk.
+const markdownItSHA256 = "b29e31221c28a486c3b461971437ca350c5ef608c8ea4a4e9fbe31e082b5864b"
 
 func TestWebNoHTMLSinks(t *testing.T) {
-	scanned, pinned := 0, 0
+	scanned, pinned, parserPinned := 0, 0, 0
 	for _, root := range []string{"web/src", "web/dist"} {
 		err := filepath.WalkDir(root, func(path string, e os.DirEntry, err error) error {
 			if err != nil || e.IsDir() || strings.HasSuffix(path, ".woff2") {
@@ -210,6 +216,13 @@ func TestWebNoHTMLSinks(t *testing.T) {
 			scanned++
 			text := string(b)
 			found := sinks.FindAllString(text, -1)
+			sum := sha256.Sum256(b)
+			parserVendor := root == "web/dist" && hex.EncodeToString(sum[:]) == markdownItSHA256
+			if parserVendor {
+				parserPinned++
+			} else if root == "web/dist" && strings.HasPrefix(filepath.Base(path), "markdown-it-") {
+				t.Errorf("%s (sha256 %s) is not the pinned Markdown parser: review it and re-pin markdownItSHA256", path, hex.EncodeToString(sum[:]))
+			}
 			if sum := sha256.Sum256(b); root == "web/dist" && hex.EncodeToString(sum[:]) == preactRuntimeSHA256 {
 				pinned++
 				var other []string
@@ -232,6 +245,9 @@ func TestWebNoHTMLSinks(t *testing.T) {
 			}
 			text = regexp.MustCompile(`http://www\.w3\.org/[\w/.]+`).ReplaceAllString(text, "") // namespace names
 			for _, ext := range []string{"http://", "https://", "//cdn", "@import", "url(//"} {
+				if parserVendor && (ext == "http://" || ext == "https://") {
+					continue
+				}
 				if strings.Contains(text, ext) {
 					t.Errorf("%s references %q; the page must be self-contained", path, ext)
 				}
@@ -242,8 +258,8 @@ func TestWebNoHTMLSinks(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if scanned < 10 || pinned != 1 {
-		t.Fatalf("scanned %d files, %d of them the pinned Preact runtime; is web/dist built?", scanned, pinned)
+	if scanned < 10 || pinned != 1 || parserPinned != 1 {
+		t.Fatalf("scanned %d files, %d pinned Preact runtimes, %d pinned Markdown parsers; is web/dist built?", scanned, pinned, parserPinned)
 	}
 	// The built page has no inline script or style for the CSP to refuse.
 	for _, tag := range regexp.MustCompile(`<script[^>]*>`).FindAllString(dashboardPage, -1) {
@@ -1100,6 +1116,59 @@ func TestTallyAndMarks(t *testing.T) {
 // The built app comes from the binary: every file under web/dist/assets is
 // served long-cached with its type, the font licence beside it, and
 // nothing else; the embedded stylesheet is nonempty (the UI uses system fonts).
+// Renderer filenames may occur only at the dynamic import or in Vite's
+// leading preload map; the parser filename must never occur in the app.
+func lazyMarkdownImports(app, renderer, parser string) bool {
+	if strings.Contains(app, parser) {
+		return false
+	}
+	dynamic := regexp.MustCompile("import\\(\\s*[\"'\x60]\\./" + regexp.QuoteMeta(renderer) + "[\"'\x60]\\s*\\)")
+	if !dynamic.MatchString(app) {
+		return false
+	}
+	remaining := dynamic.ReplaceAllString(app, "")
+	preload := regexp.MustCompile(`^(?:const|var)\s+__vite__mapDeps=[^;]+;`)
+	remaining = preload.ReplaceAllStringFunc(remaining, func(code string) string { return strings.ReplaceAll(code, renderer, "") })
+	return !strings.Contains(remaining, renderer)
+}
+
+func TestDashboardAssetImportMutations(t *testing.T) {
+	entries, err := webFS.ReadDir("web/dist/assets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var app, renderer, parser string
+	for _, entry := range entries {
+		switch {
+		case strings.HasPrefix(entry.Name(), "app-"):
+			body, err := webFS.ReadFile("web/dist/assets/" + entry.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			app = string(body)
+		case strings.HasPrefix(entry.Name(), "markdown-it-"):
+			parser = entry.Name()
+		case strings.HasPrefix(entry.Name(), "markdown-"):
+			renderer = entry.Name()
+		}
+	}
+	if renderer == "" || parser == "" || !lazyMarkdownImports(app, renderer, parser) {
+		t.Fatal("baseline lazy imports fail")
+	}
+	for _, mutation := range []struct{ name, code string }{
+		{"m8 parser side-effect import", `import"./` + parser + `";`},
+		{"m9 renderer side-effect import", `import"./` + renderer + `";`},
+		{"renderer static import", `import { Markdown } from "./` + renderer + `";`},
+		{"renderer outside allowed contexts", `const filename="` + renderer + `";`},
+	} {
+		t.Run(mutation.name, func(t *testing.T) {
+			if lazyMarkdownImports(app+mutation.code, renderer, parser) {
+				t.Fatal("eager/orphaned import escaped the guard")
+			}
+		})
+	}
+}
+
 func TestDashboardAssets(t *testing.T) {
 	h := newHarness(t)
 	d := h.dash()
@@ -1108,6 +1177,8 @@ func TestDashboardAssets(t *testing.T) {
 		t.Fatalf("web/dist/assets = %v, %v", entries, err)
 	}
 	var css string
+	js := map[string]string{}
+	var app, renderer, parser string
 	for _, e := range entries {
 		w, _ := serve(d, req("GET", "/assets/"+e.Name(), ""))
 		want, _ := webFS.ReadFile("web/dist/assets/" + e.Name())
@@ -1118,9 +1189,40 @@ func TestDashboardAssets(t *testing.T) {
 		if filepath.Ext(e.Name()) == ".css" {
 			css += w.Body.String()
 		}
-		if filepath.Ext(e.Name()) != ".woff2" && !strings.Contains(dashboardPage, "/assets/"+e.Name()) {
+		lazy := strings.HasPrefix(e.Name(), "markdown-") || strings.HasPrefix(e.Name(), "markdown-it-")
+		if lazy {
+			if strings.Contains(dashboardPage, e.Name()) {
+				t.Errorf("index.html eagerly loads or preloads %s", e.Name())
+			}
+		} else if filepath.Ext(e.Name()) != ".woff2" && !strings.Contains(dashboardPage, "/assets/"+e.Name()) {
 			t.Errorf("index.html does not load %s", e.Name())
 		}
+		if filepath.Ext(e.Name()) == ".js" {
+			js[e.Name()] = string(want)
+			switch {
+			case strings.HasPrefix(e.Name(), "app-"):
+				app = e.Name()
+			case strings.HasPrefix(e.Name(), "markdown-it-"):
+				if parser != "" {
+					t.Fatal("more than one parser chunk")
+				}
+				parser = e.Name()
+			case strings.HasPrefix(e.Name(), "markdown-"):
+				if renderer != "" {
+					t.Fatal("more than one renderer chunk")
+				}
+				renderer = e.Name()
+			}
+		}
+	}
+	// The app dynamically imports the renderer; its vendor dependency follows
+	// that lazy boundary. Neither Markdown chunk is in the initial page.
+	if app == "" || renderer == "" || parser == "" {
+		t.Fatalf("missing import-chain chunks: app=%q renderer=%q parser=%q", app, renderer, parser)
+	}
+	parserDependency := regexp.MustCompile("from[\"'\x60]\\./" + regexp.QuoteMeta(parser) + "[\"'\x60]")
+	if !lazyMarkdownImports(js[app], renderer, parser) || !parserDependency.MatchString(js[renderer]) {
+		t.Fatal("Markdown chunks are not isolated on the app -> renderer -> parser lazy import chain")
 	}
 	if strings.TrimSpace(css) == "" {
 		t.Error("the embedded stylesheet is empty")
