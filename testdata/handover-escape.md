@@ -3,6 +3,8 @@
 Rendered 2026\-09\-29T12:00:00\.000Z from the taskr ledger.
 A new session takes over with `taskr adopt 1`, then `taskr wait --as 1`.
 
+Goal: none recorded; run `taskr doc set 1 goal --file PATH`
+
 ## Identity
 
 - Orchestrator: top, task 1, orchestrator, status open

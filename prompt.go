@@ -46,8 +46,10 @@ func cmdPrompt(c *ctx, args []string) (any, int, error) {
 		return nil, 0, err
 	}
 	data, abs := map[string]any{}, ""
+	var fileBody []byte
 	if *file != "" {
-		fileBody, err := os.ReadFile(*file)
+		var err error
+		fileBody, err = os.ReadFile(*file)
 		if err != nil {
 			return nil, 0, usageErr("read prompt file: %v", err)
 		}
@@ -64,6 +66,10 @@ func cmdPrompt(c *ctx, args []string) (any, int, error) {
 	}
 	defer closeDB(c, db)
 	d := promptDelivery(*text, abs, data, *confirm, time.Duration(*confirmTimeout)*time.Millisecond)
+	if abs != "" {
+		in := bodyDocument(fileBody, abs)
+		d.document = &in
+	}
 	d.receiptTimeout = time.Duration(*receiptTimeout) * time.Millisecond
 	return deliver(c, db, id, d)
 }
@@ -77,7 +83,15 @@ func promptDelivery(text, abs string, data map[string]any, confirm bool, timeout
 			return fmt.Sprintf("First taskr got %d; read %s; execute exactly.", attempt, abs)
 		}
 	}
-	return delivery{compose: compose, body: text, data: data, reopen: true, confirm: confirm, confirmTimeout: timeout,
+	in := bodyDocument([]byte(text), "")
+	if abs != "" {
+		in = documentInput{Path: abs, Reason: "client"}
+		in.Hash, _ = data["sha256"].(string)
+		if n, ok := data["bytes"].(int64); ok {
+			in.Bytes = ptr(n)
+		}
+	}
+	return delivery{document: &in, compose: compose, body: text, data: data, reopen: true, confirm: confirm, confirmTimeout: timeout,
 		receiptTimeout: defaultReceiptTimeout}
 }
 
@@ -86,6 +100,7 @@ func promptDelivery(text, abs string, data map[string]any, confirm bool, timeout
 // file's hash. Without confirm, a positive receiptTimeout arms a receipt
 // deadline whose alarm goes to receiptRecipient, or else the target's parent.
 type delivery struct {
+	document         *documentInput
 	compose          func(attempt int64) string
 	body             string
 	data             map[string]any
@@ -200,10 +215,15 @@ func beginAttempt(c *ctx, db *sql.DB, taskID int64, d delivery, here bool, ready
 		if recip == nil {
 			recip = parentRecipient(t)
 		}
-		if d.confirm || d.receiptTimeout <= 0 || !t.ParentID.Valid || recip == nil {
-			return nil
+		if !d.confirm && d.receiptTimeout > 0 && t.ParentID.Valid && recip != nil {
+			if err := armReceipt(tx, a.id, taskID, a.launchID, *recip, d.receiptTimeout); err != nil {
+				return err
+			}
 		}
-		return armReceipt(tx, a.id, taskID, a.launchID, *recip, d.receiptTimeout)
+		if d.document != nil {
+			return capturePrompt(tx, taskID, a.id, *d.document)
+		}
+		return nil
 	})
 	if err != nil {
 		return a, err
