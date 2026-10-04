@@ -108,7 +108,7 @@ func sameDocument(old document, in documentInput) bool {
 	if in.Reason == "" {
 		return old.Captured && old.Hash.String == in.Hash
 	}
-	return !old.Captured && old.Reason.String == in.Reason && old.Path.String == in.Path
+	return !old.Captured && old.Reason.String == in.Reason && old.Path.String == in.Path && old.Host.String == in.Host
 }
 
 func storeDocument(tx *sql.Tx, taskID int64, kind, name string, in documentInput, eventID *int64, backfill int) (document, bool, error) {
@@ -119,7 +119,7 @@ func storeDocument(tx *sql.Tx, taskID int64, kind, name string, in documentInput
 	if err == nil && sameDocument(old, in) {
 		return old, true, nil
 	}
-	if in.Reason == "missing" {
+	if in.Reason == "missing" || in.Reason == "client" {
 		captured, err := scanDocument(tx.QueryRow(`select `+documentCols+` from documents
             where task_id = ? and kind = ? and name = ? and captured = 1 order by version desc limit 1`, taskID, kind, name))
 		if err == nil {
@@ -183,7 +183,7 @@ func documentHost(q queryer, taskID int64) (string, error) {
 }
 
 func recordClientDocument(c *ctx, taskID int64, kind, name string, in documentInput, eventID *int64) {
-	if c != nil && c.docUpload && in.Reason == "client" {
+	if c != nil && c.docUpload && in.Reason == "client" && in.Host == c.machine {
 		c.docUploads = append(c.docUploads, rpcDocWant{
 			Task: taskID, Kind: kind, Name: name, Path: in.Path, EventID: eventID,
 		})
@@ -227,12 +227,8 @@ func capturePrompt(tx *sql.Tx, c *ctx, taskID, eventID int64, in documentInput) 
 			} else {
 				name = filepath.Base(in.Path)
 			}
-			host, err := documentHost(tx, taskID)
-			if err != nil {
-				return err
-			}
-			if host != "" {
-				in.Host, in.Reason, in.Body, in.Format = host, "client", "", ""
+			if c != nil && c.machine != "" {
+				in.Host, in.Reason, in.Body, in.Format = c.machine, "client", "", ""
 			}
 		}
 		_, _, err := storeDocument(tx, taskID, kind, name, in, ptr(eventID), 0)

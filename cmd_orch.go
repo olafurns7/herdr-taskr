@@ -70,11 +70,7 @@ func cmdNew(c *ctx, args []string) (any, int, error) {
 	defer closeDB(c, db)
 	var briefInput *documentInput
 	if briefPath != "" {
-		host, err := resolveMachine(c, db, *machine, flagWasSet(fs, "machine"), callerMachine(c))
-		if err != nil {
-			return nil, 0, err
-		}
-		in := fileDocument(briefPath, host.String)
+		in := fileDocument(briefPath, callerMachine(c).String)
 		briefInput = &in
 	}
 	var id int64
@@ -87,13 +83,13 @@ func cmdNew(c *ctx, args []string) (any, int, error) {
 		if err != nil {
 			return err
 		}
-		// Paths exist on the task's host: the server checks its own; an RPC
-		// caller's client checked before sending; a third host is not checked.
-		if !*planned && *role != "gate" && !host.Valid {
-			if err := requireDirectory(dir); err != nil {
-				return err
+		if !*planned && *role != "gate" {
+			if !host.Valid {
+				if err := requireDirectory(dir); err != nil {
+					return err
+				}
 			}
-			if briefPath != "" {
+			if !c.rpc && briefPath != "" {
 				if err := requireFile(briefPath); err != nil {
 					return err
 				}

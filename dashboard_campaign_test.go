@@ -29,6 +29,38 @@ func campaignDoc(t *testing.T, db *sql.DB, task int64, kind, name, body string, 
 	}
 	return d
 }
+
+func campaignLegacyMiss(t *testing.T, db *sql.DB, task int64, kind, name, path, host string) document {
+	t.Helper()
+	var d document
+	if err := withTx(db, func(tx *sql.Tx) error {
+		root, err := rootOf(tx, task)
+		if err != nil {
+			return err
+		}
+		latest, err := latestDocument(tx, task, kind, name)
+		if err != nil {
+			return err
+		}
+		res, err := tx.Exec(`insert into documents (root_id, task_id, kind, name, version, sha256, bytes, format,
+			captured, reason, source_path, source_host, event_id, backfill, created_at)
+			values (?, ?, ?, ?, ?, NULL, NULL, NULL, 0, 'client', ?, ?, NULL, 0, ?)`,
+			root, task, kind, name, latest.Version+1, path, host, now())
+		if err != nil {
+			return err
+		}
+		id, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+		d, err = scanDocument(tx.QueryRow(`select `+documentCols+` from documents where id = ?`, id))
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
 func campaignGET(t *testing.T, d *dashboard, path string) map[string]any {
 	t.Helper()
 	w, m := serve(d, req("GET", path, ""))
@@ -313,7 +345,7 @@ func TestCampaignGoalMatchesHandover(t *testing.T) {
 	db := h.openDB()
 	first := campaignDoc(t, db, root, "goal", "", "# Captured first", nil)
 	latest := campaignDoc(t, db, root, "goal", "", "# Captured latest", nil)
-	miss := campaignDoc(t, db, root, "goal", "", "client", nil)
+	miss := campaignLegacyMiss(t, db, root, "goal", "", "fixture.md", "client-host")
 	d := h.dash()
 	m := campaignGET(t, d, "/api/campaign/"+id(root))
 	goal := m["goal"].(map[string]any)

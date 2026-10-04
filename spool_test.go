@@ -135,7 +135,8 @@ func TestSpoolRecordCommandsQueueAfterTransportWindow(t *testing.T) {
 			}
 			record := files[0].record
 			if record.Version != 1 || record.Seq != 1 || record.RequestKey != key || record.Request.RequestKey != key ||
-				!validSpoolTime(record.QueuedAt) || record.Request.QueuedAt != "" || len(record.Request.Capabilities) == 0 {
+				!validSpoolTime(record.QueuedAt) || record.Request.QueuedAt != "" ||
+				hasCapability(record.Request.Capabilities, docUploadCapability) != rpcCarriesDocument(record.Request.Argv) {
 				t.Fatalf("queued record = %+v", record)
 			}
 			info, err := os.Stat(files[0].path)

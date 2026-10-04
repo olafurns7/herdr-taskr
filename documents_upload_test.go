@@ -30,6 +30,22 @@ func uploadEnv(base map[string]string, extra ...map[string]string) map[string]st
 	return out
 }
 
+type uploadOrderWriter struct {
+	mu     *sync.Mutex
+	events *[]string
+	step   string
+	buf    bytes.Buffer
+}
+
+func (w *uploadOrderWriter) Write(p []byte) (int, error) {
+	if len(p) > 0 {
+		w.mu.Lock()
+		*w.events = append(*w.events, w.step)
+		w.mu.Unlock()
+	}
+	return w.buf.Write(p)
+}
+
 func uploadClient(t *testing.T, r *twoHost, home string, env map[string]string, args ...string) (int, string, string) {
 	t.Helper()
 	r.caller.Store("host-a")
@@ -104,6 +120,15 @@ func TestDocUploadCapturePoints(t *testing.T) {
 	if !textDoc.Captured || textDoc.Host.Valid || textDoc.Reason.Valid {
 		t.Fatalf("text prompt document = %+v", textDoc)
 	}
+	serverLane := r.newTask("lane-server-prompt", "implementer", root, "--pane", "w1:p2")
+	serverLaunch := num(r.one(0, nil, "launch", id(serverLane), "--provider", "codex", "--model", "m", "--effort", "high"), "launch_id")
+	serverPrompt := docFile(t, r.dir, "server-prompt.md", "caller-owned prompt")
+	r.write("prompt.stdout", `{"result":{"agent":{"agent_status":"working"}}}`, 0o644)
+	serverEnv := uploadEnv(as(serverLane, serverLaunch), map[string]string{"HERDR_SOCKET_PATH": r.herdrSock})
+	r.want(0, "host-a", serverEnv, "prompt", id(serverLane), "--file", serverPrompt, "--receipt-timeout", "0")
+	if d := docLatest(t, r.openDB(), serverLane, "prompt", filepath.Base(serverPrompt)); !d.Captured || d.Host.String != "host-a" || d.Path.String != serverPrompt {
+		t.Fatalf("client prompt for server lane = %+v", d)
+	}
 	if code, _, _ := r.cli("host-a", nil, "handover", "--as", id(root)); code != exitOK {
 		t.Fatalf("handover = %d", code)
 	}
@@ -111,6 +136,90 @@ func TestDocUploadCapturePoints(t *testing.T) {
 	if !handover.Captured || handover.Host.Valid || handover.Reason.Valid {
 		t.Fatalf("handover document = %+v", handover)
 	}
+}
+
+func TestDocUploadCallerOwnsBriefAndPrompt(t *testing.T) {
+	r := newTwoHost(t)
+	r.beat("host-b", 0)
+
+	ledgerBrief := docFile(t, r.dir, "ledger-brief.md", "ledger caller")
+	ledgerTask := num(r.one(0, nil, "new", "ledger-caller-brief", "--role", "orchestrator", "--cwd", r.dir,
+		"--machine", "host-b", "--brief", ledgerBrief), "task_id")
+	if d := docLatest(t, r.openDB(), ledgerTask, "goal", ""); !d.Captured || d.Host.Valid || d.Path.String != ledgerBrief {
+		t.Fatalf("ledger caller brief = %+v", d)
+	}
+
+	serverBrief := docFile(t, r.dir, "client-server-brief.md", "client caller, ledger task")
+	serverTask := num(r.want(0, "host-a", nil, "new", "client-caller-server-task", "--role", "orchestrator", "--cwd", r.dir,
+		"--machine", localMachine(), "--brief", serverBrief), "task_id")
+	if r.machineOf("tasks", serverTask) != "NULL" {
+		t.Fatalf("server task machine = %s", r.machineOf("tasks", serverTask))
+	}
+	assertClientDocument(t, r, serverTask, "goal", "", serverBrief, nil)
+
+	secondClientBrief := docFile(t, r.dir, "second-client-brief.md", "client caller, second client task")
+	secondClientTask := num(r.want(0, "host-a", nil, "new", "client-caller-second-client-task", "--role", "orchestrator", "--cwd", r.dir,
+		"--machine", "host-b", "--brief", secondClientBrief), "task_id")
+	if r.machineOf("tasks", secondClientTask) != "host-b" {
+		t.Fatalf("second client task machine = %s", r.machineOf("tasks", secondClientTask))
+	}
+	assertClientDocument(t, r, secondClientTask, "goal", "", secondClientBrief, nil)
+
+	root := r.newTask("prompt-root", "orchestrator", 0)
+	capture := func(name, caller, taskHost string, local bool) {
+		t.Helper()
+		task := r.newTask(name, "implementer", root)
+		if taskHost != "" {
+			docExec(t, r.openDB(), `update tasks set machine = ? where id = ?`, taskHost, task)
+		}
+		path := docFile(t, r.dir, name+".md", "prompt from "+caller)
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		in := bodyDocument(body, path)
+		machine := caller
+		if local {
+			machine = ""
+		} else {
+			in.Host, in.Reason = caller, "client"
+		}
+		c := &ctx{machine: machine, docUpload: true}
+		var eventID int64
+		if err := withTx(r.openDB(), func(tx *sql.Tx) error {
+			var err error
+			eventID, err = insertEvent(tx, event{TaskID: task, Kind: "prompt", Data: map[string]any{"file": path}})
+			if err != nil {
+				return err
+			}
+			return capturePrompt(tx, c, task, eventID, in)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if local {
+			d := docLatest(t, r.openDB(), task, "prompt", filepath.Base(path))
+			if !d.Captured || d.Host.Valid || len(c.docUploads) != 0 {
+				t.Fatalf("local prompt capture = %+v wants=%v", d, c.docUploads)
+			}
+			return
+		}
+		if len(c.docUploads) != 1 || c.docUploads[0].Path != path {
+			t.Fatalf("prompt upload wants = %+v", c.docUploads)
+		}
+		req := rpcBody(r.dir, nil, "prompt-capture-put-"+name, "_doc", "put")
+		req.Capabilities = []string{docUploadCapability}
+		req.Document = clientDocPayload(c.docUploads[0], fileDocument(path, ""), false, false)
+		_, rep, _ := r.post(caller, req)
+		if rep.Exit != exitOK {
+			t.Fatalf("prompt upload = %+v", rep)
+		}
+		if d := docLatest(t, r.openDB(), task, "prompt", filepath.Base(path)); !d.Captured || d.Host.String != caller {
+			t.Fatalf("uploaded prompt capture = %+v", d)
+		}
+	}
+	capture("prompt-ledger-caller", "ledger", "host-b", true)
+	capture("prompt-ledger-task", "host-a", "", false)
+	capture("prompt-second-client-task", "host-a", "host-b", false)
 }
 
 func TestDocUploadCapabilityGate(t *testing.T) {
@@ -130,6 +239,42 @@ func TestDocUploadCapabilityGate(t *testing.T) {
 	if rep.Exit != exitOK || rep.Upload == nil || len(*rep.Upload) != 1 || (*rep.Upload)[0].Task != lane || (*rep.Upload)[0].Path != path ||
 		strings.Contains(rep.Stdout, "upload") || !strings.Contains(raw, `"upload":[`) {
 		t.Fatalf("reply with capability = %+v %s", rep, raw)
+	}
+	base.Capabilities = nil
+	_, rep, raw = r.post("host-a", base)
+	if rep.Exit != exitOK || strings.Contains(raw, `"upload"`) {
+		t.Fatalf("replay without capability = %+v %s", rep, raw)
+	}
+}
+
+func TestDocUploadCapabilityOnlyOnDocumentCommands(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		argv []string
+		want bool
+	}{
+		{"new", []string{"--json", "new", "lane"}, true},
+		{"prompt", []string{"--json", "prompt", "1", "--file", "/tmp/prompt.md"}, true},
+		{"_prompt", []string{"--json", "_prompt", "begin", "1"}, true},
+		{"ready", []string{"--json", "ready", "ready"}, true},
+		{"done", []string{"--json", "done", "finished"}, true},
+		{"fail", []string{"--json", "fail", "failed"}, true},
+		{"close", []string{"--json", "close", "1"}, true},
+		{"doc set", []string{"--json", "doc", "set", "1", "goal"}, true},
+		{"doc backfill", []string{"--json", "doc", "backfill"}, true},
+		{"_doc put", []string{"--json", "_doc", "put"}, true},
+		{"hook", []string{"--json", "_hook"}, false},
+		{"host", []string{"--json", "_host"}, false},
+		{"wait", []string{"--json", "wait"}, false},
+		{"note", []string{"--json", "note", "text"}, false},
+		{"doc get", []string{"--json", "doc", "get", "1"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := rpcClientRequest(tc.argv, "/", "capability-scope-01", nil, nil)
+			if got := hasCapability(req.Capabilities, docUploadCapability); got != tc.want {
+				t.Fatalf("capability = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -263,6 +408,148 @@ func TestDocUploadPutValidationAndIdempotency(t *testing.T) {
 	}
 }
 
+func TestDocUploadReportStaysOnTaskHost(t *testing.T) {
+	r := newTwoHost(t)
+	root := r.newTask("report-root", "orchestrator", 0)
+	path := docFile(t, r.dir, "task-report.md", "report from task host")
+	task := r.newTask("report-on-host-b", "implementer", root, "--report", path)
+	docExec(t, r.openDB(), `update tasks set machine = 'host-b' where id = ?`, task)
+	c := &ctx{machine: "host-a", docUpload: true}
+	report := prepareReport(r.openDB(), task, path, true)
+	var eventID int64
+	if err := withTx(r.openDB(), func(tx *sql.Tx) error {
+		var err error
+		eventID, err = insertEvent(tx, event{TaskID: task, Kind: "ready", Data: map[string]any{"report": path}})
+		if err != nil {
+			return err
+		}
+		return captureReport(tx, c, task, eventID, report)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	d := docLatest(t, r.openDB(), task, "report", "")
+	if d.Captured || d.Reason.String != "client" || d.Host.String != "host-b" || len(c.docUploads) != 0 {
+		t.Fatalf("foreign caller report capture = %+v wants=%v", d, c.docUploads)
+	}
+	before := docCount(t, r.openDB(), `select count(*) from documents where task_id = ? and kind = 'report'`, task)
+	put := func(caller, key string) rpcReply {
+		t.Helper()
+		want := rpcDocWant{Task: task, Kind: "report", Path: path, EventID: ptr(eventID)}
+		req := rpcBody(r.dir, nil, key, "_doc", "put")
+		req.Capabilities = []string{docUploadCapability}
+		req.Document = clientDocPayload(want, fileDocument(path, ""), false, false)
+		_, rep, _ := r.post(caller, req)
+		return rep
+	}
+	if rep := put("host-a", "report-put-wrong-host-01"); rep.Exit != exitReject {
+		t.Fatalf("foreign report put = %+v", rep)
+	}
+	if got := docCount(t, r.openDB(), `select count(*) from documents where task_id = ? and kind = 'report'`, task); got != before {
+		t.Fatalf("foreign report put wrote a row: %d -> %d", before, got)
+	}
+	wrongPath := docFile(t, r.dir, "other-report.md", "wrong path")
+	wrongWant := rpcDocWant{Task: task, Kind: "report", Path: wrongPath, EventID: ptr(eventID)}
+	wrongReq := rpcBody(r.dir, nil, "report-put-wrong-path-01", "_doc", "put")
+	wrongReq.Capabilities = []string{docUploadCapability}
+	wrongReq.Document = clientDocPayload(wrongWant, fileDocument(wrongPath, ""), false, false)
+	if _, rep, _ := r.post("host-b", wrongReq); rep.Exit != exitReject {
+		t.Fatalf("wrong-path report put = %+v", rep)
+	}
+	if rep := put("host-b", "report-put-owner-host-01"); rep.Exit != exitOK {
+		t.Fatalf("task-host report put = %+v", rep)
+	}
+	if d := docLatest(t, r.openDB(), task, "report", ""); !d.Captured || d.Host.String != "host-b" || d.Path.String != path {
+		t.Fatalf("task-host report = %+v", d)
+	}
+}
+
+func TestDocUploadDifferentHostMisses(t *testing.T) {
+	r := newTwoHost(t)
+	root := r.newTask("miss-root", "orchestrator", 0)
+	task := r.newTask("miss-lane", "implementer", root)
+	path := docFile(t, r.dir, "same-prompt.md", "prompt")
+	name := filepath.Base(path)
+	for _, host := range []string{"host-a", "host-b"} {
+		in := documentInput{Path: path, Host: host, Reason: "client"}
+		if err := withTx(r.openDB(), func(tx *sql.Tx) error {
+			_, _, err := storeDocument(tx, task, "prompt", name, in, nil, 0)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := docCount(t, r.openDB(), `select count(*) from documents where task_id = ? and kind = 'prompt' and name = ?`, task, name); got != 2 {
+		t.Fatalf("same-path misses = %d, want 2", got)
+	}
+	if d := docLatest(t, r.openDB(), task, "prompt", name); d.Captured || d.Host.String != "host-b" || d.Version != 2 {
+		t.Fatalf("latest miss = %+v", d)
+	}
+}
+
+func TestDocUploadRepeatedReadyPreservesCapture(t *testing.T) {
+	r := newTwoHost(t)
+	root := uploadRoot(t, r)
+	path := docFile(t, r.dir, filepath.Join("reports", "repeat.md"), "report one")
+	lane, launch := uploadLane(t, r, root, "repeat-report", path)
+	for _, summary := range []string{"first", "second"} {
+		r.want(0, "host-a", as(lane, launch), "ready", summary, "--report", path)
+	}
+	if got := docCount(t, r.openDB(), `select count(*) from documents where task_id = ? and kind = 'report'`, lane); got != 2 {
+		t.Fatalf("repeat-ready rows = %d, want miss plus capture", got)
+	}
+
+	var mu sync.Mutex
+	failPut := false
+	url, ln, srv := retryEndpoint(t, r, func(w http.ResponseWriter, q *http.Request) {
+		raw, err := io.ReadAll(q.Body)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		var req rpcRequest
+		_ = json.Unmarshal(raw, &req)
+		name, args := rpcCommand(req.Argv)
+		if name == "_doc" && len(args) > 0 && args[0] == "put" {
+			mu.Lock()
+			fail := failPut
+			failPut = false
+			mu.Unlock()
+			if fail {
+				http.Error(w, "upload failed", http.StatusInternalServerError)
+				return
+			}
+		}
+		q.Body = io.NopCloser(bytes.NewReader(raw))
+		r.d.ServeHTTP(w, q)
+	})
+	go srv.Serve(ln)
+	mu.Lock()
+	failPut = true
+	mu.Unlock()
+	home := r.clientHome(url)
+	code, out, stderr := uploadClient(t, r, home, as(lane, launch), "ready", "third", "--report", path)
+	if code != exitOK || stderr != "" || len(strings.Split(strings.TrimSpace(out), "\n")) != 1 {
+		t.Fatalf("failed upload changed ready output: %d %q %q", code, out, stderr)
+	}
+	if got := docCount(t, r.openDB(), `select count(*) from documents where task_id = ? and kind = 'report'`, lane); got != 2 {
+		t.Fatalf("failed-repeat rows = %d, want 2", got)
+	}
+	if d := docLatest(t, r.openDB(), lane, "report", ""); !d.Captured || d.Version != 2 {
+		t.Fatalf("failed upload hid the captured report: %+v", d)
+	}
+
+	docFile(t, r.dir, filepath.Join("reports", "repeat.md"), "report two")
+	r.want(0, "host-a", as(lane, launch), "ready", "changed", "--report", path)
+	d := docLatest(t, r.openDB(), lane, "report", "")
+	if !d.Captured || d.Version != 3 || docCount(t, r.openDB(), `select count(*) from documents where task_id = ? and kind = 'report'`, lane) != 3 {
+		t.Fatalf("changed report versions = %+v", d)
+	}
+	var body string
+	if err := r.openDB().QueryRow(`select body from doc_blobs where sha256 = ?`, d.Hash.String).Scan(&body); err != nil || body != "report two" {
+		t.Fatalf("changed report body = %q, err=%v", body, err)
+	}
+}
+
 func TestDocUploadMissReasons(t *testing.T) {
 	r := newTwoHost(t)
 	root := uploadRoot(t, r)
@@ -336,6 +623,49 @@ func TestDocUploadBestEffortFailures(t *testing.T) {
 				t.Fatalf("primary capture changed after failed upload: %+v", d)
 			}
 		})
+	}
+}
+
+func TestDocUploadPromptOutputBeforeUpload(t *testing.T) {
+	r := newTwoHost(t)
+	root := uploadRoot(t, r)
+	path := docFile(t, r.dir, "ordered-prompt.md", "prompt")
+	lane, launch := uploadLane(t, r, root, "ordered-prompt", "")
+	r.write("prompt.stdout", `{"result":{"agent":{"agent_status":"working"}}}`, 0o644)
+	var mu sync.Mutex
+	var events []string
+	url, ln, srv := retryEndpoint(t, r, func(w http.ResponseWriter, q *http.Request) {
+		raw, err := io.ReadAll(q.Body)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		var req rpcRequest
+		_ = json.Unmarshal(raw, &req)
+		name, args := rpcCommand(req.Argv)
+		if name == "_doc" && len(args) > 0 && args[0] == "put" {
+			mu.Lock()
+			events = append(events, "upload")
+			mu.Unlock()
+		}
+		q.Body = io.NopCloser(bytes.NewReader(raw))
+		r.d.ServeHTTP(w, q)
+	})
+	go srv.Serve(ln)
+	home := r.clientHome(url)
+	env := uploadEnv(as(lane, launch), map[string]string{"HERDR_SOCKET_PATH": r.herdrSock})
+	out := &uploadOrderWriter{mu: &mu, events: &events, step: "stdout"}
+	var errOut bytes.Buffer
+	r.caller.Store("host-a")
+	code := cliMain([]string{"--json", "prompt", id(lane), "--file", path, "--receipt-timeout", "0"}, clientEnv(home, env), out, &errOut)
+	if code != exitOK || errOut.Len() != 0 {
+		t.Fatalf("prompt = %d stdout=%q stderr=%q", code, out.buf.String(), errOut.String())
+	}
+	mu.Lock()
+	got := append([]string(nil), events...)
+	mu.Unlock()
+	if !reflect.DeepEqual(got, []string{"stdout", "upload"}) {
+		t.Fatalf("prompt output/upload order = %v", got)
 	}
 }
 
@@ -442,6 +772,63 @@ func TestClientBackfillTwoPagesAndHostScope(t *testing.T) {
 	mu.Unlock()
 	if !reflect.DeepEqual(secondOffsets, []int{0, 200}) || secondPuts != 1 || docCount(t, r.openDB(), `select count(*) from documents where task_id = ?`, lane) != 201 {
 		t.Fatalf("second pages = %v, puts=%d", secondOffsets, secondPuts)
+	}
+}
+
+func TestClientBackfillUsesMissSourceHost(t *testing.T) {
+	r := newTwoHost(t)
+	r.beat("host-b", 0)
+	root := r.newTask("backfill-root", "orchestrator", 0)
+	path := docFile(t, r.dir, "caller-brief.md", "brief from caller")
+	create := rpcBody(r.dir, nil, "backfill-source-new-01", "new", "client-brief-on-host-b", "--role", "implementer",
+		"--parent", id(root), "--cwd", r.dir, "--machine", "host-b", "--brief", path)
+	_, rep, _ := r.post("host-a", create)
+	task := num(lastJSON(rep.Stdout), "task_id")
+	if rep.Exit != exitOK || rep.Upload != nil {
+		t.Fatalf("uncapable new = %+v", rep)
+	}
+	miss := docLatest(t, r.openDB(), task, "brief", "")
+	if miss.Captured || miss.Reason.String != "client" || miss.Host.String != "host-a" {
+		t.Fatalf("initial brief miss = %+v", miss)
+	}
+	wanted := func(caller, key string) []rpcDocWant {
+		t.Helper()
+		req := rpcBody(r.dir, nil, key, "_doc", "wanted", "--offset", "0")
+		req.Capabilities = []string{docUploadCapability}
+		_, reply, _ := r.post(caller, req)
+		if reply.Exit != exitOK {
+			t.Fatalf("wanted from %s = %+v", caller, reply)
+		}
+		var page struct {
+			Documents []rpcDocWant `json:"documents"`
+		}
+		if err := json.Unmarshal([]byte(lastLine(reply.Stdout)), &page); err != nil {
+			t.Fatal(err)
+		}
+		return page.Documents
+	}
+	if got := wanted("host-a", "backfill-wanted-a-01"); len(got) != 1 || got[0].Task != task || got[0].Path != path {
+		t.Fatalf("caller-host wanted = %+v", got)
+	}
+	if got := wanted("host-b", "backfill-wanted-b-01"); len(got) != 0 {
+		t.Fatalf("task-host wanted = %+v", got)
+	}
+	wrongHostPut := rpcBody(r.dir, nil, "backfill-put-wrong-host-01", "_doc", "put")
+	wrongHostPut.Capabilities = []string{docUploadCapability}
+	wrongHostPut.Document = clientDocPayload(rpcDocWant{Task: task, Kind: "brief", Path: path}, fileDocument(path, ""), true, false)
+	before := docCount(t, r.openDB(), `select count(*) from documents where task_id = ? and kind = 'brief'`, task)
+	if _, rep, _ := r.post("host-b", wrongHostPut); rep.Exit != exitReject {
+		t.Fatalf("task-host backfill put = %+v", rep)
+	}
+	if got := docCount(t, r.openDB(), `select count(*) from documents where task_id = ? and kind = 'brief'`, task); got != before {
+		t.Fatalf("wrong-host backfill put wrote a row: %d -> %d", before, got)
+	}
+	code, out, stderr := uploadClient(t, r, r.homes["host-a"], nil, "doc", "backfill")
+	if code != exitOK || stderr != "" || num(lastJSON(out), "captured") != 1 {
+		t.Fatalf("caller-host backfill = %d %q %q", code, out, stderr)
+	}
+	if d := docLatest(t, r.openDB(), task, "brief", ""); !d.Captured || d.Host.String != "host-a" || d.Backfill != 2 {
+		t.Fatalf("caller-host backfill row = %+v", d)
 	}
 }
 

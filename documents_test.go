@@ -259,7 +259,7 @@ func TestDocumentsCaptureIsolation(t *testing.T) {
 	}
 }
 
-// 7. RPC host ownership governs reads; capable clients upload captured files.
+// 7. Briefs and prompt files belong to the caller; reports belong to the lane.
 func TestDocumentsRPCCapture(t *testing.T) {
 	r := newTwoHost(t)
 	root := r.newTask("root", "orchestrator", 0)
@@ -293,7 +293,7 @@ func TestDocumentsRPCCapture(t *testing.T) {
 	serverLane := r.newTask("local", "implementer", root, "--pane", "w1:p2")
 	r.write("prompt.stdout", `{"result":{"agent":{"agent_status":"working"}}}`, 0644)
 	r.want(0, "host-b", nil, "prompt", id(serverLane), "--file", path, "--receipt-timeout", "0")
-	if d := docLatest(t, r.openDB(), serverLane, "prompt", filepath.Base(path)); !d.Captured || d.Host.Valid {
+	if d := docLatest(t, r.openDB(), serverLane, "prompt", filepath.Base(path)); !d.Captured || d.Host.String != "host-b" {
 		t.Fatalf("%+v", d)
 	}
 }

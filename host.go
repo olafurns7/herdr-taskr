@@ -196,6 +196,9 @@ func cmdPromptPhase(c *ctx, args []string) (any, int, error) {
 			data = map[string]any{"file": *file, "sha256": *sum, "bytes": *size}
 		}
 		d := promptDelivery(*text, *file, data, false, 0)
+		if *file != "" && d.document != nil {
+			d.document.Host = c.machine
+		}
 		d.receiptTimeout = time.Duration(*receiptTimeout) * time.Millisecond
 		a, err := beginAttempt(c, db, n, d, true, func() error {
 			if !*localHerdr {
@@ -351,11 +354,11 @@ func clientPrompt(c *ctx, cl *rpcClient, lead, args []string, cwd string, env ma
 			"prompt attempt %d: outcome %s observed here, but the server did not record it (%s); inspect the agent before any resend",
 			b.Attempt, outcome, e.msg)), true
 	}
+	io.WriteString(c.out, rep.Stdout)
+	io.WriteString(c.errw, rep.Stderr)
 	if rep.Exit == exitOK {
 		clientUploadDocs(cl, uploads, cwd, env)
 	}
-	io.WriteString(c.out, rep.Stdout)
-	io.WriteString(c.errw, rep.Stderr)
 	return rep.Exit, true
 }
 

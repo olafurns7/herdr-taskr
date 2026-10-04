@@ -443,6 +443,9 @@ func (d *dashboard) rpcStored(machine string, req rpcRequest) rpcReply {
 		return d.rpcError(req, err)
 	}
 	if prior != nil {
+		if !hasCapability(req.Capabilities, docUploadCapability) {
+			prior.Upload = nil
+		}
 		return *prior
 	}
 	rep := d.rpcRun(context.Background(), machine, req)

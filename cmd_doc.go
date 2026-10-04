@@ -407,6 +407,19 @@ type backfillFile struct {
 
 type backfillCandidate struct{ path, kind, name string }
 
+func backfillSourceHost(q queryer, taskID int64, candidate backfillCandidate, taskHost string) (string, error) {
+	if candidate.kind != "brief" && candidate.kind != "prompt" {
+		return taskHost, nil
+	}
+	var host sql.NullString
+	err := q.QueryRow(`select source_host from documents where task_id = ? and kind = ? and name = ? and captured = 0
+		order by version desc limit 1`, taskID, candidate.kind, candidate.name).Scan(&host)
+	if errors.Is(err, sql.ErrNoRows) {
+		return taskHost, nil
+	}
+	return host.String, err
+}
+
 func backfillCandidates(q queryer, taskID int64) ([]backfillCandidate, error) {
 	t, err := loadTask(q, taskID)
 	if err != nil {
@@ -470,7 +483,11 @@ func prepareBackfill(q queryer, taskID int64) ([]backfillFile, error) {
 	}
 	var files []backfillFile
 	for _, candidate := range candidates {
-		f := backfillFile{kind: candidate.kind, name: candidate.name, input: fileDocument(candidate.path, host)}
+		candidateHost, err := backfillSourceHost(q, taskID, candidate, host)
+		if err != nil {
+			return nil, err
+		}
+		f := backfillFile{kind: candidate.kind, name: candidate.name, input: fileDocument(candidate.path, candidateHost)}
 		f.backfill, f.eventID, err = backfillMetadata(q, taskID, f.kind, f.input)
 		if err != nil {
 			return nil, err
@@ -647,22 +664,27 @@ func cmdDocPut(c *ctx, args []string) (any, int, error) {
 			if err != nil {
 				return err
 			}
-			if host != c.machine {
-				return rejectErr("backfill task host changed")
-			}
 			candidates, err := backfillCandidates(tx, p.Task)
 			if err != nil {
 				return err
 			}
-			candidate := false
-			for _, item := range candidates {
+			var candidate *backfillCandidate
+			for i := range candidates {
+				item := &candidates[i]
 				if item.kind == p.Kind && item.name == p.Name && item.path == p.Path {
-					candidate = true
+					candidate = item
 					break
 				}
 			}
-			if !candidate {
+			if candidate == nil {
 				return rejectErr("document is not a backfill candidate")
+			}
+			candidateHost, err := backfillSourceHost(tx, p.Task, *candidate, host)
+			if err != nil {
+				return err
+			}
+			if candidateHost != c.machine {
+				return rejectErr("backfill task host changed")
 			}
 			backfill, eventID, err = backfillMetadata(tx, p.Task, p.Kind, in)
 			if err != nil {
@@ -679,6 +701,17 @@ func cmdDocPut(c *ctx, args []string) (any, int, error) {
 			if skip {
 				result = map[string]any{"ok": true, "same": true, "count": "unchanged"}
 				return nil
+			}
+		} else {
+			latest, err := latestDocument(tx, p.Task, p.Kind, p.Name)
+			if errors.Is(err, sql.ErrNoRows) {
+				return rejectErr("document upload has no matching capture")
+			}
+			if err != nil {
+				return err
+			}
+			if latest.Host.String != c.machine || latest.Path.String != p.Path {
+				return rejectErr("document upload does not match the latest capture")
 			}
 		}
 		if p.DryRun {
@@ -738,14 +771,18 @@ func cmdDocWanted(c *ctx, args []string) (any, int, error) {
 		if err != nil {
 			return nil, 0, dbErr(err)
 		}
-		if host != c.machine {
-			continue
-		}
 		files, err := backfillCandidates(db, taskID)
 		if err != nil {
 			return nil, 0, dbErr(err)
 		}
 		for _, f := range files {
+			candidateHost, err := backfillSourceHost(db, taskID, f, host)
+			if err != nil {
+				return nil, 0, dbErr(err)
+			}
+			if candidateHost != c.machine {
+				continue
+			}
 			candidates = append(candidates, rpcDocWant{Task: taskID, Kind: f.kind, Name: f.name, Path: f.path})
 		}
 	}

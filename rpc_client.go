@@ -435,7 +435,7 @@ func (cl *rpcClient) callOnceNoFallback(parent context.Context, argv []string, c
 
 func (cl *rpcClient) callOnceMode(parent context.Context, argv []string, cwd, key string, env map[string]string, document *rpcDocPayload, capability, fallback bool) (rpcReply, *exitErr, bool, bool) {
 	req := rpcRequest{Argv: argv, Cwd: cwd, Env: env, RequestKey: key, Document: document}
-	if capability {
+	if capability && rpcCarriesDocument(argv) {
 		req.Capabilities = []string{docUploadCapability}
 	}
 	return cl.callOnceRequest(parent, req, fallback)
@@ -530,8 +530,23 @@ func (cl *rpcClient) callStored(cx context.Context, req rpcRequest) (rpcReply, *
 }
 
 func rpcClientRequest(argv []string, cwd, key string, env map[string]string, document *rpcDocPayload) rpcRequest {
-	return rpcRequest{Argv: slices.Clone(argv), Cwd: cwd, Env: env, RequestKey: key,
-		Capabilities: []string{docUploadCapability}, Document: document}
+	req := rpcRequest{Argv: slices.Clone(argv), Cwd: cwd, Env: env, RequestKey: key, Document: document}
+	if rpcCarriesDocument(argv) {
+		req.Capabilities = []string{docUploadCapability}
+	}
+	return req
+}
+
+func rpcCarriesDocument(argv []string) bool {
+	name, args := rpcCommand(argv)
+	switch name {
+	case "new", "prompt", "_prompt", "ready", "done", "fail", "close", "_doc":
+		return true
+	case "doc":
+		return len(args) > 0 && (args[0] == "set" || args[0] == "backfill")
+	default:
+		return false
+	}
 }
 
 func spoolRecordCommand(argv []string) bool {
@@ -773,22 +788,24 @@ func clientDocBackfill(c *ctx, cl *rpcClient, args []string, cwd string, env map
 	return exitOK
 }
 
-// clientNewChecks runs new's existence checks here when the task will be on
-// this host: no --machine, or --machine naming this host. The server checks
-// its own host's paths and skips a third host's.
+// clientNewChecks checks --brief on the caller's host. --cwd belongs to the
+// task's host, so the client checks it only when the task will run here.
 func clientNewChecks(args []string, self string) error {
-	if m, _, _, given := flagValue(args, "machine"); given && m != machineLabel(self) {
-		return nil
-	}
 	if role, _, _, _ := flagValue(args, "role"); role == "gate" || flagTrue(args, "planned") {
 		return nil
 	}
-	dir, _, _, ok := flagValue(args, "cwd")
-	if !ok || dir == "" {
-		dir, _ = os.Getwd()
+	localTask := true
+	if m, _, _, given := flagValue(args, "machine"); given && m != machineLabel(self) {
+		localTask = false
 	}
-	if err := requireDirectory(dir); err != nil {
-		return err
+	if localTask {
+		dir, _, _, ok := flagValue(args, "cwd")
+		if !ok || dir == "" {
+			dir, _ = os.Getwd()
+		}
+		if err := requireDirectory(dir); err != nil {
+			return err
+		}
 	}
 	if brief, _, _, ok := flagValue(args, "brief"); ok && brief != "" {
 		return requireFile(brief)
