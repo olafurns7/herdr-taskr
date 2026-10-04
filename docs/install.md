@@ -126,7 +126,7 @@ Verify `taskr hook --help` succeeds and inspect the merged entries against the e
 Only configure this if the user asks. Require running Tailscale with untagged nodes owned by the same user; identity checks reject tagged nodes and other users. HTTP traffic stays inside the encrypted tailnet.
 On the hub, write `tailnet` to `$HOME/.local/state/taskr/dashboard.addr`. On a fresh client, write the hub URL (for example http://hub.example.ts.net:7788) to `server.url` in that directory; leave TASKR_DB unset. There is no local fallback when the hub is unreachable.
 For independent ledgers and a combined read-only dashboard, use `hub.url` instead; do not combine it with server.url. Before migrating an existing ledger, back it up and read https://raw.githubusercontent.com/olafurns7/herdr-taskr/master/references/recovery.md.
-Client records queue in `<state dir>/spool/` while the server is unreachable; the client daemon sends them when it returns. `qd1 <request key>` means queued, exit 0: do not retry. Check `taskr spool ls` after an outage.
+Client records queue in `$HOME/.local/state/taskr/spool/` when the server is unreachable or earlier records wait there; a running client daemon sends them after a pass that reaches the server, or use `taskr spool send` on that host. Without a daemon they stay queued until manual send; a full or unwritable spool exits 5 with `retry with:` (rerun that line). `qd1 <request key>` means queued, exit 0: do not retry. Check `taskr spool ls` after an outage.
 
 Apply changes with `taskr daemon --restart`; verify `taskr daemon --status` shows the selected mode/listeners and fresh connection or push health. On write exit 5, rerun the exact printed `retry with:` command, preserving its request key.
 

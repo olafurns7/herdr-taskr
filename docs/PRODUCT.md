@@ -26,7 +26,7 @@ The dashboard reads the durable ledger that orchestrators and workers update as 
 
 ## Current architecture (v0.10)
 
-One ledger on one server host. The server daemon (`dashboard.addr` = `tailnet`) serves the dashboard and `/api/rpc`; a client host (`~/.local/state/taskr/server.url`, no `TASKR_DB`) sends its ledger commands there without opening a local ledger; `help`, `version` and `daemon` run locally. Its daemon reports its own Herdr panes to the server and shows owner-ask notifications; its `prompt` command delivers prompts to its own lanes. Server unreachable: commands fail with exit 5 and a retry line; nothing falls back to a local ledger. A host without `server.url` keeps its own ledger and pushes to the hub as a v0.5 peer when `hub.url` is configured, until it is moved over.
+One ledger on one server host. The server daemon (`dashboard.addr` = `tailnet`) serves the dashboard and `/api/rpc`; a client host (`~/.local/state/taskr/server.url`, no `TASKR_DB`) sends its ledger commands there without opening a local ledger; `help`, `version` and `daemon` run locally. Its daemon reports its own Herdr panes to the server and shows owner-ask notifications; its `prompt` command delivers prompts to its own lanes. Server unreachable: client records got/ready/done/fail/decide/next/note/close queue in the spool (`qd1`, exit 0; full or unwritable spool: exit 5 with a retry line); other commands fail with exit 5 and a retry line; nothing falls back to a local ledger. A host without `server.url` keeps its own ledger and pushes to the hub as a v0.5 peer when `hub.url` is configured, until it is moved over.
 
 ## Operating Context
 

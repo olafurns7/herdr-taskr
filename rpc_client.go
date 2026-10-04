@@ -163,7 +163,7 @@ lead:
 			return clientFail(c, exitDB, "database", queueErr.Error())
 		}
 		if queued {
-			return clientQueuedResult(c, cargs, key, waiting, stderr)
+			return clientQueuedResult(c, cargs, key, waiting, "earlier records wait in the spool", stderr)
 		}
 	}
 	cl, e := newRPCClient(raw)
@@ -171,7 +171,7 @@ lead:
 		if spoolable && e.kind == "transport" {
 			waiting, queueErr := queueSpoolRecord(spoolDir, request, savedReady)
 			if queueErr == nil {
-				return clientQueuedResult(c, cargs, key, waiting, stderr)
+				return clientQueuedResult(c, cargs, key, waiting, "server unreachable", stderr)
 			}
 			if errors.Is(queueErr, errSpoolFull) {
 				fmt.Fprintln(stderr, "taskr: spool full")
@@ -199,7 +199,7 @@ lead:
 		if spoolable && cl.noReply {
 			waiting, queueErr := queueSpoolRecord(spoolDir, request, savedReady)
 			if queueErr == nil {
-				return clientQueuedResult(c, cargs, key, waiting, stderr)
+				return clientQueuedResult(c, cargs, key, waiting, "server unreachable", stderr)
 			}
 			if errors.Is(queueErr, errSpoolFull) {
 				fmt.Fprintln(stderr, "taskr: spool full")
@@ -602,10 +602,10 @@ func clientReadySpoolDocument(args []string, env map[string]string) *rpcDocPaylo
 	return clientDocPayload(want, fileDocument(path, ""), false, false)
 }
 
-func clientQueuedResult(c *ctx, args []string, key string, waiting int, stderr io.Writer) int {
+func clientQueuedResult(c *ctx, args []string, key string, waiting int, reason string, stderr io.Writer) int {
 	c.json = c.json || flagTrue(args, "json")
 	c.emit(map[string]any{"queued": true, "request_key": key})
-	fmt.Fprintf(stderr, "taskr: server unreachable; queued (%d waiting)\n", waiting)
+	fmt.Fprintf(stderr, "taskr: %s; queued (%d waiting)\n", reason, waiting)
 	return exitOK
 }
 

@@ -328,6 +328,29 @@ func TestSpoolStallAgeUsesClientClock(t *testing.T) {
 	}
 }
 
+func TestSpoolQueuedBehindSaysWhy(t *testing.T) {
+	r := newTwoHost(t)
+	host := spoolClientHost(r)
+	top := num(r.want(exitOK, host, nil, "new", "root-queue-reason", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
+	home := r.clientHome(r.url)
+	first := rpcClientRequest([]string{"note", "first", "--as", id(top)}, t.TempDir(), "queue-reason-first-1", nil, nil)
+	if _, err := queueSpoolRecord(spoolStateDir(home), first, nil); err != nil {
+		t.Fatal(err)
+	}
+	requests := r.count(`select count(*) from requests`)
+	code, out, stderr := spoolRunCLI(r, host, home, nil, "note", "second", "--as", id(top))
+	if code != exitOK || !strings.HasPrefix(out, "qd1 ") || stderr != "taskr: earlier records wait in the spool; queued (2 waiting)\n" {
+		t.Fatalf("queued behind = %d %q %q", code, out, stderr)
+	}
+	if r.count(`select count(*) from requests`) != requests {
+		t.Fatal("record reached the server ahead of the spool")
+	}
+	files, err := readSpoolFiles(spoolQueuePath(home))
+	if err != nil || len(files) != 2 || files[0].record.Request.Argv[1] != "first" || files[1].record.Request.Argv[1] != "second" {
+		t.Fatalf("queued order = %+v, %v", files, err)
+	}
+}
+
 func TestSpoolRecordQueuesWhileSenderOwnsSendLock(t *testing.T) {
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
@@ -345,7 +368,7 @@ func TestSpoolRecordQueuesWhileSenderOwnsSendLock(t *testing.T) {
 	defer unlockSpool(sendLock)
 	started := time.Now()
 	code, _, stderr := spoolRunCLI(r, host, home, nil, "note", "second", "--as", id(top))
-	if elapsed := time.Since(started); code != exitOK || stderr != "taskr: server unreachable; queued (2 waiting)\n" || elapsed > 250*time.Millisecond {
+	if elapsed := time.Since(started); code != exitOK || stderr != "taskr: earlier records wait in the spool; queued (2 waiting)\n" || elapsed > 250*time.Millisecond {
 		t.Fatalf("record while sender locked = %d after %s, %q", code, elapsed, stderr)
 	}
 	files, err := readSpoolFiles(filepath.Join(spoolPath(dir), spoolQueueDir))
@@ -878,7 +901,7 @@ func TestSpoolQueuedOrderAndManualSend(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, out, stderr := spoolRunCLI(r, host, home, env, "done")
-	if code != exitOK || !strings.HasPrefix(out, "qd1 ") || stderr != "taskr: server unreachable; queued (2 waiting)\n" {
+	if code != exitOK || !strings.HasPrefix(out, "qd1 ") || stderr != "taskr: earlier records wait in the spool; queued (2 waiting)\n" {
 		t.Fatalf("queued done behind got = %d %q %q", code, out, stderr)
 	}
 	files, err := readSpoolFiles(spoolQueuePath(home))
