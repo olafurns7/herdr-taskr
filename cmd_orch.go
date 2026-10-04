@@ -122,7 +122,7 @@ func cmdNew(c *ctx, args []string) (any, int, error) {
 		if err != nil {
 			return err
 		}
-		return captureBrief(tx, id, briefInput)
+		return captureBrief(tx, c, id, briefInput)
 	})
 	if err != nil {
 		return nil, 0, err
@@ -298,7 +298,7 @@ func cmdClose(c *ctx, args []string) (any, int, error) {
 		if err != nil {
 			return err
 		}
-		return captureReport(tx, id, eid, report)
+		return captureReport(tx, c, id, eid, report)
 	})
 	if err != nil {
 		return nil, 0, err

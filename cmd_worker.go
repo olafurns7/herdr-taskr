@@ -224,7 +224,7 @@ func writeWorkerEvent(c *ctx, ww workerWrite) (any, int, error) {
 		if ww.kind == "ask" {
 			out["ask_id"] = id
 		}
-		return captureReport(tx, w.task.ID, id, report)
+		return captureReport(tx, c, w.task.ID, id, report)
 	})
 	if err != nil {
 		return nil, 0, err

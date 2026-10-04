@@ -182,27 +182,41 @@ func documentHost(q queryer, taskID int64) (string, error) {
 	return host.String, err
 }
 
-func captureBrief(tx *sql.Tx, taskID int64, in *documentInput) error {
+func recordClientDocument(c *ctx, taskID int64, kind, name string, in documentInput, eventID *int64) {
+	if c != nil && c.docUpload && in.Reason == "client" {
+		c.docUploads = append(c.docUploads, rpcDocWant{
+			Task: taskID, Kind: kind, Name: name, Path: in.Path, EventID: eventID,
+		})
+	}
+}
+
+func captureBrief(tx *sql.Tx, c *ctx, taskID int64, in *documentInput) error {
 	if in == nil {
 		return nil
 	}
-	return captureDocument(tx, func() error {
+	kind, stored := "goal", false
+	err := captureDocument(tx, func() error {
 		t, err := loadTask(tx, taskID)
 		if err != nil {
 			return err
 		}
-		kind := "goal"
+		kind = "goal"
 		if t.ParentID.Valid {
 			kind = "brief"
 		}
 		_, _, err = storeDocument(tx, taskID, kind, "", *in, nil, 0)
+		stored = err == nil
 		return err
 	})
+	if err == nil && stored {
+		recordClientDocument(c, taskID, kind, "", *in, nil)
+	}
+	return err
 }
 
-func capturePrompt(tx *sql.Tx, taskID, eventID int64, in documentInput) error {
-	return captureDocument(tx, func() error {
-		kind, name := "prompt", ""
+func capturePrompt(tx *sql.Tx, c *ctx, taskID, eventID int64, in documentInput) error {
+	kind, name, stored := "prompt", "", false
+	err := captureDocument(tx, func() error {
 		if in.Path != "" {
 			var brief sql.NullString
 			if err := tx.QueryRow(`select brief_path from tasks where id = ?`, taskID).Scan(&brief); err != nil {
@@ -222,8 +236,13 @@ func capturePrompt(tx *sql.Tx, taskID, eventID int64, in documentInput) error {
 			}
 		}
 		_, _, err := storeDocument(tx, taskID, kind, name, in, ptr(eventID), 0)
+		stored = err == nil
 		return err
 	})
+	if err == nil && stored {
+		recordClientDocument(c, taskID, kind, name, in, ptr(eventID))
+	}
+	return err
 }
 
 func reportDocumentPath(q queryer, taskID int64) (string, error) {
@@ -273,11 +292,12 @@ func prepareReport(q queryer, taskID int64, explicit string, ready bool) *prepar
 	return &preparedReport{input: fileDocument(path, host), latestID: latestID}
 }
 
-func captureReport(tx *sql.Tx, taskID, eventID int64, report *preparedReport) error {
+func captureReport(tx *sql.Tx, c *ctx, taskID, eventID int64, report *preparedReport) error {
 	if report == nil {
 		return nil
 	}
-	return captureDocument(tx, func() error {
+	stored := false
+	err := captureDocument(tx, func() error {
 		path, err := reportDocumentPath(tx, taskID)
 		if err != nil {
 			return err
@@ -294,8 +314,13 @@ func captureReport(tx *sql.Tx, taskID, eventID int64, report *preparedReport) er
 			return nil
 		}
 		_, _, err = storeDocument(tx, taskID, "report", "", report.input, ptr(eventID), 0)
+		stored = err == nil
 		return err
 	})
+	if err == nil && stored {
+		recordClientDocument(c, taskID, "report", "", report.input, ptr(eventID))
+	}
+	return err
 }
 
 type handoverDocuments struct {

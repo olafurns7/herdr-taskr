@@ -221,7 +221,7 @@ func beginAttempt(c *ctx, db *sql.DB, taskID int64, d delivery, here bool, ready
 			}
 		}
 		if d.document != nil {
-			return capturePrompt(tx, taskID, a.id, *d.document)
+			return capturePrompt(tx, c, taskID, a.id, *d.document)
 		}
 		return nil
 	})

@@ -259,20 +259,20 @@ func TestDocumentsCaptureIsolation(t *testing.T) {
 	}
 }
 
-// 7. RPC host ownership governs reads; no client body field is added.
+// 7. RPC host ownership governs reads; capable clients upload captured files.
 func TestDocumentsRPCCapture(t *testing.T) {
 	r := newTwoHost(t)
 	root := r.newTask("root", "orchestrator", 0)
 	brief := docFile(t, r.dir, "brief.md", "server brief must not be read")
 	lane := num(r.want(0, "host-b", nil, "new", "remote", "--role", "implementer", "--parent", id(root), "--cwd", r.dir, "--pane", "w1:p1", "--brief", brief), "task_id")
-	if d := docLatest(t, r.openDB(), lane, "brief", ""); d.Captured || d.Reason.String != "client" || d.Path.String != brief || d.Host.String != "host-b" || d.Hash.Valid {
+	if d := docLatest(t, r.openDB(), lane, "brief", ""); !d.Captured || d.Reason.Valid || d.Path.String != brief || d.Host.String != "host-b" || !d.Hash.Valid {
 		t.Fatalf("%+v", d)
 	}
 	launch := num(r.want(0, "host-b", nil, "launch", id(lane), "--provider", "codex", "--model", "gpt-6-luna", "--effort", "max"), "launch_id")
 	path := docFile(t, r.dir, "remote.md", "server bytes must not be read")
 	r.want(0, "host-b", as(lane, launch), "ready", "r", "--report", path)
 	d := docLatest(t, r.openDB(), lane, "report", "")
-	if d.Captured || d.Reason.String != "client" || d.Path.String != path || d.Host.String != "host-b" {
+	if !d.Captured || d.Reason.Valid || d.Path.String != path || d.Host.String != "host-b" {
 		t.Fatalf("%+v", d)
 	}
 	_, rep, _ := r.post("host-b", rpcBody(r.dir, nil, "doc-prompt-file", "_prompt", "begin", id(lane), "--file", path, "--sha256", "abc", "--bytes", "42", "--local-herdr", "--receipt-timeout", "0"))

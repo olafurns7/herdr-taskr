@@ -81,14 +81,17 @@ type ctx struct {
 	code   int
 
 	// Set by the RPC handler for a remote caller; zero for the local CLI.
-	db      *sql.DB         // the daemon's resident ledger
-	log     *daemonLog      // the server daemon's log for remote calls
-	cx      context.Context // ends a wait; nil means the CLI's signal context
-	rpc     bool            // a remote caller: paths come absolute, no file effects here
-	machine string          // the caller's host label; "" is the server host
-	cwd     string          // the caller's working directory
-	client  bool            // client mode: never open a local ledger
-	server  string          // client mode: the server URL, for version
+	db         *sql.DB         // the daemon's resident ledger
+	log        *daemonLog      // the server daemon's log for remote calls
+	cx         context.Context // ends a wait; nil means the CLI's signal context
+	rpc        bool            // a remote caller: paths come absolute, no file effects here
+	machine    string          // the caller's host label; "" is the server host
+	cwd        string          // the caller's working directory
+	client     bool            // client mode: never open a local ledger
+	server     string          // client mode: the server URL, for version
+	docUpload  bool
+	docUploads []rpcDocWant
+	remoteDoc  *rpcDocPayload
 }
 
 func (c *ctx) env(k string) string {
@@ -134,7 +137,7 @@ worker:       start | got ATTEMPT_ID | note TEXT | ready TEXT --report PATH [--k
 orchestrator: new NAME --role ROLE [--parent ID] [--planned] ... | launch ID --provider P --model M --effort E | prompt ID (--file PATH | --text TEXT) [--receipt-timeout MS] [--confirm [--confirm-timeout MS]]
               answer ASK_ID TEXT [--prompt [--confirm [--confirm-timeout MS]]] | close ID
 plan:         next ID TEXT | next ID --clear | set ID KEY=VALUE... (KEY= deletes) | decide --as ID TEXT | decide --as ID --revoke EVENT_ID
-documents:    doc set ID goal|plan [--name NAME] --file PATH | doc ls ID [--tree] [--kind K] [--versions] [--limit N] | doc get DOC_ID | doc rm DOC_ID --purge | doc backfill [--tree ID] [--dry-run]
+documents:    doc set ID goal|plan [--name NAME] --file PATH (any host) | doc ls ID [--tree] [--kind K] [--versions] [--limit N] | doc get DOC_ID | doc rm DOC_ID --purge | doc backfill [--tree ID] [--dry-run] (any host)
 handover:     handover --as ID [--note TEXT] [--out PATH] | adopt ID [--workspace W --tab T --pane P]   (Markdown on stdout)
 inbox:        wait [--as ID] [--for KIND[,KIND...]] [--from NAME|ID]... [--ack EVENT_ID] [--timeout MS] [--scan-quota] | ack EVENT_ID --as ID
 hooks:        hook <harness> <event> (JSON on stdin)

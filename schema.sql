@@ -59,6 +59,7 @@ create table if not exists requests (
   exit       integer,
   stdout     text,
   stderr     text,
+  upload     text,
   created_at text not null
 );
 

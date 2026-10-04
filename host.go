@@ -319,6 +319,11 @@ func clientPrompt(c *ctx, cl *rpcClient, lead, args []string, cwd string, env ma
 	if e != nil {
 		return fail(e)
 	}
+	var uploads []rpcDocWant
+	if rep.Upload != nil {
+		uploads = *rep.Upload
+	}
+	rep.Upload = nil
 	var b struct {
 		Route   string `json:"route"`
 		Attempt int64  `json:"attempt_id"`
@@ -345,6 +350,9 @@ func clientPrompt(c *ctx, cl *rpcClient, lead, args []string, cwd string, env ma
 		return clientFail(c, exitHerdr, e.kind, fmt.Sprintf(
 			"prompt attempt %d: outcome %s observed here, but the server did not record it (%s); inspect the agent before any resend",
 			b.Attempt, outcome, e.msg)), true
+	}
+	if rep.Exit == exitOK {
+		clientUploadDocs(cl, uploads, cwd, env)
 	}
 	io.WriteString(c.out, rep.Stdout)
 	io.WriteString(c.errw, rep.Stderr)

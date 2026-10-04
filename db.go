@@ -83,6 +83,7 @@ func migrate(tx *sql.Tx) error {
 		{"tasks", "machine"}, // v0.10: NULL is the server host
 		{"launches", "machine"},
 		{"launches", "transcript_path"}, // v0.11: harness hook session transcript
+		{"requests", "upload"},          // v0.13: captured documents requested from RPC clients
 	} {
 		var n int
 		if err := tx.QueryRow(`select count(*) from pragma_table_info(?) where name = ?`, c.table, c.column).Scan(&n); err != nil {
