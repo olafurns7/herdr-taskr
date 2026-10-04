@@ -196,6 +196,9 @@ func cmdPromptPhase(c *ctx, args []string) (any, int, error) {
 			data = map[string]any{"file": *file, "sha256": *sum, "bytes": *size}
 		}
 		d := promptDelivery(*text, *file, data, false, 0)
+		if *file != "" && d.document != nil {
+			d.document.Host = c.machine
+		}
 		d.receiptTimeout = time.Duration(*receiptTimeout) * time.Millisecond
 		a, err := beginAttempt(c, db, n, d, true, func() error {
 			if !*localHerdr {
@@ -319,6 +322,11 @@ func clientPrompt(c *ctx, cl *rpcClient, lead, args []string, cwd string, env ma
 	if e != nil {
 		return fail(e)
 	}
+	var uploads []rpcDocWant
+	if rep.Upload != nil {
+		uploads = *rep.Upload
+	}
+	rep.Upload = nil
 	var b struct {
 		Route   string `json:"route"`
 		Attempt int64  `json:"attempt_id"`
@@ -348,6 +356,9 @@ func clientPrompt(c *ctx, cl *rpcClient, lead, args []string, cwd string, env ma
 	}
 	io.WriteString(c.out, rep.Stdout)
 	io.WriteString(c.errw, rep.Stderr)
+	if rep.Exit == exitOK {
+		clientUploadDocs(cl, uploads, cwd, env)
+	}
 	return rep.Exit, true
 }
 
@@ -402,6 +413,8 @@ func clientDaemon(c *ctx, raw string, args []string) int {
 	lockPath, statePath := filepath.Join(dir, "daemon.lock"), filepath.Join(dir, clientStateFile)
 	if *status {
 		out := map[string]any{"ok": true, "mode": "client", "server": raw}
+		queued, refused, bad := spoolCounts(dir)
+		out["spool"] = map[string]any{"queued": queued, "refused": refused, "bad": bad, "stuck": spoolHeadStuck(dir)}
 		var st clientState
 		if b, err := os.ReadFile(statePath); err == nil {
 			json.Unmarshal(b, &st)
@@ -562,6 +575,9 @@ func (h *hostRelay) observe() error {
 	if parseErr != nil {
 		return fmt.Errorf("server observe reply: %w", parseErr)
 	}
+	if _, err := sendSpool(filepath.Dir(h.statePath), h.raw, h.log); err != nil && h.log != nil {
+		h.log.limited("spool-send", time.Minute, "spool send failed: %v", err)
+	}
 	h.mu.Lock()
 	h.watch = r.Watch
 	h.mu.Unlock()
@@ -589,6 +605,9 @@ func (h *hostRelay) observe() error {
 		}
 		h.workspaceWriter.writeWorkspaceTokens(want)
 	}
+	notifySpoolRefused(filepath.Dir(h.statePath), h.sock, h.log)
+	notifySpoolStuck(filepath.Dir(h.statePath), h.sock, h.log)
+	notifySpoolBad(filepath.Dir(h.statePath), h.sock, h.log)
 	return notifyErr
 }
 

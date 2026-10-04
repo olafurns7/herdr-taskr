@@ -70,11 +70,7 @@ func cmdNew(c *ctx, args []string) (any, int, error) {
 	defer closeDB(c, db)
 	var briefInput *documentInput
 	if briefPath != "" {
-		host, err := resolveMachine(c, db, *machine, flagWasSet(fs, "machine"), callerMachine(c))
-		if err != nil {
-			return nil, 0, err
-		}
-		in := fileDocument(briefPath, host.String)
+		in := fileDocument(briefPath, callerMachine(c).String)
 		briefInput = &in
 	}
 	var id int64
@@ -87,13 +83,13 @@ func cmdNew(c *ctx, args []string) (any, int, error) {
 		if err != nil {
 			return err
 		}
-		// Paths exist on the task's host: the server checks its own; an RPC
-		// caller's client checked before sending; a third host is not checked.
-		if !*planned && *role != "gate" && !host.Valid {
-			if err := requireDirectory(dir); err != nil {
-				return err
+		if !*planned && *role != "gate" {
+			if !host.Valid {
+				if err := requireDirectory(dir); err != nil {
+					return err
+				}
 			}
-			if briefPath != "" {
+			if !c.rpc && briefPath != "" {
 				if err := requireFile(briefPath); err != nil {
 					return err
 				}
@@ -122,7 +118,7 @@ func cmdNew(c *ctx, args []string) (any, int, error) {
 		if err != nil {
 			return err
 		}
-		return captureBrief(tx, id, briefInput)
+		return captureBrief(tx, c, id, briefInput)
 	})
 	if err != nil {
 		return nil, 0, err
@@ -260,9 +256,13 @@ func cmdLaunch(c *ctx, args []string) (any, int, error) {
 
 func cmdClose(c *ctx, args []string) (any, int, error) {
 	fs := flag.NewFlagSet("close", flag.ContinueOnError)
+	outcome := fs.String("outcome", "", "accepted (work taken as delivered) | reworked (taken after a fix round) | rejected (not taken) | abandoned (stopped before a result)")
 	pos, err := parseArgs(c, fs, args, 1, 1)
 	if err != nil {
 		return nil, 0, err
+	}
+	if flagWasSet(fs, "outcome") && !slices.Contains([]string{"accepted", "reworked", "rejected", "abandoned"}, *outcome) {
+		return nil, 0, usageErr("--outcome must be one of accepted, reworked, rejected, abandoned")
 	}
 	id, err := parseID(pos[0], "task id")
 	if err != nil {
@@ -293,12 +293,16 @@ func cmdClose(c *ctx, args []string) (any, int, error) {
 		}
 		// The close's place in the event order: handover compares event ids,
 		// never clocks.
-		eid, err := insertEvent(tx, event{TaskID: id, Kind: "closed", Data: map[string]any{"from_status": t.Status}})
+		data := map[string]any{"from_status": t.Status}
+		if *outcome != "" {
+			data["outcome"] = *outcome
+		}
+		eid, err := c.insertEvent(tx, event{TaskID: id, Kind: "closed", Data: data})
 		out["event_id"] = eid
 		if err != nil {
 			return err
 		}
-		return captureReport(tx, id, eid, report)
+		return captureReport(tx, c, id, eid, report)
 	})
 	if err != nil {
 		return nil, 0, err

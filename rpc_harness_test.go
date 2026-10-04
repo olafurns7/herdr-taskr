@@ -565,7 +565,7 @@ func TestHarnessRPCWaits(t *testing.T) {
 	}
 }
 
-// A wait that connected times out; a write keeps its same-key retry line.
+// A wait that connected times out; a record write queues when replies are lost.
 func TestHarnessRPCDroppedConnection(t *testing.T) {
 	setVar(t, &rpcRetryWindow, func([]string) time.Duration { return 120 * time.Millisecond })
 	r := newTwoHost(t)
@@ -596,8 +596,9 @@ func TestHarnessRPCDroppedConnection(t *testing.T) {
 			}
 			continue
 		}
-		if code != exitHerdr || m["kind"] != "transport" || m["timeout"] != nil ||
-			!strings.Contains(errb.String(), "taskr: server unreachable; retry with: taskr --request-key drop-key-01 --json "+args[0]) {
+		errText := errb.String()
+		if code != exitOK || m["queued"] != true || m["request_key"] != "drop-key-01" ||
+			errText != "taskr: server unreachable; queued (1 waiting)\n" {
 			t.Fatalf("%v over a dropped connection = %d %v %q", args, code, m, errb.String())
 		}
 	}
@@ -646,8 +647,7 @@ func TestHarnessRPCPaths(t *testing.T) {
 	if rep.Exit != 0 || cwd != sub {
 		t.Fatalf("new without --cwd = %+v cwd %q", rep, cwd)
 	}
-	// Existence checks run on the task's host: the client for its own lane,
-	// the server for its own, nobody for a third host's.
+	// --cwd belongs to the task's host, while --brief belongs to the caller.
 	missing := filepath.Join(dir, "missing")
 	before := r.count(`select count(*) from requests`)
 	r.want(exitUsage, "host-a", nil, "new", "gone", "--role", "implementer", "--cwd", missing)
@@ -657,6 +657,22 @@ func TestHarnessRPCPaths(t *testing.T) {
 	r.want(exitUsage, "host-a", nil, "new", "gone", "--role", "implementer", "--cwd", missing, "--machine", localMachine())
 	r.beat("host-a", 0)
 	r.one(0, nil, "new", "host-a-lane", "--role", "implementer", "--cwd", missing, "--machine", "host-a")
+	r.beat("host-b", 0)
+	callerBrief := filepath.Join(dir, "caller-brief.md")
+	if err := os.WriteFile(callerBrief, []byte("caller brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before = r.count(`select count(*) from requests`)
+	r.want(exitUsage, "host-a", nil, "new", "missing-third-host-brief", "--role", "orchestrator", "--cwd", dir,
+		"--machine", "host-b", "--brief", filepath.Join(dir, "missing-brief.md"))
+	if r.count(`select count(*) from requests`) != before {
+		t.Fatal("the client sent a new whose --brief does not exist here")
+	}
+	thirdHostTask := num(r.want(0, "host-a", nil, "new", "third-host-brief", "--role", "orchestrator", "--cwd", dir,
+		"--machine", "host-b", "--brief", callerBrief), "task_id")
+	if d := docLatest(t, r.openDB(), thirdHostTask, "goal", ""); !d.Captured || d.Host.String != "host-a" || d.Path.String != callerBrief {
+		t.Fatalf("third-host brief = %+v", d)
+	}
 	// handover --out is written by the client, from the server's stdout.
 	out := filepath.Join(dir, "handover.md")
 	code, _, stderr := r.cli("host-a", nil, "handover", "--as", id(top), "--out", "handover.md")

@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -86,6 +88,9 @@ lead:
 		_, _, _ = cmdHook(c, cargs)
 		return exitOK
 	}
+	if name == "spool" {
+		return runCtx(c, append(lead, rest...))
+	}
 	if flag := repeatedRPCFlag(cargs); flag != "" {
 		return clientFail(c, exitUsage, "usage", "repeated RPC flag --"+flag)
 	}
@@ -117,8 +122,63 @@ lead:
 		}
 		return clientFail(c, e.code, e.kind, e.msg)
 	}
+	env := map[string]string{}
+	for _, k := range rpcClientEnv {
+		if v := c.env(k); v != "" {
+			env[k] = v
+		}
+	}
+	var remoteDoc *rpcDocPayload
+	if name == "doc" && len(cargs) > 0 && cargs[0] == "set" {
+		remoteDoc, err = clientDocSetPayload(c, cargs)
+		if err != nil {
+			var e *exitErr
+			if errors.As(err, &e) {
+				return clientFail(c, e.code, e.kind, e.msg)
+			}
+			return clientFail(c, exitUsage, "usage", err.Error())
+		}
+	}
+	spoolable := spoolRecordCommand(argv)
+	var savedReady *rpcDocPayload
+	if name == "ready" {
+		savedReady = clientReadySpoolDocument(cargs, env)
+	}
+	request := rpcClientRequest(argv, cwd, key, env, remoteDoc)
+	var spoolDir string
+	if spoolable {
+		spoolDir, err = stateDir(c)
+		if err != nil {
+			return clientFail(c, exitUsage, "usage", err.(*exitErr).msg)
+		}
+		waiting, queued, queueErr := queueSpoolIfWaiting(spoolDir, request, savedReady)
+		if queueErr != nil {
+			if errors.Is(queueErr, errSpoolFull) {
+				fmt.Fprintln(stderr, "taskr: spool full")
+				return fail(&exitErr{exitHerdr, "transport", "server unreachable; spool full"})
+			}
+			if waiting > 0 {
+				return fail(&exitErr{exitHerdr, "transport", "spool write failed: " + queueErr.Error()})
+			}
+			return clientFail(c, exitDB, "database", queueErr.Error())
+		}
+		if queued {
+			return clientQueuedResult(c, cargs, key, waiting, "earlier records wait in the spool", stderr)
+		}
+	}
 	cl, e := newRPCClient(raw)
 	if e != nil {
+		if spoolable && e.kind == "transport" {
+			waiting, queueErr := queueSpoolRecord(spoolDir, request, savedReady)
+			if queueErr == nil {
+				return clientQueuedResult(c, cargs, key, waiting, "server unreachable", stderr)
+			}
+			if errors.Is(queueErr, errSpoolFull) {
+				fmt.Fprintln(stderr, "taskr: spool full")
+				return fail(&exitErr{exitHerdr, "transport", "server unreachable; spool full"})
+			}
+			return fail(&exitErr{exitHerdr, "transport", "server unreachable; spool write failed: " + queueErr.Error()})
+		}
 		return fail(e)
 	}
 	if name == "new" {
@@ -126,21 +186,34 @@ lead:
 			return clientFail(c, exitUsage, "usage", err.(*exitErr).msg)
 		}
 	}
-	env := map[string]string{}
-	for _, k := range rpcClientEnv {
-		if v := c.env(k); v != "" {
-			env[k] = v
-		}
-	}
 	if name == "prompt" {
 		if code, done := clientPrompt(c, cl, lead, cargs, cwd, env); done {
 			return code
 		}
 	}
-	rep, e := cl.callRetry(c, argv, cwd, key, retry, env)
+	if name == "doc" && len(cargs) > 0 && cargs[0] == "backfill" {
+		return clientDocBackfill(c, cl, cargs[1:], cwd, env)
+	}
+	rep, e := cl.callRetry(c, argv, cwd, key, retry, env, remoteDoc)
 	if e != nil {
+		if spoolable && cl.noReply {
+			waiting, queueErr := queueSpoolRecord(spoolDir, request, savedReady)
+			if queueErr == nil {
+				return clientQueuedResult(c, cargs, key, waiting, "server unreachable", stderr)
+			}
+			if errors.Is(queueErr, errSpoolFull) {
+				fmt.Fprintln(stderr, "taskr: spool full")
+				return fail(&exitErr{exitHerdr, "transport", "server unreachable; spool full"})
+			}
+			return fail(&exitErr{exitHerdr, "transport", "server unreachable; spool write failed: " + queueErr.Error()})
+		}
 		return fail(e)
 	}
+	var uploads []rpcDocWant
+	if rep.Upload != nil {
+		uploads = *rep.Upload
+	}
+	rep.Upload = nil
 	io.WriteString(stdout, rep.Stdout)
 	io.WriteString(stderr, rep.Stderr)
 	if out != "" && rep.Exit == exitOK {
@@ -150,13 +223,17 @@ lead:
 		}
 		fmt.Fprintf(stderr, "taskr handover: wrote %s\n", out)
 	}
+	if rep.Exit == exitOK {
+		clientUploadDocs(cl, uploads, cwd, env)
+	}
 	return rep.Exit
 }
 
 // rpcClient is a checked route to the server that server.url names.
 type rpcClient struct {
-	target string
-	self   *tsSelf
+	target  string
+	self    *tsSelf
+	noReply bool
 }
 
 // newRPCClient checks server.url against this node's tailnet and learns this
@@ -192,10 +269,14 @@ func newRPCClient(raw string) (*rpcClient, *exitErr) {
 
 // rpcRetryWindow is injectable so outage tests need not wait a minute.
 var rpcRetryWindow = func(argv []string) time.Duration {
+	if spoolRecordCommand(argv) {
+		return 3 * time.Second
+	}
 	return max(60*time.Second, rpcBudget(argv))
 }
 
-func (cl *rpcClient) callRetry(c *ctx, argv []string, cwd, key, retry string, env map[string]string) (rpcReply, *exitErr) {
+func (cl *rpcClient) callRetry(c *ctx, argv []string, cwd, key, retry string, env map[string]string, documents ...*rpcDocPayload) (rpcReply, *exitErr) {
+	cl.noReply = false
 	name, _ := rpcCommand(argv)
 	parent := context.Background()
 	if name != "wait" {
@@ -235,6 +316,7 @@ func (cl *rpcClient) callRetry(c *ctx, argv []string, cwd, key, retry string, en
 				return rpcReply{Exit: code, Stdout: out.String()}, nil
 			}
 			if transportErr != nil {
+				cl.noReply = true
 				return rpcReply{}, transportErr
 			}
 			return rep, lastErr
@@ -248,7 +330,7 @@ func (cl *rpcClient) callRetry(c *ctx, argv []string, cwd, key, retry string, en
 				// Keep response slack for the server's normal timeout counts.
 				httpDeadline = httpDeadline.Add(rpcSlack)
 			} else {
-				if attemptDeadline := time.Now().Add(rpcBudget(argv) + rpcSlack); attemptDeadline.After(httpDeadline) {
+				if attemptDeadline := time.Now().Add(rpcBudget(argv) + rpcSlack); !spoolRecordCommand(argv) && attemptDeadline.After(httpDeadline) {
 					httpDeadline = attemptDeadline
 				}
 			}
@@ -256,12 +338,12 @@ func (cl *rpcClient) callRetry(c *ctx, argv []string, cwd, key, retry string, en
 		}
 		var retryable, reached bool
 		if name == "wait" {
-			rep, lastErr, retryable, reached = cl.callOnce(cx, argv, cwd, key, env)
+			rep, lastErr, retryable, reached = cl.callOnce(cx, argv, cwd, key, env, documents...)
 		} else {
 			// Verification has its own timeout; a signal must not wait for it.
 			done := make(chan struct{})
 			go func() {
-				rep, lastErr, retryable, reached = cl.callOnce(cx, argv, cwd, key, env)
+				rep, lastErr, retryable, reached = cl.callOnce(cx, argv, cwd, key, env, documents...)
 				close(done)
 			}()
 			select {
@@ -286,7 +368,7 @@ func (cl *rpcClient) callRetry(c *ctx, argv []string, cwd, key, retry string, en
 		if time.Until(deadline) <= 0 {
 			continue
 		}
-		if !announced {
+		if !announced && !spoolRecordCommand(argv) {
 			reason, suffix := "server unreachable", ""
 			if name != "wait" {
 				if !retryable {
@@ -332,8 +414,8 @@ func (cl *rpcClient) callRetry(c *ctx, argv []string, cwd, key, retry string, en
 	}
 }
 
-func (cl *rpcClient) call(argv []string, cwd, key string, env map[string]string) (rpcReply, *exitErr) {
-	rep, e, _, _ := cl.callOnce(context.Background(), argv, cwd, key, env)
+func (cl *rpcClient) call(argv []string, cwd, key string, env map[string]string, documents ...*rpcDocPayload) (rpcReply, *exitErr) {
+	rep, e, _, _ := cl.callOnce(context.Background(), argv, cwd, key, env, documents...)
 	return rep, e
 }
 
@@ -342,11 +424,32 @@ var rpcHTTPTransport = func() http.RoundTripper {
 }
 
 // callOnce reports retryability and whether it connected to the verified server.
-func (cl *rpcClient) callOnce(parent context.Context, argv []string, cwd, key string, env map[string]string) (rpcReply, *exitErr, bool, bool) {
+func (cl *rpcClient) callOnce(parent context.Context, argv []string, cwd, key string, env map[string]string, documents ...*rpcDocPayload) (rpcReply, *exitErr, bool, bool) {
+	var document *rpcDocPayload
+	if len(documents) > 0 {
+		document = documents[0]
+	}
+	return cl.callOnceMode(parent, argv, cwd, key, env, document, true, true)
+}
+
+func (cl *rpcClient) callOnceNoFallback(parent context.Context, argv []string, cwd, key string, env map[string]string, document *rpcDocPayload) (rpcReply, *exitErr, bool, bool) {
+	return cl.callOnceMode(parent, argv, cwd, key, env, document, true, false)
+}
+
+func (cl *rpcClient) callOnceMode(parent context.Context, argv []string, cwd, key string, env map[string]string, document *rpcDocPayload, capability, fallback bool) (rpcReply, *exitErr, bool, bool) {
+	req := rpcRequest{Argv: argv, Cwd: cwd, Env: env, RequestKey: key, Document: document}
+	if capability && rpcCarriesDocument(argv) {
+		req.Capabilities = []string{docUploadCapability}
+	}
+	return cl.callOnceRequest(parent, req, fallback)
+}
+
+func (cl *rpcClient) callOnceRequest(parent context.Context, reqBody rpcRequest, fallback bool) (rpcReply, *exitErr, bool, bool) {
 	unreachable := func(why string, retryable, reached bool) (rpcReply, *exitErr, bool, bool) {
 		return rpcReply{}, &exitErr{exitHerdr, "transport", why}, retryable, reached
 	}
-	body, _ := json.Marshal(rpcRequest{Argv: argv, Cwd: cwd, Env: env, RequestKey: key})
+	argv := reqBody.Argv
+	body, _ := json.Marshal(reqBody)
 	u, _ := url.Parse(cl.target)
 	cx, cancel := context.WithTimeout(parent, rpcBudget(argv)+rpcSlack)
 	defer cancel()
@@ -380,12 +483,47 @@ func (cl *rpcClient) callOnce(parent context.Context, argv []string, cwd, key st
 	case !usedOurs:
 		return unreachable("the request did not use the verified server connection", false, true)
 	}
-	if resp.StatusCode != http.StatusOK {
-		var e struct {
+	if resp.StatusCode == http.StatusBadRequest && fallback {
+		var refusal struct {
 			Error string `json:"error"`
 		}
-		json.Unmarshal(rb, &e)
-		msg := fmt.Sprintf("server answered %d: %s", resp.StatusCode, truncate(e.Error, 300))
+		if json.Unmarshal(rb, &refusal) == nil {
+			changed := false
+			switch {
+			case len(reqBody.Capabilities) > 0 && strings.Contains(refusal.Error, `unknown field "capabilities"`):
+				reqBody.Capabilities, reqBody.Document = nil, nil
+				changed = true
+			case reqBody.Document != nil && strings.Contains(refusal.Error, `unknown field "document"`):
+				reqBody.Document = nil
+				changed = true
+			case reqBody.QueuedAt != "" && strings.Contains(refusal.Error, `unknown field "queued_at"`):
+				reqBody.QueuedAt = ""
+				changed = true
+			case reqBody.QueuedAgeMS != 0 && strings.Contains(refusal.Error, `unknown field "queued_age_ms"`):
+				reqBody.QueuedAgeMS = 0
+				changed = true
+			}
+			if changed {
+				vc.Close()
+				return cl.callOnceRequest(parent, reqBody, true)
+			}
+		}
+	}
+	if resp.StatusCode != http.StatusOK {
+		body := strings.TrimSpace(string(rb))
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(rb, &fields) == nil {
+			if raw, ok := fields["error"]; ok {
+				var message string
+				if json.Unmarshal(raw, &message) == nil {
+					body = message
+				}
+			}
+		}
+		msg := fmt.Sprintf("server answered %d: %s", resp.StatusCode, truncate(body, 200))
+		if resp.StatusCode >= 500 && spoolRecordCommand(argv) && !rpcReplyBody(rb) {
+			return unreachable(msg, true, true)
+		}
 		switch {
 		case resp.StatusCode == http.StatusForbidden:
 			return rpcReply{}, &exitErr{exitReject, "rejected", msg}, false, true
@@ -394,11 +532,81 @@ func (cl *rpcClient) callOnce(parent context.Context, argv []string, cwd, key st
 		}
 		return unreachable(msg, false, true)
 	}
+	var shape struct {
+		Exit   *int    `json:"exit"`
+		Stdout *string `json:"stdout"`
+		Stderr *string `json:"stderr"`
+	}
 	var rep rpcReply
-	if err := json.Unmarshal(rb, &rep); err != nil {
+	if err := json.Unmarshal(rb, &shape); err != nil || shape.Exit == nil || shape.Stdout == nil || shape.Stderr == nil ||
+		json.Unmarshal(rb, &rep) != nil {
 		return unreachable("reply is not JSON", false, true)
 	}
 	return rep, nil, false, true
+}
+
+func rpcReplyBody(body []byte) bool {
+	var shape struct {
+		Exit   *int    `json:"exit"`
+		Stdout *string `json:"stdout"`
+		Stderr *string `json:"stderr"`
+	}
+	return json.Unmarshal(body, &shape) == nil && shape.Exit != nil && shape.Stdout != nil && shape.Stderr != nil
+}
+
+func (cl *rpcClient) callStored(cx context.Context, req rpcRequest) (rpcReply, *exitErr, bool) {
+	rep, err, noReply, _ := cl.callOnceRequest(cx, req, true)
+	return rep, err, noReply
+}
+
+func rpcClientRequest(argv []string, cwd, key string, env map[string]string, document *rpcDocPayload) rpcRequest {
+	req := rpcRequest{Argv: slices.Clone(argv), Cwd: cwd, Env: env, RequestKey: key, Document: document}
+	if rpcCarriesDocument(argv) {
+		req.Capabilities = []string{docUploadCapability}
+	}
+	return req
+}
+
+func rpcCarriesDocument(argv []string) bool {
+	name, args := rpcCommand(argv)
+	switch name {
+	case "new", "prompt", "_prompt", "ready", "done", "fail", "close", "_doc":
+		return true
+	case "doc":
+		return len(args) > 0 && (args[0] == "set" || args[0] == "backfill")
+	default:
+		return false
+	}
+}
+
+func spoolRecordCommand(argv []string) bool {
+	name, _ := rpcCommand(argv)
+	switch name {
+	case "got", "ready", "done", "fail", "decide", "next", "note", "close", "_hook":
+		return true
+	default:
+		return false
+	}
+}
+
+func clientReadySpoolDocument(args []string, env map[string]string) *rpcDocPayload {
+	path, _, _, ok := flagValue(args, "report")
+	if !ok || path == "" {
+		return nil
+	}
+	task, err := strconv.ParseInt(env["TASKR_TASK"], 10, 64)
+	if err != nil || task <= 0 {
+		return nil
+	}
+	want := rpcDocWant{Task: task, Kind: "report", Path: path}
+	return clientDocPayload(want, fileDocument(path, ""), false, false)
+}
+
+func clientQueuedResult(c *ctx, args []string, key string, waiting int, reason string, stderr io.Writer) int {
+	c.json = c.json || flagTrue(args, "json")
+	c.emit(map[string]any{"queued": true, "request_key": key})
+	fmt.Fprintf(stderr, "taskr: %s; queued (%d waiting)\n", reason, waiting)
+	return exitOK
 }
 
 // clientPaths makes the path flags absolute here, before they reach another
@@ -407,7 +615,11 @@ func (cl *rpcClient) callOnce(parent context.Context, argv []string, cwd, key st
 // out of argv and returned, since this host writes that file.
 func clientPaths(name string, args []string, cwd string) ([]string, string, error) {
 	base := cwd
-	for _, f := range rpcPathFlags[name] {
+	pathFlags := rpcPathFlags[name]
+	if name == "doc" && len(args) > 0 && args[0] == "set" {
+		pathFlags = []string{"file"}
+	}
+	for _, f := range pathFlags {
 		v, at, inline, ok := flagValue(args, f)
 		if !ok || at < 0 || v == "" {
 			continue
@@ -460,22 +672,186 @@ func clientPaths(name string, args []string, cwd string) ([]string, string, erro
 	return args, out, nil
 }
 
-// clientNewChecks runs new's existence checks here when the task will be on
-// this host: no --machine, or --machine naming this host. The server checks
-// its own host's paths and skips a third host's.
-func clientNewChecks(args []string, self string) error {
-	if m, _, _, given := flagValue(args, "machine"); given && m != machineLabel(self) {
-		return nil
+func clientDocSetPayload(c *ctx, args []string) (*rpcDocPayload, error) {
+	if len(args) < 3 || args[0] != "set" {
+		return nil, nil
 	}
+	fs := flag.NewFlagSet("doc set", flag.ContinueOnError)
+	file := fs.String("file", "", "")
+	name := fs.String("name", "", "")
+	pos, err := parseArgs(c, fs, args[1:], 2, 2)
+	if err != nil {
+		return nil, nil // let the server retain the command's normal validation and output
+	}
+	id, err := parseID(pos[0], "task id")
+	if err != nil {
+		return nil, nil
+	}
+	kind := pos[1]
+	if kind != "goal" && kind != "plan" || kind == "goal" && flagWasSet(fs, "name") ||
+		flagWasSet(fs, "name") && !documentNameRe.MatchString(*name) || *file == "" {
+		return nil, nil
+	}
+	in := fileDocument(*file, "")
+	if in.Reason == "missing" {
+		return nil, usageErr("document file is missing or unreadable: %s", *file)
+	}
+	if in.Reason != "" {
+		return nil, usageErr("document file: %s (%s)", in.Reason, *file)
+	}
+	body := base64.StdEncoding.EncodeToString([]byte(in.Body))
+	return &rpcDocPayload{Task: id, Kind: kind, Name: *name, Path: in.Path, Body: &body,
+		SHA256: in.Hash, Bytes: in.Bytes}, nil
+}
+
+func clientDocPayload(want rpcDocWant, in documentInput, backfill, dryRun bool) *rpcDocPayload {
+	p := &rpcDocPayload{Task: want.Task, Kind: want.Kind, Name: want.Name, Path: want.Path,
+		EventID: want.EventID, Bytes: in.Bytes, Backfill: backfill, DryRun: dryRun}
+	if in.Reason != "" {
+		p.Reason = in.Reason
+		if in.Reason == "binary" {
+			p.SHA256 = in.Hash
+		}
+		return p
+	}
+	body := base64.StdEncoding.EncodeToString([]byte(in.Body))
+	p.Body, p.SHA256 = &body, in.Hash
+	return p
+}
+
+func clientUploadDocs(cl *rpcClient, wants []rpcDocWant, cwd string, env map[string]string) {
+	_ = clientUploadSpoolDocs(cl, wants, cwd, env, nil)
+}
+
+type rpcDocUploadRefusalError struct {
+	want    rpcDocWant
+	message string
+}
+
+func (e *rpcDocUploadRefusalError) Error() string {
+	return "document upload refused: " + e.message
+}
+
+func clientUploadSpoolDocs(cl *rpcClient, wants []rpcDocWant, cwd string, env map[string]string, saved *rpcDocPayload) error {
+	for _, want := range wants {
+		var payload *rpcDocPayload
+		if saved != nil && saved.Task == want.Task && saved.Kind == want.Kind && saved.Name == want.Name && saved.Path == want.Path {
+			copy := *saved
+			copy.EventID = want.EventID
+			payload = &copy
+		} else {
+			in := fileDocument(want.Path, "")
+			payload = clientDocPayload(want, in, false, false)
+		}
+		cx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		rep, err, _, _ := cl.callOnceNoFallback(cx, []string{"--json", "_doc", "put"}, cwd, newRequestKey(), env, payload)
+		cancel()
+		if err != nil {
+			if spoolTransportError(err) {
+				return err
+			}
+			return &rpcDocUploadRefusalError{want: want, message: err.msg}
+		}
+		if rep.Exit != exitOK {
+			return &rpcDocUploadRefusalError{want: want, message: rpcReplyError(rep)}
+		}
+	}
+	return nil
+}
+
+func clientDocBackfill(c *ctx, cl *rpcClient, args []string, cwd string, env map[string]string) int {
+	fs := flag.NewFlagSet("doc backfill", flag.ContinueOnError)
+	tree := fs.Int64("tree", 0, "only this task and descendants")
+	dry := fs.Bool("dry-run", false, "count without writing")
+	if _, err := parseArgs(c, fs, args, 0, 0); err != nil {
+		var e *exitErr
+		if errors.As(err, &e) {
+			return clientFail(c, e.code, e.kind, e.msg)
+		}
+		return clientFail(c, exitUsage, "usage", err.Error())
+	}
+	if *tree < 0 {
+		return clientFail(c, exitUsage, "usage", "--tree must be a positive task id")
+	}
+	counts := map[string]int{"captured": 0, "too_large": 0, "binary": 0, "missing": 0, "client": 0, "unchanged": 0}
+	offset := 0
+	for {
+		argv := []string{"--json", "_doc", "wanted", "--offset", strconv.Itoa(offset)}
+		if *tree != 0 {
+			argv = append(argv, "--tree", strconv.FormatInt(*tree, 10))
+		}
+		rep, err := cl.callRetry(c, argv, cwd, newRequestKey(), "taskr doc backfill", env)
+		if err != nil {
+			return clientFail(c, err.code, err.kind, err.msg)
+		}
+		if rep.Exit != exitOK {
+			return clientFail(c, rep.Exit, "rejected", lastLine(rep.Stdout))
+		}
+		var page struct {
+			Documents []rpcDocWant `json:"documents"`
+			Offset    int          `json:"offset"`
+			More      bool         `json:"more"`
+			Unchanged int          `json:"unchanged"`
+		}
+		if err := json.Unmarshal([]byte(lastLine(rep.Stdout)), &page); err != nil {
+			return clientFail(c, exitDB, "database", "invalid _doc wanted reply")
+		}
+		counts["unchanged"] += page.Unchanged
+		for _, want := range page.Documents {
+			in := fileDocument(want.Path, "")
+			payload := clientDocPayload(want, in, true, *dry)
+			cx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			put, putErr, _, _ := cl.callOnceNoFallback(cx, []string{"--json", "_doc", "put"}, cwd, newRequestKey(), env, payload)
+			cancel()
+			if putErr != nil {
+				return clientFail(c, putErr.code, putErr.kind, putErr.msg)
+			}
+			if put.Exit != exitOK {
+				var failure struct {
+					Error string `json:"error"`
+					Kind  string `json:"kind"`
+				}
+				_ = json.Unmarshal([]byte(lastLine(put.Stdout)), &failure)
+				return clientFail(c, put.Exit, failure.Kind, failure.Error)
+			}
+			var result struct {
+				Count string `json:"count"`
+			}
+			if err := json.Unmarshal([]byte(lastLine(put.Stdout)), &result); err != nil {
+				return clientFail(c, exitDB, "database", "invalid _doc put reply")
+			}
+			if _, ok := counts[result.Count]; !ok {
+				return clientFail(c, exitDB, "database", "invalid _doc put count")
+			}
+			counts[result.Count]++
+		}
+		if !page.More {
+			break
+		}
+		offset = page.Offset
+	}
+	c.emit(counts)
+	return exitOK
+}
+
+// clientNewChecks checks --brief on the caller's host. --cwd belongs to the
+// task's host, so the client checks it only when the task will run here.
+func clientNewChecks(args []string, self string) error {
 	if role, _, _, _ := flagValue(args, "role"); role == "gate" || flagTrue(args, "planned") {
 		return nil
 	}
-	dir, _, _, ok := flagValue(args, "cwd")
-	if !ok || dir == "" {
-		dir, _ = os.Getwd()
+	localTask := true
+	if m, _, _, given := flagValue(args, "machine"); given && m != machineLabel(self) {
+		localTask = false
 	}
-	if err := requireDirectory(dir); err != nil {
-		return err
+	if localTask {
+		dir, _, _, ok := flagValue(args, "cwd")
+		if !ok || dir == "" {
+			dir, _ = os.Getwd()
+		}
+		if err := requireDirectory(dir); err != nil {
+			return err
+		}
 	}
 	if brief, _, _, ok := flagValue(args, "brief"); ok && brief != "" {
 		return requireFile(brief)

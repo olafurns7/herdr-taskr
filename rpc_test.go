@@ -63,7 +63,11 @@ func TestRPCModes(t *testing.T) {
 			if code != exitUsage {
 				t.Errorf("%v = %d", args, code)
 			}
-		case args[0] == "status" || args[0] == "note":
+		case args[0] == "note":
+			if code != 0 || !strings.HasPrefix(strings.TrimSpace(out.String()), "qd1 ") || !strings.Contains(errb.String(), "server unreachable; queued (1 waiting)") {
+				t.Errorf("%v = %d %q %q", args, code, out.String(), errb.String())
+			}
+		case args[0] == "status":
 			if code != exitHerdr || !strings.Contains(errb.String(), "server unreachable") {
 				t.Errorf("%v = %d %q", args, code, errb.String())
 			}
@@ -73,8 +77,11 @@ func TestRPCModes(t *testing.T) {
 			t.Errorf("version = %s", out.String())
 		}
 	}
-	if files := stateFiles(t, home); len(files) != 1 || files[0] != filepath.Join(".local", "state", "taskr", serverURLFile) {
-		t.Fatalf("client mode left files: %v", files)
+	if files := stateFiles(t, home); len(files) != 3 || files[0] != filepath.Join(".local", "state", "taskr", serverURLFile) || !strings.Contains(filepath.ToSlash(files[1]), "/spool/lock") || !strings.Contains(filepath.ToSlash(files[2]), "/spool/queue/") {
+		t.Fatalf("client mode left unexpected files: %v", files)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".local", "state", "taskr", "taskr.db")); !os.IsNotExist(err) {
+		t.Fatalf("client mode created local ledger: %v", err)
 	}
 	// A server.url that is not a tailnet address is refused, never local.
 	bad := t.TempDir()

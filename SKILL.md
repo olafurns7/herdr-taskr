@@ -25,7 +25,20 @@ taskr done "report"                   # or fail
 ```
 Blocking ask: `taskr wait --for answer` (it uses TASKR_TASK/TASKR_LAUNCH; `--as` other than TASKR_TASK exits 6). Handle the answer to your ask, then `taskr ack EVENT --as $TASKR_TASK`. Timeout: wait again. Answers never reopen finished work. --key: idempotent; got: reserved.
 
-Exit 5 `server unreachable; retry with: taskr --request-key KEY ...` on any write (`ask`, `ready`, `done` ...): the write may not be stored. Rerun that exact line, never a fresh command, before you wait on anything. Never wait on an ask that was not stored. During an outage a client write may block up to 60 s; if killed, rerun the announce line's `retry with:` command.
+Client records: `got`, `ready`, `done`, `fail`, `decide`, `next`, `note` and `close` print `qd1 <request key>` and exit 0 when the server is unreachable or earlier records wait in this host's spool. A full or unwritable spool: exit 5 with `retry with:`; rerun that line. Delivery: a running client daemon after a pass that reaches the server, or `taskr spool send` on that host; without a daemon they stay queued until manual send. Do not retry a queued record or treat it as failure. Other commands still exit 5 with `retry with: taskr --request-key KEY ...`: rerun that exact line before any wait; never wait on an unstored ask. If killed, use the announce line's retry command.
+
+`taskr spool ls` lists this host's queued, refused and bad files; `spool send` tries delivery now on a client host only; `spool rm SEQ|FILE` removes one after inspection. A stuck head (401/403/408/429) holds the whole queue in order: fix this host's token or wait for the server to be free. A refused `outcome unknown` record: check `taskr log` and run again only if missing. Other refused records will not be sent again; the server's error says why. A bad file could not be read; inspect it, then `spool rm` it.
+
+Documents are captured from the host with the file: briefs from the caller (a non-planned, non-gate `new` refuses a missing file), `prompt --file` from the caller (must exist there), reports from the lane's host when that host runs the command, goal/plan via `doc set --file` from the caller. No copy to the ledger host; `doc set` and `doc backfill` work from any host. See [Documents](references/orchestrator.md#documents).
+
+Close a lane with `taskr close ID --outcome accepted|reworked|rejected|abandoned`: accepted = work taken as delivered; reworked = taken after a fix round; rejected = not taken; abandoned = stopped before a result. Omit the flag to record no outcome; `log` shows it in the closed event's data.
+
+`taskr search QUERY [--root ID] [--kind K] [--limit N] [--raw]` searches latest captured documents and decision/ask/answer/note summaries (default 20, max 100; `--raw` uses FTS5 syntax):
+
+```sh
+taskr search "retry policy" --root 42
+taskr search 'timeout OR outage' --kind decision --limit 10 --raw
+```
 
 Orchestrator loop: `taskr wait --as ID --for ready,ask,answer,owner_answer,done,fail,prompt_outcome,herdr --ack HANDLED`; omit `--ack` on the first wait; pass `--ack` only for a newly handled pending event, and after a timeout or an error that reports `acked_event_id`, do not repeat that successful ack. Matches replay until acked. One consumer per inbox. Herdr hints are never result proof: after `ready`, read the report and the diff, not the pane. Details: [orchestrator](references/orchestrator.md).
 

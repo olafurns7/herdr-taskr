@@ -81,14 +81,19 @@ type ctx struct {
 	code   int
 
 	// Set by the RPC handler for a remote caller; zero for the local CLI.
-	db      *sql.DB         // the daemon's resident ledger
-	log     *daemonLog      // the server daemon's log for remote calls
-	cx      context.Context // ends a wait; nil means the CLI's signal context
-	rpc     bool            // a remote caller: paths come absolute, no file effects here
-	machine string          // the caller's host label; "" is the server host
-	cwd     string          // the caller's working directory
-	client  bool            // client mode: never open a local ledger
-	server  string          // client mode: the server URL, for version
+	db          *sql.DB         // the daemon's resident ledger
+	log         *daemonLog      // the server daemon's log for remote calls
+	cx          context.Context // ends a wait; nil means the CLI's signal context
+	rpc         bool            // a remote caller: paths come absolute, no file effects here
+	machine     string          // the caller's host label; "" is the server host
+	cwd         string          // the caller's working directory
+	client      bool            // client mode: never open a local ledger
+	server      string          // client mode: the server URL, for version
+	docUpload   bool
+	docUploads  []rpcDocWant
+	remoteDoc   *rpcDocPayload
+	queuedAt    string
+	queuedAgeMS int64
 }
 
 func (c *ctx) env(k string) string {
@@ -124,7 +129,8 @@ func commandTable() map[string]command {
 		"wait": cmdWait, "ack": cmdAck,
 		"next": cmdNext, "decide": cmdDecide, "set": cmdSet, "handover": cmdHandover, "adopt": cmdAdopt,
 		"status": cmdStatus, "asks": cmdAsks, "log": cmdLog,
-		"daemon": cmdDaemon, "doc": cmdDoc,
+		"search": cmdSearch,
+		"daemon": cmdDaemon, "doc": cmdDoc, "spool": cmdSpool,
 	}
 }
 
@@ -132,16 +138,19 @@ const usageText = `usage: taskr <command> [args]
 worker:       start | got ATTEMPT_ID | note TEXT | ready TEXT --report PATH [--kv K=V]... | ask TEXT [--blocking] [--owner] | done [TEXT] | fail TEXT
               note TEXT --as ID | ask TEXT --owner --as ID   (a root orchestrator: no parent, no launch)
 orchestrator: new NAME --role ROLE [--parent ID] [--planned] ... | launch ID --provider P --model M --effort E | prompt ID (--file PATH | --text TEXT) [--receipt-timeout MS] [--confirm [--confirm-timeout MS]]
-              answer ASK_ID TEXT [--prompt [--confirm [--confirm-timeout MS]]] | close ID
+              answer ASK_ID TEXT [--prompt [--confirm [--confirm-timeout MS]]] | close ID [--outcome accepted|reworked|rejected|abandoned]
+outcomes:     accepted (work taken as delivered), reworked (taken after a fix round), rejected (not taken), abandoned (stopped before a result)
 plan:         next ID TEXT | next ID --clear | set ID KEY=VALUE... (KEY= deletes) | decide --as ID TEXT | decide --as ID --revoke EVENT_ID
-documents:    doc set ID goal|plan [--name NAME] --file PATH | doc ls ID [--tree] [--kind K] [--versions] [--limit N] | doc get DOC_ID | doc rm DOC_ID --purge | doc backfill [--tree ID] [--dry-run]
+documents:    doc set ID goal|plan [--name NAME] --file PATH (any host) | doc ls ID [--tree] [--kind K] [--versions] [--limit N] | doc get DOC_ID | doc rm DOC_ID --purge | doc backfill [--tree ID] [--dry-run] (any host)
 handover:     handover --as ID [--note TEXT] [--out PATH] | adopt ID [--workspace W --tab T --pane P]   (Markdown on stdout)
 inbox:        wait [--as ID] [--for KIND[,KIND...]] [--from NAME|ID]... [--ack EVENT_ID] [--timeout MS] [--scan-quota] | ack EVENT_ID --as ID
 hooks:        hook <harness> <event> (JSON on stdin)
 read:         status [--tree ID] [--all] | asks [--open] [--tree ID] [--owner] [--limit N] | log ID [--tree] [--since EVENT_ID] [--before EVENT_ID] [--limit N]
+search:       search QUERY [--root ID] [--kind K] [--limit N] [--raw]   (documents and decision/ask/answer/note; default 20, max 100)
 daemon:       daemon [--stay] [--once] [--status] [--restart]   (the Herdr plugin's event bridge and owner dashboard; one per HOME)
 info:         version | help [CMD]
 client:       --request-key KEY <command> [args]   (with a server.url: retry a command whose answer was lost)
+spool:        spool ls | spool send | spool rm SEQ|FILE   (client-local queued records)
 format:       compact by default; --json or TASKR_FORMAT=json selects legacy JSON (handover/adopt stay Markdown)`
 
 func main() {

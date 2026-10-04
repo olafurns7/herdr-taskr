@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -134,10 +135,9 @@ func TestRetryWriteLostReply(t *testing.T) {
 	defer mu.Unlock()
 	if code != 0 || len(keys) != 2 || keys[0] != keys[1] || out != stored ||
 		r.count(`select count(*) from events where kind = 'note' and task_id = ?`, top) != 1 ||
-		strings.Count(stderr, "retrying until") != 1 {
+		stderr != "" {
 		t.Fatalf("lost reply = %d %s %s; keys=%v, stored=%q", code, out, stderr, keys, stored)
 	}
-	checkRetryAnnounce(t, stderr, "server unreachable", "taskr --request-key "+keys[0]+" --json note once --as "+id(top))
 }
 
 func TestRetryStillRunning(t *testing.T) {
@@ -186,20 +186,18 @@ func TestRetryDeadline(t *testing.T) {
 	} {
 		start := time.Now()
 		code, out, stderr := retryCLI(dead, args...)
-		if code != exitHerdr || time.Since(start) > 600*time.Millisecond || lastJSON(out)["kind"] != "transport" || lastJSON(out)["unreachable"] != nil ||
-			!strings.Contains(stderr, "retry with:") || strings.Count(stderr, "retrying until") != 1 {
-			t.Fatalf("deadline = %d %s %s after %v", code, out, stderr, time.Since(start))
-		}
-		retry := ""
-		if args[1] != "wait" {
-			retry = "taskr --request-key deadline-retry-1 --json note once --as 1"
-			_, final, _ := strings.Cut(stderr, "\n")
-			line, _, _ := strings.Cut(final, "\n")
-			if line != "taskr: server unreachable; retry with: "+retry {
-				t.Fatalf("final retry line = %q", final)
+		if args[1] == "wait" {
+			if code != exitHerdr || time.Since(start) > 600*time.Millisecond || lastJSON(out)["kind"] != "transport" ||
+				lastJSON(out)["unreachable"] != nil || !strings.Contains(stderr, "retry with:") || strings.Count(stderr, "retrying until") != 1 {
+				t.Fatalf("wait deadline = %d %s %s after %v", code, out, stderr, time.Since(start))
 			}
+			checkRetryAnnounce(t, stderr, "server unreachable", "")
+			continue
 		}
-		checkRetryAnnounce(t, stderr, "server unreachable", retry)
+		if code != exitOK || time.Since(start) > 600*time.Millisecond || lastJSON(out)["queued"] != true ||
+			lastJSON(out)["request_key"] != "deadline-retry-1" || stderr != "taskr: server unreachable; queued (1 waiting)\n" {
+			t.Fatalf("record deadline = %d %s %s after %v", code, out, stderr, time.Since(start))
+		}
 	}
 }
 
@@ -217,6 +215,13 @@ func TestRetrySignal(t *testing.T) {
 				time.Sleep(2 * time.Second) // Verification has its own timeout, independent of the HTTP context.
 				return "hub-::1"
 			})
+		} else {
+			url, ln, srv := retryEndpoint(t, r, func(w http.ResponseWriter, q *http.Request) {
+				fmt.Fprintln(os.Stderr, "taskr-test: request received")
+				cutRetryReply(w)
+			})
+			go srv.Serve(ln)
+			home = r.clientHome(url)
 		}
 		code = cliMain([]string{"--request-key", "signal-retry-1", "note", "once", "--as", "1"},
 			clientEnv(home, nil), os.Stdout, os.Stderr)
@@ -244,7 +249,9 @@ func TestRetrySignal(t *testing.T) {
 					t.Fatalf("child announce = %q, %v", line, err)
 				}
 				if phase == "backoff" {
-					checkRetryAnnounce(t, line, "server unreachable", "taskr --request-key signal-retry-1 note once --as 1")
+					if line != "taskr-test: request received\n" {
+						t.Fatalf("child request readiness = %q", line)
+					}
 				} else if line != "taskr-test: attempt in flight\n" {
 					t.Fatalf("child in-flight readiness = %q", line)
 				}
@@ -265,22 +272,31 @@ func TestRetrySignal(t *testing.T) {
 	}
 }
 
-func TestRetryAttemptSlack(t *testing.T) {
+func TestSpoolAttemptHonorsRetryWindow(t *testing.T) {
 	r := newTwoHost(t)
 	setVar(t, &rpcRetryWindow, func([]string) time.Duration { return 120 * time.Millisecond })
 	top := num(r.want(0, "host-a", nil, "new", "top", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
 	var attempts atomic.Int32
+	processed := make(chan struct{})
 	url, ln, srv := retryEndpoint(t, r, func(w http.ResponseWriter, q *http.Request) {
 		attempts.Add(1)
 		time.Sleep(250 * time.Millisecond)
 		r.d.ServeHTTP(w, q)
+		close(processed)
 	})
 	go srv.Serve(ln)
 	start := time.Now()
-	code, out, stderr := retryCLI(r.clientHome(url), "--json", "note", "after window", "--as", id(top))
-	if code != exitOK || time.Since(start) <= 120*time.Millisecond || attempts.Load() != 1 || stderr != "" ||
-		lastJSON(out)["event_id"] == nil || r.count(`select count(*) from events where kind = 'note' and task_id = ?`, top) != 1 {
-		t.Fatalf("attempt slack = %d %s %s, attempts %d after %v", code, out, stderr, attempts.Load(), time.Since(start))
+	home := r.clientHome(url)
+	code, out, stderr := retryCLI(home, "--json", "note", "after window", "--as", id(top))
+	if code != exitOK || time.Since(start) > 350*time.Millisecond || attempts.Load() != 1 ||
+		lastJSON(out)["queued"] != true || stderr != "taskr: server unreachable; queued (1 waiting)\n" ||
+		countSpoolFiles(filepath.Join(spoolStateDir(home), spoolDirName, spoolQueueDir)) != 1 {
+		t.Fatalf("attempt window = %d %s %s, attempts %d after %v", code, out, stderr, attempts.Load(), time.Since(start))
+	}
+	select {
+	case <-processed:
+	case <-time.After(time.Second):
+		t.Fatal("delayed server attempt did not finish")
 	}
 }
 
@@ -391,9 +407,9 @@ func TestRetryHookDeadline(t *testing.T) {
 }
 
 func TestRetryWindowBudget(t *testing.T) {
-	if rpcRetryWindow([]string{"note", "once"}) != time.Minute ||
+	if rpcRetryWindow([]string{"note", "once"}) != 3*time.Second ||
 		rpcRetryWindow([]string{"answer", "1", "yes", "--prompt", "--confirm"}) != 90*time.Second {
-		t.Fatal("retry window must cover the command budget")
+		t.Fatal("retry window does not match command policy")
 	}
 }
 

@@ -215,7 +215,7 @@ func expireReceiptsNow(db *sql.DB) error {
 // lateReceipt writes prompt_outcome late_receipt when attempt already has a
 // no_receipt (async or --confirm), to that alarm's inbox or else the worker's
 // parent. The task_id lookup uses the events_task index.
-func lateReceipt(tx *sql.Tx, w *worker, attempt, gotID int64) error {
+func lateReceipt(c *ctx, tx *sql.Tx, w *worker, attempt, gotID int64) error {
 	var nr int64
 	var recip sql.NullInt64
 	var at string
@@ -234,7 +234,7 @@ func lateReceipt(tx *sql.Tx, w *worker, attempt, gotID int64) error {
 	if recip.Valid {
 		to = ptr(recip.Int64)
 	}
-	_, err = insertEvent(tx, event{TaskID: w.task.ID, RecipientTaskID: to, LaunchID: w.launchID,
+	_, err = c.insertEvent(tx, event{TaskID: w.task.ID, RecipientTaskID: to, LaunchID: w.launchID,
 		Kind: "prompt_outcome", Summary: "late_receipt", RelatedEventID: ptr(attempt),
 		EventKey: lateReceiptKeyPrefix + strconv.FormatInt(attempt, 10),
 		Data: map[string]any{"outcome": "late_receipt", "got_event_id": gotID, "no_receipt_event_id": nr,

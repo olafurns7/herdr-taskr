@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -40,7 +43,7 @@ func cmdDoc(c *ctx, args []string) (any, int, error) {
 
 func cmdDocSet(c *ctx, args []string) (any, int, error) {
 	fs := flag.NewFlagSet("doc set", flag.ContinueOnError)
-	file := fs.String("file", "", "document file on the server host")
+	file := fs.String("file", "", "document file, read on any host")
 	name := fs.String("name", "", "plan name, [a-z0-9][a-z0-9._-]{0,63}")
 	pos, err := parseArgs(c, fs, args, 2, 2)
 	if err != nil {
@@ -71,9 +74,23 @@ func cmdDocSet(c *ctx, args []string) (any, int, error) {
 	if err != nil {
 		return nil, 0, usageErr("document path: %v", err)
 	}
-	in := fileDocument(path, "")
+	var in documentInput
+	if c.rpc && c.remoteDoc != nil {
+		p := c.remoteDoc
+		if !c.docUpload || p.Task != id || p.Kind != kind || p.Name != *name || p.Path != path ||
+			p.EventID != nil || p.Backfill || p.DryRun {
+			return nil, 0, rejectErr("doc set body does not match its request")
+		}
+		in, err = docPayloadInput(*p)
+		if err != nil {
+			return nil, 0, err
+		}
+		in.Host = c.machine
+	} else {
+		in = fileDocument(path, "")
+	}
 	if in.Reason == "missing" {
-		if c.rpc {
+		if c.rpc && c.remoteDoc == nil {
 			return nil, 0, usageErr("file not found on the server host; in this release the file must be on that host's disk")
 		}
 		return nil, 0, usageErr("document file is missing or unreadable: %s", path)
@@ -282,6 +299,9 @@ func cmdDocRm(c *ctx, args []string) (any, int, error) {
 		if _, err := tx.Exec(`pragma secure_delete = on`); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(`delete from search_fts where src = 'doc' and task_id = ? and kind = ? and name = ?`, d.TaskID, d.Kind, d.Name); err != nil {
+			return err
+		}
 		res, err := tx.Exec(`delete from documents where task_id = ? and kind = ? and name = ?`, d.TaskID, d.Kind, d.Name)
 		if err != nil {
 			return err
@@ -388,12 +408,23 @@ type backfillFile struct {
 	backfill   int
 }
 
-func prepareBackfill(q queryer, taskID int64) ([]backfillFile, error) {
-	t, err := loadTask(q, taskID)
-	if err != nil {
-		return nil, err
+type backfillCandidate struct{ path, kind, name string }
+
+func backfillSourceHost(q queryer, taskID int64, candidate backfillCandidate, taskHost string) (string, error) {
+	if candidate.kind != "brief" && candidate.kind != "prompt" {
+		return taskHost, nil
 	}
-	host, err := documentHost(q, taskID)
+	var host sql.NullString
+	err := q.QueryRow(`select source_host from documents where task_id = ? and kind = ? and name = ? and captured = 0
+		order by version desc limit 1`, taskID, candidate.kind, candidate.name).Scan(&host)
+	if errors.Is(err, sql.ErrNoRows) {
+		return taskHost, nil
+	}
+	return host.String, err
+}
+
+func backfillCandidates(q queryer, taskID int64) ([]backfillCandidate, error) {
+	t, err := loadTask(q, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -405,14 +436,13 @@ func prepareBackfill(q queryer, taskID int64) ([]backfillFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	type candidate struct{ path, kind, name string }
-	var candidates []candidate
+	var candidates []backfillCandidate
 	if brief.String != "" {
 		kind := "goal"
 		if t.ParentID.Valid {
 			kind = "brief"
 		}
-		candidates = append(candidates, candidate{brief.String, kind, ""})
+		candidates = append(candidates, backfillCandidate{brief.String, kind, ""})
 	}
 	paths, err := listStrings(q, `select distinct json_extract(data, '$.file') from events where task_id = ? and kind = 'prompt' and json_extract(data, '$.file') is not null order by id`, taskID)
 	if err != nil {
@@ -420,23 +450,50 @@ func prepareBackfill(q queryer, taskID int64) ([]backfillFile, error) {
 	}
 	for _, path := range paths {
 		if path != "" && path != brief.String {
-			candidates = append(candidates, candidate{path, "prompt", filepath.Base(path)})
+			candidates = append(candidates, backfillCandidate{path, "prompt", filepath.Base(path)})
 		}
 	}
 	if report != "" {
-		candidates = append(candidates, candidate{report, "report", ""})
+		candidates = append(candidates, backfillCandidate{report, "report", ""})
+	}
+	return candidates, nil
+}
+
+func backfillMetadata(q queryer, taskID int64, kind string, in documentInput) (int, *int64, error) {
+	if kind == "report" || in.Hash == "" {
+		return 2, nil, nil
+	}
+	var eventID int64
+	err := q.QueryRow(`select id from events where task_id = ? and kind = 'prompt' and json_extract(data, '$.file') = ? and json_extract(data, '$.sha256') = ? order by id desc limit 1`,
+		taskID, in.Path, in.Hash).Scan(&eventID)
+	if err == nil {
+		return 1, ptr(eventID), nil
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return 2, nil, nil
+	}
+	return 0, nil, err
+}
+
+func prepareBackfill(q queryer, taskID int64) ([]backfillFile, error) {
+	host, err := documentHost(q, taskID)
+	if err != nil {
+		return nil, err
+	}
+	candidates, err := backfillCandidates(q, taskID)
+	if err != nil {
+		return nil, err
 	}
 	var files []backfillFile
 	for _, candidate := range candidates {
-		f := backfillFile{kind: candidate.kind, name: candidate.name, input: fileDocument(candidate.path, host), backfill: 2}
-		if f.kind != "report" && f.input.Hash != "" {
-			var eid int64
-			err := q.QueryRow(`select id from events where task_id = ? and kind = 'prompt' and json_extract(data, '$.file') = ? and json_extract(data, '$.sha256') = ? order by id desc limit 1`, taskID, f.input.Path, f.input.Hash).Scan(&eid)
-			if err == nil {
-				f.backfill, f.eventID = 1, ptr(eid)
-			} else if !errors.Is(err, sql.ErrNoRows) {
-				return nil, err
-			}
+		candidateHost, err := backfillSourceHost(q, taskID, candidate, host)
+		if err != nil {
+			return nil, err
+		}
+		f := backfillFile{kind: candidate.kind, name: candidate.name, input: fileDocument(candidate.path, candidateHost)}
+		f.backfill, f.eventID, err = backfillMetadata(q, taskID, f.kind, f.input)
+		if err != nil {
+			return nil, err
 		}
 		files = append(files, f)
 	}
@@ -482,4 +539,270 @@ func backfillTask(tx *sql.Tx, taskID int64, files []backfillFile, counts map[str
 		counts[key] = counts[key].(int) + 1
 	}
 	return nil
+}
+
+func docPayloadInput(p rpcDocPayload) (documentInput, error) {
+	if p.Task <= 0 || !documentKinds[p.Kind] || p.Path == "" || !filepath.IsAbs(p.Path) {
+		return documentInput{}, rejectErr("document task, kind and absolute path are required")
+	}
+	if p.Kind == "goal" && p.Name != "" || p.Name != "" && !documentNameRe.MatchString(p.Name) {
+		return documentInput{}, rejectErr("invalid document name")
+	}
+	if p.EventID != nil && *p.EventID <= 0 {
+		return documentInput{}, rejectErr("event_id must be positive")
+	}
+	if p.SHA256 != "" {
+		if len(p.SHA256) != sha256.Size*2 {
+			return documentInput{}, rejectErr("invalid document sha256")
+		}
+		if _, err := hex.DecodeString(p.SHA256); err != nil {
+			return documentInput{}, rejectErr("invalid document sha256")
+		}
+	}
+	if p.Bytes != nil && *p.Bytes < 0 {
+		return documentInput{}, rejectErr("invalid document byte count")
+	}
+	if p.Body != nil {
+		if p.Reason != "" || p.SHA256 == "" {
+			return documentInput{}, rejectErr("document body needs a sha256 and no reason")
+		}
+		body, err := base64.StdEncoding.DecodeString(*p.Body)
+		if err != nil {
+			return documentInput{}, rejectErr("document body is not base64")
+		}
+		in := bodyDocument(body, p.Path)
+		if in.Reason != "" || in.Hash != p.SHA256 || p.Bytes != nil && *p.Bytes != int64(len(body)) {
+			return documentInput{}, rejectErr("document body failed size, text or sha256 validation")
+		}
+		return in, nil
+	}
+	if p.Reason != "missing" && p.Reason != "too_large" && p.Reason != "binary" {
+		return documentInput{}, rejectErr("document body or a supported miss reason is required")
+	}
+	if p.Reason == "too_large" && (p.Bytes == nil || *p.Bytes <= documentCap) {
+		return documentInput{}, rejectErr("too_large document is below the size cap")
+	}
+	if p.Reason == "binary" && (p.Bytes == nil || *p.Bytes > documentCap || p.SHA256 == "") {
+		return documentInput{}, rejectErr("binary document needs its size and sha256")
+	}
+	return documentInput{Path: p.Path, Hash: p.SHA256, Bytes: p.Bytes, Reason: p.Reason}, nil
+}
+
+func hasCapability(caps []string, want string) bool {
+	for _, cap := range caps {
+		if cap == want {
+			return true
+		}
+	}
+	return false
+}
+
+func clientBackfillSkipped(q queryer, d rpcDocWant) (bool, error) {
+	var skip bool
+	err := q.QueryRow(`select exists(select 1 from documents where task_id = ? and kind = ? and name = ?
+		and captured = 1 and (backfill = 0 or source_path = ?))`, d.Task, d.Kind, d.Name, d.Path).Scan(&skip)
+	return skip, err
+}
+
+func cmdDocRPC(c *ctx, args []string) (any, int, error) {
+	if err := hiddenOnly(c, "_doc"); err != nil {
+		return nil, 0, err
+	}
+	if !c.docUpload {
+		return nil, 0, rejectErr("_doc requires the doc-upload capability")
+	}
+	if len(args) == 0 {
+		return nil, 0, usageErr("_doc: expected put or wanted")
+	}
+	switch args[0] {
+	case "put":
+		return cmdDocPut(c, args[1:])
+	case "wanted":
+		return cmdDocWanted(c, args[1:])
+	default:
+		return nil, 0, usageErr("_doc: expected put or wanted")
+	}
+}
+
+func cmdDocPut(c *ctx, args []string) (any, int, error) {
+	if _, err := parseArgs(c, flag.NewFlagSet("_doc put", flag.ContinueOnError), args, 0, 0); err != nil {
+		return nil, 0, err
+	}
+	p := c.remoteDoc
+	if p == nil {
+		return nil, 0, usageErr("_doc put needs a document payload")
+	}
+	in, err := docPayloadInput(*p)
+	if err != nil {
+		return nil, 0, err
+	}
+	in.Host = c.machine
+	if p.Reason == "" && p.Body == nil || p.Body != nil && p.Reason != "" {
+		return nil, 0, rejectErr("document upload body and reason conflict")
+	}
+	db, err := openDB(c)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer closeDB(c, db)
+	var result map[string]any
+	err = withTx(db, func(tx *sql.Tx) error {
+		if _, err := loadTask(tx, p.Task); errors.Is(err, sql.ErrNoRows) {
+			return rejectErr("task %d does not exist", p.Task)
+		} else if err != nil {
+			return err
+		}
+		if p.EventID != nil {
+			var belongs bool
+			if err := tx.QueryRow(`select exists(select 1 from events where id = ? and task_id = ?)`, *p.EventID, p.Task).Scan(&belongs); err != nil {
+				return err
+			}
+			if !belongs {
+				return rejectErr("event %d does not belong to task %d", *p.EventID, p.Task)
+			}
+		}
+		backfill, eventID := 0, p.EventID
+		if p.Backfill {
+			host, err := documentHost(tx, p.Task)
+			if err != nil {
+				return err
+			}
+			candidates, err := backfillCandidates(tx, p.Task)
+			if err != nil {
+				return err
+			}
+			var candidate *backfillCandidate
+			for i := range candidates {
+				item := &candidates[i]
+				if item.kind == p.Kind && item.name == p.Name && item.path == p.Path {
+					candidate = item
+					break
+				}
+			}
+			if candidate == nil {
+				return rejectErr("document is not a backfill candidate")
+			}
+			candidateHost, err := backfillSourceHost(tx, p.Task, *candidate, host)
+			if err != nil {
+				return err
+			}
+			if candidateHost != c.machine {
+				return rejectErr("backfill task host changed")
+			}
+			backfill, eventID, err = backfillMetadata(tx, p.Task, p.Kind, in)
+			if err != nil {
+				return err
+			}
+			if p.EventID != nil && (eventID == nil || *eventID != *p.EventID) {
+				return rejectErr("event %d does not match the backfill document", *p.EventID)
+			}
+			want := rpcDocWant{Task: p.Task, Kind: p.Kind, Name: p.Name, Path: p.Path}
+			skip, err := clientBackfillSkipped(tx, want)
+			if err != nil {
+				return err
+			}
+			if skip {
+				result = map[string]any{"ok": true, "same": true, "count": "unchanged"}
+				return nil
+			}
+		} else {
+			latest, err := latestDocument(tx, p.Task, p.Kind, p.Name)
+			if errors.Is(err, sql.ErrNoRows) {
+				return rejectErr("document upload has no matching capture")
+			}
+			if err != nil {
+				return err
+			}
+			if latest.Host.String != c.machine || latest.Path.String != p.Path {
+				return rejectErr("document upload does not match the latest capture")
+			}
+		}
+		if p.DryRun {
+			if _, err := tx.Exec(`savepoint doc_upload_dry_run`); err != nil {
+				return err
+			}
+		}
+		d, same, err := storeDocument(tx, p.Task, p.Kind, p.Name, in, eventID, backfill)
+		if p.DryRun {
+			if _, rollbackErr := tx.Exec(`rollback to doc_upload_dry_run`); err == nil {
+				err = rollbackErr
+			}
+			_, _ = tx.Exec(`release doc_upload_dry_run`)
+		}
+		if err != nil {
+			return err
+		}
+		count := in.Reason
+		if count == "" {
+			count = "captured"
+		}
+		if same {
+			count = "unchanged"
+		}
+		result = map[string]any{"ok": true, "action": "put", "doc_id": d.ID, "version": d.Version,
+			"same": same, "count": count}
+		return nil
+	})
+	return result, exitOK, err
+}
+
+func cmdDocWanted(c *ctx, args []string) (any, int, error) {
+	fs := flag.NewFlagSet("_doc wanted", flag.ContinueOnError)
+	tree := fs.Int64("tree", 0, "only this task and descendants")
+	offset := fs.Int("offset", 0, "candidate offset")
+	if _, err := parseArgs(c, fs, args, 0, 0); err != nil {
+		return nil, 0, err
+	}
+	if *tree < 0 || *offset < 0 {
+		return nil, 0, usageErr("invalid _doc wanted page")
+	}
+	db, err := openDB(c)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer closeDB(c, db)
+	ids, err := listIDs(db, `select id from tasks order by id`)
+	if *tree != 0 {
+		ids, err = subtree(db, *tree)
+	}
+	if err != nil {
+		return nil, 0, dbErr(err)
+	}
+	var candidates []rpcDocWant
+	for _, taskID := range ids {
+		host, err := documentHost(db, taskID)
+		if err != nil {
+			return nil, 0, dbErr(err)
+		}
+		files, err := backfillCandidates(db, taskID)
+		if err != nil {
+			return nil, 0, dbErr(err)
+		}
+		for _, f := range files {
+			candidateHost, err := backfillSourceHost(db, taskID, f, host)
+			if err != nil {
+				return nil, 0, dbErr(err)
+			}
+			if candidateHost != c.machine {
+				continue
+			}
+			candidates = append(candidates, rpcDocWant{Task: taskID, Kind: f.kind, Name: f.name, Path: f.path})
+		}
+	}
+	start := min(*offset, len(candidates))
+	end := min(start+200, len(candidates))
+	wanted := make([]rpcDocWant, 0, end-start)
+	unchanged := 0
+	for _, candidate := range candidates[start:end] {
+		skip, err := clientBackfillSkipped(db, candidate)
+		if err != nil {
+			return nil, 0, dbErr(err)
+		}
+		if skip {
+			unchanged++
+		} else {
+			wanted = append(wanted, candidate)
+		}
+	}
+	return map[string]any{"documents": wanted, "offset": end, "more": end < len(candidates), "unchanged": unchanged}, exitOK, nil
 }

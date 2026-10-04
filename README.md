@@ -18,6 +18,10 @@ Keep parallel work moving without polling terminal screens or relaying messages:
 
 - Register lanes with brief and report paths.
 - Keep the text of briefs, prompts, reports, and handovers in the ledger, with a goal and a plan for each campaign.
+- Capture files from any host without copying them to the ledger host.
+- Queue client records during an outage for the daemon to send later.
+- Search captured documents, decisions, questions, answers, and notes.
+- Label closed lanes accepted, reworked, rejected, or abandoned.
 - Block on `wait` until a report, question, or event arrives.
 - Confirm prompt acknowledgment with receipts.
 - Answer worker questions and route owner decisions.

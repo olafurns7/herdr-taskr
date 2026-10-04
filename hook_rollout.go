@@ -87,7 +87,7 @@ func scanCodexRolloutFallback(db *sql.DB, parent *int64, deadline time.Time) err
 			c.Task, c.Launch, c.Session, c.Path, serverHost).Scan(&current)
 		if err == nil && current {
 			w := &worker{task: &task{ID: c.Task, ParentID: sql.NullInt64{Int64: c.Parent, Valid: true}}, launchID: ptr(c.Launch)}
-			err = writeHookStall(tx, w, c.Launch, code)
+			err = writeHookStall(nil, tx, w, c.Launch, code)
 		}
 		if err != nil {
 			tx.Rollback()

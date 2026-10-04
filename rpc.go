@@ -27,7 +27,7 @@ import (
 
 const (
 	rpcPath        = "/api/rpc"
-	rpcBodyMax     = 256 << 10
+	rpcBodyMax     = 2 << 20
 	rpcHeader      = "X-Taskr-RPC"
 	requestKeyFlag = "--request-key"
 	requestsKeep   = 7 * 24 * time.Hour
@@ -43,25 +43,54 @@ var (
 )
 
 type rpcRequest struct {
-	Argv       []string          `json:"argv"`
-	Cwd        string            `json:"cwd"`
-	Env        map[string]string `json:"env"`
-	RequestKey string            `json:"request_key"`
+	Argv         []string          `json:"argv"`
+	Cwd          string            `json:"cwd"`
+	Env          map[string]string `json:"env"`
+	RequestKey   string            `json:"request_key"`
+	Capabilities []string          `json:"capabilities,omitempty"`
+	Document     *rpcDocPayload    `json:"document,omitempty"`
+	QueuedAt     string            `json:"queued_at,omitempty"`
+	QueuedAgeMS  int64             `json:"queued_age_ms,omitempty"`
 }
 
 type rpcReply struct {
-	Exit   int    `json:"exit"`
-	Stdout string `json:"stdout"`
-	Stderr string `json:"stderr"`
+	Exit   int           `json:"exit"`
+	Stdout string        `json:"stdout"`
+	Stderr string        `json:"stderr"`
+	Upload *[]rpcDocWant `json:"upload,omitempty"`
+}
+
+const docUploadCapability = "doc-upload"
+
+type rpcDocPayload struct {
+	Task     int64   `json:"task"`
+	Kind     string  `json:"kind"`
+	Name     string  `json:"name"`
+	Path     string  `json:"path"`
+	EventID  *int64  `json:"event_id"`
+	Body     *string `json:"body,omitempty"` // base64 text; a pointer allows an empty document
+	SHA256   string  `json:"sha256,omitempty"`
+	Bytes    *int64  `json:"bytes,omitempty"`
+	Reason   string  `json:"reason,omitempty"`
+	Backfill bool    `json:"backfill,omitempty"`
+	DryRun   bool    `json:"dry_run,omitempty"`
+}
+
+type rpcDocWant struct {
+	Task    int64  `json:"task"`
+	Kind    string `json:"kind"`
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	EventID *int64 `json:"event_id"`
 }
 
 // hiddenCommands are the client's own calls, run only over RPC: `_prompt`
-// splits a prompt for a lane on the caller's host, `_host` is that host's
-// daemon. They are never stored under a request key.
-var hiddenCommands = map[string]command{"_prompt": cmdPromptPhase, "_host": cmdHost, "_hook": cmdHookRPC}
+// splits a prompt for a lane, `_host` is the client daemon, and `_hook` records
+// one fire-and-forget hook call.
+var hiddenCommands = map[string]command{"_prompt": cmdPromptPhase, "_host": cmdHost, "_hook": cmdHookRPC, "_doc": cmdDocRPC}
 
 // freshCommands always run anew and are never stored; a retry is a new read.
-var freshCommands = map[string]bool{"wait": true, "status": true, "asks": true, "log": true, "version": true, "help": true, "_hook": true}
+var freshCommands = map[string]bool{"wait": true, "status": true, "asks": true, "log": true, "search": true, "version": true, "help": true}
 
 // rpcCommand is the command name in argv after a leading --json, or "".
 func rpcCommand(argv []string) (string, []string) {
@@ -93,6 +122,9 @@ func wantsHelp(args []string) bool {
 // and help requests.
 func storedCommand(argv []string) bool {
 	name, args := rpcCommand(argv)
+	if name == "_hook" {
+		return true
+	}
 	if _, ok := commands[name]; !ok || name == "daemon" || freshCommands[name] {
 		return false
 	}
@@ -186,7 +218,7 @@ var rpcPathFlags = map[string][]string{"new": {"cwd", "brief", "report"}, "ready
 
 var rpcScalarFlags = map[string]bool{
 	"cwd": true, "brief": true, "report": true, "file": true, "out": true,
-	"machine": true, "role": true, "planned": true, "timeout": true,
+	"machine": true, "role": true, "planned": true, "timeout": true, "name": true,
 	"confirm": true, "confirm-timeout": true, "prompt": true, "receipt-timeout": true,
 }
 
@@ -230,6 +262,9 @@ func rpcCheckArgs(argv []string) error {
 	if name == "daemon" {
 		return usageErr("daemon runs on its own host; it is not available over RPC")
 	}
+	if name == "spool" {
+		return usageErr("spool commands run on their own host; they are not available over RPC")
+	}
 	for _, f := range rpcPathFlags[name] {
 		if v, _, _, ok := flagValue(args, f); ok && v != "" && !filepath.IsAbs(v) {
 			return usageErr("--%s must be an absolute path over RPC, got %q", f, v)
@@ -243,6 +278,18 @@ func rpcCheckArgs(argv []string) error {
 
 func argvSHA(argv []string) string {
 	b, _ := json.Marshal(argv)
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+func rpcRequestSHA(req rpcRequest) string {
+	if req.Document == nil {
+		return argvSHA(req.Argv)
+	}
+	b, _ := json.Marshal(struct {
+		Argv     []string       `json:"argv"`
+		Document *rpcDocPayload `json:"document"`
+	}{req.Argv, req.Document})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }
@@ -330,7 +377,9 @@ func (d *dashboard) rpcRun(cx context.Context, machine string, req rpcRequest) (
 	}
 	var out, errw bytes.Buffer
 	c := &ctx{getenv: func(k string) string { return env[k] }, out: &out, errw: &errw,
-		db: d.db, log: d.log, cx: cx, rpc: true, machine: machine, cwd: req.Cwd}
+		db: d.db, log: d.log, cx: cx, rpc: true, machine: machine, cwd: req.Cwd,
+		docUpload: hasCapability(req.Capabilities, docUploadCapability), remoteDoc: req.Document,
+		queuedAt: req.QueuedAt, queuedAgeMS: req.QueuedAgeMS}
 	defer func() {
 		if p := recover(); p != nil {
 			d.log.logf("rpc: machine=%s key=%s panicked: %s", machine, req.RequestKey, truncate(fmt.Sprint(p), 200))
@@ -339,7 +388,14 @@ func (d *dashboard) rpcRun(cx context.Context, machine string, req rpcRequest) (
 		}
 	}()
 	code := runCtx(c, req.Argv)
-	return rpcReply{Exit: code, Stdout: out.String(), Stderr: errw.String()}
+	rep = rpcReply{Exit: code, Stdout: out.String(), Stderr: errw.String()}
+	if code == exitOK && c.docUpload {
+		if len(c.docUploads) > 0 {
+			upload := c.docUploads
+			rep.Upload = &upload
+		}
+	}
+	return rep
 }
 
 // rpcStored runs a command that may write at most once per request key. In
@@ -348,7 +404,7 @@ func (d *dashboard) rpcRun(cx context.Context, machine string, req rpcRequest) (
 // host or another command line. The run continues when the caller goes
 // away, and its result is stored for the retry.
 func (d *dashboard) rpcStored(machine string, req rpcRequest) rpcReply {
-	sha := argvSHA(req.Argv)
+	sha := rpcRequestSHA(req)
 	var prior *rpcReply
 	var refusal error
 	err := withTx(d.db, func(tx *sql.Tx) error {
@@ -358,9 +414,9 @@ func (d *dashboard) rpcStored(machine string, req rpcRequest) rpcReply {
 		var m sql.NullString
 		var argv, state string
 		var exit sql.NullInt64
-		var stdout, stderr sql.NullString
-		err := tx.QueryRow(`select machine, argv_sha, state, exit, stdout, stderr from requests where key = ?`, req.RequestKey).
-			Scan(&m, &argv, &state, &exit, &stdout, &stderr)
+		var stdout, stderr, upload sql.NullString
+		err := tx.QueryRow(`select machine, argv_sha, state, exit, stdout, stderr, upload from requests where key = ?`, req.RequestKey).
+			Scan(&m, &argv, &state, &exit, &stdout, &stderr, &upload)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			_, err = tx.Exec(`insert into requests (key, machine, argv_sha, state, created_at) values (?, ?, ?, 'running', ?)`,
@@ -372,6 +428,11 @@ func (d *dashboard) rpcStored(machine string, req rpcRequest) rpcReply {
 			refusal = rejectErr("request key %s belongs to another command", req.RequestKey)
 		case state == "done":
 			prior = &rpcReply{Exit: int(exit.Int64), Stdout: stdout.String, Stderr: stderr.String}
+			if upload.Valid {
+				if err := json.Unmarshal([]byte(upload.String), &prior.Upload); err != nil {
+					return err
+				}
+			}
 		default:
 			refusal = herdrErr("request %s: outcome unknown (still running, or the server stopped during it); inspect `taskr log` before any resend", req.RequestKey)
 		}
@@ -384,11 +445,15 @@ func (d *dashboard) rpcStored(machine string, req rpcRequest) rpcReply {
 		return d.rpcError(req, err)
 	}
 	if prior != nil {
+		if !hasCapability(req.Capabilities, docUploadCapability) {
+			prior.Upload = nil
+		}
 		return *prior
 	}
 	rep := d.rpcRun(context.Background(), machine, req)
-	if _, err := d.db.Exec(`update requests set state = 'done', exit = ?, stdout = ?, stderr = ? where key = ?`,
-		rep.Exit, rep.Stdout, rep.Stderr, req.RequestKey); err != nil {
+	upload, _ := json.Marshal(rep.Upload)
+	if _, err := d.db.Exec(`update requests set state = 'done', exit = ?, stdout = ?, stderr = ?, upload = ? where key = ?`,
+		rep.Exit, rep.Stdout, rep.Stderr, string(upload), req.RequestKey); err != nil {
 		d.log.logf("rpc: storing the result of %s failed: %v", req.RequestKey, err)
 	}
 	return rep
