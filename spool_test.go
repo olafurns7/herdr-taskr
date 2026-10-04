@@ -1254,6 +1254,9 @@ func TestSpoolUploadRefusalDropsAndContinues(t *testing.T) {
 }
 
 func TestSpoolQueueWriteFailurePrintsRetry(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can write to read-only directories")
+	}
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-queue-write-error", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")

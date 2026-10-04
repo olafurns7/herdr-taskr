@@ -580,13 +580,10 @@ func rpcCarriesDocument(argv []string) bool {
 }
 
 func spoolRecordCommand(argv []string) bool {
-	name, args := rpcCommand(argv)
+	name, _ := rpcCommand(argv)
 	switch name {
-	case "got", "ready", "done", "fail", "decide", "next", "note", "_hook":
+	case "got", "ready", "done", "fail", "decide", "next", "note", "close", "_hook":
 		return true
-	case "close":
-		_, _, _, outcome := flagValue(args, "outcome")
-		return !outcome
 	default:
 		return false
 	}

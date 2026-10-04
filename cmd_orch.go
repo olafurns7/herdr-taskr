@@ -256,9 +256,13 @@ func cmdLaunch(c *ctx, args []string) (any, int, error) {
 
 func cmdClose(c *ctx, args []string) (any, int, error) {
 	fs := flag.NewFlagSet("close", flag.ContinueOnError)
+	outcome := fs.String("outcome", "", "accepted (work taken as delivered) | reworked (taken after a fix round) | rejected (not taken) | abandoned (stopped before a result)")
 	pos, err := parseArgs(c, fs, args, 1, 1)
 	if err != nil {
 		return nil, 0, err
+	}
+	if flagWasSet(fs, "outcome") && !slices.Contains([]string{"accepted", "reworked", "rejected", "abandoned"}, *outcome) {
+		return nil, 0, usageErr("--outcome must be one of accepted, reworked, rejected, abandoned")
 	}
 	id, err := parseID(pos[0], "task id")
 	if err != nil {
@@ -289,7 +293,11 @@ func cmdClose(c *ctx, args []string) (any, int, error) {
 		}
 		// The close's place in the event order: handover compares event ids,
 		// never clocks.
-		eid, err := c.insertEvent(tx, event{TaskID: id, Kind: "closed", Data: map[string]any{"from_status": t.Status}})
+		data := map[string]any{"from_status": t.Status}
+		if *outcome != "" {
+			data["outcome"] = *outcome
+		}
+		eid, err := c.insertEvent(tx, event{TaskID: id, Kind: "closed", Data: data})
 		out["event_id"] = eid
 		if err != nil {
 			return err

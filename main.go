@@ -138,7 +138,8 @@ const usageText = `usage: taskr <command> [args]
 worker:       start | got ATTEMPT_ID | note TEXT | ready TEXT --report PATH [--kv K=V]... | ask TEXT [--blocking] [--owner] | done [TEXT] | fail TEXT
               note TEXT --as ID | ask TEXT --owner --as ID   (a root orchestrator: no parent, no launch)
 orchestrator: new NAME --role ROLE [--parent ID] [--planned] ... | launch ID --provider P --model M --effort E | prompt ID (--file PATH | --text TEXT) [--receipt-timeout MS] [--confirm [--confirm-timeout MS]]
-              answer ASK_ID TEXT [--prompt [--confirm [--confirm-timeout MS]]] | close ID
+              answer ASK_ID TEXT [--prompt [--confirm [--confirm-timeout MS]]] | close ID [--outcome accepted|reworked|rejected|abandoned]
+outcomes:     accepted (work taken as delivered), reworked (taken after a fix round), rejected (not taken), abandoned (stopped before a result)
 plan:         next ID TEXT | next ID --clear | set ID KEY=VALUE... (KEY= deletes) | decide --as ID TEXT | decide --as ID --revoke EVENT_ID
 documents:    doc set ID goal|plan [--name NAME] --file PATH (any host) | doc ls ID [--tree] [--kind K] [--versions] [--limit N] | doc get DOC_ID | doc rm DOC_ID --purge | doc backfill [--tree ID] [--dry-run] (any host)
 handover:     handover --as ID [--note TEXT] [--out PATH] | adopt ID [--workspace W --tab T --pane P]   (Markdown on stdout)
@@ -149,7 +150,7 @@ search:       search QUERY [--root ID] [--kind K] [--limit N] [--raw]   (documen
 daemon:       daemon [--stay] [--once] [--status] [--restart]   (the Herdr plugin's event bridge and owner dashboard; one per HOME)
 info:         version | help [CMD]
 client:       --request-key KEY <command> [args]   (with a server.url: retry a command whose answer was lost)
-spool:        spool ls | spool send | spool rm SEQ   (client-local queued records)
+spool:        spool ls | spool send | spool rm SEQ|FILE   (client-local queued records)
 format:       compact by default; --json or TASKR_FORMAT=json selects legacy JSON (handover/adopt stay Markdown)`
 
 func main() {

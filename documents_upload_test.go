@@ -550,6 +550,32 @@ func TestDocUploadRepeatedReadyPreservesCapture(t *testing.T) {
 	}
 }
 
+func TestDocUploadMissingFileKeepsCapture(t *testing.T) {
+	r := newTwoHost(t)
+	root := uploadRoot(t, r)
+	path := docFile(t, r.dir, "report.md", "captured report")
+	lane, launch := uploadLane(t, r, root, "missing-report", path)
+	result := r.want(exitOK, "host-a", as(lane, launch), "ready", "first", "--report", path)
+	db := r.openDB()
+	before := assertClientDocument(t, r, lane, "report", "", path, ptr(num(result, "event_id")))
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	r.want(exitOK, "host-a", as(lane, launch), "ready", "file gone", "--report", path)
+	if after := docLatest(t, db, lane, "report", ""); !reflect.DeepEqual(after, before) {
+		t.Fatalf("client missing file replaced captured report: before=%+v after=%+v", before, after)
+	}
+	// Move the scratch lane to the ledger host: both host and path differ.
+	docExec(t, db, `update launches set machine = null where id = ?`, launch)
+	r.ok(as(lane, launch), "ready", "file gone", "--report", filepath.Join(r.dir, "absent.md"))
+	if after := docLatest(t, db, lane, "report", ""); !reflect.DeepEqual(after, before) {
+		t.Fatalf("missing file replaced captured report: before=%+v after=%+v", before, after)
+	}
+	if n := docCount(t, db, `select count(*) from documents where task_id = ? and kind = 'report'`, lane); n != 2 {
+		t.Fatalf("missing file wrote a document row: %d", n)
+	}
+}
+
 func TestDocUploadChangedReportPathCapturesLatest(t *testing.T) {
 	r := newTwoHost(t)
 	root := uploadRoot(t, r)
