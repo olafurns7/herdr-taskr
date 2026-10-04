@@ -1,6 +1,6 @@
 import type { ComponentChildren } from "preact";
 import type { AttentionItem, PlanRef } from "../api";
-import { ago, cueAction, cueLabel, signalWord, umdCounts } from "../model";
+import { ago, noteTime, cueAction, cueLabel, signalWord, umdCounts } from "../model";
 import { campaignItem, type WorkItem } from "../work";
 import { Mark } from "./Mark";
 
@@ -15,6 +15,7 @@ export function Detail({ item, now, open }: { item: WorkItem; now: number; open:
         {item.at && <p class="muted">Updated {ago(item.at, now)}</p>}
       </div>
       {d.kind === "cue" && <CueDetail cue={d.cue} />}
+      {d.kind === "owner-notes" && <Section title="For you"><ul class="full-list">{d.notes.map(n => <li key={n.id}><time class="history-meta" dateTime={n.at}>{noteTime(n.at)} · {ago(n.at, now)}</time><p>{n.text}</p></li>)}</ul><a class="text-button" href={"#/campaign/" + d.notes[0]!.root_id}>Campaign page</a></Section>}
       {d.kind === "milestone" && <>
         <Section title="Checkpoint">{d.milestone.text || "No checkpoint text recorded."}</Section>
         <Properties values={[["Campaign", d.milestone.orchestrator], ["Lane", d.milestone.lane], ["Role", d.milestone.role], ["Event", String(d.milestone.id)]]} />

@@ -15,11 +15,15 @@ export interface CampaignLane extends Omit<CampaignRoot, "next"> {
   parent_id: number; depth: number; provider: string; model: string; effort: string; summary: string;
   brief: DocumentMeta | null; report: DocumentMeta | null;
 }
+export interface CampaignNote {
+  id: number; text: string; at: string; age_ms: number; owner: boolean;
+}
 export interface CampaignView extends PageInfo {
   root: CampaignRoot; goal: DocumentMeta | null; goal_miss?: DocumentMeta;
   plan: (DocumentMeta & { decisions_since: number; closed_since: number }) | null;
   documents: DocumentMeta[]; decisions: { id: number; time: string; text: string }[];
   handovers: { id: number; time: string; note: string; doc_id: number | null }[]; lanes: CampaignLane[];
+  notes?: CampaignNote[];
 }
 export interface CampaignArchive extends PageInfo {
   campaigns: { id: number; name: string; status: string; created_at: string; closed_at: string; lane_counts: Record<string, number>; goal: string }[];

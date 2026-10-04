@@ -100,6 +100,8 @@ code { font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; overflo
 .row-preview, .row-context { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row-preview { color: var(--secondary); }
 .row-status { font-size: 12px; color: var(--secondary); overflow-wrap: anywhere; }
+.work-row.row-read .row-title, .work-row.row-read .row-preview, .work-row.row-read .row-status { color: var(--muted); }
+.work-row.row-read .row-title { font-weight: 400; }
 .folded-tags { font-size: 11px; }
 .row-age { color: var(--muted); text-align: right; font-size: 11px; align-self: start; padding-top: 2px; }
 .next-label { color: var(--accent); font-weight: 500; margin-right: 5px; }
@@ -182,6 +184,7 @@ code { font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; overflo
   .mobile-machine select { min-height: 36px; max-width: 100%; padding: 5px 6px; font-size: 12px; }
   .filter-notice { padding: 8px 16px; font-size: 11px; }
   .group-header { padding: 8px 16px; flex-wrap: wrap; gap: 4px 12px; }
+  .group-header .text-button { min-height: 36px; }
   .group-machine { max-width: 100%; }
   .work-row { padding: 12px 16px; grid-template-columns: 16px minmax(0, 1fr) 28px; gap: 4px 8px; }
   .row-content { grid-column: 2; }
@@ -214,6 +217,7 @@ code { font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; overflo
 .ledger-section > h2 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
 .ledger-meta { display: block; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; margin-block: 4px; }
 .ledger-text { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 72ch; }
+.owner-note-label { color: var(--secondary); font-weight: 550; }
 .ledger-notes, .archive-list { list-style: none; margin: 0; padding: 0; }
 .ledger-notes > li, .archive-list > li { padding: 12px 0; border-bottom: 1px solid var(--rule); }
 .archive-heading { display: flex; justify-content: space-between; gap: 18px; }

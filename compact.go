@@ -182,7 +182,7 @@ func (c *ctx) emitCompact(v any) {
 		c.frame("dc1", aliases(except(m, "ok", "task_id"), resultAliases))
 	case "set":
 		c.frame("rf1", m["event_ids"])
-	case "status", "asks", "log":
+	case "status", "asks", "log", "notes":
 		fmt.Fprint(c.out, readLine(m))
 	default:
 		c.frame("j1", m)

@@ -1723,6 +1723,9 @@ func fixtureShape(v any, path string, out map[string]bool) {
 func TestWebStateFixture(t *testing.T) {
 	h := newHarness(t)
 	f := seedDashboard(h)
+	h.ok(nil, "note", "OWNER: review the open choice.\n"+strings.Repeat("Owner update. ", 100), "--owner", "--as", id(f.a))
+	h.ok(nil, "note", "OWNER: nothing", "--owner", "--as", id(f.b))
+	h.ok(nil, "note", "ordinary root checkpoint", "--as", id(f.b))
 	d := h.hubDash()
 	db := h.openDB()
 	db.Exec(`insert into meta (key, value) values (?, ?)`, heartbeatKey, stamp(time.Now().Add(-5*time.Minute)))
@@ -1773,6 +1776,19 @@ func TestWebStateFixture(t *testing.T) {
 	var v map[string]any
 	if err := json.Unmarshal([]byte(raw), &v); err != nil {
 		t.Fatal(err)
+	}
+	ownerNotes := v["owner_notes"].([]any)
+	if len(ownerNotes) < 2 {
+		t.Fatal("fixture lacks owner notes on two roots")
+	}
+	longOwnerNote := false
+	for _, n := range ownerNotes {
+		if len([]rune(n.(map[string]any)["text"].(string))) > 1000 {
+			longOwnerNote = true
+		}
+	}
+	if !longOwnerNote {
+		t.Fatal("fixture lacks an owner note longer than 1,000 runes")
 	}
 	kinds := map[string]bool{}
 	for _, a := range v["attention"].([]any) {

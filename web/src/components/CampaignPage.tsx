@@ -2,6 +2,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { fetchCampaignData, type CampaignArchive, type CampaignView, type DocumentMeta, type DocumentView, type PageInfo } from "../campaign-api";
 import type { Route } from "../router";
+import { noteTime } from "../model";
 import { Mark } from "./Mark";
 import { MarkdownBoundary, PlainDocument } from "./DocumentBody";
 
@@ -64,17 +65,18 @@ function Captured({ doc, revision }: { doc: DocumentMeta; revision: number }) {
   const { data, error } = useLoaded<DocumentView>("/api/doc/" + doc.doc_id, revision);
   return <>{error ? <p class="notice" role="alert">{error}</p> : data ? <Body doc={data} /> : <p class="muted" role="status">Loading document…</p>}<p class="ledger-meta"><a href={"#/doc/" + doc.doc_id}>Document details · v{doc.version}</a></p></>;
 }
-function Campaign({ data: c, changePage, revision }: { data: CampaignView; changePage: (n: number) => void; revision: number }) {
+export function Campaign({ data: c, changePage, revision }: { data: CampaignView; changePage: (n: number) => void; revision: number }) {
   const parents = new Map(c.lanes.map(l => [l.id, l.name]));
   return <>
     <Status status={c.root.status} /><Times created={c.root.created_at} closed={c.root.closed_at} />
     <Section title="Goal">{!c.goal ? <><p>No goal recorded</p><code>taskr doc set {c.root.id} goal --file PATH</code></> : c.goal.captured ? <Captured key={c.goal.doc_id} doc={c.goal} revision={revision} /> : <Miss doc={c.goal} />}{c.goal_miss && <p class="document-miss">A later version was not captured ({c.goal_miss.reason})</p>}</Section>
     <Section title="Plan">{c.plan ? <><p class="ledger-meta">Plan v{c.plan.version}: since then {c.plan.decisions_since} decisions, {c.plan.closed_since} lanes closed</p>{c.plan.captured ? <Captured key={c.plan.doc_id} doc={c.plan} revision={revision} /> : <Miss doc={c.plan} />}</> : <p class="muted">No plan recorded.</p>}</Section>
+    {c.root.next && <Section title="Next step"><p class="ledger-text">{c.root.next}</p></Section>}
+    <Section title="Notes"><ul class="ledger-notes">{[...(c.notes ?? [])].sort((a, b) => b.id - a.id).map(n => <li key={n.id}><p class="ledger-meta">{n.owner && <span class="owner-note-label">For you · </span>}<time dateTime={n.at}>{noteTime(n.at)}</time></p><p class="ledger-text">{n.text}</p></li>)}</ul>{!c.notes?.length && <p class="muted">No notes recorded.</p>}</Section>
     <Section title="Documents"><ul class="ledger-notes">{c.documents.map(doc => <li key={doc.doc_id}><a href={"#/doc/" + doc.doc_id}>{doc.name} · v{doc.version}</a>{!doc.captured && <Miss doc={doc} />}</li>)}</ul>{!c.documents.length && <p class="muted">No named documents.</p>}</Section>
     <Section title="Decisions in force"><ul class="ledger-notes">{c.decisions.map(d => <li key={d.id}><p class="ledger-meta">Event {d.id} · <time dateTime={d.time}>{d.time}</time></p><p class="ledger-text">{d.text}</p></li>)}</ul>{!c.decisions.length && <p class="muted">No decisions in force.</p>}</Section>
     <Section title="Handovers"><ul class="ledger-notes">{c.handovers.map(h => <li key={h.id}><p class="ledger-meta">Event {h.id} · <time dateTime={h.time}>{h.time}</time></p><p class="ledger-text">{h.note || "No handover note."}</p>{h.doc_id !== null && <a href={"#/doc/" + h.doc_id}>Captured handover</a>}</li>)}</ul>{!c.handovers.length && <p class="muted">No handovers recorded.</p>}</Section>
     <Section title="Lanes"><div class="ledger-table-wrap" tabIndex={0} role="region" aria-label="Lane table"><table class="ledger-table"><thead><tr><th scope="col">Name</th><th scope="col">Role</th><th scope="col">Model and effort</th><th scope="col">Status</th><th scope="col">Final summary</th><th scope="col">Documents</th></tr></thead><tbody>{c.lanes.map(l => <tr key={l.id}><th scope="row"><span class="lane-name">{Array.from({ length: Math.min(20, l.depth - 1) }, (_, i) => <span class="lane-indent" key={i} aria-hidden="true" />)}{l.name}</span><span class="ledger-meta">Task {l.id}</span>{l.depth > 1 && <span class="ledger-meta">{parents.has(l.parent_id) ? "Under " + parents.get(l.parent_id) : "Under task " + l.parent_id}</span>}</th><td>{l.role}</td><td>{[l.provider, l.model, l.effort].filter(Boolean).join(" / ") || "No launch recorded"}</td><td><Status status={l.status} /></td><td class="ledger-text">{l.summary || "No final summary"}</td><td><div class="document-links"><DocLink doc={l.brief} label="brief" /><DocLink doc={l.report} label="report" /></div></td></tr>)}</tbody></table></div>{!c.lanes.length && <p class="muted">No lanes recorded.</p>}<Paging info={c} changePage={changePage} previous="Previous" next="Next" /></Section>
-    {c.root.next && <Section title="Next step"><p class="ledger-text">{c.root.next}</p></Section>}
   </>;
 }
 function Document({ data: d }: { data: DocumentView }) {

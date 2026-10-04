@@ -7,7 +7,7 @@ Herdr runs your agents; taskr tracks their questions, reports, and progress.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/dashboard-dark.png">
-  <img src="docs/img/dashboard-light.png" alt="Mock taskr dashboard with an owner question, a stalled lane, waiting work, and a five-lane release campaign across two hosts.">
+  <img src="docs/img/dashboard-light.png" alt="Mock taskr dashboard with an owner question, notes left for the owner, a stalled lane, waiting work, and a five-lane release campaign across two hosts.">
 </picture>
 
 Mock data.

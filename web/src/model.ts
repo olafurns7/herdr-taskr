@@ -42,6 +42,12 @@ export function clock(ts: string, tzOffsetMin = new Date(ts).getTimezoneOffset()
   return String(d.getUTCHours()).padStart(2, "0") + ":" + String(d.getUTCMinutes()).padStart(2, "0");
 }
 
+/** noteTime is a short weekday and HH:MM in the viewer's zone. */
+export function noteTime(ts: string, tzOffsetMin = new Date(ts).getTimezoneOffset()): string {
+  const d = new Date(Date.parse(ts) - tzOffsetMin * 60000);
+  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()] + " " + clock(ts, tzOffsetMin);
+}
+
 // ---- PROGRAM ----------------------------------------------------------------
 
 export function askKey(a: { local: boolean; node_id?: string; machine?: string }, id: number): string {
@@ -63,8 +69,9 @@ export function programTally(c: { red: number; amber: number }): Tally {
   return c.red ? "red" : c.amber ? "amber" : "off";
 }
 
-export function pageTitle(c: { red: number; amber: number }): string {
-  return c.red ? "(" + c.red + ") taskr" : c.amber ? "(·) taskr" : "taskr";
+export function pageTitle(c: { red: number; amber: number }, newNotes = 0): string {
+  const counts = [c.red ? String(c.red) : c.amber ? "·" : "", newNotes ? newNotes + " new" : ""].filter(Boolean);
+  return counts.length ? "(" + counts.join(", ") + ") taskr" : "taskr";
 }
 
 const CUE_KIND: Record<string, string> = {

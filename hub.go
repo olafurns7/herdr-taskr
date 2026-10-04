@@ -325,6 +325,16 @@ func (d *dashboard) peerPush(w http.ResponseWriter, r *http.Request) {
 
 // capState trims a pushed snapshot to the caps readState applies.
 func capState(s *dashState) {
+	notes := []ownerNote{}
+	counts := map[int64]int{}
+	for _, n := range s.OwnerNotes {
+		if counts[n.RootID] < stateOwnerNotesMax {
+			n.Text = clip(n.Text, ownerNoteTextMax)
+			notes = append(notes, n)
+			counts[n.RootID]++
+		}
+	}
+	s.OwnerNotes = notes
 	s.OwnerAsks = capList(s.OwnerAsks, stateAsksMax)
 	s.Orchestrators = capList(s.Orchestrators, stateRootsMax)
 	s.Activity = capList(s.Activity, stateActivityMax)
@@ -382,6 +392,9 @@ func walkTimes(s *dashState, f func(at *string, age *int64)) {
 	}
 	for i := range s.OwnerAsks {
 		f(&s.OwnerAsks[i].At, &s.OwnerAsks[i].AgeMS)
+	}
+	for i := range s.OwnerNotes {
+		f(&s.OwnerNotes[i].At, &s.OwnerNotes[i].AgeMS)
 	}
 	for i := range s.Orchestrators {
 		o := &s.Orchestrators[i]
@@ -530,6 +543,9 @@ func (d *dashboard) peerViews(cx context.Context, v *stateView, at time.Time) er
 		if err := json.Unmarshal([]byte(snap), &s); err != nil {
 			d.log.limited("snapshot:"+m.NodeID, time.Minute, "dashboard: stored snapshot of %s unreadable: %v", m.Machine, err)
 			continue
+		}
+		if s.OwnerNotes == nil {
+			s.OwnerNotes = []ownerNote{}
 		}
 		rt := parseTime(received)
 		// The host's daemon now observes to the hub as a client; its old

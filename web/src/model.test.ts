@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AttentionItem, MachineView, Orchestrator, StateTask } from "./api";
 import {
-  PROGRAM_CUES_MAX, ago, askKey, clock, cueAction, cueKey, cueOverdue, cueTone, laneAt, laneLine, markOf, merged, pageTitle, programCounts, programMore, programTally,
+  PROGRAM_CUES_MAX, ago, askKey, clock, noteTime, cueAction, cueKey, cueOverdue, cueTone, laneAt, laneLine, markOf, merged, pageTitle, programCounts, programMore, programTally,
   short, signalWord, switched, tallyOf, umdCounts, wallOrder,
 } from "./model";
 
@@ -33,6 +33,12 @@ describe("time", () => {
   it("prints the viewer's clock", () => {
     expect(clock("2026-09-29T21:05:00.000Z", 0)).toBe("21:05");
     expect(clock("2026-09-29T21:05:00.000Z", -120)).toBe("23:05");
+  });
+  it("prints a note's weekday and viewer clock, including day changes", () => {
+    const ts = "2026-10-03T23:23:00.000Z";
+    expect(noteTime(ts, 0)).toBe("Sat 23:23");
+    expect(noteTime(ts, -120)).toBe("Sun 01:23");
+    expect(noteTime("2026-10-03T01:23:00.000Z", 120)).toBe("Fri 23:23");
   });
 });
 

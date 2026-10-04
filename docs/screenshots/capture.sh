@@ -5,13 +5,13 @@ profile=""
 trap 'if [ -n "$profile" ]; then rm -rf "$profile"; fi' EXIT HUP INT TERM
 for theme in light dark; do
     profile=$(mktemp -d)
-    dark_mode=""
-    if [ "$theme" = dark ]; then dark_mode="--force-dark-mode"; fi
+    scheme="--blink-settings=preferredColorScheme=1"
+    if [ "$theme" = dark ]; then scheme="--force-dark-mode --blink-settings=preferredColorScheme=0"; fi
     output="docs/img/dashboard-$theme.png"
     rm -f "$output"
     python3 - "$output" "$chrome" --user-data-dir="$profile" --headless=new --hide-scrollbars \
         --no-first-run --no-default-browser-check --disable-extensions --disable-gpu \
-        --disable-background-networking $dark_mode --window-size=1440,700 \
+        --disable-background-networking $scheme --window-size=1440,700 \
         --force-device-scale-factor=2 --virtual-time-budget=2000 \
         --screenshot="$output" http://127.0.0.1:7799/ <<'PY'
 import os

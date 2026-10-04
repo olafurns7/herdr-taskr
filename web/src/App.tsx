@@ -6,6 +6,8 @@ import { poller } from "./poller";
 import { pageTitle, programCounts } from "./model";
 import { hashRoute, routePolling } from "./router";
 import { CampaignPage } from "./components/CampaignPage";
+import { markOwnerNotesRead, readOwnerNotes, OWNER_NOTES_READ_KEY } from "./owner-notes";
+import { ownerNoteSummary } from "./work";
 
 const POLL_MS = 3000;
 
@@ -14,6 +16,7 @@ export function App() {
   const [s, setS] = useState<StateView | null>(null);
   const [skew, setSkew] = useState(0); // local clock minus server clock, ms
   const [lost, setLost] = useState<number | null>(null); // local time of the last good poll, while polls fail
+  const [readThrough, setReadThrough] = useState(() => readOwnerNotes());
   const lastOK = useRef(0);
 
   useEffect(() => {
@@ -45,13 +48,23 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const sync = (event: StorageEvent) => {
+      if (event.key === OWNER_NOTES_READ_KEY) setReadThrough(readOwnerNotes());
+    };
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
+  }, []);
+
   const now = Date.now() - skew;
   const attention = s?.attention ?? [];
   const counts = programCounts(attention);
+  const notes = s ? ownerNoteSummary(s, readThrough) : { newRows: 0, markThrough: readThrough };
   useEffect(() => {
-    if (route.view === "dashboard") document.title = pageTitle(counts);
+    if (route.view === "dashboard") document.title = pageTitle(counts, notes.newRows);
   });
 
   if (route.view !== "dashboard") return <CampaignPage key={route.view + ("id" in route ? route.id : "")} route={route} />;
-  return <Dashboard state={s} now={now} lost={lost} />;
+  const markRead = () => setReadThrough(markOwnerNotesRead(notes.markThrough));
+  return <Dashboard state={s} now={now} lost={lost} readThrough={readThrough} markRead={markRead} />;
 }

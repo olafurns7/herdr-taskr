@@ -94,6 +94,15 @@ lead:
 	if flag := repeatedRPCFlag(cargs); flag != "" {
 		return clientFail(c, exitUsage, "usage", "repeated RPC flag --"+flag)
 	}
+	if name == "note" {
+		if _, _, err := cmdNote(c, cargs); err != nil {
+			var e *exitErr
+			if errors.As(err, &e) {
+				return clientFail(c, e.code, e.kind, e.msg)
+			}
+			return clientFail(c, exitUsage, "usage", err.Error())
+		}
+	}
 	if readErr != nil {
 		return clientFail(c, exitUsage, "usage", serverURLFile+": "+readErr.Error())
 	}
