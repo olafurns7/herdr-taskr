@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -55,7 +56,7 @@ func TestSearchSources(t *testing.T) {
 		docExec(t, db, `insert into events(task_id, kind, summary, created_at) values (?, ?, 'sharedtoken event', ?)`, lane, kind, now())
 	}
 	hits := searchHits(t, h, "sharedtoken")
-	if len(hits) != 5 {
+	if len(hits) != 6 {
 		t.Fatalf("hits = %v", hits)
 	}
 	seen := map[string]bool{}
@@ -72,7 +73,7 @@ func TestSearchSources(t *testing.T) {
 			t.Fatalf("event has document name: %v", hit)
 		}
 	}
-	for _, kind := range []string{"report", "decision", "ask", "answer", "note"} {
+	for _, kind := range []string{"report", "decision", "ask", "answer", "owner_answer", "note"} {
 		if !seen[kind] {
 			t.Fatalf("missing %s", kind)
 		}
@@ -91,16 +92,22 @@ func TestSearchDocumentVersionAndPurge(t *testing.T) {
 	root := h.newTask("root", "orchestrator", 0)
 	path := docFile(t, h.dir, "goal.md", "oldtoken")
 	first := h.ok(nil, "doc", "set", id(root), "goal", "--file", path)
+	db := h.openDB()
+	if docCount(t, db, `select count(*) from search_fts_data where instr(block, cast('oldtoken' as blob)) > 0`) == 0 {
+		t.Fatal("old token not present before replacement")
+	}
 	docFile(t, h.dir, "goal.md", "newtoken")
 	second := h.ok(nil, "doc", "set", id(root), "goal", "--file", path)
 	if len(searchHits(t, h, "oldtoken")) != 0 {
 		t.Fatal("old version remains indexed")
 	}
+	if n := docCount(t, db, `select count(*) from search_fts_data where instr(block, cast('oldtoken' as blob)) > 0`); n != 0 {
+		t.Fatalf("replacement left old token in %d index blocks", n)
+	}
 	hits := searchHits(t, h, "newtoken")
 	if len(hits) != 1 || num(hits[0], "ref") != num(second, "doc_id") {
 		t.Fatal(hits)
 	}
-	db := h.openDB()
 	err := withTx(db, func(tx *sql.Tx) error {
 		_, _, err := storeDocument(tx, root, "goal", "", documentInput{Reason: "binary"}, nil, 0)
 		return err
@@ -115,6 +122,9 @@ func TestSearchDocumentVersionAndPurge(t *testing.T) {
 	h.ok(nil, "doc", "rm", id(num(first, "doc_id")), "--purge")
 	if len(searchHits(t, h, "newtoken")) != 0 || docCount(t, db, `select count(*) from search_fts where src = 'doc'`) != 0 {
 		t.Fatal("purge left a search row")
+	}
+	if n := docCount(t, db, `select count(*) from search_fts_data where instr(block, cast('newtoken' as blob)) > 0`); n != 0 {
+		t.Fatalf("purge left token in %d index blocks", n)
 	}
 }
 
@@ -144,7 +154,7 @@ func TestSearchMigration(t *testing.T) {
 	}
 	docExec(t, db, `insert into documents(root_id, task_id, kind, name, version, captured, reason, created_at)
 		values (1, 3, 'report', '', 3, 0, 'binary', '2026-01-02')`)
-	for _, kind := range []string{"decision", "ask", "answer", "note", "ready"} {
+	for _, kind := range []string{"decision", "ask", "answer", "owner_answer", "note", "ready"} {
 		docExec(t, db, `insert into events(task_id, kind, summary, created_at) values (3, ?, 'migrationtoken event', '2026-01-01')`, kind)
 	}
 	if docCount(t, db, `select count(*) from sqlite_master where name = 'search_fts'`) != 0 {
@@ -157,7 +167,7 @@ func TestSearchMigration(t *testing.T) {
 		t.Fatal("migration indexed old version")
 	}
 	hits := searchHits(t, h, "migrationtoken")
-	if len(hits) != 6 {
+	if len(hits) != 7 {
 		t.Fatal(hits)
 	}
 	for _, hit := range hits {
@@ -165,12 +175,125 @@ func TestSearchMigration(t *testing.T) {
 			t.Fatal(hit)
 		}
 	}
-	if err := withTx(db, migrate); err != nil || docCount(t, db, `select count(*) from search_fts`) != 6 {
+	if err := withTx(db, migrate); err != nil || docCount(t, db, `select count(*) from search_fts`) != 7 {
 		t.Fatalf("migration not idempotent: %v", err)
 	}
 	docExec(t, db, `insert into events(task_id, kind, summary, created_at) values (3, 'note', 'migrationtoken after', '2026-01-03')`)
-	if len(searchHits(t, h, "migrationtoken")) != 7 {
+	if len(searchHits(t, h, "migrationtoken")) != 8 {
 		t.Fatal("migration trigger not active")
+	}
+}
+
+func TestSearchSecureDeleteExisting(t *testing.T) {
+	h := newHarness(t)
+	db := h.openDB()
+	docExec(t, db, `insert into search_fts(search_fts, rank) values('secure-delete', 0)`)
+	db = h.openDB()
+	if docCount(t, db, `select count(*) from search_fts_config where k = 'secure-delete' and v = 1`) != 1 {
+		t.Fatal("existing table did not enable secure-delete on start")
+	}
+}
+
+func TestSearchRepair(t *testing.T) {
+	for _, missing := range []string{"table", "trigger", "old-trigger"} {
+		t.Run(missing, func(t *testing.T) {
+			h := newHarness(t)
+			root := h.newTask("root", "orchestrator", 0)
+			db := h.openDB()
+			searchDocument(t, db, root, "goal", "", "repairtoken document")
+			h.ok(nil, "note", "repairtoken old note", "--as", id(root))
+			if missing == "old-trigger" {
+				var oldSQL string
+				if err := db.QueryRow(`select sql from sqlite_master where name = 'search_events_insert'`).Scan(&oldSQL); err != nil {
+					t.Fatal(err)
+				}
+				// Reproduce the definition committed before owner answers were indexed.
+				oldSQL = strings.ReplaceAll(oldSQL, ", 'owner_answer'", "")
+				docExec(t, db, `drop trigger search_events_insert`)
+				docExec(t, db, oldSQL)
+			}
+			docExec(t, db, `insert into events(task_id, kind, summary, created_at) values (?, 'owner_answer', 'repairtoken old owner answer', ?)`, root, now())
+			switch missing {
+			case "table":
+				docExec(t, db, `drop table search_fts`)
+			case "trigger":
+				docExec(t, db, `drop trigger search_events_insert`)
+			}
+			h.ok(nil, "note", "repairtoken new note", "--as", id(root))
+			if hits := searchHits(t, h, "repairtoken"); len(hits) != 4 {
+				t.Fatalf("repair hits = %v", hits)
+			}
+			// Preserve distinctive rowids to detect an unnecessary second rebuild.
+			docExec(t, db, `update search_fts set rowid = rowid + 1000`)
+			db = h.openDB()
+			if docCount(t, db, `select count(*) from search_fts`) != 4 || docCount(t, db, `select count(*) from search_fts where rowid > 1000`) != 4 {
+				var storedSQL string
+				if err := db.QueryRow(`select sql from sqlite_master where name = 'search_events_insert'`).Scan(&storedSQL); err != nil {
+					t.Fatal(err)
+				}
+				t.Fatalf("second start changed or duplicated rows; stored trigger = %q", storedSQL)
+			}
+			if len(searchHits(t, h, "repairtoken")) != 4 {
+				t.Fatal("second start changed search results")
+			}
+		})
+	}
+}
+
+func TestSearchNULQuery(t *testing.T) {
+	h := newHarness(t)
+	for _, flags := range [][]string{nil, {"--raw"}} {
+		h.one(exitUsage, nil, append([]string{"search", "a\x00b"}, flags...)...)
+	}
+	r := newTwoHost(t)
+	for _, flags := range [][]string{nil, {"--raw"}} {
+		_, rep, _ := r.post("host-a", rpcBody(r.dir, nil, "search-nul-01", append([]string{"search", "a\x00b"}, flags...)...))
+		if rep.Exit != exitUsage {
+			t.Fatalf("RPC NUL query = %+v", rep)
+		}
+	}
+}
+
+func TestSearchControlSnippet(t *testing.T) {
+	h := newHarness(t)
+	root := h.newTask("root", "orchestrator", 0)
+	docExec(t, h.openDB(), `insert into events(task_id, kind, summary, created_at) values (?, 'note', ?, ?)`, root, "controltoken\tESC\x1bBEL\aDEL\x7fend", now())
+	hits := searchHits(t, h, "controltoken")
+	if len(hits) != 1 {
+		t.Fatal(hits)
+	}
+	snippet := hits[0]["snippet"].(string)
+	if strings.IndexFunc(snippet, unicode.IsControl) >= 0 || snippet != "[controltoken] ESC BEL DEL end" {
+		t.Fatalf("control snippet = %q", snippet)
+	}
+}
+
+func TestSearchOwnerAnswer(t *testing.T) {
+	h := newHarness(t)
+	root, lane, launch := docLane(t, h)
+	for _, owner := range []bool{false, true} {
+		args := []string{"ask", "ownertoken question"}
+		if owner {
+			args = append(args, "--owner")
+		}
+		ask := h.ok(as(lane, launch), args...)
+		h.ok(nil, "answer", id(num(ask, "ask_id")), "ownertoken answer", "--as", id(root))
+	}
+	// Historical owner notices remain searchable alongside current CLI answers.
+	docExec(t, h.openDB(), `insert into events(task_id, kind, summary, created_at) values (?, 'owner_answer', 'ownertoken legacy answer', ?)`, lane, now())
+	if len(searchHits(t, h, "ownertoken")) != 5 || len(searchHits(t, h, "ownertoken", "--kind", "ask")) != 2 {
+		t.Fatal("plain/owner asks or answers missing")
+	}
+	hits := searchHits(t, h, "ownertoken", "--kind", "answer")
+	if len(hits) != 3 {
+		t.Fatal(hits)
+	}
+	seen := false
+	for _, hit := range hits {
+		seen = seen || hit["kind"] == "owner_answer"
+	}
+	if !seen {
+		t.Fatal("owner answer kind lost")
 	}
 }
 

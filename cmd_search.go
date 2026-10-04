@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"strings"
+	"unicode"
 )
 
 func cmdSearch(c *ctx, args []string) (any, int, error) {
@@ -25,6 +26,9 @@ func cmdSearch(c *ctx, args []string) (any, int, error) {
 		return nil, 0, usageErr("unknown search kind %q", *kind)
 	}
 	query := pos[0]
+	if strings.ContainsRune(query, '\x00') {
+		return nil, 0, usageErr("search query must not contain a NUL byte")
+	}
 	if !*raw {
 		terms := strings.Fields(query)
 		for i, term := range terms {
@@ -53,7 +57,9 @@ func cmdSearch(c *ctx, args []string) (any, int, error) {
 		where += ` and root_id = ?`
 		qargs = append(qargs, *root)
 	}
-	if *kind != "" {
+	if *kind == "answer" {
+		where += ` and kind in ('answer', 'owner_answer')`
+	} else if *kind != "" {
 		where += ` and kind = ?`
 		qargs = append(qargs, *kind)
 	}
@@ -78,7 +84,12 @@ func cmdSearch(c *ctx, args []string) (any, int, error) {
 		if err := rows.Scan(&src, &ref, &root, &task, &kind, &name, &at, &snippet); err != nil {
 			return nil, 0, dbErr(err)
 		}
-		snippet = strings.NewReplacer("\r", " ", "\n", " ", "\u2028", " ", "\u2029", " ").Replace(snippet)
+		snippet = strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+				return ' '
+			}
+			return r
+		}, snippet)
 		runes := []rune(snippet)
 		if len(runes) > 200 {
 			snippet = string(runes[:200])

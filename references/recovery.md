@@ -59,6 +59,7 @@ Read the full log and recorded native home/session; verify the owned pane and to
 
 The owner restarts daemons; a worker never does. `taskr daemon --status` reports freshness, version, pid, socket, dashboard URL/role, peer push state and `dashboard_usage`; `stale: true` means an older daemon still runs.
 
+- If `taskr search` reports a damaged index, stop the server, drop the table `search_fts` in the ledger file, and start the server; it builds the index again.
 - `taskr daemon --restart` (local and client mode) stops only the daemon whose recorded pid, executable, argv, start time and uid match, waits ≤10 s, and starts this binary detached with only HOME/PATH/HERDR_SOCKET_PATH, preserving the recorded daemon arguments (including `--stay`). An unknown identity exits 6 and signals nothing.
 - A local daemon is recorded as supervised only when `INVOCATION_ID` is set and `SYSTEMD_EXEC_PID` equals its own pid. `--restart` stops it, then waits up to 10 s for a verified replacement with a new process start time. If none appears and the lock is free, it starts a detached replacement and reports `started_detached: true`. `daemon --status` shows `stay` and `supervised`; the detached fallback is not supervised.
 - With no lock holder, `--restart` starts plain `daemon`; a stopped stay daemon does not return with `--stay`.

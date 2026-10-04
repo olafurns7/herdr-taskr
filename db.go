@@ -98,20 +98,9 @@ func migrate(tx *sql.Tx) error {
 	return migrateSearch(tx)
 }
 
-func migrateSearch(tx *sql.Tx) error {
-	var exists int
-	if err := tx.QueryRow(`select count(*) from sqlite_master where name = 'search_fts'`).Scan(&exists); err != nil {
-		return err
-	}
-	if exists != 0 {
-		return nil
-	}
-	_, err := tx.Exec(`
-create virtual table search_fts using fts5(body, src UNINDEXED, ref UNINDEXED,
-  kind UNINDEXED, name UNINDEXED, root_id UNINDEXED, task_id UNINDEXED,
-  at UNINDEXED, tokenize = 'unicode61 remove_diacritics 2');
-create trigger search_events_insert after insert on events
-when new.kind in ('decision', 'ask', 'answer', 'note')
+// SQLite stores the leading CREATE TRIGGER keywords in uppercase.
+const searchEventTriggerSQL = `CREATE TRIGGER search_events_insert after insert on events
+when new.kind in ('decision', 'ask', 'answer', 'note', 'owner_answer')
 begin
   insert into search_fts(body, src, ref, kind, name, root_id, task_id, at)
   values (coalesce(new.summary, ''), 'event', new.id, new.kind, '',
@@ -119,7 +108,28 @@ begin
       select id, parent_id from tasks where id = new.task_id
       union all select t.id, t.parent_id from tasks t join ancestors a on t.id = a.parent_id
     ) select id from ancestors where parent_id is null), new.task_id, new.created_at);
-end;
+end`
+
+func migrateSearch(tx *sql.Tx) error {
+	var tableExists bool
+	var triggerSQL string
+	if err := tx.QueryRow(`select
+		exists(select 1 from sqlite_master where type = 'table' and name = 'search_fts'),
+		coalesce((select sql from sqlite_master where type = 'trigger' and name = 'search_events_insert'), '')`).Scan(&tableExists, &triggerSQL); err != nil {
+		return err
+	}
+	if tableExists && triggerSQL == searchEventTriggerSQL {
+		_, err := tx.Exec(`insert into search_fts(search_fts, rank) values('secure-delete', 1)`)
+		return err
+	}
+	_, err := tx.Exec(`
+drop trigger if exists search_events_insert;
+drop table if exists search_fts;
+create virtual table search_fts using fts5(body, src UNINDEXED, ref UNINDEXED,
+  kind UNINDEXED, name UNINDEXED, root_id UNINDEXED, task_id UNINDEXED,
+  at UNINDEXED, tokenize = 'unicode61 remove_diacritics 2');
+insert into search_fts(search_fts, rank) values('secure-delete', 1);
+` + searchEventTriggerSQL + `;
 insert into search_fts(body, src, ref, kind, name, root_id, task_id, at)
 select b.body, 'doc', d.id, d.kind, d.name, d.root_id, d.task_id, d.created_at
 from documents d join doc_blobs b on b.sha256 = d.sha256
@@ -133,7 +143,7 @@ with recursive tree(id, root_id) as (
 )
 select coalesce(e.summary, ''), 'event', e.id, e.kind, '', tree.root_id, e.task_id, e.created_at
 from events e join tree on tree.id = e.task_id
-where e.kind in ('decision', 'ask', 'answer', 'note');`)
+where e.kind in ('decision', 'ask', 'answer', 'note', 'owner_answer');`)
 	return err
 }
 
