@@ -293,7 +293,7 @@ func cmdClose(c *ctx, args []string) (any, int, error) {
 		}
 		// The close's place in the event order: handover compares event ids,
 		// never clocks.
-		eid, err := insertEvent(tx, event{TaskID: id, Kind: "closed", Data: map[string]any{"from_status": t.Status}})
+		eid, err := c.insertEvent(tx, event{TaskID: id, Kind: "closed", Data: map[string]any{"from_status": t.Status}})
 		out["event_id"] = eid
 		if err != nil {
 			return err

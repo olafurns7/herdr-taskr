@@ -410,6 +410,8 @@ func clientDaemon(c *ctx, raw string, args []string) int {
 	lockPath, statePath := filepath.Join(dir, "daemon.lock"), filepath.Join(dir, clientStateFile)
 	if *status {
 		out := map[string]any{"ok": true, "mode": "client", "server": raw}
+		queued, refused := spoolCounts(dir)
+		out["spool"] = map[string]int{"queued": queued, "refused": refused}
 		var st clientState
 		if b, err := os.ReadFile(statePath); err == nil {
 			json.Unmarshal(b, &st)
@@ -570,6 +572,9 @@ func (h *hostRelay) observe() error {
 	if parseErr != nil {
 		return fmt.Errorf("server observe reply: %w", parseErr)
 	}
+	if _, err := sendSpool(filepath.Dir(h.statePath), h.raw, h.log); err != nil && h.log != nil {
+		h.log.limited("spool-send", time.Minute, "spool send failed: %v", err)
+	}
 	h.mu.Lock()
 	h.watch = r.Watch
 	h.mu.Unlock()
@@ -597,6 +602,7 @@ func (h *hostRelay) observe() error {
 		}
 		h.workspaceWriter.writeWorkspaceTokens(want)
 	}
+	notifySpoolRefused(filepath.Dir(h.statePath), h.sock, h.log)
 	return notifyErr
 }
 

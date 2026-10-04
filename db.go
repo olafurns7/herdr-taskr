@@ -217,6 +217,18 @@ func insertEvent(tx *sql.Tx, e event) (int64, error) {
 	return res.LastInsertId()
 }
 
+func (c *ctx) insertEvent(tx *sql.Tx, e event) (int64, error) {
+	if c != nil && c.queuedAt != "" {
+		data := make(map[string]any, len(e.Data)+1)
+		for key, value := range e.Data {
+			data[key] = value
+		}
+		data["queued_at"] = c.queuedAt
+		e.Data = data
+	}
+	return insertEvent(tx, e)
+}
+
 const eventCols = `e.id, e.task_id, t.name, e.recipient_task_id, e.launch_id, e.kind, e.summary, e.data,
 	e.related_event_id, e.answered_by, e.event_key, e.created_at`
 

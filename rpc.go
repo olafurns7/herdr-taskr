@@ -49,6 +49,7 @@ type rpcRequest struct {
 	RequestKey   string            `json:"request_key"`
 	Capabilities []string          `json:"capabilities,omitempty"`
 	Document     *rpcDocPayload    `json:"document,omitempty"`
+	QueuedAt     string            `json:"queued_at,omitempty"`
 }
 
 type rpcReply struct {
@@ -83,12 +84,12 @@ type rpcDocWant struct {
 }
 
 // hiddenCommands are the client's own calls, run only over RPC: `_prompt`
-// splits a prompt for a lane on the caller's host, `_host` is that host's
-// daemon. They are never stored under a request key.
+// splits a prompt for a lane, `_host` is the client daemon, and `_hook` records
+// one fire-and-forget hook call.
 var hiddenCommands = map[string]command{"_prompt": cmdPromptPhase, "_host": cmdHost, "_hook": cmdHookRPC, "_doc": cmdDocRPC}
 
 // freshCommands always run anew and are never stored; a retry is a new read.
-var freshCommands = map[string]bool{"wait": true, "status": true, "asks": true, "log": true, "version": true, "help": true, "_hook": true}
+var freshCommands = map[string]bool{"wait": true, "status": true, "asks": true, "log": true, "version": true, "help": true}
 
 // rpcCommand is the command name in argv after a leading --json, or "".
 func rpcCommand(argv []string) (string, []string) {
@@ -120,6 +121,9 @@ func wantsHelp(args []string) bool {
 // and help requests.
 func storedCommand(argv []string) bool {
 	name, args := rpcCommand(argv)
+	if name == "_hook" {
+		return true
+	}
 	if _, ok := commands[name]; !ok || name == "daemon" || freshCommands[name] {
 		return false
 	}
@@ -257,6 +261,9 @@ func rpcCheckArgs(argv []string) error {
 	if name == "daemon" {
 		return usageErr("daemon runs on its own host; it is not available over RPC")
 	}
+	if name == "spool" {
+		return usageErr("spool commands run on their own host; they are not available over RPC")
+	}
 	for _, f := range rpcPathFlags[name] {
 		if v, _, _, ok := flagValue(args, f); ok && v != "" && !filepath.IsAbs(v) {
 			return usageErr("--%s must be an absolute path over RPC, got %q", f, v)
@@ -370,7 +377,7 @@ func (d *dashboard) rpcRun(cx context.Context, machine string, req rpcRequest) (
 	var out, errw bytes.Buffer
 	c := &ctx{getenv: func(k string) string { return env[k] }, out: &out, errw: &errw,
 		db: d.db, log: d.log, cx: cx, rpc: true, machine: machine, cwd: req.Cwd,
-		docUpload: hasCapability(req.Capabilities, docUploadCapability), remoteDoc: req.Document}
+		docUpload: hasCapability(req.Capabilities, docUploadCapability), remoteDoc: req.Document, queuedAt: req.QueuedAt}
 	defer func() {
 		if p := recover(); p != nil {
 			d.log.logf("rpc: machine=%s key=%s panicked: %s", machine, req.RequestKey, truncate(fmt.Sprint(p), 200))

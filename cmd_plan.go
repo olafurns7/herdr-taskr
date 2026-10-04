@@ -81,7 +81,7 @@ func cmdNext(c *ctx, args []string) (any, int, error) {
 		} else {
 			out["next"] = text
 		}
-		eid, err := insertEvent(tx, e)
+		eid, err := c.insertEvent(tx, e)
 		out["event_id"] = eid
 		return err
 	})
@@ -273,7 +273,7 @@ func cmdDecide(c *ctx, args []string) (any, int, error) {
 		root := w.task.ID
 		out["task_id"] = root
 		if *revoke == 0 {
-			eid, err := insertEvent(tx, event{TaskID: root, Kind: "decision", Summary: text})
+			eid, err := c.insertEvent(tx, event{TaskID: root, Kind: "decision", Summary: text})
 			out["event_id"], out["kind"], out["decision_id"] = eid, "decision", eid
 			return err
 		}
@@ -297,7 +297,7 @@ func cmdDecide(c *ctx, args []string) (any, int, error) {
 			}
 			return rejectErr("event %d is not a decision in force under task %d", *revoke, root)
 		}
-		eid, err := insertEvent(tx, event{TaskID: root, Kind: "revoke", Summary: clip(target.Text, stateSummaryMax),
+		eid, err := c.insertEvent(tx, event{TaskID: root, Kind: "revoke", Summary: clip(target.Text, stateSummaryMax),
 			RelatedEventID: ptr(*revoke), Data: map[string]any{"revoked": *revoke, "revoked_kind": target.Kind}})
 		out["event_id"], out["kind"], out["revoked"] = eid, "revoke", *revoke
 		return err

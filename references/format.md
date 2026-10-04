@@ -17,6 +17,7 @@ f1 EVENT [dup]
 k1 ACKED [already]    # ack, current cursor if already
 c1 TASK [already]     # close
 nx1 EVENT [clear]
+qd1 REQUEST_KEY       # record queued for delivery
 ds1 DOC VERSION [same] # doc set
 dr1 DOC VERSIONS_REMOVED # doc rm --purge
 rf1 [CHANGED_IDS]     # set; []=no changes

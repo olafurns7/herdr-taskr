@@ -360,12 +360,12 @@ func applyHookRecord(c *ctx, db *sql.DB, cx context.Context, h hookRecord) error
 			return map[string]any{"session_ref": session.String, "session_source": "hook:" + h.Event,
 				"transcript_path": nullStringValueForHook(tx, launch)}, nil
 		}
-		_, err := recordGot(tx, w, h.Attempt, identity)
+		_, err := recordGot(c, tx, w, h.Attempt, identity)
 		if err != nil {
 			return err
 		}
 	} else if hookStallEvent(h.Event) {
-		if err := writeHookStall(tx, w, *w.launchID, h.Error); err != nil {
+		if err := writeHookStall(c, tx, w, *w.launchID, h.Error); err != nil {
 			return err
 		}
 	} else {
@@ -382,7 +382,7 @@ func nullStringValueForHook(tx *sql.Tx, launch int64) any {
 	return path.String
 }
 
-func writeHookStall(tx *sql.Tx, w *worker, launch int64, errorCode string) error {
+func writeHookStall(c *ctx, tx *sql.Tx, w *worker, launch int64, errorCode string) error {
 	if errorCode == "" {
 		var role string
 		if err := tx.QueryRow(`select role from tasks where id = ?`, w.task.ID).Scan(&role); err != nil {
@@ -427,7 +427,11 @@ func writeHookStall(tx *sql.Tx, w *worker, launch int64, errorCode string) error
 			data["last"] = code
 		}
 	}
-	_, err = insertEvent(tx, event{TaskID: w.task.ID, RecipientTaskID: parentRecipient(w.task), LaunchID: ptr(launch),
+	var insert func(*sql.Tx, event) (int64, error) = insertEvent
+	if c != nil && c.rpc && c.machine != "" {
+		insert = c.insertEvent
+	}
+	_, err = insert(tx, event{TaskID: w.task.ID, RecipientTaskID: parentRecipient(w.task), LaunchID: ptr(launch),
 		Kind: "herdr", Summary: "worker turn stalled", Data: data, EventKey: key})
 	return err
 }
@@ -447,10 +451,6 @@ func hookRPCArgs(h hookRecord) []string {
 }
 
 func sendHookRPC(c *ctx, h hookRecord) {
-	cl, e := newRPCClient(c.server)
-	if e != nil {
-		return
-	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return
@@ -461,7 +461,27 @@ func sendHookRPC(c *ctx, h hookRecord) {
 			env[k] = v
 		}
 	}
-	_, _ = cl.call(hookRPCArgs(h), cwd, newRequestKey(), env)
+	req := rpcClientRequest(hookRPCArgs(h), cwd, newRequestKey(), env, nil)
+	dir, err := stateDir(c)
+	if err != nil {
+		return
+	}
+	if _, queued, _ := queueSpoolIfWaitingMode(dir, req, nil, false); queued {
+		return
+	}
+	cl, e := newRPCClient(c.server)
+	if e != nil {
+		if e.kind == "transport" {
+			_, _ = queueSpoolRecordMode(dir, req, nil, false)
+		}
+		return
+	}
+	cx, cancel := context.WithTimeout(context.Background(), hookDeadline)
+	defer cancel()
+	_, callErr, noReply, _ := cl.callOnceRequest(cx, req, true)
+	if callErr != nil && noReply {
+		_, _ = queueSpoolRecordMode(dir, req, nil, false)
+	}
 }
 
 func cmdHookRPC(c *ctx, args []string) (res any, code int, err error) {
@@ -497,6 +517,13 @@ func cmdHookRPC(c *ctx, args []string) (res any, code int, err error) {
 	}
 	if h.Session == "" || !absoluteHookPath(h.Transcript) || (hookPromptEvent(h.Event) && h.Attempt <= 0) {
 		return nil, exitOK, nil
+	}
+	if hookStallEvent(h.Event) && c.queuedAt != "" {
+		queuedAt, err := time.Parse(time.RFC3339, c.queuedAt)
+		if err == nil && time.Since(queuedAt) > 10*time.Minute {
+			fmt.Fprintln(c.out, "expired")
+			return nil, exitOK, nil
+		}
 	}
 	parent := c.cx
 	if parent == nil {

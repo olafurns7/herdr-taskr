@@ -88,6 +88,9 @@ lead:
 		_, _, _ = cmdHook(c, cargs)
 		return exitOK
 	}
+	if name == "spool" {
+		return runCtx(c, append(lead, rest...))
+	}
 	if flag := repeatedRPCFlag(cargs); flag != "" {
 		return clientFail(c, exitUsage, "usage", "repeated RPC flag --"+flag)
 	}
@@ -119,24 +122,10 @@ lead:
 		}
 		return clientFail(c, e.code, e.kind, e.msg)
 	}
-	cl, e := newRPCClient(raw)
-	if e != nil {
-		return fail(e)
-	}
-	if name == "new" {
-		if err := clientNewChecks(cargs, cl.self.Short); err != nil {
-			return clientFail(c, exitUsage, "usage", err.(*exitErr).msg)
-		}
-	}
 	env := map[string]string{}
 	for _, k := range rpcClientEnv {
 		if v := c.env(k); v != "" {
 			env[k] = v
-		}
-	}
-	if name == "prompt" {
-		if code, done := clientPrompt(c, cl, lead, cargs, cwd, env); done {
-			return code
 		}
 	}
 	var remoteDoc *rpcDocPayload
@@ -150,11 +139,71 @@ lead:
 			return clientFail(c, exitUsage, "usage", err.Error())
 		}
 	}
+	spoolable := spoolRecordCommand(argv)
+	var savedReady *rpcDocPayload
+	if name == "ready" {
+		savedReady = clientReadySpoolDocument(cargs, env)
+	}
+	request := rpcClientRequest(argv, cwd, key, env, remoteDoc)
+	var spoolDir string
+	if spoolable {
+		spoolDir, err = stateDir(c)
+		if err != nil {
+			return clientFail(c, exitUsage, "usage", err.(*exitErr).msg)
+		}
+		waiting, queued, queueErr := queueSpoolIfWaiting(spoolDir, request, savedReady)
+		if queueErr != nil {
+			if errors.Is(queueErr, errSpoolFull) {
+				fmt.Fprintln(stderr, "taskr: spool full")
+				return fail(&exitErr{exitHerdr, "transport", "server unreachable; spool full"})
+			}
+			return clientFail(c, exitDB, "database", queueErr.Error())
+		}
+		if queued {
+			return clientQueuedResult(c, cargs, key, waiting, stderr)
+		}
+	}
+	cl, e := newRPCClient(raw)
+	if e != nil {
+		if spoolable && e.kind == "transport" {
+			waiting, queueErr := queueSpoolRecord(spoolDir, request, savedReady)
+			if queueErr == nil {
+				return clientQueuedResult(c, cargs, key, waiting, stderr)
+			}
+			if errors.Is(queueErr, errSpoolFull) {
+				fmt.Fprintln(stderr, "taskr: spool full")
+				return fail(&exitErr{exitHerdr, "transport", "server unreachable; spool full"})
+			}
+			return fail(&exitErr{exitHerdr, "transport", "server unreachable; spool write failed: " + queueErr.Error()})
+		}
+		return fail(e)
+	}
+	if name == "new" {
+		if err := clientNewChecks(cargs, cl.self.Short); err != nil {
+			return clientFail(c, exitUsage, "usage", err.(*exitErr).msg)
+		}
+	}
+	if name == "prompt" {
+		if code, done := clientPrompt(c, cl, lead, cargs, cwd, env); done {
+			return code
+		}
+	}
 	if name == "doc" && len(cargs) > 0 && cargs[0] == "backfill" {
 		return clientDocBackfill(c, cl, cargs[1:], cwd, env)
 	}
 	rep, e := cl.callRetry(c, argv, cwd, key, retry, env, remoteDoc)
 	if e != nil {
+		if spoolable && cl.noReply {
+			waiting, queueErr := queueSpoolRecord(spoolDir, request, savedReady)
+			if queueErr == nil {
+				return clientQueuedResult(c, cargs, key, waiting, stderr)
+			}
+			if errors.Is(queueErr, errSpoolFull) {
+				fmt.Fprintln(stderr, "taskr: spool full")
+				return fail(&exitErr{exitHerdr, "transport", "server unreachable; spool full"})
+			}
+			return fail(&exitErr{exitHerdr, "transport", "server unreachable; spool write failed: " + queueErr.Error()})
+		}
 		return fail(e)
 	}
 	var uploads []rpcDocWant
@@ -179,8 +228,9 @@ lead:
 
 // rpcClient is a checked route to the server that server.url names.
 type rpcClient struct {
-	target string
-	self   *tsSelf
+	target  string
+	self    *tsSelf
+	noReply bool
 }
 
 // newRPCClient checks server.url against this node's tailnet and learns this
@@ -216,10 +266,14 @@ func newRPCClient(raw string) (*rpcClient, *exitErr) {
 
 // rpcRetryWindow is injectable so outage tests need not wait a minute.
 var rpcRetryWindow = func(argv []string) time.Duration {
+	if spoolRecordCommand(argv) {
+		return 3 * time.Second
+	}
 	return max(60*time.Second, rpcBudget(argv))
 }
 
 func (cl *rpcClient) callRetry(c *ctx, argv []string, cwd, key, retry string, env map[string]string, documents ...*rpcDocPayload) (rpcReply, *exitErr) {
+	cl.noReply = false
 	name, _ := rpcCommand(argv)
 	parent := context.Background()
 	if name != "wait" {
@@ -259,6 +313,7 @@ func (cl *rpcClient) callRetry(c *ctx, argv []string, cwd, key, retry string, en
 				return rpcReply{Exit: code, Stdout: out.String()}, nil
 			}
 			if transportErr != nil {
+				cl.noReply = true
 				return rpcReply{}, transportErr
 			}
 			return rep, lastErr
@@ -272,7 +327,7 @@ func (cl *rpcClient) callRetry(c *ctx, argv []string, cwd, key, retry string, en
 				// Keep response slack for the server's normal timeout counts.
 				httpDeadline = httpDeadline.Add(rpcSlack)
 			} else {
-				if attemptDeadline := time.Now().Add(rpcBudget(argv) + rpcSlack); attemptDeadline.After(httpDeadline) {
+				if attemptDeadline := time.Now().Add(rpcBudget(argv) + rpcSlack); !spoolRecordCommand(argv) && attemptDeadline.After(httpDeadline) {
 					httpDeadline = attemptDeadline
 				}
 			}
@@ -310,7 +365,7 @@ func (cl *rpcClient) callRetry(c *ctx, argv []string, cwd, key, retry string, en
 		if time.Until(deadline) <= 0 {
 			continue
 		}
-		if !announced {
+		if !announced && !spoolRecordCommand(argv) {
 			reason, suffix := "server unreachable", ""
 			if name != "wait" {
 				if !retryable {
@@ -379,13 +434,18 @@ func (cl *rpcClient) callOnceNoFallback(parent context.Context, argv []string, c
 }
 
 func (cl *rpcClient) callOnceMode(parent context.Context, argv []string, cwd, key string, env map[string]string, document *rpcDocPayload, capability, fallback bool) (rpcReply, *exitErr, bool, bool) {
+	req := rpcRequest{Argv: argv, Cwd: cwd, Env: env, RequestKey: key, Document: document}
+	if capability {
+		req.Capabilities = []string{docUploadCapability}
+	}
+	return cl.callOnceRequest(parent, req, fallback)
+}
+
+func (cl *rpcClient) callOnceRequest(parent context.Context, reqBody rpcRequest, fallback bool) (rpcReply, *exitErr, bool, bool) {
 	unreachable := func(why string, retryable, reached bool) (rpcReply, *exitErr, bool, bool) {
 		return rpcReply{}, &exitErr{exitHerdr, "transport", why}, retryable, reached
 	}
-	reqBody := rpcRequest{Argv: argv, Cwd: cwd, Env: env, RequestKey: key, Document: document}
-	if capability {
-		reqBody.Capabilities = []string{docUploadCapability}
-	}
+	argv := reqBody.Argv
 	body, _ := json.Marshal(reqBody)
 	u, _ := url.Parse(cl.target)
 	cx, cancel := context.WithTimeout(parent, rpcBudget(argv)+rpcSlack)
@@ -420,13 +480,27 @@ func (cl *rpcClient) callOnceMode(parent context.Context, argv []string, cwd, ke
 	case !usedOurs:
 		return unreachable("the request did not use the verified server connection", false, true)
 	}
-	if resp.StatusCode == http.StatusBadRequest && fallback && capability {
+	if resp.StatusCode == http.StatusBadRequest && fallback {
 		var refusal struct {
 			Error string `json:"error"`
 		}
-		if json.Unmarshal(rb, &refusal) == nil && strings.Contains(refusal.Error, `unknown field "capabilities"`) {
-			vc.Close()
-			return cl.callOnceMode(parent, argv, cwd, key, env, nil, false, false)
+		if json.Unmarshal(rb, &refusal) == nil {
+			changed := false
+			switch {
+			case len(reqBody.Capabilities) > 0 && strings.Contains(refusal.Error, `unknown field "capabilities"`):
+				reqBody.Capabilities, reqBody.Document = nil, nil
+				changed = true
+			case reqBody.Document != nil && strings.Contains(refusal.Error, `unknown field "document"`):
+				reqBody.Document = nil
+				changed = true
+			case reqBody.QueuedAt != "" && strings.Contains(refusal.Error, `unknown field "queued_at"`):
+				reqBody.QueuedAt = ""
+				changed = true
+			}
+			if changed {
+				vc.Close()
+				return cl.callOnceRequest(parent, reqBody, true)
+			}
 		}
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -448,6 +522,49 @@ func (cl *rpcClient) callOnceMode(parent context.Context, argv []string, cwd, ke
 		return unreachable("reply is not JSON", false, true)
 	}
 	return rep, nil, false, true
+}
+
+func (cl *rpcClient) callStored(cx context.Context, req rpcRequest) (rpcReply, *exitErr, bool) {
+	rep, err, noReply, _ := cl.callOnceRequest(cx, req, true)
+	return rep, err, noReply
+}
+
+func rpcClientRequest(argv []string, cwd, key string, env map[string]string, document *rpcDocPayload) rpcRequest {
+	return rpcRequest{Argv: slices.Clone(argv), Cwd: cwd, Env: env, RequestKey: key,
+		Capabilities: []string{docUploadCapability}, Document: document}
+}
+
+func spoolRecordCommand(argv []string) bool {
+	name, args := rpcCommand(argv)
+	switch name {
+	case "got", "ready", "done", "fail", "decide", "next", "note", "_hook":
+		return true
+	case "close":
+		_, _, _, outcome := flagValue(args, "outcome")
+		return !outcome
+	default:
+		return false
+	}
+}
+
+func clientReadySpoolDocument(args []string, env map[string]string) *rpcDocPayload {
+	path, _, _, ok := flagValue(args, "report")
+	if !ok || path == "" {
+		return nil
+	}
+	task, err := strconv.ParseInt(env["TASKR_TASK"], 10, 64)
+	if err != nil || task <= 0 {
+		return nil
+	}
+	want := rpcDocWant{Task: task, Kind: "report", Path: path}
+	return clientDocPayload(want, fileDocument(path, ""), false, false)
+}
+
+func clientQueuedResult(c *ctx, args []string, key string, waiting int, stderr io.Writer) int {
+	c.json = c.json || flagTrue(args, "json")
+	c.emit(map[string]any{"queued": true, "request_key": key})
+	fmt.Fprintf(stderr, "taskr: server unreachable; queued (%d waiting)\n", waiting)
+	return exitOK
 }
 
 // clientPaths makes the path flags absolute here, before they reach another
@@ -561,9 +678,20 @@ func clientDocPayload(want rpcDocWant, in documentInput, backfill, dryRun bool) 
 }
 
 func clientUploadDocs(cl *rpcClient, wants []rpcDocWant, cwd string, env map[string]string) {
+	clientUploadSpoolDocs(cl, wants, cwd, env, nil)
+}
+
+func clientUploadSpoolDocs(cl *rpcClient, wants []rpcDocWant, cwd string, env map[string]string, saved *rpcDocPayload) {
 	for _, want := range wants {
-		in := fileDocument(want.Path, "")
-		payload := clientDocPayload(want, in, false, false)
+		var payload *rpcDocPayload
+		if saved != nil && saved.Task == want.Task && saved.Kind == want.Kind && saved.Name == want.Name && saved.Path == want.Path {
+			copy := *saved
+			copy.EventID = want.EventID
+			payload = &copy
+		} else {
+			in := fileDocument(want.Path, "")
+			payload = clientDocPayload(want, in, false, false)
+		}
 		cx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, _, _ = cl.callOnceNoFallback(cx, []string{"--json", "_doc", "put"}, cwd, newRequestKey(), env, payload)
 		cancel()

@@ -205,8 +205,14 @@ func writeWorkerEvent(c *ctx, ww workerWrite) (any, int, error) {
 		if err := notPlannedRecipient(tx, recip); err != nil {
 			return err
 		}
-		id, err := insertEvent(tx, event{TaskID: w.task.ID, RecipientTaskID: recip, LaunchID: w.launchID,
-			Kind: ww.kind, Summary: ww.summary, Data: ww.data, EventKey: ww.key})
+		e := event{TaskID: w.task.ID, RecipientTaskID: recip, LaunchID: w.launchID,
+			Kind: ww.kind, Summary: ww.summary, Data: ww.data, EventKey: ww.key}
+		var id int64
+		if ww.kind == "note" || ww.kind == "ready" || ww.kind == "done" || ww.kind == "fail" {
+			id, err = c.insertEvent(tx, e)
+		} else {
+			id, err = insertEvent(tx, e)
+		}
 		if err != nil {
 			return err
 		}
@@ -328,7 +334,7 @@ func cmdGot(c *ctx, args []string) (any, int, error) {
 		if err != nil {
 			return err
 		}
-		g, err := recordGot(tx, w, attempt, func(tx *sql.Tx, launch int64) (map[string]any, error) {
+		g, err := recordGot(c, tx, w, attempt, func(tx *sql.Tx, launch int64) (map[string]any, error) {
 			return mergeIdentity(c, tx, launch)
 		})
 		if err != nil {
@@ -356,7 +362,7 @@ type gotResult struct {
 // returns the first receipt. If `start` has not recorded the launch's native
 // home yet, identity supplies it. A first receipt deletes the attempt's
 // receipt deadline and, after a no_receipt, writes late_receipt.
-func recordGot(tx *sql.Tx, w *worker, attempt int64, identity func(tx *sql.Tx, launch int64) (map[string]any, error)) (gotResult, error) {
+func recordGot(c *ctx, tx *sql.Tx, w *worker, attempt int64, identity func(tx *sql.Tx, launch int64) (map[string]any, error)) (gotResult, error) {
 	var g gotResult
 	if w.launchID == nil {
 		return g, rejectErr("task %d has no launch to receive prompts", w.task.ID)
@@ -420,7 +426,7 @@ func recordGot(tx *sql.Tx, w *worker, attempt int64, identity func(tx *sql.Tx, l
 	if err := notPlannedRecipient(tx, parentRecipient(w.task)); err != nil {
 		return g, err
 	}
-	g.eventID, err = insertEvent(tx, event{TaskID: w.task.ID, RecipientTaskID: parentRecipient(w.task), LaunchID: w.launchID,
+	g.eventID, err = c.insertEvent(tx, event{TaskID: w.task.ID, RecipientTaskID: parentRecipient(w.task), LaunchID: w.launchID,
 		Kind: "got", Summary: "prompt attempt " + strconv.FormatInt(attempt, 10) + " received", Data: edata,
 		RelatedEventID: ptr(attempt), EventKey: key})
 	if err != nil {
@@ -429,7 +435,7 @@ func recordGot(tx *sql.Tx, w *worker, attempt int64, identity func(tx *sql.Tx, l
 	if err := disarmReceipt(tx, attempt); err != nil {
 		return g, err
 	}
-	return g, lateReceipt(tx, w, attempt, g.eventID)
+	return g, lateReceipt(c, tx, w, attempt, g.eventID)
 }
 
 // accountLabel returns an optional account label when the agent home follows

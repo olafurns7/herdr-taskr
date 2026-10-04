@@ -565,7 +565,7 @@ func TestHarnessRPCWaits(t *testing.T) {
 	}
 }
 
-// A wait that connected times out; a write keeps its same-key retry line.
+// A wait that connected times out; a record write queues when replies are lost.
 func TestHarnessRPCDroppedConnection(t *testing.T) {
 	setVar(t, &rpcRetryWindow, func([]string) time.Duration { return 120 * time.Millisecond })
 	r := newTwoHost(t)
@@ -596,8 +596,9 @@ func TestHarnessRPCDroppedConnection(t *testing.T) {
 			}
 			continue
 		}
-		if code != exitHerdr || m["kind"] != "transport" || m["timeout"] != nil ||
-			!strings.Contains(errb.String(), "taskr: server unreachable; retry with: taskr --request-key drop-key-01 --json "+args[0]) {
+		errText := errb.String()
+		if code != exitOK || m["queued"] != true || m["request_key"] != "drop-key-01" ||
+			errText != "taskr: server unreachable; queued (1 waiting)\n" {
 			t.Fatalf("%v over a dropped connection = %d %v %q", args, code, m, errb.String())
 		}
 	}

@@ -92,6 +92,7 @@ type ctx struct {
 	docUpload  bool
 	docUploads []rpcDocWant
 	remoteDoc  *rpcDocPayload
+	queuedAt   string
 }
 
 func (c *ctx) env(k string) string {
@@ -127,7 +128,7 @@ func commandTable() map[string]command {
 		"wait": cmdWait, "ack": cmdAck,
 		"next": cmdNext, "decide": cmdDecide, "set": cmdSet, "handover": cmdHandover, "adopt": cmdAdopt,
 		"status": cmdStatus, "asks": cmdAsks, "log": cmdLog,
-		"daemon": cmdDaemon, "doc": cmdDoc,
+		"daemon": cmdDaemon, "doc": cmdDoc, "spool": cmdSpool,
 	}
 }
 
@@ -145,6 +146,7 @@ read:         status [--tree ID] [--all] | asks [--open] [--tree ID] [--owner] [
 daemon:       daemon [--stay] [--once] [--status] [--restart]   (the Herdr plugin's event bridge and owner dashboard; one per HOME)
 info:         version | help [CMD]
 client:       --request-key KEY <command> [args]   (with a server.url: retry a command whose answer was lost)
+spool:        spool ls | spool send | spool rm SEQ   (client-local queued records)
 format:       compact by default; --json or TASKR_FORMAT=json selects legacy JSON (handover/adopt stay Markdown)`
 
 func main() {

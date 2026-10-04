@@ -84,6 +84,10 @@ func (c *ctx) emitCompact(v any) {
 		fmt.Fprintf(c.out, "x1 %d %s\n", c.code, jsonText(aliases(m, resultAliases)))
 		return
 	}
+	if m["queued"] == true {
+		fmt.Fprintf(c.out, "qd1 %v\n", m["request_key"])
+		return
+	}
 	if m["timeout"] == true {
 		owed, hasOwed := m["owed"]
 		due, hasDue := m["due"]
