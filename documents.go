@@ -151,6 +151,13 @@ func storeDocument(tx *sql.Tx, taskID int64, kind, name string, in documentInput
 		return document{}, false, err
 	}
 	d, err := scanDocument(tx.QueryRow(`select `+documentCols+` from documents where id = ?`, id))
+	if err == nil && d.Captured {
+		_, err = tx.Exec(`delete from search_fts where src = 'doc' and task_id = ? and kind = ? and name = ?`, taskID, kind, name)
+		if err == nil {
+			_, err = tx.Exec(`insert into search_fts(body, src, ref, kind, name, root_id, task_id, at)
+				values (?, 'doc', ?, ?, ?, ?, ?, ?)`, in.Body, d.ID, kind, name, root, taskID, d.Created)
+		}
+	}
 	return d, false, err
 }
 

@@ -299,6 +299,9 @@ func cmdDocRm(c *ctx, args []string) (any, int, error) {
 		if _, err := tx.Exec(`pragma secure_delete = on`); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(`delete from search_fts where src = 'doc' and task_id = ? and kind = ? and name = ?`, d.TaskID, d.Kind, d.Name); err != nil {
+			return err
+		}
 		res, err := tx.Exec(`delete from documents where task_id = ? and kind = ? and name = ?`, d.TaskID, d.Kind, d.Name)
 		if err != nil {
 			return err

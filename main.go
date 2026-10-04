@@ -129,6 +129,7 @@ func commandTable() map[string]command {
 		"wait": cmdWait, "ack": cmdAck,
 		"next": cmdNext, "decide": cmdDecide, "set": cmdSet, "handover": cmdHandover, "adopt": cmdAdopt,
 		"status": cmdStatus, "asks": cmdAsks, "log": cmdLog,
+		"search": cmdSearch,
 		"daemon": cmdDaemon, "doc": cmdDoc, "spool": cmdSpool,
 	}
 }
@@ -144,6 +145,7 @@ handover:     handover --as ID [--note TEXT] [--out PATH] | adopt ID [--workspac
 inbox:        wait [--as ID] [--for KIND[,KIND...]] [--from NAME|ID]... [--ack EVENT_ID] [--timeout MS] [--scan-quota] | ack EVENT_ID --as ID
 hooks:        hook <harness> <event> (JSON on stdin)
 read:         status [--tree ID] [--all] | asks [--open] [--tree ID] [--owner] [--limit N] | log ID [--tree] [--since EVENT_ID] [--before EVENT_ID] [--limit N]
+search:       search QUERY [--root ID] [--kind K] [--limit N] [--raw]   (documents and decision/ask/answer/note; default 20, max 100)
 daemon:       daemon [--stay] [--once] [--status] [--restart]   (the Herdr plugin's event bridge and owner dashboard; one per HOME)
 info:         version | help [CMD]
 client:       --request-key KEY <command> [args]   (with a server.url: retry a command whose answer was lost)
