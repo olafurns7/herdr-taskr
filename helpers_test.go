@@ -22,7 +22,8 @@ func TestMain(m *testing.M) {
 	tailscaleFallbacks = nil             // never the real tailscale
 	// These subprocess probes already receive scratch state (or create a harness).
 	// Preserve their deliberately restricted launch environment and PATH.
-	if os.Getenv("TASKR_HOOK_LOCK_CHILD") == "1" || os.Getenv("TASKR_RETRY_SIGNAL_CHILD") == "1" {
+	if os.Getenv("TASKR_HOOK_LOCK_CHILD") == "1" || os.Getenv("TASKR_RETRY_SIGNAL_CHILD") == "1" ||
+		os.Getenv("TASKR_SPOOL_HOOK_HELPER") == "1" {
 		os.Exit(m.Run())
 	}
 	// Keep Go's shared build/module caches outside the scratch HOME used by every test.

@@ -50,6 +50,7 @@ type rpcRequest struct {
 	Capabilities []string          `json:"capabilities,omitempty"`
 	Document     *rpcDocPayload    `json:"document,omitempty"`
 	QueuedAt     string            `json:"queued_at,omitempty"`
+	QueuedAgeMS  int64             `json:"queued_age_ms,omitempty"`
 }
 
 type rpcReply struct {
@@ -377,7 +378,8 @@ func (d *dashboard) rpcRun(cx context.Context, machine string, req rpcRequest) (
 	var out, errw bytes.Buffer
 	c := &ctx{getenv: func(k string) string { return env[k] }, out: &out, errw: &errw,
 		db: d.db, log: d.log, cx: cx, rpc: true, machine: machine, cwd: req.Cwd,
-		docUpload: hasCapability(req.Capabilities, docUploadCapability), remoteDoc: req.Document, queuedAt: req.QueuedAt}
+		docUpload: hasCapability(req.Capabilities, docUploadCapability), remoteDoc: req.Document,
+		queuedAt: req.QueuedAt, queuedAgeMS: req.QueuedAgeMS}
 	defer func() {
 		if p := recover(); p != nil {
 			d.log.logf("rpc: machine=%s key=%s panicked: %s", machine, req.RequestKey, truncate(fmt.Sprint(p), 200))

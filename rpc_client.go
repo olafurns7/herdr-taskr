@@ -157,6 +157,9 @@ lead:
 				fmt.Fprintln(stderr, "taskr: spool full")
 				return fail(&exitErr{exitHerdr, "transport", "server unreachable; spool full"})
 			}
+			if waiting > 0 {
+				return fail(&exitErr{exitHerdr, "transport", "spool write failed: " + queueErr.Error()})
+			}
 			return clientFail(c, exitDB, "database", queueErr.Error())
 		}
 		if queued {
@@ -496,6 +499,9 @@ func (cl *rpcClient) callOnceRequest(parent context.Context, reqBody rpcRequest,
 			case reqBody.QueuedAt != "" && strings.Contains(refusal.Error, `unknown field "queued_at"`):
 				reqBody.QueuedAt = ""
 				changed = true
+			case reqBody.QueuedAgeMS != 0 && strings.Contains(refusal.Error, `unknown field "queued_age_ms"`):
+				reqBody.QueuedAgeMS = 0
+				changed = true
 			}
 			if changed {
 				vc.Close()
@@ -504,11 +510,11 @@ func (cl *rpcClient) callOnceRequest(parent context.Context, reqBody rpcRequest,
 		}
 	}
 	if resp.StatusCode != http.StatusOK {
-		var e struct {
-			Error string `json:"error"`
+		body := strings.TrimSpace(string(rb))
+		if body == "" {
+			body = http.StatusText(resp.StatusCode)
 		}
-		json.Unmarshal(rb, &e)
-		msg := fmt.Sprintf("server answered %d: %s", resp.StatusCode, truncate(e.Error, 300))
+		msg := fmt.Sprintf("server answered %d: %s", resp.StatusCode, truncate(body, 300))
 		switch {
 		case resp.StatusCode == http.StatusForbidden:
 			return rpcReply{}, &exitErr{exitReject, "rejected", msg}, false, true
@@ -517,8 +523,14 @@ func (cl *rpcClient) callOnceRequest(parent context.Context, reqBody rpcRequest,
 		}
 		return unreachable(msg, false, true)
 	}
+	var shape struct {
+		Exit   *int    `json:"exit"`
+		Stdout *string `json:"stdout"`
+		Stderr *string `json:"stderr"`
+	}
 	var rep rpcReply
-	if err := json.Unmarshal(rb, &rep); err != nil {
+	if err := json.Unmarshal(rb, &shape); err != nil || shape.Exit == nil || shape.Stdout == nil || shape.Stderr == nil ||
+		json.Unmarshal(rb, &rep) != nil {
 		return unreachable("reply is not JSON", false, true)
 	}
 	return rep, nil, false, true
@@ -693,10 +705,10 @@ func clientDocPayload(want rpcDocWant, in documentInput, backfill, dryRun bool) 
 }
 
 func clientUploadDocs(cl *rpcClient, wants []rpcDocWant, cwd string, env map[string]string) {
-	clientUploadSpoolDocs(cl, wants, cwd, env, nil)
+	_ = clientUploadSpoolDocs(cl, wants, cwd, env, nil)
 }
 
-func clientUploadSpoolDocs(cl *rpcClient, wants []rpcDocWant, cwd string, env map[string]string, saved *rpcDocPayload) {
+func clientUploadSpoolDocs(cl *rpcClient, wants []rpcDocWant, cwd string, env map[string]string, saved *rpcDocPayload) error {
 	for _, want := range wants {
 		var payload *rpcDocPayload
 		if saved != nil && saved.Task == want.Task && saved.Kind == want.Kind && saved.Name == want.Name && saved.Path == want.Path {
@@ -708,9 +720,16 @@ func clientUploadSpoolDocs(cl *rpcClient, wants []rpcDocWant, cwd string, env ma
 			payload = clientDocPayload(want, in, false, false)
 		}
 		cx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_, _, _, _ = cl.callOnceNoFallback(cx, []string{"--json", "_doc", "put"}, cwd, newRequestKey(), env, payload)
+		rep, err, _, _ := cl.callOnceNoFallback(cx, []string{"--json", "_doc", "put"}, cwd, newRequestKey(), env, payload)
 		cancel()
+		if err != nil {
+			return err
+		}
+		if rep.Exit != exitOK {
+			return fmt.Errorf("document upload refused: %s", rpcReplyError(rep))
+		}
 	}
+	return nil
 }
 
 func clientDocBackfill(c *ctx, cl *rpcClient, args []string, cwd string, env map[string]string) int {

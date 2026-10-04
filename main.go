@@ -81,18 +81,19 @@ type ctx struct {
 	code   int
 
 	// Set by the RPC handler for a remote caller; zero for the local CLI.
-	db         *sql.DB         // the daemon's resident ledger
-	log        *daemonLog      // the server daemon's log for remote calls
-	cx         context.Context // ends a wait; nil means the CLI's signal context
-	rpc        bool            // a remote caller: paths come absolute, no file effects here
-	machine    string          // the caller's host label; "" is the server host
-	cwd        string          // the caller's working directory
-	client     bool            // client mode: never open a local ledger
-	server     string          // client mode: the server URL, for version
-	docUpload  bool
-	docUploads []rpcDocWant
-	remoteDoc  *rpcDocPayload
-	queuedAt   string
+	db          *sql.DB         // the daemon's resident ledger
+	log         *daemonLog      // the server daemon's log for remote calls
+	cx          context.Context // ends a wait; nil means the CLI's signal context
+	rpc         bool            // a remote caller: paths come absolute, no file effects here
+	machine     string          // the caller's host label; "" is the server host
+	cwd         string          // the caller's working directory
+	client      bool            // client mode: never open a local ledger
+	server      string          // client mode: the server URL, for version
+	docUpload   bool
+	docUploads  []rpcDocWant
+	remoteDoc   *rpcDocPayload
+	queuedAt    string
+	queuedAgeMS int64
 }
 
 func (c *ctx) env(k string) string {

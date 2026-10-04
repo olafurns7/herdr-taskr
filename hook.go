@@ -24,6 +24,7 @@ import (
 
 const (
 	hookDeadline    = 500 * time.Millisecond
+	hookSendBudget  = 350 * time.Millisecond
 	hookBusyTimeout = 150 * time.Millisecond
 )
 
@@ -239,6 +240,7 @@ func receiptAttempt(prompt string) int64 {
 // cmdHook is a fire-and-forget harness entry point. Keep every failure silent:
 // hooks run inside the harness turn and must never block it.
 func cmdHook(c *ctx, args []string) (res any, code int, err error) {
+	started := time.Now()
 	if c != nil {
 		c.lines = true
 	}
@@ -271,7 +273,7 @@ func cmdHook(c *ctx, args []string) (res any, code int, err error) {
 		return nil, exitOK, nil
 	}
 	if c.client {
-		sendHookRPC(c, h)
+		sendHookRPC(c, h, started)
 		return nil, exitOK, nil
 	}
 	db := c.db
@@ -450,7 +452,27 @@ func hookRPCArgs(h hookRecord) []string {
 	return args
 }
 
-func sendHookRPC(c *ctx, h hookRecord) {
+func queueHookRecordUntil(dir string, req rpcRequest, deadline time.Time) {
+	for {
+		_, err := queueSpoolRecordMode(dir, req, nil, false)
+		if err != errSpoolBusy || time.Until(deadline) <= 0 {
+			return
+		}
+		time.Sleep(min(5*time.Millisecond, time.Until(deadline)))
+	}
+}
+
+func queueHookIfWaitingUntil(dir string, req rpcRequest, deadline time.Time) (int, bool, bool, error) {
+	for {
+		count, queued, err := queueSpoolIfWaitingMode(dir, req, nil, false)
+		if err != errSpoolBusy || time.Until(deadline) <= 0 {
+			return count, queued, err == errSpoolBusy, err
+		}
+		time.Sleep(min(5*time.Millisecond, time.Until(deadline)))
+	}
+}
+
+func sendHookRPC(c *ctx, h hookRecord, started time.Time) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return
@@ -466,21 +488,46 @@ func sendHookRPC(c *ctx, h hookRecord) {
 	if err != nil {
 		return
 	}
-	if _, queued, _ := queueSpoolIfWaitingMode(dir, req, nil, false); queued {
+	sendDeadline := started.Add(hookSendBudget)
+	processDeadline := started.Add(hookDeadline)
+	count, queued, busy, queueErr := queueHookIfWaitingUntil(dir, req, started.Add(hookBusyTimeout))
+	if queued || queueErr != nil && !busy {
 		return
 	}
-	cl, e := newRPCClient(c.server)
-	if e != nil {
-		if e.kind == "transport" {
-			_, _ = queueSpoolRecordMode(dir, req, nil, false)
+	if busy {
+		if countSpoolFiles(filepath.Join(spoolPath(dir), spoolQueueDir)) > 0 || count > 0 {
+			queueHookRecordUntil(dir, req, processDeadline)
+			return
 		}
+	}
+	type clientResult struct {
+		client *rpcClient
+		err    *exitErr
+	}
+	clientCh := make(chan clientResult, 1)
+	go func() {
+		cl, e := newRPCClient(c.server)
+		clientCh <- clientResult{client: cl, err: e}
+	}()
+	var cl *rpcClient
+	select {
+	case result := <-clientCh:
+		if result.err != nil {
+			if result.err.kind == "transport" {
+				queueHookRecordUntil(dir, req, processDeadline)
+			}
+			return
+		}
+		cl = result.client
+	case <-time.After(max(0, time.Until(sendDeadline))):
+		queueHookRecordUntil(dir, req, processDeadline)
 		return
 	}
-	cx, cancel := context.WithTimeout(context.Background(), hookDeadline)
+	cx, cancel := context.WithDeadline(context.Background(), sendDeadline)
 	defer cancel()
 	_, callErr, noReply, _ := cl.callOnceRequest(cx, req, true)
-	if callErr != nil && noReply {
-		_, _ = queueSpoolRecordMode(dir, req, nil, false)
+	if callErr != nil && (noReply || spoolTransportError(callErr)) {
+		queueHookRecordUntil(dir, req, processDeadline)
 	}
 }
 
@@ -518,12 +565,9 @@ func cmdHookRPC(c *ctx, args []string) (res any, code int, err error) {
 	if h.Session == "" || !absoluteHookPath(h.Transcript) || (hookPromptEvent(h.Event) && h.Attempt <= 0) {
 		return nil, exitOK, nil
 	}
-	if hookStallEvent(h.Event) && c.queuedAt != "" {
-		queuedAt, err := time.Parse(time.RFC3339, c.queuedAt)
-		if err == nil && time.Since(queuedAt) > 10*time.Minute {
-			fmt.Fprintln(c.out, "expired")
-			return nil, exitOK, nil
-		}
+	if hookStallEvent(h.Event) && c.queuedAgeMS > int64((10*time.Minute)/time.Millisecond) {
+		fmt.Fprintln(c.out, "expired")
+		return nil, exitOK, nil
 	}
 	parent := c.cx
 	if parent == nil {
