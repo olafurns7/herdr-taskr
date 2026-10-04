@@ -911,21 +911,27 @@ func sendSpool(dir, raw string, log *daemonLog) (int, error) {
 		}
 		if err := clientUploadSpoolDocs(cl, wants, req.Cwd, req.Env, file.record.Document); err != nil {
 			var refusal *rpcDocUploadRefusalError
-			if !errors.As(err, &refusal) {
-				return sent, err
+			if errors.As(err, &refusal) {
+				if log != nil {
+					log.logf("spool document upload refused task=%d document=%s/%s path=%q error=%s",
+						refusal.want.Task, refusal.want.Kind, refusal.want.Name, refusal.want.Path, refusal.message)
+				}
+				if err := removeQueuedSpoolFile(dir, file); err != nil {
+					return sent, err
+				}
+				file, hasFile, err = spoolQueueHead(dir)
+				if err != nil {
+					return sent, err
+				}
+				continue
 			}
-			if log != nil {
-				log.logf("spool document upload refused task=%d document=%s/%s path=%q error=%s",
-					refusal.want.Task, refusal.want.Kind, refusal.want.Name, refusal.want.Path, refusal.message)
+			var uploadErr *exitErr
+			if errors.As(err, &uploadErr) && spoolStuckReasonIsHTTPStatus(uploadErr.msg) {
+				if _, markErr := updateQueuedSpoolStuck(dir, file, uploadErr.msg); markErr != nil {
+					return sent, markErr
+				}
 			}
-			if err := removeQueuedSpoolFile(dir, file); err != nil {
-				return sent, err
-			}
-			file, hasFile, err = spoolQueueHead(dir)
-			if err != nil {
-				return sent, err
-			}
-			continue
+			return sent, err
 		}
 		if err := removeQueuedSpoolFile(dir, file); err != nil {
 			return sent, err

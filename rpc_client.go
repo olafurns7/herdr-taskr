@@ -747,7 +747,7 @@ func clientUploadSpoolDocs(cl *rpcClient, wants []rpcDocWant, cwd string, env ma
 		rep, err, _, _ := cl.callOnceNoFallback(cx, []string{"--json", "_doc", "put"}, cwd, newRequestKey(), env, payload)
 		cancel()
 		if err != nil {
-			if err.kind == "transport" {
+			if spoolTransportError(err) {
 				return err
 			}
 			return &rpcDocUploadRefusalError{want: want, message: err.msg}

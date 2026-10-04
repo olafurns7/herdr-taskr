@@ -1253,6 +1253,86 @@ func TestSpoolUploadRefusalDropsAndContinues(t *testing.T) {
 	}
 }
 
+func TestSpoolUpload429KeepsThenSendsInOrder(t *testing.T) {
+	r := newTwoHost(t)
+	host := spoolClientHost(r)
+	deadURL := spoolDeadURL(t, r)
+	top, task, launch := spoolMakeWorker(t, r, host, 44)
+	report := filepath.Join(t.TempDir(), "rate-limited-report.txt")
+	const body = "report uploaded after rate limit\n"
+	if err := os.WriteFile(report, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.openDB().Exec(`update tasks set report_path = ? where id = ?`, report, task); err != nil {
+		t.Fatal(err)
+	}
+	setVar(t, &rpcRetryWindow, func([]string) time.Duration { return 30 * time.Millisecond })
+	home := r.clientHome(deadURL)
+	code, _, _ := spoolRunCLI(r, host, home, as(task, launch), "done")
+	if code != exitOK || countSpoolFiles(spoolQueuePath(home)) != 1 {
+		t.Fatalf("done did not queue: code %d", code)
+	}
+	dir := spoolStateDir(home)
+	note := rpcClientRequest([]string{"--json", "note", "after upload rate limit", "--as", id(top)}, t.TempDir(), "after-upload-429-01", nil, nil)
+	if _, err := queueSpoolRecord(dir, note, nil); err != nil {
+		t.Fatal(err)
+	}
+	var uploadStatus atomic.Int32
+	uploadStatus.Store(http.StatusTooManyRequests)
+	var puts atomic.Int32
+	url, ln, srv := retryEndpoint(t, r, func(w http.ResponseWriter, q *http.Request) {
+		raw, err := io.ReadAll(q.Body)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		var req rpcRequest
+		if err := json.Unmarshal(raw, &req); err != nil {
+			t.Error(err)
+			return
+		}
+		name, _ := rpcCommand(req.Argv)
+		if name == "_doc" {
+			puts.Add(1)
+			if int(uploadStatus.Load()) == http.StatusTooManyRequests {
+				http.Error(w, "upload rate limited", http.StatusTooManyRequests)
+				return
+			}
+		}
+		q.Body = io.NopCloser(bytes.NewReader(raw))
+		r.d.ServeHTTP(w, q)
+	})
+	go srv.Serve(ln)
+	defer srv.Close()
+	r.caller.Store(host)
+	sent, err := sendSpool(dir, url, nil)
+	queued, refused, _ := spoolCounts(dir)
+	files, readErr := readSpoolFiles(filepath.Join(spoolPath(dir), spoolQueueDir))
+	if err == nil || sent != 0 || queued != 2 || refused != 0 || readErr != nil || len(files) != 2 ||
+		files[0].record.StuckSince == "" || files[0].record.StuckReason != "server answered 429: upload rate limited" {
+		t.Fatalf("429 upload pass = sent %d, queued %d, refused %d, head %+v, err %v / %v", sent, queued, refused, files, err, readErr)
+	}
+	if r.count(`select count(*) from events where task_id = ? and kind = 'done'`, task) != 1 ||
+		r.count(`select count(*) from events where task_id = ? and kind = 'note'`, top) != 0 {
+		t.Fatal("429 upload did not stop behind the applied done record")
+	}
+	uploadStatus.Store(http.StatusOK)
+	sent, err = sendSpool(dir, url, nil)
+	queued, refused, _ = spoolCounts(dir)
+	if err != nil || sent != 2 || queued != 0 || refused != 0 || puts.Load() != 2 {
+		t.Fatalf("send after 429 = sent %d, queued %d, refused %d, puts %d, err %v", sent, queued, refused, puts.Load(), err)
+	}
+	var captured int
+	var stored string
+	if err := r.openDB().QueryRow(`select d.captured, b.body from documents d join doc_blobs b on b.sha256 = d.sha256
+		where d.task_id = ? and d.kind = 'report' order by d.version desc limit 1`, task).Scan(&captured, &stored); err != nil || captured != 1 || stored != body {
+		t.Fatalf("report after 429 = captured %d, body %q, err %v", captured, stored, err)
+	}
+	if got := r.count(`select count(*) from events where task_id = ? and kind = 'note'`, top); got != 1 {
+		t.Fatalf("note behind uploaded report was not sent: %d", got)
+	}
+}
+
 func TestSpoolQueueWriteFailurePrintsRetry(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can write to read-only directories")
