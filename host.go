@@ -414,7 +414,7 @@ func clientDaemon(c *ctx, raw string, args []string) int {
 	if *status {
 		out := map[string]any{"ok": true, "mode": "client", "server": raw}
 		queued, refused, bad := spoolCounts(dir)
-		out["spool"] = map[string]int{"queued": queued, "refused": refused, "bad": bad}
+		out["spool"] = map[string]any{"queued": queued, "refused": refused, "bad": bad, "stuck": spoolHeadStuck(dir)}
 		var st clientState
 		if b, err := os.ReadFile(statePath); err == nil {
 			json.Unmarshal(b, &st)
@@ -606,6 +606,7 @@ func (h *hostRelay) observe() error {
 		h.workspaceWriter.writeWorkspaceTokens(want)
 	}
 	notifySpoolRefused(filepath.Dir(h.statePath), h.sock, h.log)
+	notifySpoolStuck(filepath.Dir(h.statePath), h.sock, h.log)
 	notifySpoolBad(filepath.Dir(h.statePath), h.sock, h.log)
 	return notifyErr
 }

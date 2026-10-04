@@ -206,14 +206,17 @@ func TestSpoolBadFilesQuarantineAndNotify(t *testing.T) {
 	env := as(task, launch)
 	c := &ctx{getenv: clientEnv(home, env), client: true, server: r.url}
 	sendHookRPC(c, hookRecord{Event: "session.idle", Session: "session", Transcript: filepath.Join(t.TempDir(), "trace.jsonl")}, time.Now())
-	queuedFiles, err := readSpoolFiles(queueDir)
-	if err != nil || len(queuedFiles) != 2 {
+	queuedFiles, err := readSpoolEntries(queueDir)
+	if err != nil || len(queuedFiles) != 4 || queuedFiles[1].parseErr == "" || queuedFiles[2].parseErr == "" {
 		t.Fatalf("hook did not queue behind the note: files=%+v err=%v", queuedFiles, err)
 	}
 	if command, _ := rpcCommand(queuedFiles[0].record.Request.Argv); command != "note" {
 		t.Fatalf("queue head = %q", command)
 	}
-	if command, _ := rpcCommand(queuedFiles[1].record.Request.Argv); command != "_hook" {
+	if queuedFiles[3].parseErr != "" {
+		t.Fatalf("hook queue tail is invalid: %+v", queuedFiles[3])
+	}
+	if command, _ := rpcCommand(queuedFiles[3].record.Request.Argv); command != "_hook" {
 		t.Fatalf("hook queue tail = %q", command)
 	}
 	r.caller.Store(host)
@@ -527,6 +530,74 @@ func TestSpoolHookTimeoutWritesBeforeProcessExit(t *testing.T) {
 	}
 }
 
+func TestSpoolHookLargeQueueWritesBeforeExit(t *testing.T) {
+	r := newTwoHost(t)
+	host := spoolClientHost(r)
+	_, task, launch := spoolMakeWorker(t, r, host, 25)
+	never, entered := make(chan struct{}), make(chan struct{}, 1)
+	url, ln, srv := retryEndpoint(t, r, func(http.ResponseWriter, *http.Request) {
+		entered <- struct{}{}
+		<-never
+	})
+	go srv.Serve(ln)
+	defer func() { close(never); _ = srv.Close() }()
+	home := r.clientHome(url)
+	dir := spoolStateDir(home)
+	if err := ensureSpoolDirs(dir); err != nil {
+		t.Fatal(err)
+	}
+	queueDir := filepath.Join(spoolPath(dir), spoolQueueDir)
+	large := bytes.Repeat([]byte("x"), 40<<10)
+	for seq := 1; seq < spoolFileMax; seq++ {
+		name := fmt.Sprintf("large-key-%04d", seq)
+		path := filepath.Join(queueDir, fmt.Sprintf("%06d-%s.json", seq, name))
+		if err := os.WriteFile(path, large, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSpoolHookNeverAnswerProcessHelper$")
+	cmd.Env = []string{
+		"TASKR_SPOOL_HOOK_HELPER=1",
+		"HOME=" + home,
+		"TASKR_DB=",
+		"TASKR_TASK=" + id(task),
+		"TASKR_LAUNCH=" + id(launch),
+		"HERDR_ENV=1",
+		"HERDR_PANE_ID=test-pane",
+		"GOTELEMETRY=off",
+		"PATH=" + r.bin + string(os.PathListSeparator) + os.Getenv("PATH"),
+	}
+	payload, err := os.ReadFile(filepath.Join("testdata", "hooks", "claude-stop.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.Stdin = bytes.NewReader(payload)
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	if err := cmd.Run(); err != nil || errb.Len() != 0 {
+		t.Fatalf("large-queue hook process = %v, stdout %q, stderr %q", err, out.String(), errb.String())
+	}
+	select {
+	case <-entered:
+		t.Fatal("hook parsed or sent past the existing queue")
+	default:
+	}
+	entries, err := os.ReadDir(queueDir)
+	if err != nil || len(entries) != spoolFileMax || countSpoolFiles(filepath.Join(spoolPath(dir), spoolBadDir)) != 0 {
+		t.Fatalf("large-queue hook left %d files, bad=%d, err=%v", len(entries), countSpoolFiles(filepath.Join(spoolPath(dir), spoolBadDir)), err)
+	}
+	added := false
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), "large-key-") {
+			added = true
+			break
+		}
+	}
+	if !added {
+		t.Fatal("hook record was not written behind the large queue")
+	}
+}
+
 func TestSpoolOutcomeUnknownKeepsQueue(t *testing.T) {
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
@@ -551,6 +622,217 @@ func TestSpoolOutcomeUnknownKeepsQueue(t *testing.T) {
 	}
 	if got := r.count(`select count(*) from events where task_id = ? and kind = 'note'`, top); got != 0 {
 		t.Fatalf("later queued record ran after unknown outcome: %d", got)
+	}
+}
+
+func TestSpoolOutcomeUnknownStaysStuckThenRefuses(t *testing.T) {
+	r := newTwoHost(t)
+	host := spoolClientHost(r)
+	top := num(r.want(0, host, nil, "new", "root-stuck-expire", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
+	oldClock := spoolNow
+	defer func() { spoolNow = oldClock }()
+	started := time.Now().UTC().Truncate(time.Second)
+	spoolNow = func() time.Time { return started }
+	home := r.clientHome(r.url)
+	dir := spoolStateDir(home)
+	first := rpcClientRequest([]string{"--json", "note", "stuck first", "--as", id(top)}, t.TempDir(), "stuck-first-note-01", nil, nil)
+	second := rpcClientRequest([]string{"--json", "note", "stuck second", "--as", id(top)}, t.TempDir(), "stuck-second-note-2", nil, nil)
+	for _, req := range []rpcRequest{first, second} {
+		if _, err := queueSpoolRecord(dir, req, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := r.openDB().Exec(`insert into requests (key, machine, argv_sha, state, created_at) values (?, ?, ?, 'running', ?)`,
+		first.RequestKey, host, rpcRequestSHA(first), now()); err != nil {
+		t.Fatal(err)
+	}
+	r.caller.Store(host)
+	for _, advance := range []time.Duration{0, 5 * time.Minute} {
+		started = time.Now().UTC().Truncate(time.Second).Add(advance)
+		sent, err := sendSpool(dir, r.url, nil)
+		if err != nil || sent != 0 {
+			t.Fatalf("stuck pass at %s = sent %d, err %v", advance, sent, err)
+		}
+	}
+	files, err := readSpoolFiles(filepath.Join(spoolPath(dir), spoolQueueDir))
+	if err != nil || len(files) != 2 || files[0].record.StuckSince == "" ||
+		files[0].record.StuckReason != spoolOutcomeUnknownReason {
+		t.Fatalf("stuck queue head = %+v, %v", files, err)
+	}
+	code, out, stderr := spoolRunCLI(r, host, home, nil, "--json", "spool", "ls")
+	listing := spoolOutputMap(out)
+	queued, _ := listing["queued"].([]any)
+	if code != exitOK || stderr != "" || len(queued) != 2 || queued[0].(map[string]any)["stuck_since"] == "" ||
+		queued[0].(map[string]any)["stuck_reason"] != spoolOutcomeUnknownReason {
+		t.Fatalf("stuck spool ls = %d %v %q", code, listing, stderr)
+	}
+	code, out, stderr = spoolRunCLI(r, host, home, nil, "--json", "daemon", "--status")
+	status := spoolOutputMap(out)
+	counts, _ := status["spool"].(map[string]any)
+	if code != exitOK || stderr != "" || counts["stuck"] != true {
+		t.Fatalf("stuck daemon status = %d %v %q", code, status, stderr)
+	}
+	started = started.Truncate(time.Second).Add(5 * time.Minute)
+	sent, err := sendSpool(dir, r.url, nil)
+	queuedCount, refusedCount, _ := spoolCounts(dir)
+	if err != nil || sent != 1 || queuedCount != 0 || refusedCount != 1 {
+		t.Fatalf("expired outcome unknown = sent %d, queue %d, refused %d, err %v", sent, queuedCount, refusedCount, err)
+	}
+	failed, err := readSpoolFiles(filepath.Join(spoolPath(dir), spoolFailDir))
+	if err != nil || len(failed) != 1 || failed[0].record.Error != spoolOutcomeUnknownReason {
+		t.Fatalf("refused stuck head = %+v, %v", failed, err)
+	}
+	if got := r.count(`select count(*) from events where task_id = ? and kind = 'note'`, top); got != 1 {
+		t.Fatalf("note behind refused head was not sent: %d", got)
+	}
+	notifySpoolRefused(dir, r.herdrSock, nil)
+	notifySpoolRefused(dir, r.herdrSock, nil)
+	if calls := r.calls("notification|"); len(calls) != 1 || !strings.Contains(calls[0], "outcome unknown: look for the record") {
+		t.Fatalf("outcome unknown notifications = %q", calls)
+	}
+}
+
+func TestSpoolOutcomeUnknownStoredResultClearsQueue(t *testing.T) {
+	r := newTwoHost(t)
+	host := spoolClientHost(r)
+	top := num(r.want(0, host, nil, "new", "root-stuck-resolved", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
+	oldClock := spoolNow
+	defer func() { spoolNow = oldClock }()
+	started := time.Now().UTC().Truncate(time.Second)
+	spoolNow = func() time.Time { return started }
+	dir := t.TempDir()
+	first := rpcClientRequest([]string{"--json", "note", "resolved first", "--as", id(top)}, t.TempDir(), "resolved-first-note-1", nil, nil)
+	second := rpcClientRequest([]string{"--json", "note", "resolved second", "--as", id(top)}, t.TempDir(), "resolved-second-note-2", nil, nil)
+	for _, req := range []rpcRequest{first, second} {
+		if _, err := queueSpoolRecord(dir, req, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := r.openDB().Exec(`insert into requests (key, machine, argv_sha, state, created_at) values (?, ?, ?, 'running', ?)`,
+		first.RequestKey, host, rpcRequestSHA(first), now()); err != nil {
+		t.Fatal(err)
+	}
+	r.caller.Store(host)
+	if sent, err := sendSpool(dir, r.url, nil); err != nil || sent != 0 {
+		t.Fatalf("initial unknown reply = sent %d, err %v", sent, err)
+	}
+	if _, err := r.openDB().Exec(`update requests set state = 'done', exit = 0, stdout = '', stderr = '', upload = 'null' where key = ?`, first.RequestKey); err != nil {
+		t.Fatal(err)
+	}
+	started = started.Add(10 * time.Minute)
+	sent, err := sendSpool(dir, r.url, nil)
+	queued, refused, _ := spoolCounts(dir)
+	if err != nil || sent != 2 || queued != 0 || refused != 0 {
+		t.Fatalf("stored result after stuck window = sent %d, queued %d, refused %d, err %v", sent, queued, refused, err)
+	}
+	if got := r.count(`select count(*) from events where task_id = ? and kind = 'note'`, top); got != 1 {
+		t.Fatalf("note behind stored result was not sent: %d", got)
+	}
+}
+
+func TestSpoolForbiddenHeadStaysQueuedAndNotifiesOnce(t *testing.T) {
+	r := newTwoHost(t)
+	host := spoolClientHost(r)
+	top := num(r.want(0, host, nil, "new", "root-forbidden-stuck", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
+	oldClock := spoolNow
+	defer func() { spoolNow = oldClock }()
+	started := time.Now().UTC().Truncate(time.Second)
+	spoolNow = func() time.Time { return started }
+	first := rpcClientRequest([]string{"--json", "note", "forbidden first", "--as", id(top)}, t.TempDir(), "forbidden-first-01", nil, nil)
+	second := rpcClientRequest([]string{"--json", "note", "forbidden second", "--as", id(top)}, t.TempDir(), "forbidden-second-2", nil, nil)
+	dir := t.TempDir()
+	for _, req := range []rpcRequest{first, second} {
+		if _, err := queueSpoolRecord(dir, req, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var forbidden atomic.Bool
+	forbidden.Store(true)
+	url, ln, srv := retryEndpoint(t, r, func(w http.ResponseWriter, q *http.Request) {
+		if forbidden.Load() {
+			http.Error(w, "token rejected", http.StatusForbidden)
+			return
+		}
+		r.d.ServeHTTP(w, q)
+	})
+	go srv.Serve(ln)
+	defer srv.Close()
+	r.caller.Store(host)
+	for _, advance := range []time.Duration{0, 30 * time.Minute} {
+		started = time.Now().UTC().Truncate(time.Second).Add(advance)
+		sent, err := sendSpool(dir, url, nil)
+		queued, refused, _ := spoolCounts(dir)
+		if err != nil || sent != 0 || queued != 2 || refused != 0 {
+			t.Fatalf("403 pass at %s = sent %d, queued %d, refused %d, err %v", advance, sent, queued, refused, err)
+		}
+	}
+	files, err := readSpoolFiles(filepath.Join(spoolPath(dir), spoolQueueDir))
+	if err != nil || len(files) != 2 || files[0].record.StuckSince == "" || files[0].record.StuckReason != "server answered 403: token rejected" {
+		t.Fatalf("403 stuck head = %+v, %v", files, err)
+	}
+	if got := r.count(`select count(*) from events where task_id = ? and kind = 'note'`, top); got != 0 {
+		t.Fatalf("queue advanced during 403: %d", got)
+	}
+	notifySpoolStuck(dir, r.herdrSock, nil)
+	notifySpoolStuck(dir, r.herdrSock, nil)
+	files, err = readSpoolFiles(filepath.Join(spoolPath(dir), spoolQueueDir))
+	if err != nil || len(files) != 2 || !files[0].record.StuckShown {
+		t.Fatalf("403 notification marker = %+v, %v", files, err)
+	}
+	if calls := r.calls("notification|"); len(calls) != 1 || !strings.Contains(calls[0], "server answered 403") {
+		t.Fatalf("403 stuck notifications = %q", calls)
+	}
+	forbidden.Store(false)
+	started = started.Add(time.Minute)
+	sent, err := sendSpool(dir, url, nil)
+	queued, refused, _ := spoolCounts(dir)
+	if err != nil || sent != 2 || queued != 0 || refused != 0 {
+		t.Fatalf("queue after 403 ends = sent %d, queued %d, refused %d, err %v", sent, queued, refused, err)
+	}
+	rows, err := r.openDB().Query(`select summary from events where task_id = ? and kind = 'note' order by id`, top)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var summaries []string
+	for rows.Next() {
+		var summary string
+		if err := rows.Scan(&summary); err != nil {
+			t.Fatal(err)
+		}
+		summaries = append(summaries, summary)
+	}
+	if fmt.Sprint(summaries) != "[forbidden first forbidden second]" {
+		t.Fatalf("queue order after 403 = %v", summaries)
+	}
+}
+
+func TestSpoolTransportFailureNeverStartsStuckClock(t *testing.T) {
+	r := newTwoHost(t)
+	host := spoolClientHost(r)
+	top := num(r.want(0, host, nil, "new", "root-transport-clock", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
+	oldClock := spoolNow
+	defer func() { spoolNow = oldClock }()
+	started := time.Now().UTC().Truncate(time.Second)
+	spoolNow = func() time.Time { return started }
+	req := rpcClientRequest([]string{"--json", "note", "transport", "--as", id(top)}, t.TempDir(), "transport-clock-01", nil, nil)
+	dir := t.TempDir()
+	if _, err := queueSpoolRecord(dir, req, nil); err != nil {
+		t.Fatal(err)
+	}
+	url, ln, srv := retryEndpoint(t, r, func(w http.ResponseWriter, _ *http.Request) { cutRetryReply(w) })
+	go srv.Serve(ln)
+	defer srv.Close()
+	r.caller.Store(host)
+	for _, advance := range []time.Duration{0, 30 * time.Minute} {
+		started = time.Now().UTC().Truncate(time.Second).Add(advance)
+		if sent, err := sendSpool(dir, url, nil); err != nil || sent != 0 {
+			t.Fatalf("transport pass at %s = sent %d, err %v", advance, sent, err)
+		}
+		files, err := readSpoolFiles(filepath.Join(spoolPath(dir), spoolQueueDir))
+		if err != nil || len(files) != 1 || files[0].record.StuckSince != "" || files[0].record.StuckReason != "" {
+			t.Fatalf("transport started stuck clock at %s: %+v, %v", advance, files, err)
+		}
 	}
 }
 
@@ -902,6 +1184,75 @@ func TestSpoolUploadFailureKeepsReady(t *testing.T) {
 	}
 }
 
+func TestSpoolUploadRefusalDropsAndContinues(t *testing.T) {
+	r := newTwoHost(t)
+	host := spoolClientHost(r)
+	deadURL := spoolDeadURL(t, r)
+	top, task, launch := spoolMakeWorker(t, r, host, 43)
+	report := filepath.Join(t.TempDir(), "refused-report.txt")
+	if err := os.WriteFile(report, []byte("report refused during upload\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.openDB().Exec(`update tasks set report_path = ? where id = ?`, report, task); err != nil {
+		t.Fatal(err)
+	}
+	setVar(t, &rpcRetryWindow, func([]string) time.Duration { return 30 * time.Millisecond })
+	home := r.clientHome(deadURL)
+	code, _, _ := spoolRunCLI(r, host, home, as(task, launch), "done")
+	if code != exitOK || countSpoolFiles(spoolQueuePath(home)) != 1 {
+		t.Fatalf("done did not queue: code %d", code)
+	}
+	dir := spoolStateDir(home)
+	note := rpcClientRequest([]string{"--json", "note", "after upload refusal", "--as", id(top)}, t.TempDir(), "after-upload-refusal-1", nil, nil)
+	if _, err := queueSpoolRecord(dir, note, nil); err != nil {
+		t.Fatal(err)
+	}
+	url, ln, srv := retryEndpoint(t, r, func(w http.ResponseWriter, q *http.Request) {
+		raw, err := io.ReadAll(q.Body)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		var req rpcRequest
+		if err := json.Unmarshal(raw, &req); err != nil {
+			t.Error(err)
+			return
+		}
+		name, _ := rpcCommand(req.Argv)
+		q.Body = io.NopCloser(bytes.NewReader(raw))
+		if name == "_doc" {
+			_ = json.NewEncoder(w).Encode(rpcReply{Exit: exitReject, Stderr: "upload refused"})
+			return
+		}
+		r.d.ServeHTTP(w, q)
+	})
+	go srv.Serve(ln)
+	defer srv.Close()
+	r.caller.Store(host)
+	logPath := filepath.Join(t.TempDir(), "daemon.log")
+	log := openDaemonLog(logPath)
+	sent, err := sendSpool(dir, url, log)
+	log.close()
+	queued, refused, _ := spoolCounts(dir)
+	if err != nil || sent != 1 || queued != 0 || refused != 0 {
+		t.Fatalf("upload refusal pass = sent %d, queued %d, refused %d, err %v", sent, queued, refused, err)
+	}
+	if r.count(`select count(*) from events where task_id = ? and kind = 'done'`, task) != 1 ||
+		r.count(`select count(*) from events where task_id = ? and kind = 'note'`, top) != 1 {
+		t.Fatal("refused upload stopped the pass or lost the applied record")
+	}
+	var captured int
+	var reason string
+	if err := r.openDB().QueryRow(`select captured, reason from documents where task_id = ? and kind = 'report'`, task).Scan(&captured, &reason); err != nil || captured != 0 || reason != "client" {
+		t.Fatalf("refused report miss = captured %d, reason %q, err %v", captured, reason, err)
+	}
+	logText, err := os.ReadFile(logPath)
+	if err != nil || !strings.Contains(string(logText), fmt.Sprintf("task=%d", task)) ||
+		!strings.Contains(string(logText), report) || !strings.Contains(string(logText), "upload refused") {
+		t.Fatalf("refused upload log = %q, %v", logText, err)
+	}
+}
+
 func TestSpoolQueueWriteFailurePrintsRetry(t *testing.T) {
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
@@ -972,6 +1323,88 @@ func TestSpoolHTTPProxyErrorsKeepOrRefuse(t *testing.T) {
 	if err != nil || sent != 0 || queued != 0 || refused != 1 || readErr != nil || len(files) != 1 ||
 		!strings.Contains(files[0].record.Error, "413") || !strings.Contains(files[0].record.Error, "payload too large") {
 		t.Fatalf("413 send = %d queued %d refused %d file %+v err %v / %v", sent, queued, refused, files, err, readErr)
+	}
+}
+
+func TestSpoolHTTPErrorUsesJSONErrorAndLimitsBody(t *testing.T) {
+	r := newTwoHost(t)
+	host := spoolClientHost(r)
+	var requests atomic.Int32
+	url, ln, srv := retryEndpoint(t, r, func(w http.ResponseWriter, _ *http.Request) {
+		switch requests.Add(1) {
+		case 1:
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = io.WriteString(w, `{"error":"this node is the server","ok":false}`)
+		default:
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = io.WriteString(w, strings.Repeat("x", 250))
+		}
+	})
+	go srv.Serve(ln)
+	defer srv.Close()
+	r.caller.Store(host)
+	cl, err := newRPCClient(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, callErr := cl.call([]string{"--json", "status"}, t.TempDir(), "json-error-status-01", nil)
+	if callErr == nil || callErr.code != exitReject || callErr.msg != "server answered 403: this node is the server" {
+		t.Fatalf("403 JSON error = %+v", callErr)
+	}
+	_, callErr = cl.call([]string{"--json", "status"}, t.TempDir(), "json-error-status-02", nil)
+	want := "server answered 502: " + strings.Repeat("x", 199) + "…"
+	if callErr == nil || callErr.msg != want {
+		t.Fatalf("long HTTP error = %+v, want %q", callErr, want)
+	}
+}
+
+func TestSpoolRemoveBadFileByName(t *testing.T) {
+	r := newTwoHost(t)
+	host := spoolClientHost(r)
+	home := r.clientHome(r.url)
+	badDir := filepath.Join(spoolPath(spoolStateDir(home)), spoolBadDir)
+	if err := os.MkdirAll(badDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(badDir, "noseq.json")
+	if err := os.WriteFile(path, []byte("not a record"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, stderr := spoolRunCLI(r, host, home, nil, "--json", "spool", "ls")
+	listing := spoolOutputMap(out)
+	bad, _ := listing["bad"].([]any)
+	if code != exitOK || stderr != "" || len(bad) != 1 || bad[0].(map[string]any)["name"] != "noseq.json" {
+		t.Fatalf("bad file listing = %d %v %q", code, listing, stderr)
+	}
+	code, _, stderr = spoolRunCLI(r, host, home, nil, "--json", "spool", "rm", "noseq.json")
+	if code != exitOK || stderr != "" {
+		t.Fatalf("spool rm by name = %d %q", code, stderr)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("bad file remains after removal: %v", err)
+	}
+}
+
+func TestSpoolProxyFiveXXQueuesRecordOnly(t *testing.T) {
+	r := newTwoHost(t)
+	host := spoolClientHost(r)
+	top := num(r.want(0, host, nil, "new", "root-proxy-five-xx", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
+	url, ln, srv := retryEndpoint(t, r, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = io.WriteString(w, "upstream unavailable")
+	})
+	go srv.Serve(ln)
+	defer srv.Close()
+	setVar(t, &rpcRetryWindow, func([]string) time.Duration { return 30 * time.Millisecond })
+	home := r.clientHome(url)
+	code, out, stderr := spoolRunCLI(r, host, home, nil, "note", "proxy failure", "--as", id(top))
+	if code != exitOK || !strings.HasPrefix(out, "qd1 ") || countSpoolFiles(spoolQueuePath(home)) != 1 ||
+		!strings.Contains(stderr, "queued (1 waiting)") {
+		t.Fatalf("record through 502 = %d %q %q", code, out, stderr)
+	}
+	code, _, _ = spoolRunCLI(r, host, home, nil, "status")
+	if code != exitHerdr {
+		t.Fatalf("status through 502 = %d, want %d", code, exitHerdr)
 	}
 }
 

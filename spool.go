@@ -18,27 +18,33 @@ import (
 )
 
 const (
-	spoolDirName  = "spool"
-	spoolQueueDir = "queue"
-	spoolFailDir  = "refused"
-	spoolBadDir   = "bad"
-	spoolFileMax  = 500
-	spoolByteMax  = 20 << 20
+	spoolDirName    = "spool"
+	spoolQueueDir   = "queue"
+	spoolFailDir    = "refused"
+	spoolBadDir     = "bad"
+	spoolFileMax    = 500
+	spoolByteMax    = 20 << 20
+	spoolStuckAfter = 10 * time.Minute
 )
+
+const spoolOutcomeUnknownReason = "outcome unknown: look for the record in the ledger and run the command again if it is missing"
 
 var spoolNow = time.Now
 
 type spoolRecord struct {
-	Version    int            `json:"v"`
-	Seq        int64          `json:"seq"`
-	RequestKey string         `json:"request_key"`
-	Request    rpcRequest     `json:"request"`
-	QueuedAt   string         `json:"queued_at"`
-	Document   *rpcDocPayload `json:"document,omitempty"`
-	RefusedAt  string         `json:"refused_at,omitempty"`
-	Exit       int            `json:"exit,omitempty"`
-	Error      string         `json:"error,omitempty"`
-	Shown      bool           `json:"shown,omitempty"`
+	Version     int            `json:"v"`
+	Seq         int64          `json:"seq"`
+	RequestKey  string         `json:"request_key"`
+	Request     rpcRequest     `json:"request"`
+	QueuedAt    string         `json:"queued_at"`
+	Document    *rpcDocPayload `json:"document,omitempty"`
+	RefusedAt   string         `json:"refused_at,omitempty"`
+	Exit        int            `json:"exit,omitempty"`
+	Error       string         `json:"error,omitempty"`
+	Shown       bool           `json:"shown,omitempty"`
+	StuckSince  string         `json:"stuck_since,omitempty"`
+	StuckReason string         `json:"stuck_reason,omitempty"`
+	StuckShown  bool           `json:"stuck_shown,omitempty"`
 }
 
 type spoolFile struct {
@@ -48,12 +54,15 @@ type spoolFile struct {
 }
 
 type spoolListItem struct {
-	Seq     int64  `json:"seq"`
-	Age     string `json:"age"`
-	Command string `json:"command"`
-	Task    int64  `json:"task,omitempty"`
-	Kind    string `json:"kind,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Seq         int64  `json:"seq"`
+	Name        string `json:"name"`
+	Age         string `json:"age"`
+	Command     string `json:"command"`
+	Task        int64  `json:"task,omitempty"`
+	Kind        string `json:"kind,omitempty"`
+	Error       string `json:"error,omitempty"`
+	StuckSince  string `json:"stuck_since,omitempty"`
+	StuckReason string `json:"stuck_reason,omitempty"`
 }
 
 func spoolPath(dir string) string { return filepath.Join(dir, spoolDirName) }
@@ -167,7 +176,9 @@ func readSpoolEntries(dir string) ([]spoolFile, error) {
 			} else if record.Version != 1 {
 				file.parseErr = fmt.Sprintf("unsupported spool version %d", record.Version)
 			} else if record.Seq <= 0 || !requestKeyRe.MatchString(record.RequestKey) ||
-				record.Request.RequestKey != record.RequestKey || !validSpoolTime(record.QueuedAt) {
+				record.Request.RequestKey != record.RequestKey || !validSpoolTime(record.QueuedAt) ||
+				(record.StuckSince != "" && !validSpoolTime(record.StuckSince)) ||
+				(record.StuckSince == "" && (record.StuckReason != "" || record.StuckShown)) {
 				file.parseErr = "invalid spool record fields"
 			} else {
 				file.record = record
@@ -453,6 +464,30 @@ func queueSpoolIfWaitingMode(dir string, req rpcRequest, document *rpcDocPayload
 		return countSpoolFiles(queueDir), false, errSpoolBusy
 	}
 	defer unlockSpool(lock)
+	if !wait {
+		entries, err := os.ReadDir(queueDir)
+		if err != nil {
+			return 0, false, err
+		}
+		count, duplicate := 0, false
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+				continue
+			}
+			count++
+			if spoolRequestKeyFromName(entry.Name()) == req.RequestKey {
+				duplicate = true
+			}
+		}
+		if count == 0 {
+			return 0, false, nil
+		}
+		if duplicate {
+			return count, true, nil
+		}
+		count, err = queueSpoolRecordLocked(dir, lock, req, document, count)
+		return count, true, err
+	}
 	entries, err := readSpoolEntries(queueDir)
 	if err != nil {
 		return 0, false, err
@@ -464,23 +499,39 @@ func queueSpoolIfWaitingMode(dir string, req rpcRequest, document *rpcDocPayload
 	if len(files) == 0 {
 		return 0, false, nil
 	}
-	count, err := queueSpoolRecordLocked(dir, lock, req, document, files)
-	return count, true, err
-}
-
-func queueSpoolRecordLocked(dir string, lock *os.File, req rpcRequest, document *rpcDocPayload, files []spoolFile) (int, error) {
-	queueDir := filepath.Join(spoolPath(dir), spoolQueueDir)
 	for _, file := range files {
 		if file.record.RequestKey == req.RequestKey {
 			if rpcRequestSHA(file.record.Request) != rpcRequestSHA(req) {
-				return len(files), rejectErr("request key %s belongs to another command", req.RequestKey)
+				return len(files), true, rejectErr("request key %s belongs to another command", req.RequestKey)
 			}
-			return len(files), nil
+			return len(files), true, nil
 		}
 	}
+	count, err := queueSpoolRecordLocked(dir, lock, req, document, len(files))
+	return count, true, err
+}
+
+func spoolRequestKeyFromName(name string) string {
+	base := strings.TrimSuffix(name, ".json")
+	seq, key, ok := strings.Cut(base, "-")
+	if !ok {
+		return ""
+	}
+	n, err := strconv.ParseInt(seq, 10, 64)
+	if err != nil || n <= 0 || !requestKeyRe.MatchString(key) {
+		return ""
+	}
+	return key
+}
+
+func queueSpoolRecordLocked(dir string, lock *os.File, req rpcRequest, document *rpcDocPayload, queued int) (int, error) {
+	queueDir := filepath.Join(spoolPath(dir), spoolQueueDir)
 	count, size, err := spoolQueueUsage(queueDir)
 	if err != nil {
 		return 0, err
+	}
+	if queued > count {
+		count = queued
 	}
 	if count+1 > spoolFileMax {
 		return count, errSpoolFull
@@ -548,7 +599,7 @@ func readSpoolListing(dir string) (map[string]any, error) {
 		items := make([]spoolListItem, 0, len(files))
 		for _, file := range files {
 			r := file.record
-			item := spoolListItem{Seq: r.Seq}
+			item := spoolListItem{Seq: r.Seq, Name: filepath.Base(file.path)}
 			if kind == "bad" {
 				item.Kind = "bad"
 				if item.Seq <= 0 {
@@ -564,6 +615,7 @@ func readSpoolListing(dir string) (map[string]any, error) {
 			}
 			command, _ := rpcCommand(r.Request.Argv)
 			item.Age, item.Command, item.Task = age.Round(time.Second).String(), command, spoolTaskID(r.Request)
+			item.StuckSince, item.StuckReason = r.StuckSince, r.StuckReason
 			if kind == "refused" {
 				item.Error = r.Error
 			}
@@ -596,9 +648,11 @@ func spoolTaskID(req rpcRequest) int64 {
 	return 0
 }
 
-func rmSpoolRecord(dir string, seq int64) error {
+func rmSpoolRecord(dir, target string) error {
+	seq, seqErr := strconv.ParseInt(target, 10, 64)
+	byName := seqErr != nil
 	if _, err := os.Stat(spoolPath(dir)); errors.Is(err, os.ErrNotExist) {
-		return rejectErr("spool sequence %d does not exist", seq)
+		return rejectErr("spool item %s does not exist", target)
 	} else if err != nil {
 		return err
 	}
@@ -607,7 +661,7 @@ func rmSpoolRecord(dir string, seq int64) error {
 		return err
 	}
 	if !ok {
-		return rejectErr("spool sequence %d does not exist", seq)
+		return rejectErr("spool item %s does not exist", target)
 	}
 	defer unlockSpool(lock)
 	for _, folder := range []string{spoolQueueDir, spoolFailDir, spoolBadDir} {
@@ -620,7 +674,8 @@ func rmSpoolRecord(dir string, seq int64) error {
 			return err
 		}
 		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || spoolSeqFromName(entry.Name()) != seq {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") ||
+				(byName && entry.Name() != target) || (!byName && (seq <= 0 || spoolSeqFromName(entry.Name()) != seq)) {
 				continue
 			}
 			path := filepath.Join(folderPath, entry.Name())
@@ -633,7 +688,7 @@ func rmSpoolRecord(dir string, seq int64) error {
 			return syncSpoolDir(folderPath)
 		}
 	}
-	return rejectErr("spool sequence %d does not exist", seq)
+	return rejectErr("spool item %s does not exist", target)
 }
 
 func moveSpoolRefused(dir string, file spoolFile, exit int, message string) error {
@@ -694,6 +749,59 @@ func moveQueuedSpoolRefused(dir string, file spoolFile, exit int, message string
 	return moveSpoolRefused(dir, file, exit, message)
 }
 
+func updateQueuedSpoolStuck(dir string, file spoolFile, reason string) (spoolFile, error) {
+	lock, ok, err := lockSpool(dir, true)
+	if err != nil || !ok {
+		return file, err
+	}
+	defer unlockSpool(lock)
+	raw, err := os.ReadFile(file.path)
+	if err != nil {
+		return file, err
+	}
+	var record spoolRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		return file, err
+	}
+	if record.StuckSince == "" {
+		record.StuckSince = spoolNow().UTC().Format(time.RFC3339)
+	}
+	record.StuckReason = reason
+	if err := writeSpoolAtomic(filepath.Dir(file.path), filepath.Base(file.path), record); err != nil {
+		return file, err
+	}
+	file.record = record
+	return file, nil
+}
+
+func spoolStuckExpired(record spoolRecord, now time.Time) bool {
+	return record.StuckSince != "" && now.Sub(spoolTime(record.StuckSince)) >= spoolStuckAfter
+}
+
+func spoolStuckReasonIsHTTPStatus(reason string) bool {
+	const prefix = "server answered "
+	if !strings.HasPrefix(reason, prefix) {
+		return false
+	}
+	status, _, _ := strings.Cut(strings.TrimPrefix(reason, prefix), ":")
+	code, err := strconv.Atoi(status)
+	return err == nil && (code == http.StatusUnauthorized || code == http.StatusForbidden ||
+		code == http.StatusRequestTimeout || code == http.StatusTooManyRequests)
+}
+
+func spoolHeadStuck(dir string) bool {
+	files, err := readSpoolEntries(filepath.Join(spoolPath(dir), spoolQueueDir))
+	if err != nil {
+		return false
+	}
+	for _, file := range files {
+		if file.parseErr == "" {
+			return file.record.StuckSince != ""
+		}
+	}
+	return false
+}
+
 func spoolTransportError(err *exitErr) bool {
 	if err == nil || err.kind == "transport" {
 		return err != nil
@@ -739,7 +847,16 @@ func sendSpool(dir, raw string, log *daemonLog) (int, error) {
 		req.QueuedAgeMS = age.Milliseconds()
 		rep, callErr, noReply := cl.callStored(context.Background(), req)
 		if callErr != nil {
-			if noReply || spoolTransportError(callErr) {
+			if noReply || callErr.kind == "transport" {
+				return sent, nil
+			}
+			if spoolStuckReasonIsHTTPStatus(callErr.msg) {
+				if _, err := updateQueuedSpoolStuck(dir, file, callErr.msg); err != nil {
+					return sent, err
+				}
+				return sent, nil
+			}
+			if spoolTransportError(callErr) {
 				return sent, nil
 			}
 			if err := moveQueuedSpoolRefused(dir, file, callErr.code, callErr.msg); err != nil {
@@ -752,7 +869,21 @@ func sendSpool(dir, raw string, log *daemonLog) (int, error) {
 			continue
 		}
 		if rep.Exit == exitHerdr && strings.Contains(rep.Stdout, "outcome unknown (still running") {
-			return sent, nil
+			file, err = updateQueuedSpoolStuck(dir, file, spoolOutcomeUnknownReason)
+			if err != nil {
+				return sent, err
+			}
+			if !spoolStuckExpired(file.record, spoolNow()) {
+				return sent, nil
+			}
+			if err := moveQueuedSpoolRefused(dir, file, exitHerdr, spoolOutcomeUnknownReason); err != nil {
+				return sent, err
+			}
+			file, hasFile, err = spoolQueueHead(dir)
+			if err != nil {
+				return sent, err
+			}
+			continue
 		}
 		if reqName, _ := rpcCommand(req.Argv); reqName == "_hook" && rep.Exit == exitOK && strings.TrimSpace(rep.Stdout) == "expired" {
 			if err := removeQueuedSpoolFile(dir, file); err != nil {
@@ -779,7 +910,22 @@ func sendSpool(dir, raw string, log *daemonLog) (int, error) {
 			wants = *rep.Upload
 		}
 		if err := clientUploadSpoolDocs(cl, wants, req.Cwd, req.Env, file.record.Document); err != nil {
-			return sent, err
+			var refusal *rpcDocUploadRefusalError
+			if !errors.As(err, &refusal) {
+				return sent, err
+			}
+			if log != nil {
+				log.logf("spool document upload refused task=%d document=%s/%s path=%q error=%s",
+					refusal.want.Task, refusal.want.Kind, refusal.want.Name, refusal.want.Path, refusal.message)
+			}
+			if err := removeQueuedSpoolFile(dir, file); err != nil {
+				return sent, err
+			}
+			file, hasFile, err = spoolQueueHead(dir)
+			if err != nil {
+				return sent, err
+			}
+			continue
 		}
 		if err := removeQueuedSpoolFile(dir, file); err != nil {
 			return sent, err
@@ -818,6 +964,62 @@ func rpcReplyError(rep rpcReply) string {
 		return msg
 	}
 	return fmt.Sprintf("server exited %d", rep.Exit)
+}
+
+func notifySpoolStuck(dir, sock string, log *daemonLog) {
+	file, ok, err := spoolQueueHead(dir)
+	if err != nil || !ok {
+		if err != nil && log != nil {
+			log.logf("spool stuck read failed: %v", err)
+		}
+		return
+	}
+	if file.record.StuckShown || !spoolStuckReasonIsHTTPStatus(file.record.StuckReason) ||
+		!spoolStuckExpired(file.record, spoolNow()) {
+		return
+	}
+	command, _ := rpcCommand(file.record.Request.Argv)
+	body := fmt.Sprintf("taskr: queued %s for task %d has been stuck: %s", command,
+		spoolTaskID(file.record.Request), file.record.StuckReason)
+	if err := herdrRun(sock, "notification", "show", "taskr: queued record is stuck",
+		"--body", truncate(body, notifyBodyMax), "--sound", "request"); err != nil {
+		if log != nil {
+			log.logf("notify stuck spool %d failed: %v", file.record.Seq, err)
+		}
+		return
+	}
+	lock, ok, err := lockSpool(dir, true)
+	if err != nil || !ok {
+		if log != nil && err != nil {
+			log.logf("spool stuck notification marker lock failed: %v", err)
+		}
+		return
+	}
+	defer unlockSpool(lock)
+	raw, err := os.ReadFile(file.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	if err != nil {
+		if log != nil {
+			log.logf("spool stuck notification marker read failed: %v", err)
+		}
+		return
+	}
+	var record spoolRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		if log != nil {
+			log.logf("spool stuck notification marker parse failed: %v", err)
+		}
+		return
+	}
+	if record.StuckShown || record.StuckSince != file.record.StuckSince || record.StuckReason != file.record.StuckReason {
+		return
+	}
+	record.StuckShown = true
+	if err := writeSpoolAtomic(filepath.Dir(file.path), filepath.Base(file.path), record); err != nil && log != nil {
+		log.logf("spool stuck notification marker write failed: %v", err)
+	}
 }
 
 func notifySpoolRefused(dir, sock string, log *daemonLog) {
@@ -948,17 +1150,23 @@ func cmdSpool(c *ctx, args []string) (any, int, error) {
 		return map[string]any{"ok": err == nil, "sent": sent, "queued": queued, "refused": refused}, exitOK, err
 	case "rm":
 		if len(pos) != 2 {
-			return nil, 0, usageErr("spool rm needs SEQ")
+			return nil, 0, usageErr("spool rm needs SEQ or FILE")
 		}
-		seq, err := strconv.ParseInt(pos[1], 10, 64)
-		if err != nil || seq <= 0 {
-			return nil, 0, usageErr("spool rm needs a positive sequence")
+		target := pos[1]
+		seq, parseErr := strconv.ParseInt(target, 10, 64)
+		if parseErr == nil && seq <= 0 || parseErr != nil &&
+			(filepath.Base(target) != target || !strings.HasSuffix(target, ".json")) {
+			return nil, 0, usageErr("spool rm needs a positive sequence or file name")
 		}
-		if err := rmSpoolRecord(dir, seq); err != nil {
+		if err := rmSpoolRecord(dir, target); err != nil {
 			return nil, 0, err
 		}
-		return map[string]any{"ok": true, "removed": seq}, exitOK, nil
+		removed := any(target)
+		if parseErr == nil {
+			removed = seq
+		}
+		return map[string]any{"ok": true, "removed": removed}, exitOK, nil
 	default:
-		return nil, 0, usageErr("spool: expected ls, send or rm SEQ")
+		return nil, 0, usageErr("spool: expected ls, send or rm SEQ|FILE")
 	}
 }

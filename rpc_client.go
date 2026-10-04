@@ -511,10 +511,19 @@ func (cl *rpcClient) callOnceRequest(parent context.Context, reqBody rpcRequest,
 	}
 	if resp.StatusCode != http.StatusOK {
 		body := strings.TrimSpace(string(rb))
-		if body == "" {
-			body = http.StatusText(resp.StatusCode)
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(rb, &fields) == nil {
+			if raw, ok := fields["error"]; ok {
+				var message string
+				if json.Unmarshal(raw, &message) == nil {
+					body = message
+				}
+			}
 		}
-		msg := fmt.Sprintf("server answered %d: %s", resp.StatusCode, truncate(body, 300))
+		msg := fmt.Sprintf("server answered %d: %s", resp.StatusCode, truncate(body, 200))
+		if resp.StatusCode >= 500 && spoolRecordCommand(argv) && !rpcReplyBody(rb) {
+			return unreachable(msg, true, true)
+		}
 		switch {
 		case resp.StatusCode == http.StatusForbidden:
 			return rpcReply{}, &exitErr{exitReject, "rejected", msg}, false, true
@@ -534,6 +543,15 @@ func (cl *rpcClient) callOnceRequest(parent context.Context, reqBody rpcRequest,
 		return unreachable("reply is not JSON", false, true)
 	}
 	return rep, nil, false, true
+}
+
+func rpcReplyBody(body []byte) bool {
+	var shape struct {
+		Exit   *int    `json:"exit"`
+		Stdout *string `json:"stdout"`
+		Stderr *string `json:"stderr"`
+	}
+	return json.Unmarshal(body, &shape) == nil && shape.Exit != nil && shape.Stdout != nil && shape.Stderr != nil
 }
 
 func (cl *rpcClient) callStored(cx context.Context, req rpcRequest) (rpcReply, *exitErr, bool) {
@@ -708,6 +726,15 @@ func clientUploadDocs(cl *rpcClient, wants []rpcDocWant, cwd string, env map[str
 	_ = clientUploadSpoolDocs(cl, wants, cwd, env, nil)
 }
 
+type rpcDocUploadRefusalError struct {
+	want    rpcDocWant
+	message string
+}
+
+func (e *rpcDocUploadRefusalError) Error() string {
+	return "document upload refused: " + e.message
+}
+
 func clientUploadSpoolDocs(cl *rpcClient, wants []rpcDocWant, cwd string, env map[string]string, saved *rpcDocPayload) error {
 	for _, want := range wants {
 		var payload *rpcDocPayload
@@ -723,10 +750,13 @@ func clientUploadSpoolDocs(cl *rpcClient, wants []rpcDocWant, cwd string, env ma
 		rep, err, _, _ := cl.callOnceNoFallback(cx, []string{"--json", "_doc", "put"}, cwd, newRequestKey(), env, payload)
 		cancel()
 		if err != nil {
-			return err
+			if err.kind == "transport" {
+				return err
+			}
+			return &rpcDocUploadRefusalError{want: want, message: err.msg}
 		}
 		if rep.Exit != exitOK {
-			return fmt.Errorf("document upload refused: %s", rpcReplyError(rep))
+			return &rpcDocUploadRefusalError{want: want, message: rpcReplyError(rep)}
 		}
 	}
 	return nil
