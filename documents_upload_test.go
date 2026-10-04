@@ -550,6 +550,79 @@ func TestDocUploadRepeatedReadyPreservesCapture(t *testing.T) {
 	}
 }
 
+func TestDocUploadChangedReportPathCapturesLatest(t *testing.T) {
+	r := newTwoHost(t)
+	root := uploadRoot(t, r)
+	pathA := docFile(t, r.dir, filepath.Join("reports", "report1.md"), "report one")
+	pathB := docFile(t, r.dir, filepath.Join("reports", "report2.md"), "report two")
+	lane, launch := uploadLane(t, r, root, "changed-report-path", pathA)
+	r.want(0, "host-a", as(lane, launch), "ready", "first", "--report", pathA)
+	r.want(0, "host-a", as(lane, launch), "ready", "second", "--report", pathB)
+
+	db := r.openDB()
+	if got := docCount(t, db, `select count(*) from documents where task_id = ? and kind = 'report'`, lane); got != 4 {
+		t.Fatalf("changed-path rows = %d, want 4", got)
+	}
+	miss, err := scanDocument(db.QueryRow(`select `+documentCols+` from documents where task_id = ? and kind = 'report' and version = 3`, lane))
+	if err != nil || miss.Captured || miss.Reason.String != "client" || miss.Host.String != "host-a" || miss.Path.String != pathB {
+		t.Fatalf("changed-path miss = %+v, err=%v", miss, err)
+	}
+	d := docLatest(t, db, lane, "report", "")
+	if !d.Captured || d.Version != 4 || d.Host.String != "host-a" || d.Path.String != pathB {
+		t.Fatalf("changed-path capture = %+v", d)
+	}
+}
+
+func TestDocUploadPromptSameNameNewPathCapturesLatest(t *testing.T) {
+	r := newTwoHost(t)
+	root := uploadRoot(t, r)
+	lane, launch := uploadLane(t, r, root, "same-name-prompt", "")
+	pathA := docFile(t, r.dir, filepath.Join("a", "prompt.md"), "prompt one")
+	pathB := docFile(t, r.dir, filepath.Join("b", "prompt.md"), "prompt two")
+	env := uploadEnv(as(lane, launch), map[string]string{"HERDR_SOCKET_PATH": r.herdrSock})
+	for _, path := range []string{pathA, pathB} {
+		r.write("prompt.stdout", `{"result":{"agent":{"agent_status":"working"}}}`, 0o644)
+		r.want(0, "host-a", env, "prompt", id(lane), "--file", path, "--receipt-timeout", "0")
+	}
+
+	db := r.openDB()
+	name := filepath.Base(pathA)
+	if got := docCount(t, db, `select count(*) from documents where task_id = ? and kind = 'prompt' and name = ?`, lane, name); got != 4 {
+		t.Fatalf("same-name prompt rows = %d, want 4", got)
+	}
+	miss, err := scanDocument(db.QueryRow(`select `+documentCols+` from documents where task_id = ? and kind = 'prompt' and name = ? and version = 3`, lane, name))
+	if err != nil || miss.Captured || miss.Reason.String != "client" || miss.Host.String != "host-a" || miss.Path.String != pathB {
+		t.Fatalf("same-name prompt miss = %+v, err=%v", miss, err)
+	}
+	d := docLatest(t, db, lane, "prompt", name)
+	if !d.Captured || d.Version != 4 || d.Host.String != "host-a" || d.Path.String != pathB {
+		t.Fatalf("same-name prompt capture = %+v", d)
+	}
+}
+
+func TestDocUploadReportSamePathNewHostCapturesLatest(t *testing.T) {
+	r := newTwoHost(t)
+	root := uploadRoot(t, r)
+	path := docFile(t, r.dir, filepath.Join("reports", "moved.md"), "report")
+	lane, launch := uploadLane(t, r, root, "moved-report-host", path)
+	r.want(0, "host-a", as(lane, launch), "ready", "first", "--report", path)
+	docExec(t, r.openDB(), `update launches set machine = 'host-b' where id = ?`, launch)
+	r.want(0, "host-b", as(lane, launch), "ready", "second", "--report", path)
+
+	db := r.openDB()
+	if got := docCount(t, db, `select count(*) from documents where task_id = ? and kind = 'report'`, lane); got != 4 {
+		t.Fatalf("changed-host rows = %d, want 4", got)
+	}
+	miss, err := scanDocument(db.QueryRow(`select `+documentCols+` from documents where task_id = ? and kind = 'report' and version = 3`, lane))
+	if err != nil || miss.Captured || miss.Reason.String != "client" || miss.Host.String != "host-b" || miss.Path.String != path {
+		t.Fatalf("changed-host miss = %+v, err=%v", miss, err)
+	}
+	d := docLatest(t, db, lane, "report", "")
+	if !d.Captured || d.Version != 4 || d.Host.String != "host-b" || d.Path.String != path {
+		t.Fatalf("changed-host capture = %+v", d)
+	}
+}
+
 func TestDocUploadMissReasons(t *testing.T) {
 	r := newTwoHost(t)
 	root := uploadRoot(t, r)

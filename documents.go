@@ -123,9 +123,10 @@ func storeDocument(tx *sql.Tx, taskID int64, kind, name string, in documentInput
 		captured, err := scanDocument(tx.QueryRow(`select `+documentCols+` from documents
             where task_id = ? and kind = ? and name = ? and captured = 1 order by version desc limit 1`, taskID, kind, name))
 		if err == nil {
-			return captured, true, nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
+			if in.Reason == "missing" || captured.Host.String == in.Host && captured.Path.String == in.Path {
+				return captured, true, nil
+			}
+		} else if !errors.Is(err, sql.ErrNoRows) {
 			return document{}, false, err
 		}
 	}
