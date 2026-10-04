@@ -16,6 +16,12 @@ export interface Stamped {
   age_ms: number;
 }
 
+export interface OwnerNote extends Stamped {
+  id: number;
+  root_id: number;
+  root_name: string;
+}
+
 export interface LastEvent {
   kind: string;
   summary?: string;
@@ -188,6 +194,7 @@ export interface DashState {
   now: string;
   version: string;
   owner_asks: OwnerAsk[];
+  owner_notes?: OwnerNote[];
   orchestrators: Orchestrator[];
   activity: Activity[];
   closed: ClosedRoot[];

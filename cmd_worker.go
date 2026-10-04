@@ -164,6 +164,9 @@ func writeWorkerEvent(c *ctx, ww workerWrite) (any, int, error) {
 	}
 	out := map[string]any{"ok": true, "kind": ww.kind}
 	err = withTx(db, func(tx *sql.Tx) error {
+		if ww.kind == "note" && ww.owner && (c.env("TASKR_TASK") != "" || ww.as == 0) {
+			return rejectErr("--owner: only a root orchestrator's own note")
+		}
 		w, err := resolveWriter(c, tx, ww.as)
 		if err != nil {
 			return err
@@ -171,13 +174,21 @@ func writeWorkerEvent(c *ctx, ww workerWrite) (any, int, error) {
 		if ww.key != "" {
 			var id, tid int64
 			var kind string
-			err := tx.QueryRow(`select id, task_id, kind from events where event_key = ?`, ww.key).Scan(&id, &tid, &kind)
+			var owner bool
+			err := tx.QueryRow(`select id, task_id, kind, coalesce(json_extract(data, '$.owner'), 0) from events where event_key = ?`, ww.key).Scan(&id, &tid, &kind, &owner)
 			if err == nil {
 				if tid != w.task.ID {
 					return rejectErr("event key %q belongs to task %d", ww.key, tid)
 				}
 				if kind != ww.kind {
 					return rejectErr("event key %q is a %s event, not %s", ww.key, kind, ww.kind)
+				}
+				if kind == "note" && owner != ww.owner {
+					flag := "without"
+					if owner {
+						flag = "with"
+					}
+					return rejectErr("event key %q is a note %s --owner", ww.key, flag)
 				}
 				out["event_id"], out["task_id"], out["status"], out["duplicate"] = id, tid, w.task.Status, true
 				if ww.kind == "ask" {
@@ -470,6 +481,7 @@ func firstNonEmpty(s ...string) string {
 func cmdNote(c *ctx, args []string) (any, int, error) {
 	fs := flag.NewFlagSet("note", flag.ContinueOnError)
 	key := fs.String("key", "", "idempotency key")
+	owner := fs.Bool("owner", false, "for the owner; root orchestrators only")
 	as := fs.Int64("as", 0, "a root orchestrator's own task id")
 	pos, err := parseArgs(c, fs, args, 1, 1)
 	if err != nil {
@@ -478,7 +490,17 @@ func cmdNote(c *ctx, args []string) (any, int, error) {
 	if *as < 0 {
 		return nil, 0, usageErr("--as must be a positive task id")
 	}
-	return writeWorkerEvent(c, workerWrite{kind: "note", summary: pos[0], key: *key, as: *as})
+	if *owner && (c.env("TASKR_TASK") != "" || *as == 0) {
+		return nil, 0, rejectErr("--owner: only a root orchestrator's own note")
+	}
+	if c.client {
+		return nil, exitOK, nil // client preflight; the write goes through RPC
+	}
+	var data map[string]any
+	if *owner {
+		data = map[string]any{"owner": true}
+	}
+	return writeWorkerEvent(c, workerWrite{kind: "note", summary: pos[0], key: *key, as: *as, owner: *owner, data: data})
 }
 
 func cmdReady(c *ctx, args []string) (any, int, error) {

@@ -1,10 +1,11 @@
-import type { AttentionItem, MachineView, Milestone, Orchestrator, StateTask, StateView } from "./api";
+import type { AttentionItem, MachineView, Milestone, Orchestrator, OwnerNote, StateTask, StateView } from "./api";
 import { cueKey, cueLabel, cueTone, laneAt, logKind, MARK_WORD, markOf, tallyOf, TALLY_WORD, tileKey, umdCounts, wallOrder, type Icon, type Tally } from "./model";
 
 export type WorkDetail =
   | { kind: "cue"; cue: AttentionItem }
   | { kind: "campaign"; machine: MachineView; campaign: Orchestrator; lane?: StateTask }
-  | { kind: "milestone"; milestone: Milestone };
+  | { kind: "milestone"; milestone: Milestone }
+  | { kind: "owner-notes"; notes: OwnerNote[] };
 
 export interface WorkItem {
   key: string;
@@ -17,6 +18,7 @@ export interface WorkItem {
   icon: Icon;
   tone: Tally;
   at?: string;
+  isNew?: boolean;
   detail: WorkDetail;
   search: string;
 }
@@ -43,7 +45,48 @@ export function campaignItem(m: MachineView, o: Orchestrator, t?: StateTask): Wo
   }, [t?.report_path, t?.last_event?.summary, o.note?.text, o.next?.text, ...(o.refs ?? []).map(r => r.key + "=" + r.value)].filter(Boolean).join(" "));
 }
 
-export function workItems(s: StateView) {
+export function ownerNoteItems(s: StateView, readThrough = 0): WorkItem[] {
+  const roots = new Map<number, OwnerNote[]>();
+  for (const note of [...(s.owner_notes ?? [])].sort((a, b) => b.id - a.id)) {
+    const notes = roots.get(note.root_id);
+    if (notes) notes.push(note);
+    else roots.set(note.root_id, [note]);
+  }
+  return [...roots.values()].map(notes => {
+    const latest = notes[0]!;
+    const isNew = latest.id > readThrough;
+    return item({
+      key: "owner-notes:" + latest.root_id, machineKey: "local", machine: s.machine,
+      title: latest.root_name, context: "", preview: latest.text.split(/\r?\n/, 1)[0] ?? "",
+      status: isNew ? "New" : "Read", icon: "note", tone: "off", at: latest.at, isNew,
+      detail: { kind: "owner-notes", notes },
+    }, notes.map(n => n.text).join(" "));
+  });
+}
+
+export function ownerNoteSummary(s: StateView, readThrough: number): { newRows: number; markThrough: number } {
+  const rows = ownerNoteItems(s, readThrough);
+  return {
+    newRows: rows.filter(x => x.isNew).length,
+    markThrough: Math.max(readThrough, ...(s.owner_notes ?? []).map(n => n.id)),
+  };
+}
+
+export type InboxScope = "all" | "attention" | "waiting";
+type InboxData = { inbox: WorkItem[]; ownerNotes: WorkItem[] };
+
+export function inboxCount(data: InboxData): number {
+  return data.inbox.length + data.ownerNotes.length;
+}
+
+export function inboxScope(data: InboxData, scope: InboxScope): InboxData {
+  return {
+    inbox: data.inbox.filter(x => scope === "all" || x.tone === (scope === "waiting" ? "amber" : "red")),
+    ownerNotes: scope === "all" ? data.ownerNotes : [],
+  };
+}
+
+export function workItems(s: StateView, readThrough = 0) {
   const inbox = s.attention.map(c => item({
     key: "cue:" + cueKey(c), machineKey: machineKey(c), machine: c.machine,
     title: c.lane?.name ?? c.orchestrator?.name ?? c.machine,
@@ -63,7 +106,7 @@ export function workItems(s: StateView) {
       detail: { kind: "milestone", milestone: e },
     });
   });
-  return { inbox, campaigns, lanes, milestones };
+  return { inbox, ownerNotes: ownerNoteItems(s, readThrough), campaigns, lanes, milestones };
 }
 
 export function filterItems(items: WorkItem[], machine: string, query: string): WorkItem[] {

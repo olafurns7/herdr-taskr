@@ -154,6 +154,11 @@ Neutral full-width buttons, selected fill, shared SVG and aligned counts. Names 
 ### Work row
 Compact button inside a semantic list. Title/preview and status/machine metadata form two tiers. Hover uses the neutral hover surface; selection uses the violet-neutral selection surface. Enter opens focused details; Escape or Back returns focus to the source row.
 
+### For you
+The neutral Inbox group follows Owner asks and has its own count. Inbox and All count attention items plus one owner-note row per campaign; the urgent style still follows red attention only. One row per campaign shows the campaign name, the newest owner note's first line and age. New rows keep the normal row weight and a visible New status; read rows remain in the list, with muted text and regular-weight titles. Neither state uses red or amber or contributes to attention counts. The detail lists the full newest note, then earlier owner notes newest first, each with its time and preserved line breaks. The group stays in the phone's Inbox view.
+
+Mark read uses the existing compact text button in the group header, shown only when a row is new. It saves the newest owner-note event ID under `taskr.ownerNotes.readThrough` in localStorage for this browser only. The dashboard title shows new campaign-row counts separately from attention. A storage read failure leaves all notes new; a write failure keeps the marker for the session. Rows have no dismiss or close action; a newer note replaces their content. The Inbox shows "You're up to date" only without attention items or owner notes.
+
 ### Search and filters
 Native search input and select, labelled scope buttons with aria-pressed. Active filters disclose their local scope and a clear-filters action. These controls never mutate the ledger.
 
@@ -174,6 +179,6 @@ Wrapping full text, plain property pairs, native disclosure for decisions, hando
 
 ## Campaign archive and documents
 
-Full ledger views inherit the system font, compact status words, restrained accent links, OS themes and thin rules. Their order is goal, plan, named documents, decisions, handovers, then lanes. Document prose is bounded at 72ch; code and lane tables scroll within their own containers on narrow screens. View titles and Markdown h1 use 19px/600, with document headings stepping down at 17px, 15px and 13px so they never outrank the view title.
+Full ledger views inherit the system font, compact status words, restrained accent links, OS themes and thin rules. Their order is goal, plan, next step when present, notes, named documents, decisions, handovers, then lanes. Notes use the existing ruled list and muted timestamp metadata, newest first; owner notes carry a small neutral For you label. Full note text wraps at 72ch with preserved line breaks and no Markdown rendering. Missing notes from older hubs show the usual muted empty text. Document prose is bounded at 72ch; code and lane tables scroll within their own containers on narrow screens. View titles and Markdown h1 use 19px/600, with document headings stepping down at 17px, 15px and 13px so they never outrank the view title.
 
 Lane rows disclose their task ID and indent descendants. Parent names appear when available on the page, with task IDs as the fallback. Archive paging uses Newer/Older; the ascending lane table uses Previous/Next. Misses and rendering-fallback notices use the muted prose treatment, preserving selectable source paths and complete preformatted text. Version links use the existing accent and visible keyboard focus.

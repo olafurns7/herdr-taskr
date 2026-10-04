@@ -6,7 +6,35 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
+
+type campaignNote struct {
+	ID    int64  `json:"id"`
+	Text  string `json:"text"`
+	At    string `json:"at"`
+	AgeMS int64  `json:"age_ms"`
+	Owner bool   `json:"owner"`
+}
+
+func campaignNotes(q queryer, root int64, at time.Time) ([]campaignNote, error) {
+	rows, err := q.Query(`select id, coalesce(summary, ''), created_at, coalesce(json_extract(data, '$.owner'), 0)
+		from events where task_id = ? and kind = 'note' order by id desc limit 50`, root)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	notes := []campaignNote{}
+	for rows.Next() {
+		var n campaignNote
+		if err := rows.Scan(&n.ID, &n.Text, &n.At, &n.Owner); err != nil {
+			return nil, err
+		}
+		n.Text, n.AgeMS = clip(n.Text, ownerNoteTextMax), max(0, at.Sub(parseTime(n.At)).Milliseconds())
+		notes = append(notes, n)
+	}
+	return notes, rows.Err()
+}
 
 func campaignPage(r *http.Request) int {
 	n, err := strconv.Atoi(r.URL.Query().Get("page"))
@@ -296,6 +324,9 @@ func readCampaign(q queryer, root int64, page int) (map[string]any, error) {
 		}
 	}
 	out["goal"], out["plan"], out["documents"], out["decisions"], out["handovers"], out["lanes"] = goal, plan, named, ds, handovers, lanes
+	if out["notes"], err = campaignNotes(q, root, time.Now()); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 

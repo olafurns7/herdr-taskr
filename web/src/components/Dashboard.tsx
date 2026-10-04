@@ -2,29 +2,31 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { StateView } from "../api";
 import { ageOf, ago, plural, programCounts, short, signalWord, type Icon } from "../model";
-import { campaignItem, filterItems, machineKey, workItems, type WorkItem } from "../work";
+import { campaignItem, filterItems, inboxCount, inboxScope, machineKey, workItems, type InboxScope, type WorkItem } from "../work";
 import { Detail } from "./Detail";
 import { Mark } from "./Mark";
 
 type View = "Inbox" | "Campaigns" | "Activity";
-type InboxFilter = "all" | "attention" | "waiting";
 const NAV: [View, Icon][] = [["Inbox", "inbox"], ["Campaigns", "campaign"], ["Activity", "activity"]];
 
-export function Dashboard({ state: s, now, lost }: { state: StateView | null; now: number; lost: number | null }) {
+export function Dashboard({ state: s, now, lost, readThrough, markRead }: { state: StateView | null; now: number; lost: number | null; readThrough: number; markRead: () => void }) {
   const [view, setView] = useState<View>("Inbox");
   const [machine, setMachine] = useState("");
   const [query, setQuery] = useState("");
-  const [scope, setScope] = useState<InboxFilter>("all");
+  const [scope, setScope] = useState<InboxScope>("all");
   const [selected, setSelected] = useState<string | null>(null);
   const origin = useRef<HTMLElement | null>(null);
   const detail = useRef<HTMLElement>(null);
   const main = useRef<HTMLElement>(null);
-  const data = s ? workItems(s) : { inbox: [], campaigns: [], lanes: [], milestones: [] };
+  const data = s ? workItems(s, readThrough) : { inbox: [], ownerNotes: [], campaigns: [], lanes: [], milestones: [] };
   const counts = programCounts(s?.attention ?? []);
-  const all = [...data.inbox, ...data.campaigns, ...data.lanes, ...data.milestones];
+  const all = [...data.inbox, ...data.ownerNotes, ...data.campaigns, ...data.lanes, ...data.milestones];
   const current = all.find(x => x.key === selected);
   const filtered = (items: WorkItem[]) => filterItems(items, machine, query);
-  const inbox = filtered(data.inbox).filter(x => scope === "all" || (scope === "waiting" ? x.tone === "amber" : x.tone === "red"));
+  const totalInbox = inboxCount(data);
+  const scoped = inboxScope(data, scope);
+  const inbox = filtered(scoped.inbox);
+  const ownerNotes = filtered(scoped.ownerNotes);
   const campaigns = filtered(data.campaigns);
   const milestones = filtered(data.milestones);
   const open = (x: WorkItem, element?: HTMLElement) => {
@@ -54,7 +56,7 @@ export function Dashboard({ state: s, now, lost }: { state: StateView | null; no
       <aside class="sidebar" aria-label="Workspace">
         <div class="workspace"><span class="workspace-mark"><Mark icon="campaign" /></span><span class="brand">taskr</span><span class="workspace-meta">{s?.hub ? "Hub" : "Workspace"}</span></div>
         <nav class="primary-nav" aria-label="Dashboard">
-          {NAV.map(([name, icon]) => <button key={name} class={view === name ? "nav-item active" : "nav-item"} aria-current={view === name ? "page" : undefined} onClick={() => navigate(name)}><Mark icon={icon} /><span>{name}</span><span class={"nav-count" + (name === "Inbox" && counts.red ? " urgent" : "")}>{s ? name === "Inbox" ? data.inbox.length : name === "Campaigns" ? data.campaigns.length : data.milestones.length : "—"}</span></button>)}
+          {NAV.map(([name, icon]) => <button key={name} class={view === name ? "nav-item active" : "nav-item"} aria-current={view === name ? "page" : undefined} onClick={() => navigate(name)}><Mark icon={icon} /><span>{name}</span><span class={"nav-count" + (name === "Inbox" && counts.red ? " urgent" : "")}>{s ? name === "Inbox" ? totalInbox : name === "Campaigns" ? data.campaigns.length : data.milestones.length : "—"}</span></button>)}
         </nav>
         <div class="machine-nav">
           <h2>Machines</h2>
@@ -75,14 +77,14 @@ export function Dashboard({ state: s, now, lost }: { state: StateView | null; no
         <div class={"work-area" + (selected ? " has-detail" : "")}>
           <div class="list-pane">
             <div class="toolbar">
-              {view === "Inbox" ? <div class="scope-buttons" aria-label="Inbox filters">{([["all", "All"], ["attention", "Needs attention"], ["waiting", "Waiting"]] as const).map(([value, label]) => <button key={value} aria-pressed={scope === value} class={scope === value ? "selected" : ""} onClick={() => setScope(value)}>{label}<span>{s ? value === "all" ? data.inbox.length : value === "attention" ? counts.red : counts.amber : "—"}</span></button>)}</div> : <p class="toolbar-label">{view === "Campaigns" ? "Campaigns and lanes" : "Recent checkpoints"}</p>}
+              {view === "Inbox" ? <div class="scope-buttons" aria-label="Inbox filters">{([["all", "All"], ["attention", "Needs attention"], ["waiting", "Waiting"]] as const).map(([value, label]) => <button key={value} aria-pressed={scope === value} class={scope === value ? "selected" : ""} onClick={() => setScope(value)}>{label}<span>{s ? value === "all" ? totalInbox : value === "attention" ? counts.red : counts.amber : "—"}</span></button>)}</div> : <p class="toolbar-label">{view === "Campaigns" ? "Campaigns and lanes" : "Recent checkpoints"}</p>}
               <label class="search"><Mark icon="search" /><input type="search" aria-label={"Search " + view.toLowerCase()} placeholder="Search…" value={query} onInput={e => setQuery(e.currentTarget.value)} /></label>
               <label class="mobile-machine"><span class="sr-only">Filter by machine</span><select value={machine} onChange={e => { setMachine(e.currentTarget.value); setSelected(null); }}><option value="">All machines</option>{s?.machines.map(m => <option key={machineKey(m)} value={machineKey(m)}>{m.machine}</option>)}</select></label>
             </div>
             {(machine || query || (view === "Inbox" && scope !== "all")) && <div class="filter-notice"><span>Filtered view · global attention counts above include all machines</span><button class="text-button" onClick={() => { setMachine(""); setQuery(""); setScope("all"); }}>Clear filters</button></div>}
             {!s ? <div class="loading" role="status"><h2>{lost === null ? "Connecting to taskr" : "No snapshot available"}</h2><p>The inbox and campaigns appear when the daemon responds.</p>{lost === null && <div class="skeleton" aria-hidden="true"><div /><div /><div /></div>}</div> : <>
               {view === "Inbox" && <>
-                {inbox.length ? <>{([ ["Owner asks", inbox.filter(x => x.detail.kind === "cue" && x.detail.cue.kind === "owner_ask")], ["Needs checking", inbox.filter(x => x.detail.kind === "cue" && x.detail.cue.kind !== "owner_ask" && x.tone === "red")], ["Work waiting", inbox.filter(x => x.tone === "amber")] ] as [string, WorkItem[]][]).map(([name, items]) => items.length ? <Group key={name} title={name} count={items.length}>{items.map(x => <Row key={x.key} item={x} selected={selected} now={now} open={open} />)}</Group> : null)}</> : <Empty title={data.inbox.length ? "No matching attention items" : lost !== null || stale ? "No attention items in this snapshot" : "You're up to date"} text={data.inbox.length ? "Adjust the filters to see the other attention items. Global counts remain above." : lost !== null || stale ? "Machine data may be incomplete or out of date. Check connection health before relying on this snapshot." : "Nothing currently needs your attention. Campaign progress is below."} />}
+                <InboxGroups inbox={inbox} ownerNotes={ownerNotes} total={totalInbox} unavailable={lost !== null || !!stale} selected={selected} now={now} open={open} markRead={markRead} />
                 <Group title="Campaigns" count={campaigns.length} action={<button class="text-button" onClick={() => navigate("Campaigns")}>View lanes<Mark icon="open" /></button>}>{campaigns.length ? campaigns.map(x => <Row key={x.key} item={x} selected={selected} now={now} open={open} />) : <li class="empty-inline">{machine || query ? "No matching campaigns." : "No open campaigns in this snapshot."}</li>}</Group>
               </>}
               {view === "Campaigns" && <>
@@ -115,6 +117,16 @@ export function Dashboard({ state: s, now, lost }: { state: StateView | null; no
   );
 }
 
+export function InboxGroups({ inbox, ownerNotes, total, unavailable, selected, now, open, markRead }: { inbox: WorkItem[]; ownerNotes: WorkItem[]; total: number; unavailable: boolean; selected: string | null; now: number; open: (x: WorkItem, el?: HTMLElement) => void; markRead: () => void }) {
+  const groups: [string, WorkItem[]][] = [
+    ["Owner asks", inbox.filter(x => x.detail.kind === "cue" && x.detail.cue.kind === "owner_ask")],
+    ["For you", ownerNotes],
+    ["Needs checking", inbox.filter(x => x.detail.kind === "cue" && x.detail.cue.kind !== "owner_ask" && x.tone === "red")],
+    ["Work waiting", inbox.filter(x => x.tone === "amber")],
+  ];
+  return inbox.length || ownerNotes.length ? <>{groups.map(([name, items]) => items.length ? <Group key={name} title={name} count={items.length} action={name === "For you" && items.some(x => x.isNew) ? <button class="text-button" onClick={markRead}>Mark read</button> : undefined}>{items.map(x => <Row key={x.key} item={x} selected={selected} now={now} open={open} />)}</Group> : null)}</> : <Empty title={total ? "No matching inbox items" : unavailable ? "No inbox items in this snapshot" : "You're up to date"} text={total ? "Adjust the filters to see the other inbox items. Global counts remain above." : unavailable ? "Machine data may be incomplete or out of date. Check connection health before relying on this snapshot." : "Nothing currently needs your attention. Campaign progress is below."} />;
+}
+
 function Group({ title, count, subtitle, action, children }: { title: string; count: number; subtitle?: string; action?: ComponentChildren; children: ComponentChildren }) {
   return <section class="work-group" aria-label={title + (subtitle ? " · " + subtitle : "")}><header class="group-header"><h2>{title}<span>{count}</span></h2>{subtitle && <span class="group-machine">{subtitle}</span>}{action}</header><ul class="work-list">{children}</ul></section>;
 }
@@ -122,7 +134,7 @@ function Row({ item: x, selected, now, open, lane = false }: { item: WorkItem; s
   const cue = x.detail.kind === "cue" ? x.detail.cue : null;
   const campaign = x.detail.kind === "campaign" && !x.detail.lane ? x.detail.campaign : null;
   const tags = cue ? [...(cue.blocking ? ["blocking"] : []), ...(cue.also ?? []).map(s => signalWord(s.kind))] : [];
-  return <li><button class={"work-row " + x.tone + (lane ? " lane-row" : "") + (selected === x.key ? " row-selected" : "")} aria-expanded={selected === x.key} aria-controls="detail-view" onClick={e => open(x, e.currentTarget)}>
+  return <li><button class={"work-row " + x.tone + (x.detail.kind === "owner-notes" && !x.isNew ? " row-read" : "") + (lane ? " lane-row" : "") + (selected === x.key ? " row-selected" : "")} aria-expanded={selected === x.key} aria-controls="detail-view" onClick={e => open(x, e.currentTarget)}>
     <span class="row-icon"><Mark icon={x.icon} /></span>
     <span class="row-content"><span class="row-title">{x.title}</span><span class="row-preview">{campaign?.next ? <><span class="next-label">Next</span> {x.preview}</> : x.preview || x.context || "Open details"}</span></span>
     <span class="row-meta"><span class="row-status">{x.status}{tags.length > 0 && <span class="folded-tags"> · {tags.join(" · ")}</span>}</span><span class="row-context">{[x.machine, x.context].filter(Boolean).join(" · ")}</span></span>

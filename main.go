@@ -128,7 +128,7 @@ func commandTable() map[string]command {
 		"prompt": cmdPrompt, "answer": cmdAnswer, "hook": cmdHook,
 		"wait": cmdWait, "ack": cmdAck,
 		"next": cmdNext, "decide": cmdDecide, "set": cmdSet, "handover": cmdHandover, "adopt": cmdAdopt,
-		"status": cmdStatus, "asks": cmdAsks, "log": cmdLog,
+		"status": cmdStatus, "asks": cmdAsks, "log": cmdLog, "notes": cmdNotes,
 		"search": cmdSearch,
 		"daemon": cmdDaemon, "doc": cmdDoc, "spool": cmdSpool,
 	}
@@ -136,7 +136,7 @@ func commandTable() map[string]command {
 
 const usageText = `usage: taskr <command> [args]
 worker:       start | got ATTEMPT_ID | note TEXT | ready TEXT --report PATH [--kv K=V]... | ask TEXT [--blocking] [--owner] | done [TEXT] | fail TEXT
-              note TEXT --as ID | ask TEXT --owner --as ID   (a root orchestrator: no parent, no launch)
+              note TEXT [--owner] --as ID | ask TEXT --owner --as ID   (a root orchestrator: no parent, no launch; note --owner requires TASKR_TASK unset)
 orchestrator: new NAME --role ROLE [--parent ID] [--planned] ... | launch ID --provider P --model M --effort E | prompt ID (--file PATH | --text TEXT) [--receipt-timeout MS] [--confirm [--confirm-timeout MS]]
               answer ASK_ID TEXT [--prompt [--confirm [--confirm-timeout MS]]] | close ID [--outcome accepted|reworked|rejected|abandoned]
 outcomes:     accepted (work taken as delivered), reworked (taken after a fix round), rejected (not taken), abandoned (stopped before a result)
@@ -146,6 +146,7 @@ handover:     handover --as ID [--note TEXT] [--out PATH] | adopt ID [--workspac
 inbox:        wait [--as ID] [--for KIND[,KIND...]] [--from NAME|ID]... [--ack EVENT_ID] [--timeout MS] [--scan-quota] | ack EVENT_ID --as ID
 hooks:        hook <harness> <event> (JSON on stdin)
 read:         status [--tree ID] [--all] | asks [--open] [--tree ID] [--owner] [--limit N] | log ID [--tree] [--since EVENT_ID] [--before EVENT_ID] [--limit N]
+              notes [--owner] [--root ID] [--since EVENT|DURATION] [--limit N]   (root notes, newest first; default 48h, 50)
 search:       search QUERY [--root ID] [--kind K] [--limit N] [--raw]   (documents and decision/ask/answer/note; default 20, max 100)
 daemon:       daemon [--stay] [--once] [--status] [--restart]   (the Herdr plugin's event bridge and owner dashboard; one per HOME)
 info:         version | help [CMD]

@@ -72,15 +72,17 @@ const (
 
 // Caps on /api/state.
 const (
-	stateAsksMax     = 50
-	stateRootsMax    = 50
-	stateTasksMax    = 200 // descendants per root
-	stateActivityMax = 40
-	stateClosedMax   = 20
-	stateAskTextMax  = 4000 // runes
-	stateNoteMax     = 1000
-	stateSummaryMax  = 300
-	stateDecisionMax = 50 // decisions in force per root, the latest
+	stateAsksMax       = 50
+	stateRootsMax      = 50
+	stateTasksMax      = 200 // descendants per root
+	stateActivityMax   = 40
+	stateClosedMax     = 20
+	stateAskTextMax    = 4000 // runes
+	stateNoteMax       = 1000
+	stateOwnerNotesMax = 10   // per root
+	ownerNoteTextMax   = 4000 // runes
+	stateSummaryMax    = 300
+	stateDecisionMax   = 50 // decisions in force per root, the latest
 )
 
 // The owner's attention model (v0.7), named in one place: what needs the
@@ -469,6 +471,15 @@ type ownerAsk struct {
 	PaneID       string  `json:"pane_id,omitempty"`
 }
 
+type ownerNote struct {
+	ID       int64  `json:"id"`
+	RootID   int64  `json:"root_id"`
+	RootName string `json:"root_name"`
+	Text     string `json:"text"`
+	At       string `json:"at"`
+	AgeMS    int64  `json:"age_ms"`
+}
+
 type stateTask struct {
 	ID          int64      `json:"id"`
 	ParentID    int64      `json:"parent_id"`
@@ -618,6 +629,7 @@ type dashState struct {
 	Now           string         `json:"now"`
 	Version       string         `json:"version"`
 	OwnerAsks     []ownerAsk     `json:"owner_asks"`
+	OwnerNotes    []ownerNote    `json:"owner_notes"`
 	Orchestrators []orchestrator `json:"orchestrators"`
 	Activity      []activity     `json:"activity"`
 	Closed        []closedRoot   `json:"closed"`
@@ -646,10 +658,34 @@ func readState(cx context.Context, db *sql.DB, at time.Time) (*dashState, error)
 	nowS := stamp(at)
 	age := func(ts string) int64 { return max(0, at.Sub(parseTime(ts)).Milliseconds()) }
 	s := &dashState{Now: nowS, Version: version, OwnerAsks: []ownerAsk{}, Orchestrators: []orchestrator{},
-		Activity: []activity{}, Closed: []closedRoot{}, Milestones: []milestone{}, Attention: []attentionItem{}}
+		OwnerNotes: []ownerNote{}, Activity: []activity{}, Closed: []closedRoot{}, Milestones: []milestone{}, Attention: []attentionItem{}}
+
+	rows, err := tx.Query(`select id, root_id, root_name, text, at from (
+		select e.id, t.id as root_id, t.name as root_name, coalesce(e.summary, '') as text, e.created_at as at,
+		row_number() over (partition by t.id order by e.id desc) as rank
+		from events e join tasks t on t.id = e.task_id
+		where e.kind = 'note' and json_extract(e.data, '$.owner') = 1 and t.parent_id is null
+		and e.created_at > ? and (t.status != 'closed' or t.closed_at > ?)
+	) where rank <= ? order by id desc`, stamp(at.Add(-48*time.Hour)), stamp(at.Add(-24*time.Hour)), stateOwnerNotesMax)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var n ownerNote
+		if err := rows.Scan(&n.ID, &n.RootID, &n.RootName, &n.Text, &n.At); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		n.Text, n.AgeMS = clip(n.Text, ownerNoteTextMax), age(n.At)
+		s.OwnerNotes = append(s.OwnerNotes, n)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	// Open owner asks on non-closed tasks: the ones the page shows.
-	rows, err := tx.Query(`select e.id, coalesce(e.summary, ''), e.created_at, coalesce(json_extract(e.data, '$.blocking'), 0),
+	rows, err = tx.Query(`select e.id, coalesce(e.summary, ''), e.created_at, coalesce(json_extract(e.data, '$.blocking'), 0),
 		t.id, t.name, t.role, coalesce(t.workspace_id, ''), coalesce(t.tab_id, ''), coalesce(l.pane_id, t.pane_id, ''),
 		coalesce(t.waiting_until > ?, 0)
 		from events e join tasks t on t.id = e.task_id left join launches l on l.id = t.current_launch_id

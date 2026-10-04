@@ -3,7 +3,7 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 18,
+      "id": 21,
       "kind": "fail",
       "root_id": 5,
       "root_name": "camp-b",
@@ -17,7 +17,7 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 17,
+      "id": 20,
       "kind": "ready",
       "root_id": 5,
       "root_name": "camp-b",
@@ -31,7 +31,7 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 16,
+      "id": 19,
       "kind": "next",
       "root_id": 1,
       "root_name": "camp-a",
@@ -45,7 +45,7 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 15,
+      "id": 18,
       "kind": "adopt",
       "root_id": 1,
       "root_name": "camp-a",
@@ -59,7 +59,7 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 14,
+      "id": 17,
       "kind": "handover",
       "root_id": 1,
       "root_name": "camp-a",
@@ -73,7 +73,7 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 13,
+      "id": 16,
       "kind": "decision",
       "root_id": 1,
       "root_name": "camp-a",
@@ -87,7 +87,7 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 12,
+      "id": 15,
       "kind": "ref",
       "root_id": 1,
       "root_name": "camp-a",
@@ -101,7 +101,7 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 11,
+      "id": 14,
       "kind": "ref",
       "root_id": 1,
       "root_name": "camp-a",
@@ -115,7 +115,7 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 10,
+      "id": 13,
       "kind": "next",
       "root_id": 1,
       "root_name": "camp-a",
@@ -129,11 +129,53 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 9,
+      "id": 12,
       "kind": "next",
       "root_id": 1,
       "root_name": "camp-a",
       "summary": "merge after the review",
+      "task": {
+        "id": 1,
+        "name": "camp-a",
+        "role": "orchestrator"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 11,
+      "kind": "note",
+      "root_id": 5,
+      "root_name": "camp-b",
+      "summary": "ordinary root checkpoint",
+      "task": {
+        "id": 5,
+        "name": "camp-b",
+        "role": "orchestrator"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 10,
+      "kind": "note",
+      "root_id": 5,
+      "root_name": "camp-b",
+      "summary": "OWNER: nothing",
+      "task": {
+        "id": 5,
+        "name": "camp-b",
+        "role": "orchestrator"
+      }
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 9,
+      "kind": "note",
+      "root_id": 1,
+      "root_name": "camp-a",
+      "summary": "OWNER: review the open choice.\nOwner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Ow…",
       "task": {
         "id": 1,
         "name": "camp-a",
@@ -420,7 +462,7 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 18,
+            "id": 21,
             "kind": "fail",
             "root_id": 5,
             "root_name": "camp-b",
@@ -434,7 +476,7 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 17,
+            "id": 20,
             "kind": "ready",
             "root_id": 5,
             "root_name": "camp-b",
@@ -448,7 +490,7 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 16,
+            "id": 19,
             "kind": "next",
             "root_id": 1,
             "root_name": "camp-a",
@@ -462,7 +504,7 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 15,
+            "id": 18,
             "kind": "adopt",
             "root_id": 1,
             "root_name": "camp-a",
@@ -476,7 +518,7 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 14,
+            "id": 17,
             "kind": "handover",
             "root_id": 1,
             "root_name": "camp-a",
@@ -490,7 +532,7 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 13,
+            "id": 16,
             "kind": "decision",
             "root_id": 1,
             "root_name": "camp-a",
@@ -504,7 +546,7 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 12,
+            "id": 15,
             "kind": "ref",
             "root_id": 1,
             "root_name": "camp-a",
@@ -518,7 +560,7 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 11,
+            "id": 14,
             "kind": "ref",
             "root_id": 1,
             "root_name": "camp-a",
@@ -532,7 +574,7 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 10,
+            "id": 13,
             "kind": "next",
             "root_id": 1,
             "root_name": "camp-a",
@@ -546,11 +588,53 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 9,
+            "id": 12,
             "kind": "next",
             "root_id": 1,
             "root_name": "camp-a",
             "summary": "merge after the review",
+            "task": {
+              "id": 1,
+              "name": "camp-a",
+              "role": "orchestrator"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 11,
+            "kind": "note",
+            "root_id": 5,
+            "root_name": "camp-b",
+            "summary": "ordinary root checkpoint",
+            "task": {
+              "id": 5,
+              "name": "camp-b",
+              "role": "orchestrator"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 10,
+            "kind": "note",
+            "root_id": 5,
+            "root_name": "camp-b",
+            "summary": "OWNER: nothing",
+            "task": {
+              "id": 5,
+              "name": "camp-b",
+              "role": "orchestrator"
+            }
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 9,
+            "kind": "note",
+            "root_id": 1,
+            "root_name": "camp-a",
+            "summary": "OWNER: review the open choice.\nOwner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Ow…",
             "task": {
               "id": 1,
               "name": "camp-a",
@@ -799,7 +883,7 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 18,
+            "id": 21,
             "kind": "fail",
             "lane": "impl-fail",
             "lane_id": 10,
@@ -812,7 +896,7 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 17,
+            "id": 20,
             "kind": "ready",
             "lane": "impl-b",
             "lane_id": 6,
@@ -825,7 +909,7 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 15,
+            "id": 18,
             "kind": "adopt",
             "machine": "hub",
             "orchestrator": "camp-a",
@@ -835,7 +919,7 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 14,
+            "id": 17,
             "kind": "handover",
             "machine": "hub",
             "orchestrator": "camp-a",
@@ -845,7 +929,7 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 13,
+            "id": 16,
             "kind": "decision",
             "machine": "hub",
             "orchestrator": "camp-a",
@@ -855,7 +939,7 @@
           {
             "age_ms": 60000,
             "at": "2026-09-29T12:00:00.000Z",
-            "id": 11,
+            "id": 14,
             "key": "pr",
             "kind": "ref",
             "lane": "impl-a",
@@ -865,6 +949,36 @@
             "role": "implementer",
             "root_id": 1,
             "text": "pr=3712"
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 11,
+            "kind": "note",
+            "machine": "hub",
+            "orchestrator": "camp-b",
+            "root_id": 5,
+            "text": "ordinary root checkpoint"
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 10,
+            "kind": "note",
+            "machine": "hub",
+            "orchestrator": "camp-b",
+            "root_id": 5,
+            "text": "OWNER: nothing"
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 9,
+            "kind": "note",
+            "machine": "hub",
+            "orchestrator": "camp-a",
+            "root_id": 1,
+            "text": "OWNER: review the open choice.\nOwner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Ow…"
           },
           {
             "age_ms": 60000,
@@ -896,7 +1010,7 @@
               {
                 "age_ms": 60000,
                 "at": "2026-09-29T12:00:00.000Z",
-                "id": 13,
+                "id": 16,
                 "kind": "decision",
                 "text": "Review before merging."
               }
@@ -922,7 +1036,7 @@
             "note": {
               "age_ms": 60000,
               "at": "2026-09-29T12:00:00.000Z",
-              "text": "phase 2: reviewing"
+              "text": "OWNER: review the open choice.\nOwner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Ow…"
             },
             "open_asks": 0,
             "pane_id": "w1:p1",
@@ -1026,11 +1140,15 @@
             "last_event": {
               "age_ms": 60000,
               "at": "2026-09-29T12:00:00.000Z",
-              "kind": "ask",
-              "summary": "Which branch?"
+              "kind": "note",
+              "summary": "ordinary root checkpoint"
             },
             "name": "camp-b",
-            "note": null,
+            "note": {
+              "age_ms": 60000,
+              "at": "2026-09-29T12:00:00.000Z",
+              "text": "ordinary root checkpoint"
+            },
             "open_asks": 1,
             "role": "orchestrator",
             "status": "open",
@@ -1099,7 +1217,7 @@
                 "age_ms": 60000,
                 "at": "2026-09-29T12:00:00.000Z",
                 "count": 2,
-                "event_id": 17,
+                "event_id": 20,
                 "from": {
                   "id": 6,
                   "name": "impl-b",
@@ -1156,6 +1274,24 @@
               "role": "orchestrator"
             },
             "text": "Which branch?"
+          }
+        ],
+        "owner_notes": [
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 10,
+            "root_id": 5,
+            "root_name": "camp-b",
+            "text": "OWNER: nothing"
+          },
+          {
+            "age_ms": 60000,
+            "at": "2026-09-29T12:00:00.000Z",
+            "id": 9,
+            "root_id": 1,
+            "root_name": "camp-a",
+            "text": "OWNER: review the open choice.\nOwner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. "
           }
         ],
         "version": "dev"
@@ -1228,6 +1364,7 @@
             "text": "Ship it?"
           }
         ],
+        "owner_notes": [],
         "version": "v0.6.0"
       }
     },
@@ -1293,6 +1430,7 @@
           }
         ],
         "owner_asks": [],
+        "owner_notes": [],
         "version": "test"
       }
     }
@@ -1301,7 +1439,7 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 18,
+      "id": 21,
       "kind": "fail",
       "lane": "impl-fail",
       "lane_id": 10,
@@ -1314,7 +1452,7 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 15,
+      "id": 18,
       "kind": "adopt",
       "machine": "hub",
       "orchestrator": "camp-a",
@@ -1324,7 +1462,7 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 14,
+      "id": 17,
       "kind": "handover",
       "machine": "hub",
       "orchestrator": "camp-a",
@@ -1334,7 +1472,7 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 13,
+      "id": 16,
       "kind": "decision",
       "machine": "hub",
       "orchestrator": "camp-a",
@@ -1344,7 +1482,7 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 11,
+      "id": 14,
       "key": "pr",
       "kind": "ref",
       "lane": "impl-a",
@@ -1354,6 +1492,36 @@
       "role": "implementer",
       "root_id": 1,
       "text": "pr=3712"
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 11,
+      "kind": "note",
+      "machine": "hub",
+      "orchestrator": "camp-b",
+      "root_id": 5,
+      "text": "ordinary root checkpoint"
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 10,
+      "kind": "note",
+      "machine": "hub",
+      "orchestrator": "camp-b",
+      "root_id": 5,
+      "text": "OWNER: nothing"
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 9,
+      "kind": "note",
+      "machine": "hub",
+      "orchestrator": "camp-a",
+      "root_id": 1,
+      "text": "OWNER: review the open choice.\nOwner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Ow…"
     },
     {
       "age_ms": 60000,
@@ -1390,7 +1558,7 @@
     {
       "age_ms": 60000,
       "at": "2026-09-29T12:00:00.000Z",
-      "id": 17,
+      "id": 20,
       "kind": "ready",
       "lane": "impl-b",
       "lane_id": 6,
@@ -1480,7 +1648,7 @@
         {
           "age_ms": 60000,
           "at": "2026-09-29T12:00:00.000Z",
-          "id": 13,
+          "id": 16,
           "kind": "decision",
           "text": "Review before merging."
         }
@@ -1506,7 +1674,7 @@
       "note": {
         "age_ms": 60000,
         "at": "2026-09-29T12:00:00.000Z",
-        "text": "phase 2: reviewing"
+        "text": "OWNER: review the open choice.\nOwner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Ow…"
       },
       "open_asks": 0,
       "pane_id": "w1:p1",
@@ -1610,11 +1778,15 @@
       "last_event": {
         "age_ms": 60000,
         "at": "2026-09-29T12:00:00.000Z",
-        "kind": "ask",
-        "summary": "Which branch?"
+        "kind": "note",
+        "summary": "ordinary root checkpoint"
       },
       "name": "camp-b",
-      "note": null,
+      "note": {
+        "age_ms": 60000,
+        "at": "2026-09-29T12:00:00.000Z",
+        "text": "ordinary root checkpoint"
+      },
       "open_asks": 1,
       "role": "orchestrator",
       "status": "open",
@@ -1683,7 +1855,7 @@
           "age_ms": 60000,
           "at": "2026-09-29T12:00:00.000Z",
           "count": 2,
-          "event_id": 17,
+          "event_id": 20,
           "from": {
             "id": 6,
             "name": "impl-b",
@@ -1740,6 +1912,24 @@
         "role": "orchestrator"
       },
       "text": "Which branch?"
+    }
+  ],
+  "owner_notes": [
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 10,
+      "root_id": 5,
+      "root_name": "camp-b",
+      "text": "OWNER: nothing"
+    },
+    {
+      "age_ms": 60000,
+      "at": "2026-09-29T12:00:00.000Z",
+      "id": 9,
+      "root_id": 1,
+      "root_name": "camp-a",
+      "text": "OWNER: review the open choice.\nOwner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. Owner update. "
     }
   ],
   "version": "dev"
