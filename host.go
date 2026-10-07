@@ -64,7 +64,7 @@ func hiddenOnly(c *ctx, name string) error {
 }
 
 // cmdHost is a client daemon's pass: `_host observe --agents JSON` records
-// the host's heartbeat, applies its agent listing to its own launches, and
+// the host's heartbeat, applies its agent listing to its own launches and roots, and
 // returns the panes to watch and wanted workspace and owner ask tokens.
 func cmdHost(c *ctx, args []string) (any, int, error) {
 	if err := hiddenOnly(c, "_host"); err != nil {
@@ -112,6 +112,13 @@ func cmdHost(c *ctx, args []string) (any, int, error) {
 		if wrote {
 			n++
 		}
+	}
+	leads, err := leadsOn(db, host)
+	if err == nil {
+		err = observeLeads(db, host, leads, byPane)
+	}
+	if err != nil {
+		return nil, 0, dbErr(err)
 	}
 	panes, err := watchedPanes(db, host)
 	if err != nil {

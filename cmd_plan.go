@@ -873,8 +873,9 @@ func cmdAdopt(c *ctx, args []string) (any, int, error) {
 		// The predecessor's wait is gone with its session: its waiting_until
 		// marker no longer means anyone is waiting.
 		// The root moves to the adopter's host, so its --as writes pass the host check there.
-		if _, err := tx.Exec(`update tasks set workspace_id = ?, tab_id = ?, pane_id = ?, machine = ?, waiting_until = null, updated_at = ?
-			where id = ?`, nullStr(nw), nullStr(nt), np, callerMachine(c), now(), id); err != nil {
+		// The stored lead observation was of the old pane.
+		if _, err := tx.Exec(`update tasks set workspace_id = ?, tab_id = ?, pane_id = ?, machine = ?, waiting_until = null, updated_at = ?,
+			`+clearLead+` where id = ?`, nullStr(nw), nullStr(nt), np, callerMachine(c), now(), id); err != nil {
 			return err
 		}
 		loc := func(w, t, p string) map[string]any {

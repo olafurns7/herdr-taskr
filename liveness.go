@@ -273,15 +273,28 @@ func observeChildren(db *sql.DB, sock string, parent int64, deadline time.Time) 
 
 // observe runs one liveness pass over watchedTasks(parent): one herdr agent
 // list, then one CAS write per changed observation. It returns the number of
-// observations written.
+// lane observations written; with a nil parent the same listing also records
+// the server host's roots (lead.go), which count for nothing here.
 func observe(db *sql.DB, sock string, parent *int64, deadline time.Time) (int, error) {
 	ws, err := watchedTasks(db, parent)
-	if err != nil || len(ws) == 0 {
+	if err != nil {
 		return 0, dbErr(err)
+	}
+	var leads []lead // the pass over every task also observes the server host's roots
+	if parent == nil {
+		if leads, err = leadsOn(db, serverHost); err != nil {
+			return 0, dbErr(err)
+		}
+	}
+	if len(ws) == 0 && len(leads) == 0 {
+		return 0, nil
 	}
 	agents, err := herdrAgentList(sock, deadline)
 	if err != nil {
 		return 0, err
+	}
+	if err := observeLeads(db, serverHost, leads, agents); err != nil {
+		return 0, dbErr(err)
 	}
 	n := 0
 	for _, ch := range planChanges(ws, agents) {
