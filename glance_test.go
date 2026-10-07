@@ -203,6 +203,103 @@ func TestGlanceBookkeepingKeepsTodo(t *testing.T) {
 	}
 }
 
+func TestGlanceOwnerUnclear(t *testing.T) {
+	for _, tc := range []struct {
+		value   string
+		unclear bool
+	}{
+		{"no decision needed now.", true},
+		{"nothing urgent. Verdict …", true},
+		{"nothing to do.", true},
+		{"NOTHING NEEDED; waiting", true},
+		{"no action yet", true},
+		{"no decision, waiting", true},
+		{"nothing: waiting", true},
+		{"nothing urgent.\n\x1b[31m" + strings.Repeat("á", 4100), true},
+		{"nothing until you approve X", false},
+		{"nothing urgent until you approve X", false},
+		{"nothingness", false},
+		{"no changes until you approve X", false},
+		{"no action needed now until you approve X", false},
+		{"1) nothing urgent.", false},
+		{"1. no decision needed now.", false},
+		{"1) nothing to do. 2) approve X", false},
+	} {
+		t.Run(tc.value[:min(40, len(tc.value))], func(t *testing.T) {
+			f := newGlanceFixture(t)
+			r := f.task("root", 0, "open")
+			f.event(r, 0, 0, "note", "OWNER: old todo", `{"owner":true}`, 24*time.Hour)
+			note := f.event(r, 0, 0, "note", "OWNER: "+tc.value, `{"owner":true}`, 13*time.Hour)
+			v := f.view()
+			if !tc.unclear {
+				if v.Verdict != "needs_you" || len(v.NeedsYou) != 1 || v.NeedsYou[0].Kind != "owner_todo" || len(v.Attention) != 0 {
+					t.Fatalf("owner todo = %+v", v)
+				}
+				return
+			}
+			if v.Verdict != "attention" || len(v.NeedsYou) != 0 || len(v.Attention) != 1 || len(v.Campaigns) != 1 || v.Quiet.Count != 0 {
+				t.Fatalf("unclear snapshot = %+v", v)
+			}
+			a := v.Attention[0]
+			if a.Kind != "owner_unclear" || a.Campaign != "root" || a.RootID != r || a.NoteID != note || a.Text != tc.value || a.Since != stamp(f.at.Add(-13*time.Hour)) || a.AgeMS != (13*time.Hour).Milliseconds() {
+				t.Fatalf("unclear attention = %+v", a)
+			}
+			raw, err := json.Marshal(a)
+			if err != nil || !bytes.Contains(raw, []byte(fmt.Sprintf(`"note_id":%d`, note))) {
+				t.Fatalf("unclear JSON = %s, err = %v", raw, err)
+			}
+		})
+	}
+	if glanceRank("owner_unclear") != glanceRank("results_waiting") {
+		t.Fatal("owner unclear must rank like work waiting")
+	}
+}
+
+func TestGlanceNeedsYouOrder(t *testing.T) {
+	f := newGlanceFixture(t)
+	r := f.task("root", 0, "open")
+	todo := f.event(r, 0, 0, "note", "OWNER: approve oldest todo", `{"owner":true}`, 48*time.Hour)
+	ask := f.event(r, 0, 0, "ask", "older nonblocking", `{"owner":true}`, 24*time.Hour)
+	newBlock := f.event(r, 0, 0, "ask", "new blocking", `{"owner":true,"blocking":true}`, time.Minute)
+	oldBlock := f.event(r, 0, 0, "ask", "older blocking", `{"owner":true,"blocking":true}`, time.Hour)
+	newAsk := f.event(r, 0, 0, "ask", "new nonblocking", `{"owner":true}`, 30*time.Second)
+	v := f.view()
+	ids := []int64{}
+	for _, n := range v.NeedsYou {
+		if n.Kind == "owner_todo" {
+			ids = append(ids, n.NoteID)
+		} else {
+			ids = append(ids, n.AskID)
+		}
+	}
+	if !reflect.DeepEqual(ids, []int64{oldBlock, newBlock, todo, ask, newAsk}) {
+		t.Fatalf("needs_you order = %v", ids)
+	}
+	rows := renderGlance(v, 80, 7, 0, "", false, watchTestNow)
+	if !strings.Contains(strings.Join(rows, "\n"), "older blocking") {
+		t.Fatalf("short frame dropped oldest blocking ask: %q", rows)
+	}
+}
+
+func TestGlanceUnlaunchedGate(t *testing.T) {
+	f := newGlanceFixture(t)
+	r := f.task("root", 0, "open")
+	w := f.task("gate", r, "open")
+	f.exec(`update tasks set role = 'gate' where id = ?`, w)
+	f.event(w, 0, 0, "note", "planned gate", `{}`, 13*time.Hour)
+	if v := f.view(); len(v.Campaigns) != 0 || v.Quiet.Count != 1 || v.Verdict != "rolling" {
+		t.Fatalf("old unlaunched gate = %+v", v)
+	}
+	f.event(r, 0, 0, "note", "recent activity", `{}`, time.Minute)
+	if v := f.view(); len(v.Campaigns) != 1 || v.Campaigns[0].Lanes != (glanceLanes{Open: 1}) {
+		t.Fatalf("recent unlaunched gate = %+v", v)
+	}
+	f.launch(w, "working", true, nil)
+	if v := f.view(); v.Campaigns[0].Lanes != (glanceLanes{Open: 1, Working: 1}) {
+		t.Fatalf("launched gate = %+v", v)
+	}
+}
+
 func TestGlanceQuietBacklogVerdict(t *testing.T) {
 	f := newGlanceFixture(t)
 	r := f.task("quiet", 0, "open")

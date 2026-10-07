@@ -1,6 +1,6 @@
 taskr · 17:30     stale 2s: server unreachable
 ──────────────────────────────────────────────
-? copilot-modular  12m  BLOCKING  → wN4:p1
+» copilot-modular  12m  BLOCKING  lane failed…
   Merge #4840 now or wait for M3?
 ! booked-vs-resolved  1h
   1. approve prod deploy of #4833  (+1 more)

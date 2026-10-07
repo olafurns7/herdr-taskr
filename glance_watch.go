@@ -111,7 +111,7 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 	}
 	groups := [3][][]string{}
 	for _, n := range v.NeedsYou {
-		first, text := "? "+watchText(n.Campaign)+"  "+ageOf(n.AgeMS), n.Text
+		first, text := "» "+watchText(n.Campaign)+"  "+ageOf(n.AgeMS), n.Text
 		if n.Kind == "owner_todo" {
 			first = "! " + watchText(n.Campaign) + "  " + ageOf(n.AgeMS)
 			text = ""
@@ -124,6 +124,9 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 		} else {
 			if n.Blocking != nil && *n.Blocking {
 				first += "  BLOCKING"
+			}
+			if len(n.Also) > 0 {
+				first += "  " + watchText(n.Also[0])
 			}
 			if n.PaneID != "" {
 				first += "  → " + watchText(n.PaneID)
@@ -144,6 +147,8 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 			sym, word = "!", "lead blocked"
 		case "lead_unknown":
 			word = "lead unknown"
+		case "owner_unclear":
+			word = "owner unclear"
 		case "lane_missing":
 			word = "missing"
 		case "results_waiting":
@@ -157,9 +162,15 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 		if name == "" {
 			name = firstNonEmpty(watchText(a.Host), "hub")
 		}
-		first := fmt.Sprintf("%s %s  %s %s", sym, name, word, ageOf(a.AgeMS))
+		when := ""
+		if a.Since != "" {
+			when = " " + ageOf(a.AgeMS)
+		} else if a.Kind == "lead_unknown" {
+			when = " never"
+		}
+		first := fmt.Sprintf("%s %s  %s%s", sym, name, word, when)
 		if a.Kind == "results_waiting" {
-			first = fmt.Sprintf("%s %s: %d waiting %s", sym, watchText(a.Recipient), a.Count, ageOf(a.AgeMS))
+			first = fmt.Sprintf("%s %s: %d waiting%s", sym, watchText(a.Recipient), a.Count, when)
 		}
 		groups[1] = append(groups[1], []string{line(first, "33"), line("  "+watchText(a.Text), "")})
 	}

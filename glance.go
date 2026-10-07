@@ -47,6 +47,7 @@ type glanceAttention struct {
 	Kind        string `json:"kind"`
 	Campaign    string `json:"campaign,omitempty"`
 	RootID      int64  `json:"root_id,omitempty"`
+	NoteID      int64  `json:"note_id,omitempty"`
 	Lane        string `json:"lane,omitempty"`
 	LaneID      int64  `json:"lane_id,omitempty"`
 	Text        string `json:"text"`
@@ -196,7 +197,7 @@ func glanceTasks(tx *sql.Tx, at time.Time, roots map[int64]*glanceRoot, tasks ma
 		group by tree.root)
 		select tree.root, t.id, coalesce(t.parent_id, 0), t.name, t.role, t.status,
 		coalesce(l.pane_id, t.pane_id, ''), coalesce(l.machine, t.machine, ''), coalesce(l.machine, ''),
-		coalesce(t.waiting_until > ?, 0), coalesce(l.observed_status, ''), coalesce(l.observed_at, ''), l.present,
+		t.current_launch_id is not null, coalesce(t.waiting_until > ?, 0), coalesce(l.observed_status, ''), coalesce(l.observed_at, ''), l.present,
 		le.kind, le.summary, le.created_at, coalesce(ae.created_at, ''),
 		ms.id, ms.kind, ms.summary, ms.created_at, coalesce(json_extract(ms.data, '$.key'), ''),
 		coalesce(json_extract(ms.data, '$.value'), ''), coalesce(json_extract(ms.data, '$.owner'), 0)
@@ -216,9 +217,9 @@ func glanceTasks(tx *sql.Tx, at time.Time, roots map[int64]*glanceRoot, tasks ma
 		var present sql.NullBool
 		var kind, summary, since, msKind, msText, msAt sql.NullString
 		var msID sql.NullInt64
-		var owner bool
+		var owner, launched bool
 		if err := rows.Scan(&t.rootID, &t.ID, &t.ParentID, &t.Name, &t.Role, &t.Status, &t.PaneID, &t.host, &t.launchHost,
-			&t.Waiting, &t.AgentStatus, &t.ObservedAt, &present, &kind, &summary, &since, &activity,
+			&launched, &t.Waiting, &t.AgentStatus, &t.ObservedAt, &present, &kind, &summary, &since, &activity,
 			&msID, &msKind, &msText, &msAt, &key, &value, &owner); err != nil {
 			rows.Close()
 			return err
@@ -249,6 +250,9 @@ func glanceTasks(tx *sql.Tx, at time.Time, roots map[int64]*glanceRoot, tasks ma
 			t.LastEvent = &lastEvent{Kind: kind.String, Summary: clip(summary.String, stateSummaryMax), At: since.String, AgeMS: glanceAge(at, since.String)}
 		}
 		t.Mark = laneMark(&t.stateTask)
+		if t.Role == "gate" && !launched {
+			t.Mark = markPlanned
+		}
 		// Freshness is read after closing rows, so the transaction needs no
 		// concurrent statement while this result is being scanned.
 		if t.launchHost != "" {
@@ -360,6 +364,12 @@ func glanceOwnerTodos(tx *sql.Tx, at time.Time, v *glanceView, roots map[int64]*
 		if items := glanceOwnerItems(text); len(items) != 0 {
 			r := roots[rootID]
 			r.active = true
+			value, _ := glanceOwnerValue(text)
+			if len(items) == 1 && !glanceOwnerNumber.MatchString(value) && glanceUnclear.MatchString(strings.ToLower(items[0])) {
+				v.Attention = append(v.Attention, glanceAttention{Kind: "owner_unclear", Campaign: r.Name, RootID: rootID,
+					NoteID: noteID, Text: items[0], Since: since, AgeMS: glanceAge(at, since)})
+				continue
+			}
 			v.NeedsYou = append(v.NeedsYou, glanceNeed{Kind: "owner_todo", Campaign: r.Name, RootID: rootID,
 				Host: r.Host, PaneID: r.PaneID, NoteID: noteID, Items: items, Since: since, AgeMS: glanceAge(at, since)})
 		}
@@ -518,7 +528,15 @@ func finishGlance(at time.Time, v *glanceView, roots map[int64]*glanceRoot) {
 			}
 		}
 	}
-	sort.SliceStable(v.NeedsYou, func(i, j int) bool { return v.NeedsYou[i].AgeMS > v.NeedsYou[j].AgeMS })
+	sort.SliceStable(v.NeedsYou, func(i, j int) bool {
+		a, b := v.NeedsYou[i], v.NeedsYou[j]
+		ab := a.Kind == "owner_ask" && a.Blocking != nil && *a.Blocking
+		bb := b.Kind == "owner_ask" && b.Blocking != nil && *b.Blocking
+		if ab != bb {
+			return ab
+		}
+		return a.AgeMS > b.AgeMS
+	})
 	sort.SliceStable(v.Attention, func(i, j int) bool {
 		a, b := v.Attention[i], v.Attention[j]
 		if glanceRank(a.Kind) != glanceRank(b.Kind) {
@@ -534,7 +552,7 @@ func finishGlance(at time.Time, v *glanceView, roots map[int64]*glanceRoot) {
 	})
 	for _, a := range v.Attention {
 		switch a.Kind {
-		case "lane_failed", "lane_blocked", "lane_missing", "lead_blocked", "lead_gone", "results_waiting":
+		case "lane_failed", "lane_blocked", "lane_missing", "lead_blocked", "lead_gone", "results_waiting", "owner_unclear":
 			v.Verdict = "attention"
 		default:
 			if v.Verdict == "rolling" {
@@ -558,15 +576,17 @@ func glanceRank(kind string) int {
 		kind = attentionBlocked
 	case "lead_gone":
 		kind = attentionMissing
-	case "results_waiting":
+	case "results_waiting", "owner_unclear":
 		kind = attentionWorkWaits
 	}
 	return attentionRank[kind]
 }
 
 var (
-	glanceOwnerEnd = regexp.MustCompile(`(?m)(?: |^)(?:DONE|HAPPENED|NOW):`)
-	glanceNothing  = regexp.MustCompile(`^nothing(\s+(yet|new|now))?\s*($|[.(])`)
+	glanceOwnerEnd    = regexp.MustCompile(`(?m)(?: |^)(?:DONE|HAPPENED|NOW):`)
+	glanceNothing     = regexp.MustCompile(`^nothing(\s+(yet|new|now))?\s*($|[.(])`)
+	glanceUnclear     = regexp.MustCompile(`^(nothing( urgent| to do| needed)?|no (decision|action)( needed)?( now| yet)?)\s*([.;,:]|$)`)
+	glanceOwnerNumber = regexp.MustCompile(`(^|\s)1(\)|\.(\s|$))`)
 )
 
 func glanceOwnerValue(text string) (string, bool) {
@@ -587,11 +607,11 @@ func glanceOwnerItems(text string) []string {
 	}
 	items := []string{}
 	for n := 1; ; n++ {
-		boundary := `\s`
-		if n == 1 {
-			boundary = `(^|\s)`
+		marker := glanceOwnerNumber
+		if n > 1 {
+			marker = regexp.MustCompile(`\s` + strconv.Itoa(n) + `(\)|\.(\s|$))`)
 		}
-		loc := regexp.MustCompile(boundary + strconv.Itoa(n) + `(\)|\.(\s|$))`).FindStringIndex(value)
+		loc := marker.FindStringIndex(value)
 		if loc == nil {
 			if n == 1 {
 				return []string{value}

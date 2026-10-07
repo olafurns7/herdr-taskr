@@ -146,7 +146,7 @@ handover:     handover --as ID [--note TEXT] [--out PATH] | adopt ID [--workspac
 inbox:        wait [--as ID] [--for KIND[,KIND...]] [--from NAME|ID]... [--ack EVENT_ID] [--timeout MS] [--scan-quota] | ack EVENT_ID --as ID
 hooks:        hook <harness> <event> (JSON on stdin)
 read:         status [--tree ID] [--all] | asks [--open] [--tree ID] [--owner] [--limit N] | log ID [--tree] [--since EVENT_ID] [--before EVENT_ID] [--limit N]
-              glance   (finite owner snapshot)
+              glance [--watch [--every 5s]]   (owner snapshot; --watch is the live split-pane view)
               notes [--owner] [--root ID] [--since EVENT|DURATION] [--limit N]   (root notes, newest first; default 48h, 50)
 search:       search QUERY [--root ID] [--kind K] [--limit N] [--raw]   (documents and decision/ask/answer/note; default 20, max 100)
 daemon:       daemon [--stay] [--once] [--status] [--restart]   (the Herdr plugin's event bridge and owner dashboard; one per HOME)

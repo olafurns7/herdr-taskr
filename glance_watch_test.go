@@ -28,12 +28,12 @@ func busyGlance() *glanceView {
 	return &glanceView{
 		Verdict: "needs_you",
 		NeedsYou: []glanceNeed{
-			{Kind: "owner_ask", Campaign: "copilot-modular", AgeMS: 12 * time.Minute.Milliseconds(), Blocking: &blocking, PaneID: "wN4:p1", Text: "Merge #4840 now or wait for M3?"},
+			{Kind: "owner_ask", Campaign: "copilot-modular", AgeMS: 12 * time.Minute.Milliseconds(), Blocking: &blocking, Also: []string{"lane failed"}, PaneID: "wN4:p1", Text: "Merge #4840 now or wait for M3?"},
 			{Kind: "owner_todo", Campaign: "booked-vs-resolved", AgeMS: time.Hour.Milliseconds(), Items: []string{"1. approve prod deploy of #4833", "2. approve next rollout"}},
 		},
 		Attention: []glanceAttention{
-			{Kind: "lane_failed", Campaign: "mobile-screens", Lane: "impl-tabs", AgeMS: 4 * time.Minute.Milliseconds(), Text: "lint gate exit 1"},
-			{Kind: "results_waiting", Recipient: "orch-hns2", Count: 3, AgeMS: 31 * time.Hour.Milliseconds(), Text: "reports ready to review"},
+			{Kind: "lane_failed", Campaign: "mobile-screens", Lane: "impl-tabs", Since: stamp(watchTestNow.Add(-4 * time.Minute)), AgeMS: 4 * time.Minute.Milliseconds(), Text: "lint gate exit 1"},
+			{Kind: "results_waiting", Recipient: "orch-hns2", Count: 3, Since: stamp(watchTestNow.Add(-31 * time.Hour)), AgeMS: 31 * time.Hour.Milliseconds(), Text: "reports ready to review"},
 		},
 		Campaigns: []glanceCampaign{
 			{Name: "planner-ui", Lanes: glanceLanes{Working: 3, Open: 5}, Last: &glanceLast{AgeMS: 2 * time.Minute.Milliseconds(), Text: "S4 merged"}},
@@ -50,6 +50,11 @@ func TestRenderGlanceGoldens(t *testing.T) {
 	rolling.NeedsYou = nil
 	rolling.Attention = nil
 	rolling.Quiet.WithBacklog = 0
+	unclear := &glanceView{Verdict: "attention", Attention: []glanceAttention{
+		{Kind: "owner_unclear", Campaign: "copilot-modular", Since: stamp(watchTestNow.Add(-time.Hour)), AgeMS: time.Hour.Milliseconds(), Text: "no decision needed now."},
+		{Kind: "lead_unknown", Campaign: "never-observed", Text: "lead has never been observed"},
+		{Kind: "host_stale", Host: "mac", Text: "no heartbeat recorded"},
+	}}
 	for _, tc := range []struct {
 		name          string
 		v             *glanceView
@@ -60,11 +65,12 @@ func TestRenderGlanceGoldens(t *testing.T) {
 		{"no-data-46", nil, 46, 24, ""}, {"stale-46", busyGlance(), 46, 24, "server unreachable"},
 		{"busy-80", busyGlance(), 80, 24, ""}, {"overflow-8", busyGlance(), 46, 8, ""},
 		{"narrow-20", busyGlance(), 20, 24, ""},
+		{"unclear-46", unclear, 46, 24, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.name == "busy-46" || tc.name == "busy-80" {
 				tc.v.Attention = append(tc.v.Attention, glanceAttention{Kind: "lead_gone", Campaign: "planner-ui",
-					AgeMS: 5 * time.Minute.Milliseconds(), Text: "lead pane wN5:p1 is not in its host's agent list"})
+					Since: stamp(watchTestNow.Add(-5 * time.Minute)), AgeMS: 5 * time.Minute.Milliseconds(), Text: "lead pane wN5:p1 is not in its host's agent list"})
 			}
 			lines := renderGlance(tc.v, tc.width, tc.height, 2*time.Second, tc.err, false, watchTestNow)
 			checkWatchWidths(t, lines, tc.width, tc.height)
@@ -117,6 +123,7 @@ func TestRenderGlanceSanitizingAndColor(t *testing.T) {
 	v.NeedsYou[0].Campaign = hostile
 	v.NeedsYou[0].Text = hostile
 	v.NeedsYou[0].PaneID = hostile
+	v.NeedsYou[0].Also[0] = hostile
 	v.NeedsYou[1].Items[0] = hostile
 	v.Attention[0].Campaign = hostile
 	v.Attention[0].Lane = hostile
@@ -144,7 +151,7 @@ func TestRenderGlanceSanitizingAndColor(t *testing.T) {
 		}
 	}
 	rows := renderGlance(busyGlance(), 80, 24, 0, "", true, watchTestNow)
-	if !strings.HasPrefix(rows[2], "\x1b[31m? ") || !strings.HasSuffix(rows[2], "\x1b[0m") || !strings.HasPrefix(rows[7], "\x1b[33m✗ ") {
+	if !strings.HasPrefix(rows[2], "\x1b[31m» ") || !strings.HasSuffix(rows[2], "\x1b[0m") || !strings.HasPrefix(rows[7], "\x1b[33m✗ ") {
 		t.Fatalf("first-row colours: %q", rows)
 	}
 	if rows[3] != "  Merge #4840 now or wait for M3?" {
@@ -152,6 +159,32 @@ func TestRenderGlanceSanitizingAndColor(t *testing.T) {
 	}
 	for _, height := range []int{0, 1, 2, 4, 8} {
 		checkWatchWidths(t, renderGlance(v, 20, height, 0, "", true, watchTestNow), 20, height)
+	}
+}
+
+func TestRenderGlanceOwnerUnclearAndMissingSince(t *testing.T) {
+	v := &glanceView{Verdict: "attention", Attention: []glanceAttention{
+		{Kind: "owner_unclear", Campaign: "campaign", Text: "nothing urgent.\x1b[31m\n" + strings.Repeat("x", 100)},
+		{Kind: "lead_unknown", Campaign: "campaign"},
+		{Kind: "lead_unknown", Campaign: "observed", Since: stamp(watchTestNow.Add(-time.Minute)), AgeMS: time.Minute.Milliseconds()},
+		{Kind: "results_waiting", Recipient: "lead", Count: 2},
+	}}
+	for _, color := range []bool{false, true} {
+		rows := renderGlance(v, 46, 24, time.Second, "", color, watchTestNow)
+		checkWatchWidths(t, rows, 46, 24)
+		if ansi.Strip(rows[2]) != "? campaign  owner unclear" || ansi.Strip(rows[4]) != "? campaign  lead unknown never" || ansi.Strip(rows[6]) != "? observed  lead unknown 1m" || ansi.Strip(rows[8]) != "⌛ lead: 2 waiting" {
+			t.Fatalf("attention ages: %q", rows)
+		}
+		if !strings.HasSuffix(rows[3], "…") || strings.Contains(ansi.Strip(rows[3]), "\x1b") || strings.ContainsAny(rows[3], "\n\r") {
+			t.Fatalf("unclear text not sanitised and truncated: %q", rows[3])
+		}
+		if color && (!strings.HasPrefix(rows[2], "\x1b[33m? ") || strings.Contains(rows[0], "\x1b[32m")) {
+			t.Fatalf("unclear colour: %q", rows)
+		}
+	}
+	rows := renderGlance(busyGlance(), 80, 24, 0, "", false, watchTestNow)
+	if rows[2] != "» copilot-modular  12m  BLOCKING  lane failed  → wN4:p1" {
+		t.Fatalf("folded cue: %q", rows[2])
 	}
 }
 
