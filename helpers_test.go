@@ -86,6 +86,9 @@ case "$1 $2" in
   if [ -f "$d/list.hold" ]; then sleep 10 & wait; fi
   cat "$d/list.json"
   exit "$(cat "$d/list.exit" 2>/dev/null || echo 0)" ;;
+"pane list")
+  if [ -f "$d/panes.json" ]; then cat "$d/panes.json"; else echo '{"result":{"panes":[]}}'; fi
+  exit "$(cat "$d/panes.exit" 2>/dev/null || echo 0)" ;;
 "agent prompt")
   [ -f "$d/prompt.stderr" ] && cat "$d/prompt.stderr" >&2
   [ -f "$d/prompt.stdout" ] && cat "$d/prompt.stdout"

@@ -520,6 +520,8 @@ type daemon struct {
 	connected       atomic.Bool                    // the subscription is acked and open
 
 	failedWorkspaceWant map[string]workspaceTokenState // wanted pairs at the last failed list
+	ownerAskTokens      map[string]int64               // pane -> taskr_owner_ask; nil until the pane list succeeds
+	failedOwnerAskWant  map[string]int64               // wanted counts at the last failed list
 
 	mu         sync.Mutex
 	want       []string      // the pane set the last pass computed
@@ -593,6 +595,7 @@ func (d *daemon) pass() passResult {
 		d.heartbeat()
 	}
 	r.tokens += d.writeCampaignTokens()
+	r.tokens += d.writeOwnerAskTokens()
 	return r
 }
 
@@ -942,6 +945,142 @@ func (d *daemon) writeWorkspaceTokens(want map[string]workspaceTokenState) int {
 	return n
 }
 
+// fallbackTick lets failed lists retry. The owner ask cache is a pane list
+// snapshot, so it is dropped too: panes absent from the last list are revisited.
+func (d *daemon) fallbackTick() {
+	d.failedWorkspaceWant, d.failedOwnerAskWant, d.ownerAskTokens = nil, nil, nil
+}
+
+// wantedOwnerAsks maps each server-host pane to its tasks' own open owner asks
+// (n > 0 only). An ask is on the asker's task; --owner only routes it to the root.
+func wantedOwnerAsks(q queryer) (map[string]int64, error) {
+	rows, err := q.Query(`select coalesce(l.pane_id, t.pane_id), count(*)
+		from tasks t left join launches l on l.id = t.current_launch_id
+		join events o on o.task_id = t.id and o.kind = 'ask' and o.answered_by is null
+			and coalesce(json_extract(o.data, '$.owner'), 0)
+		where t.status not in ('closed', 'planned') and coalesce(l.pane_id, t.pane_id) is not null
+		and (case when l.id is null then t.machine else l.machine end) is null and coalesce(l.present, 1)
+		group by 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	want := map[string]int64{}
+	for rows.Next() {
+		var pane string
+		var n int64
+		if err := rows.Scan(&pane, &n); err != nil {
+			return nil, err
+		}
+		want[pane] = n
+	}
+	return want, rows.Err()
+}
+
+// writeOwnerAskTokens reconciles taskr_owner_ask with the panes Herdr lists,
+// on startup and whenever the wanted counts change: it sets differing counts
+// and clears the token on every listed pane that is not wanted (a moved
+// launch, or an ask answered or a task closed while the daemon was down).
+// A failed list waits for a changed want or the fallback tick; a failed write
+// or a wanted pane absent from the list leaves the cache unequal, so the next
+// pass lists again. The fallback tick drops the cache, so a stale pane absent
+// from the last list is cleared once it appears. taskr owns the taskr_ token
+// namespace: no other source writes taskr_owner_ask, so the merged list value
+// is taskr's own.
+func (d *daemon) writeOwnerAskTokens() int {
+	want, err := wantedOwnerAsks(d.db)
+	if err != nil {
+		d.log.logf("owner ask token query failed: %v", err)
+		return 0
+	}
+	if d.failedOwnerAskWant != nil && maps.Equal(want, d.failedOwnerAskWant) {
+		return 0
+	}
+	if d.ownerAskTokens != nil && maps.Equal(want, d.ownerAskTokens) {
+		return 0
+	}
+	listed, panes, err := herdrOwnerAskTokens(d.sock)
+	if err != nil {
+		d.failedOwnerAskWant = want
+		d.log.logf("owner ask token list failed: %v", err)
+		return 0
+	}
+	d.failedOwnerAskWant = nil
+	d.ownerAskTokens = listed
+	order := slices.Sorted(maps.Keys(panes))
+	n := 0
+	for _, pane := range order {
+		w, have := want[pane], listed[pane]
+		var args []string
+		switch {
+		case w > 0 && (!panes[pane] || have != w):
+			args = []string{"--token", "taskr_owner_ask=" + strconv.FormatInt(w, 10)}
+		case w == 0 && panes[pane]:
+			args = []string{"--clear-token", "taskr_owner_ask"}
+		default:
+			continue
+		}
+		if err := herdrRun(d.sock, append([]string{"pane", "report-metadata", pane, "--source", "taskr"}, args...)...); err != nil {
+			d.log.logf("owner ask token write for %s failed: %v", pane, err)
+			continue
+		}
+		if w > 0 {
+			d.ownerAskTokens[pane] = w
+		} else {
+			delete(d.ownerAskTokens, pane)
+		}
+		n++
+	}
+	return n
+}
+
+// herdrOwnerAskTokens lists every pane; panes[p] says whether p carries
+// taskr_owner_ask, and listed holds its count (-1 when not a number).
+func herdrOwnerAskTokens(sock string) (listed map[string]int64, panes map[string]bool, err error) {
+	cx, cancel := context.WithTimeout(context.Background(), herdrListDeadline)
+	defer cancel()
+	cmd, err := herdrCommand(cx, sock, "pane", "list")
+	if err != nil {
+		return nil, nil, err
+	}
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.WaitDelay = herdrWaitDelay
+	if err := cmd.Run(); err != nil {
+		return nil, nil, fmt.Errorf("herdr pane list failed: %w", err)
+	}
+	var resp struct {
+		Result *struct {
+			Panes []struct {
+				ID     string            `json:"pane_id"`
+				Tokens map[string]string `json:"tokens"`
+			} `json:"panes"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
+		return nil, nil, fmt.Errorf("herdr pane list returned malformed JSON: %w", err)
+	}
+	if resp.Result == nil || resp.Result.Panes == nil {
+		return nil, nil, errors.New("herdr pane list returned no result.panes")
+	}
+	listed, panes = map[string]int64{}, map[string]bool{}
+	for _, p := range resp.Result.Panes {
+		if p.ID == "" {
+			return nil, nil, errors.New("herdr pane list entry without pane_id")
+		}
+		v, ok := p.Tokens["taskr_owner_ask"]
+		panes[p.ID] = ok
+		if ok {
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil || n <= 0 {
+				n = -1
+			}
+			listed[p.ID] = n
+		}
+	}
+	return listed, panes, nil
+}
+
 // run is the resident loop: a subscription reader marks the daemon dirty and
 // one worker runs passes. It returns why it stopped.
 func (d *daemon) run(parent context.Context, sock string) string {
@@ -997,7 +1136,7 @@ func (d *daemon) run(parent context.Context, sock string) string {
 			}
 			continue
 		case <-fb.C:
-			d.failedWorkspaceWant = nil
+			d.fallbackTick()
 		case <-dirty:
 			wait := max(daemonSettle, time.Until(last.Add(daemonMinGap)))
 			select {
@@ -1018,6 +1157,7 @@ func (d *daemon) run(parent context.Context, sock string) string {
 			attachment = n
 			d.tokens = map[int64]tokenState{}
 			d.workspaceTokens, d.failedWorkspaceWant = nil, nil
+			d.ownerAskTokens, d.failedOwnerAskWant = nil, nil
 		}
 		d.pass()
 		d.refreshPanes()
