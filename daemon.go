@@ -499,8 +499,8 @@ func (l *daemonLog) close() {
 
 // tokenState is what the daemon last wrote to a task's pane.
 type tokenState struct {
-	pane, state string
-	round       int64
+	pane, state      string
+	round, ownerAsks int64
 }
 
 type workspaceTokenState struct {
@@ -709,8 +709,10 @@ func taskToken(status string, waiting bool, openAsks int64) string {
 	return "open"
 }
 
-// writeTokens reports taskr_state and taskr_round on each task's pane whose
-// token changed since the last successful write. The first call only records
+// writeTokens reports taskr_state, taskr_round and taskr_owner_ask (the
+// task's own open owner asks; cleared at 0) on each task's pane whose token
+// changed since the last successful write. A task that leaves the set (closed)
+// gets taskr_owner_ask cleared once if it was set. The first call only records
 // the baseline. A task whose launch is observed missing is skipped; a failed
 // write is logged and retried on a later pass. Only server-host panes get
 // tokens: a launchless task's host is its own machine.
@@ -718,7 +720,9 @@ func (d *daemon) writeTokens() int {
 	rows, err := d.db.Query(`select t.id, coalesce(l.pane_id, t.pane_id), t.status, coalesce(t.waiting_until > ?, 0),
 		(select count(*) from events a where a.task_id = t.id and a.kind = 'ask' and a.answered_by is null),
 		(select count(*) from events p where p.task_id = t.id and p.kind = 'prompt' and p.launch_id is t.current_launch_id),
-		coalesce(l.present, 1)
+		coalesce(l.present, 1),
+		(select count(*) from events o where o.task_id = t.id and o.kind = 'ask' and o.answered_by is null
+			and coalesce(json_extract(o.data, '$.owner'), 0))
 		from tasks t left join launches l on l.id = t.current_launch_id
 		where t.status not in ('closed', 'planned') and coalesce(l.pane_id, t.pane_id) is not null
 		and (case when l.id is null then t.machine else l.machine end) is null order by t.id`, now())
@@ -727,20 +731,22 @@ func (d *daemon) writeTokens() int {
 		return 0
 	}
 	cur := map[int64]tokenState{}
+	skipped := map[int64]bool{}
 	var order []int64
 	for rows.Next() {
-		var id, asks, round int64
+		var id, asks, round, ownerAsks int64
 		var pane, status string
 		var waiting, present bool
-		if err := rows.Scan(&id, &pane, &status, &waiting, &asks, &round, &present); err != nil {
+		if err := rows.Scan(&id, &pane, &status, &waiting, &asks, &round, &present, &ownerAsks); err != nil {
 			d.log.logf("token scan failed: %v", err)
 			rows.Close()
 			return 0
 		}
 		if !present {
+			skipped[id] = true
 			continue
 		}
-		cur[id] = tokenState{pane: pane, state: taskToken(status, waiting, asks), round: round}
+		cur[id] = tokenState{pane: pane, state: taskToken(status, waiting, asks), round: round, ownerAsks: ownerAsks}
 		order = append(order, id)
 	}
 	rows.Close()
@@ -754,13 +760,38 @@ func (d *daemon) writeTokens() int {
 		if prev, ok := d.tokens[id]; ok && prev == ts {
 			continue
 		}
-		if err := herdrRun(d.sock, "pane", "report-metadata", ts.pane, "--source", "taskr",
-			"--token", "taskr_state="+ts.state, "--token", "taskr_round="+strconv.FormatInt(ts.round, 10)); err != nil {
+		prev := d.tokens[id]
+		args := []string{"pane", "report-metadata", ts.pane, "--source", "taskr",
+			"--token", "taskr_state=" + ts.state, "--token", "taskr_round=" + strconv.FormatInt(ts.round, 10)}
+		if ts.ownerAsks > 0 {
+			args = append(args, "--token", "taskr_owner_ask="+strconv.FormatInt(ts.ownerAsks, 10))
+		} else if prev.ownerAsks > 0 {
+			args = append(args, "--clear-token", "taskr_owner_ask")
+		}
+		if err := herdrRun(d.sock, args...); err != nil {
 			d.log.logf("token write for task %d failed: %v", id, err)
 			continue
 		}
 		d.tokens[id] = ts
 		n++
+	}
+	var gone []int64
+	for id := range d.tokens {
+		if _, ok := cur[id]; !ok && !skipped[id] {
+			gone = append(gone, id)
+		}
+	}
+	slices.Sort(gone)
+	for _, id := range gone {
+		if prev := d.tokens[id]; prev.ownerAsks > 0 {
+			if err := herdrRun(d.sock, "pane", "report-metadata", prev.pane, "--source", "taskr",
+				"--clear-token", "taskr_owner_ask"); err != nil {
+				d.log.logf("owner ask token clear for task %d failed: %v", id, err)
+				continue
+			}
+			n++
+		}
+		delete(d.tokens, id)
 	}
 	return n
 }
