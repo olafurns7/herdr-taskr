@@ -81,6 +81,12 @@ func TestAsksHideOrphans(t *testing.T) {
 				}
 			})
 		}
+	} // Hidden is not unanswerable: an open asker under a closed root can
+	// still be answered, and the answer lists it again.
+	h.ok(nil, "answer", id(rootOrphan), "late answer")
+	code, rows := h.run(nil, "asks", "--tree", id(closedRoot), "--limit", "0")
+	if code != exitOK || len(rows) != 2 || num(rows[0], "id") != rootOrphan || rows[0]["answer"] != "late answer" {
+		t.Fatalf("answered orphan = %d %v", code, rows)
 	}
 }
 
@@ -108,10 +114,10 @@ func TestCloseOrphanOwnerAsks(t *testing.T) {
 				h.ok(as(empty, h.launch(empty)), "ask", "only a plain ask")
 				closeID := lane
 				want := []int64{laneAsk}
-				warning := fmt.Sprintf("taskr: closing %d orphans owner ask(s) %d; the owner can no longer answer them\n", lane, laneAsk)
+				warning := fmt.Sprintf("taskr: closing %d orphans owner ask(s) %d; asks hides them unless --all\n", lane, laneAsk)
 				if target == "root" {
 					closeID, want = root, []int64{rootAsk, laneAsk, childAsk}
-					warning = fmt.Sprintf("taskr: closing %d orphans owner ask(s) %d, %d, %d; the owner can no longer answer them\n", root, rootAsk, laneAsk, childAsk)
+					warning = fmt.Sprintf("taskr: closing %d orphans owner ask(s) %d, %d, %d; asks hides them unless --all\n", root, rootAsk, laneAsk, childAsk)
 				} else if target == "none" {
 					closeID, want, warning = empty, nil, ""
 				}
@@ -163,7 +169,7 @@ func TestCloseOrphanWarningRPC(t *testing.T) {
 	_, lane, launch := spoolMakeWorker(t, r, "host-a", 1)
 	ask := num(r.want(exitOK, "host-a", as(lane, launch), "ask", "owner question", "--owner"), "ask_id")
 	code, result, stderr := r.cli("host-a", nil, "close", id(lane))
-	warning := fmt.Sprintf("taskr: closing %d orphans owner ask(s) %d; the owner can no longer answer them\n", lane, ask)
+	warning := fmt.Sprintf("taskr: closing %d orphans owner ask(s) %d; asks hides them unless --all\n", lane, ask)
 	if code != exitOK || jsonText(result["orphaned_owner_asks"]) != jsonText([]int64{ask}) || stderr != warning {
 		t.Fatalf("RPC close = %d %v %q, want warning %q", code, result, stderr, warning)
 	}

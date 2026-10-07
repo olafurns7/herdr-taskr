@@ -327,7 +327,7 @@ func cmdClose(c *ctx, args []string) (any, int, error) {
 		for i, ask := range orphaned {
 			ids[i] = fmt.Sprint(ask)
 		}
-		fmt.Fprintf(c.errw, "taskr: closing %d orphans owner ask(s) %s; the owner can no longer answer them\n", id, strings.Join(ids, ", "))
+		fmt.Fprintf(c.errw, "taskr: closing %d orphans owner ask(s) %s; asks hides them unless --all\n", id, strings.Join(ids, ", "))
 	}
 	return out, exitOK, nil
 }
