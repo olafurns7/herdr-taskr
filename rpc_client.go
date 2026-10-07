@@ -106,6 +106,9 @@ lead:
 	if readErr != nil {
 		return clientFail(c, exitUsage, "usage", serverURLFile+": "+readErr.Error())
 	}
+	if name == "glance" && glanceWatchRequested(cargs) {
+		return runCtx(c, append(lead, rest...))
+	}
 	if name == "daemon" {
 		return clientDaemon(c, raw, cargs)
 	}

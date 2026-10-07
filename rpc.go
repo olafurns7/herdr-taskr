@@ -90,7 +90,7 @@ type rpcDocWant struct {
 var hiddenCommands = map[string]command{"_prompt": cmdPromptPhase, "_host": cmdHost, "_hook": cmdHookRPC, "_doc": cmdDocRPC}
 
 // freshCommands always run anew and are never stored; a retry is a new read.
-var freshCommands = map[string]bool{"wait": true, "status": true, "asks": true, "log": true, "notes": true, "search": true, "version": true, "help": true}
+var freshCommands = map[string]bool{"wait": true, "status": true, "asks": true, "log": true, "notes": true, "search": true, "version": true, "help": true, "glance": true}
 
 // rpcCommand is the command name in argv after a leading --json, or "".
 func rpcCommand(argv []string) (string, []string) {
@@ -353,7 +353,9 @@ func (d *dashboard) rpc(w http.ResponseWriter, r *http.Request) {
 	} else {
 		rep = d.rpcRun(r.Context(), id.Machine, req)
 	}
-	d.log.logf("rpc: machine=%s cmd=%s key=%s exit=%d", id.Machine, name, req.RequestKey, rep.Exit)
+	if name != "glance" || rep.Exit != 0 {
+		d.log.logf("rpc: machine=%s cmd=%s key=%s exit=%d", id.Machine, name, req.RequestKey, rep.Exit)
+	}
 	httpJSON(w, http.StatusOK, rep)
 }
 

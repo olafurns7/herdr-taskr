@@ -74,6 +74,13 @@ sequenceDiagram
     end
 ```
 
+### Owner glance
+
+`taskr glance` prints the owner's snapshot as one `j1` JSON line.
+`taskr glance --watch [--every 5s]` is a live view for a narrow split pane
+that works on the hub and on client hosts; q quits.
+The verdicts are **all rolling**, **N need you**, **N to check**, and **unknown**.
+
 ## Install
 
 Paste this into Claude Code or Codex running inside Herdr:
