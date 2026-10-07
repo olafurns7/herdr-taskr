@@ -147,7 +147,7 @@ func readGlance(db *sql.DB, at time.Time) (*glanceView, error) {
 	if err := glanceBacklog(tx, at, v, roots, tasks, hosts, asked); err != nil {
 		return nil, err
 	}
-	finishGlance(tx, at, v, roots)
+	finishGlance(at, v, roots)
 	return v, nil
 }
 
@@ -455,7 +455,7 @@ func glanceBacklog(tx *sql.Tx, at time.Time, v *glanceView, roots map[int64]*gla
 	return nil
 }
 
-func finishGlance(_ *sql.Tx, at time.Time, v *glanceView, roots map[int64]*glanceRoot) {
+func finishGlance(at time.Time, v *glanceView, roots map[int64]*glanceRoot) {
 	ordered := make([]*glanceRoot, 0, len(roots))
 	for _, r := range roots {
 		r.ActivityAgeMS = glanceAge(at, r.activity)
@@ -533,7 +533,7 @@ func glanceRank(kind string) int {
 
 var (
 	glanceOwnerEnd = regexp.MustCompile(`(?m)(?: |^)(?:DONE|HAPPENED|NOW):`)
-	glanceNothing  = regexp.MustCompile(`^nothing(\s+(yet|new|now))?\s*($|[.,;:(]|\s-)`)
+	glanceNothing  = regexp.MustCompile(`^nothing(\s+(yet|new|now))?\s*($|[.(])`)
 )
 
 func glanceOwnerValue(text string) (string, bool) {
@@ -558,7 +558,7 @@ func glanceOwnerItems(text string) []string {
 		if n == 1 {
 			boundary = `(^|\s)`
 		}
-		loc := regexp.MustCompile(boundary + strconv.Itoa(n) + `[.)]`).FindStringIndex(value)
+		loc := regexp.MustCompile(boundary + strconv.Itoa(n) + `(\)|\.(\s|$))`).FindStringIndex(value)
 		if loc == nil {
 			if n == 1 {
 				return []string{value}
