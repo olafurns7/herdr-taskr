@@ -951,16 +951,16 @@ func (d *daemon) fallbackTick() {
 	d.failedWorkspaceWant, d.failedOwnerAskWant, d.ownerAskTokens = nil, nil, nil
 }
 
-// wantedOwnerAsks maps each server-host pane to its tasks' own open owner asks
+// wantedOwnerAsks maps each of host's panes to its tasks' own open owner asks
 // (n > 0 only). An ask is on the asker's task; --owner only routes it to the root.
-func wantedOwnerAsks(q queryer) (map[string]int64, error) {
+func wantedOwnerAsks(q queryer, host sql.NullString) (map[string]int64, error) {
 	rows, err := q.Query(`select coalesce(l.pane_id, t.pane_id), count(*)
 		from tasks t left join launches l on l.id = t.current_launch_id
 		join events o on o.task_id = t.id and o.kind = 'ask' and o.answered_by is null
 			and coalesce(json_extract(o.data, '$.owner'), 0)
 		where t.status not in ('closed', 'planned') and coalesce(l.pane_id, t.pane_id) is not null
-		and (case when l.id is null then t.machine else l.machine end) is null and coalesce(l.present, 1)
-		group by 1`)
+		and (case when l.id is null then t.machine else l.machine end) is ? and coalesce(l.present, 1)
+		group by 1`, host)
 	if err != nil {
 		return nil, err
 	}
@@ -988,11 +988,17 @@ func wantedOwnerAsks(q queryer) (map[string]int64, error) {
 // namespace: no other source writes taskr_owner_ask, so the merged list value
 // is taskr's own.
 func (d *daemon) writeOwnerAskTokens() int {
-	want, err := wantedOwnerAsks(d.db)
+	want, err := wantedOwnerAsks(d.db, serverHost)
 	if err != nil {
 		d.log.logf("owner ask token query failed: %v", err)
 		return 0
 	}
+	return d.reconcileOwnerAskTokens(want)
+}
+
+// reconcileOwnerAskTokens applies want to the panes on d.sock under the rules
+// above. A client host's daemon calls it with the server's map for its host.
+func (d *daemon) reconcileOwnerAskTokens(want map[string]int64) int {
 	if d.failedOwnerAskWant != nil && maps.Equal(want, d.failedOwnerAskWant) {
 		return 0
 	}

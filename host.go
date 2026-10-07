@@ -65,7 +65,7 @@ func hiddenOnly(c *ctx, name string) error {
 
 // cmdHost is a client daemon's pass: `_host observe --agents JSON` records
 // the host's heartbeat, applies its agent listing to its own launches, and
-// returns the panes to watch and wanted workspace tokens.
+// returns the panes to watch and wanted workspace and owner ask tokens.
 func cmdHost(c *ctx, args []string) (any, int, error) {
 	if err := hiddenOnly(c, "_host"); err != nil {
 		return nil, 0, err
@@ -134,6 +134,13 @@ func cmdHost(c *ctx, args []string) (any, int, error) {
 			}
 		}
 		reply["workspace_tokens"] = tokens
+	}
+	if asks, err := wantedOwnerAsks(db, host); err != nil {
+		if c.log != nil {
+			c.log.logf("owner ask token query failed: %v", err)
+		}
+	} else {
+		reply["owner_ask_tokens"] = asks
 	}
 	asks, err := claimOwnerAsks(db, host, nil)
 	if err != nil {
@@ -387,7 +394,7 @@ type clientState struct {
 // clientDaemon is `taskr daemon` on a client host: no ledger, dashboard,
 // or peer push. Every clientObserveEvery, and after each Herdr pane
 // change, it sends this host's agent listing to the server, which returns
-// the panes to watch and workspace tokens to publish locally.
+// the panes to watch and workspace and owner ask tokens to publish locally.
 func clientDaemon(c *ctx, raw string, args []string) int {
 	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
 	once := fs.Bool("once", false, "run one observation pass and exit")
@@ -517,7 +524,7 @@ type hostRelay struct {
 	log                  *daemonLog
 	mu                   sync.Mutex
 	watch                []string
-	workspaceWriter      *daemon
+	workspaceWriter      *daemon // writes workspace and owner ask tokens
 }
 
 type workspaceTokenValues struct {
@@ -566,6 +573,7 @@ func (h *hostRelay) observe() error {
 		Watch           []string                        `json:"watch"`
 		OwnerAsks       []ownerAskNotification          `json:"owner_asks"`
 		WorkspaceTokens map[string]workspaceTokenValues `json:"workspace_tokens"`
+		OwnerAskTokens  map[string]int64                `json:"owner_ask_tokens"`
 		Error           string                          `json:"error"`
 	}
 	parseErr := json.Unmarshal([]byte(lastLine(rep.Stdout)), &r)
@@ -605,6 +613,13 @@ func (h *hostRelay) observe() error {
 		}
 		h.workspaceWriter.writeWorkspaceTokens(want)
 	}
+	// Likewise a missing owner_ask_tokens (nil, unlike {}) preserves tokens.
+	if r.OwnerAskTokens != nil {
+		if h.workspaceWriter == nil {
+			h.workspaceWriter = &daemon{sock: h.sock, log: h.log}
+		}
+		h.workspaceWriter.reconcileOwnerAskTokens(r.OwnerAskTokens)
+	}
 	notifySpoolRefused(filepath.Dir(h.statePath), h.sock, h.log)
 	notifySpoolStuck(filepath.Dir(h.statePath), h.sock, h.log)
 	notifySpoolBad(filepath.Dir(h.statePath), h.sock, h.log)
@@ -636,8 +651,9 @@ func (h *hostRelay) run(cx context.Context) string {
 		}
 	}()
 	defer func() { cancel(); <-readerDone }()
-	tick := time.NewTicker(clientObserveEvery)
+	tick, fb := time.NewTicker(clientObserveEvery), time.NewTicker(daemonFallback)
 	defer tick.Stop()
+	defer fb.Stop()
 	h.pass()
 	d.refreshPanes()
 	for {
@@ -649,6 +665,10 @@ func (h *hostRelay) run(cx context.Context) string {
 		case <-tick.C:
 			if h.workspaceWriter != nil {
 				h.workspaceWriter.failedWorkspaceWant = nil
+			}
+		case <-fb.C:
+			if h.workspaceWriter != nil {
+				h.workspaceWriter.fallbackTick()
 			}
 		case <-dirty:
 			select {
