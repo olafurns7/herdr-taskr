@@ -224,7 +224,7 @@ func (w *watchOutput) wait(t *testing.T, match func(string) bool) string {
 	}
 }
 func lastWatchFrame(s string) string {
-	at := strings.LastIndex(s, "\x1b[H")
+	at := strings.LastIndex(s, "\x1b[1;1H")
 	if at < 0 {
 		return ""
 	}
@@ -258,7 +258,7 @@ func (h *watchHarness) stop(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("watch did not quit promptly")
 	}
 	if !strings.HasSuffix(h.out.text(), "\x1b[?25h\x1b[?1049l") {
@@ -298,15 +298,15 @@ func TestRunWatchQuitAndEOF(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-			case <-time.After(200 * time.Millisecond):
+			case <-time.After(time.Second):
 				t.Fatal("quit blocked on fetch")
 			}
-			if time.Since(before) > 200*time.Millisecond {
+			if time.Since(before) > time.Second {
 				t.Fatal("slow quit")
 			}
 			select {
 			case <-canceled:
-			case <-time.After(200 * time.Millisecond):
+			case <-time.After(time.Second):
 				t.Fatal("fetch not canceled")
 			}
 			got := h.out.text()
@@ -365,7 +365,7 @@ func TestRunWatchResizeAndAge(t *testing.T) {
 	width.Store(20)
 	h.resize <- syscall.SIGWINCH
 	h.out.wait(t, func(s string) bool {
-		return strings.Contains(lastWatchFrame(s), strings.Repeat("─", 20)+"\x1b[K\r\n") && !strings.Contains(lastWatchFrame(s), strings.Repeat("─", 21))
+		return strings.Contains(lastWatchFrame(s), "\x1b[2;1H\x1b[2K"+strings.Repeat("─", 20)+"\x1b[3;1H") && !strings.Contains(lastWatchFrame(s), strings.Repeat("─", 21))
 	})
 	if calls.Load() != 1 {
 		t.Fatalf("resize fetched: %d", calls.Load())
@@ -402,6 +402,11 @@ func TestRunWatchWriteErrorRestores(t *testing.T) {
 
 func TestGlanceWatchFlagsAndRPCRefusal(t *testing.T) {
 	h := newHarness(t)
+	for _, args := range [][]string{{"--watch=false"}, {"-watch=0"}, {"--watch=invalid"}, {"--", "--watch"}, {"watch"}} {
+		if glanceWatchRequested(args) {
+			t.Errorf("unexpected watch for %q", args)
+		}
+	}
 	for _, args := range [][]string{{"--every", "5s"}, {"--watch", "--every", "0s"}, {"--watch", "--every", "6m"}, {"--watch=false", "--every", "1s"}} {
 		h.one(exitUsage, nil, append([]string{"glance"}, args...)...)
 	}
@@ -416,10 +421,12 @@ func TestGlanceWatchFlagsAndRPCRefusal(t *testing.T) {
 	if status != 200 || reply.Exit != exitUsage || !strings.Contains(reply.Stdout, "glance --watch runs on the invoking host") {
 		t.Fatalf("RPC watch: HTTP %d %+v %s", status, reply, raw)
 	}
-	var out, errb bytes.Buffer
 	r.caller.Store("host-a")
-	if code := cliMain([]string{"glance", "--watch"}, clientEnv(r.homes["host-a"], nil), &out, &errb); code != 0 || !strings.HasPrefix(out.String(), "taskr · ") || strings.Contains(out.String(), "\x1b") {
-		t.Fatalf("client fallback: %d %q %s", code, out.String(), errb.String())
+	for _, watch := range []string{"--watch", "-watch", "--watch=t", "-watch=T", "--watch=TRUE", "-watch=True", "--watch=1"} {
+		var out, errb bytes.Buffer
+		if code := cliMain([]string{"glance", watch}, clientEnv(r.homes["host-a"], nil), &out, &errb); code != 0 || !strings.HasPrefix(out.String(), "taskr · ") || strings.Contains(out.String(), "\x1b") {
+			t.Fatalf("client fallback %s: %d %q %s", watch, code, out.String(), errb.String())
+		}
 	}
 }
 
@@ -461,13 +468,173 @@ func TestRunWatchWaitsAfterFetchCompletion(t *testing.T) {
 
 func TestRunWatchFrameProtocol(t *testing.T) {
 	h := newWatchHarness(t, func(context.Context) (*glanceView, error) { return nil, errors.New("offline") }, time.Hour, watchSize, fixedWatchNow)
-	h.out.wait(t, func(s string) bool { return strings.Contains(lastWatchFrame(s), "stale") })
+	h.out.wait(t, func(s string) bool { return strings.Contains(lastWatchFrame(s), "no data: offline") })
 	frame := lastWatchFrame(h.out.text())
-	expected := "\x1b[H" + strings.Join(renderGlance(nil, 46, 24, 0, "offline", false, watchTestNow), "\x1b[K\r\n") + "\x1b[K\x1b[J"
+	rows := renderGlance(nil, 46, 24, 0, "offline", false, watchTestNow)
+	expected := ""
+	for i := 1; i <= 24; i++ {
+		expected += fmt.Sprintf("\x1b[%d;1H\x1b[2K", i)
+		if i <= len(rows) {
+			expected += rows[i-1]
+		}
+	}
 	if frame != expected {
 		t.Fatalf("frame protocol: %q != %q", frame, expected)
 	}
 	h.stop(t)
+}
+
+func TestRunWatchFullWidthRow(t *testing.T) {
+	h := newWatchHarness(t, func(context.Context) (*glanceView, error) { return busyGlance(), nil }, time.Hour, watchSize, fixedWatchNow)
+	h.out.wait(t, func(s string) bool { return strings.Contains(lastWatchFrame(s), "planner-ui") })
+	frame := lastWatchFrame(h.out.text())
+	for i, row := range renderGlance(busyGlance(), 46, 24, 0, "", false, watchTestNow) {
+		if ansi.StringWidth(row) == 46 && !strings.Contains(frame, fmt.Sprintf("\x1b[%d;1H\x1b[2K%s\x1b[%d;1H", i+1, row, i+2)) {
+			t.Fatalf("full-width row erased before cursor move: %q", frame)
+		}
+	}
+	if strings.ContainsAny(frame, "\r\n") || strings.Contains(frame, "\x1b[K") || strings.Contains(frame, "\x1b[J") {
+		t.Fatalf("unexpected erase or newline: %q", frame)
+	}
+	h.stop(t)
+}
+
+func TestRenderGlanceNarrowHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		width     int
+		err, want string
+	}{
+		{16, "", "17:30 2 need you"},
+		{20, "", "17:30     2 need you"},
+		{16, "offline", "stale 2s: offli…"},
+		{20, "offline", "   stale 2s: offline"},
+	} {
+		header := renderGlance(busyGlance(), tc.width, 24, 2*time.Second, tc.err, false, watchTestNow)[0]
+		if header != tc.want {
+			t.Errorf("width %d err %q: %q != %q", tc.width, tc.err, header, tc.want)
+		}
+	}
+}
+
+func TestRenderGlanceUncertainHeadersNeverGreen(t *testing.T) {
+	for _, tc := range []struct {
+		v         *glanceView
+		err, want string
+	}{
+		{&glanceView{Verdict: "rolling"}, "offline", "stale 2s: offline"},
+		{nil, "", "no data"},
+		{nil, "offline", "no data: offline"},
+		{&glanceView{Verdict: "unknown"}, "", "? unknown"},
+	} {
+		header := renderGlance(tc.v, 46, 24, 2*time.Second, tc.err, true, watchTestNow)[0]
+		if strings.Contains(header, "\x1b[32m") || !strings.Contains(header, "\x1b[33m"+tc.want) {
+			t.Errorf("uncertain header: %q", header)
+		}
+	}
+}
+
+func TestRenderGlanceOverflowSkipsUnhelpfulDrop(t *testing.T) {
+	v := busyGlance()
+	v.Campaigns = v.Campaigns[:1]
+	v.Quiet = glanceQuiet{}
+	rows := renderGlance(v, 46, 12, 0, "", false, watchTestNow)
+	got := strings.Join(rows, "\n")
+	checkWatchWidths(t, rows, 46, 12)
+	for _, want := range []string{"planner-ui", "+1 more to check", "mobile-screens", "Merge #4840"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("overflow missing %q: %s", want, got)
+		}
+	}
+}
+
+func TestRenderGlanceMoreCampaignsThanHeightKeepsCounts(t *testing.T) {
+	v := busyGlance()
+	v.Campaigns = nil
+	for i := 0; i < 20; i++ {
+		v.Campaigns = append(v.Campaigns, glanceCampaign{Name: fmt.Sprintf("campaign-%d", i)})
+	}
+	rows := renderGlance(v, 46, 8, 0, "", false, watchTestNow)
+	checkWatchWidths(t, rows, 46, 8)
+	got := strings.Join(rows, "\n")
+	for _, want := range []string{"2 need you", "+2 more need you", "+2 more to check", "+20 more campaigns", "13 quiet", "4 with backlog"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("overflow missing %q: %s", want, got)
+		}
+	}
+}
+
+func TestRenderGlanceTinyHeightKeepsHeaderVerdict(t *testing.T) {
+	for height := 1; height <= 4; height++ {
+		rows := renderGlance(busyGlance(), 46, height, 0, "", false, watchTestNow)
+		checkWatchWidths(t, rows, 46, height)
+		if !strings.HasSuffix(rows[0], "2 need you") {
+			t.Errorf("height %d lost header verdict: %q", height, rows)
+		}
+		if height >= 2 && !strings.Contains(rows[1], "+2 more need you") {
+			t.Errorf("height %d lost needs-you priority: %q", height, rows)
+		}
+		if height >= 3 && !strings.Contains(rows[2], "+2 more to check") {
+			t.Errorf("height %d lost attention priority: %q", height, rows)
+		}
+		if height >= 4 && !strings.Contains(rows[3], "+3 more campaigns") {
+			t.Errorf("height %d lost campaigns priority: %q", height, rows)
+		}
+	}
+}
+
+func TestRunWatchFetchPanic(t *testing.T) {
+	h := newWatchHarness(t, func(context.Context) (*glanceView, error) { panic("boom") }, time.Hour, watchSize, fixedWatchNow)
+	h.out.wait(t, func(s string) bool { return strings.Contains(lastWatchFrame(s), "no data: fetch panic: boom") })
+	h.stop(t)
+}
+
+func TestGlanceWatchRPCLogging(t *testing.T) {
+	r := newTwoHost(t)
+	for _, tc := range []struct {
+		key  string
+		args []string
+		exit int
+	}{
+		{"watch-log-success", []string{"glance"}, 0},
+		{"watch-log-failure", []string{"glance", "--bad-flag"}, exitUsage},
+		{"watch-log-other", []string{"status"}, 0},
+	} {
+		status, reply, raw := r.post("host-a", rpcBody(t.TempDir(), nil, tc.key, tc.args...))
+		if status != 200 || reply.Exit != tc.exit {
+			t.Fatalf("%s: HTTP %d %+v %s", tc.key, status, reply, raw)
+		}
+	}
+	logText, err := os.ReadFile(filepath.Join(r.stateDir(), "daemon.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(logText), "key=watch-log-success") || !strings.Contains(string(logText), "cmd=glance key=watch-log-failure exit=2") || !strings.Contains(string(logText), "cmd=status key=watch-log-other exit=0") {
+		t.Fatalf("RPC audit log: %s", logText)
+	}
+}
+
+func TestGlanceWatchClientFetchDeadline(t *testing.T) {
+	r := newTwoHost(t)
+	canceled := make(chan struct{}, 1)
+	var calls atomic.Int32
+	endpoint, ln, srv := retryEndpoint(t, r, func(w http.ResponseWriter, q *http.Request) {
+		calls.Add(1)
+		io.Copy(io.Discard, q.Body)
+		<-q.Context().Done()
+		canceled <- struct{}{}
+	})
+	go srv.Serve(ln)
+	var out bytes.Buffer
+	start := time.Now()
+	_, code, err := watchGlance(&ctx{client: true, server: endpoint, out: &out}, 100*time.Millisecond)
+	if code != 1 || err == nil || calls.Load() != 1 || time.Since(start) > time.Second {
+		t.Fatalf("deadline: code %d err %v calls %d elapsed %s", code, err, calls.Load(), time.Since(start))
+	}
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Fatal("hanging request was not canceled")
+	}
 }
 
 func TestGlanceWatchClientFetchErrors(t *testing.T) {

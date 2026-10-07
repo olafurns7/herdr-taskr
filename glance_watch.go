@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +18,23 @@ import (
 )
 
 type watchResizeKey struct{}
+
+func glanceWatchRequested(args []string) bool {
+	for _, arg := range args {
+		if arg == "--" {
+			return false
+		}
+		if arg == "--watch" || arg == "-watch" {
+			return true
+		}
+		name, value, _ := strings.Cut(arg, "=")
+		if name == "--watch" || name == "-watch" {
+			watch, _ := strconv.ParseBool(value)
+			return watch
+		}
+	}
+	return false
+}
 
 func watchText(s string) string {
 	return strings.TrimSpace(strings.Map(func(r rune) rune {
@@ -55,7 +73,11 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 	ageOf := func(ms int64) string { return watchAge(time.Duration(ms)*time.Millisecond + age) }
 	left, right, tint := "taskr · "+now.Local().Format("15:04"), "no data", "33"
 	if fetchErr != "" {
-		right = "stale " + watchAge(age) + ": " + watchText(fetchErr)
+		if v == nil {
+			right += ": " + watchText(fetchErr)
+		} else {
+			right = "stale " + watchAge(age) + ": " + watchText(fetchErr)
+		}
 	} else if v != nil {
 		switch v.Verdict {
 		case "rolling":
@@ -75,11 +97,14 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 	if ansi.StringWidth(fullLeft)+ansi.StringWidth(right)+1 > width {
 		fullLeft = left
 	}
-	right = ansi.Truncate(right, max(0, width-ansi.StringWidth(fullLeft)-1), "…")
-	header := ansi.Truncate(fullLeft, width, "…")
-	if right != "" {
-		header += strings.Repeat(" ", max(1, width-ansi.StringWidth(header)-ansi.StringWidth(right))) + line(right, tint)
+	if ansi.StringWidth(fullLeft)+ansi.StringWidth(right)+1 > width {
+		fullLeft = now.Local().Format("15:04")
 	}
+	if ansi.StringWidth(fullLeft)+ansi.StringWidth(right)+1 > width {
+		fullLeft = ""
+	}
+	right = ansi.Truncate(right, width, "…")
+	header := fullLeft + strings.Repeat(" ", width-ansi.StringWidth(fullLeft)-ansi.StringWidth(right)) + line(right, tint)
 	rule := strings.Repeat("─", width)
 	if v == nil {
 		return []string{header, rule}[:min(2, height)]
@@ -190,18 +215,28 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 		return rows
 	}
 	rows := compose()
-	total := len(rows)
-	for g := 2; g >= 0; g-- {
-		for total > height && keep[g] > 0 {
-			keep[g]--
-			total -= len(groups[g][keep[g]])
-			if keep[g] == len(groups[g])-1 {
-				total++ // The first dropped item introduces its overflow count.
+	for len(rows) > height {
+		dropped := false
+		for g := 2; g >= 0; g-- {
+			before := keep[g]
+			for keep[g] > 0 {
+				keep[g]--
+				if next := compose(); len(next) < len(rows) {
+					rows, dropped = next, true
+					break
+				}
 			}
+			if dropped {
+				break
+			}
+			keep[g] = before
+		}
+		if !dropped {
+			break
 		}
 	}
-	rows = compose()
-	// Tiny terminals shed decoration after all item counts have been collapsed.
+	// Counts survive when the minimal composition fits; tiny heights shed rules,
+	// then bottom rows, preserving the header verdict and higher-priority counts.
 	for i := len(rows) - 1; i > 0 && len(rows) > height; i-- {
 		if rows[i] == rule {
 			rows = append(rows[:i], rows[i+1:]...)
@@ -249,11 +284,14 @@ func runWatch(cx context.Context, fetch func(context.Context) (*glanceView, erro
 		}
 		w, h := size()
 		rows := renderGlance(v, w, h, age, fetchErr, !noColor && os.Getenv("TERM") != "dumb", now())
-		body := ""
-		if len(rows) > 0 {
-			body = strings.Join(rows, "\x1b[K\r\n") + "\x1b[K"
+		var body strings.Builder
+		for i := 0; i < h; i++ {
+			fmt.Fprintf(&body, "\x1b[%d;1H\x1b[2K", i+1)
+			if i < len(rows) {
+				body.WriteString(rows[i])
+			}
 		}
-		_, err := io.WriteString(out, "\x1b[H"+body+"\x1b[J")
+		_, err := io.WriteString(out, body.String())
 		return err
 	}
 	if err := draw(); err != nil {
@@ -266,7 +304,16 @@ func runWatch(cx context.Context, fetch func(context.Context) (*glanceView, erro
 		case <-quit:
 			return nil
 		case <-next.C:
-			go func() { v, err := fetch(cx); results <- result{v, err} }()
+			go func() {
+				var r result
+				defer func() {
+					if p := recover(); p != nil {
+						r.err = fmt.Errorf("fetch panic: %v", p)
+					}
+					results <- r
+				}()
+				r.v, r.err = fetch(cx)
+			}()
 			continue
 		case r := <-results:
 			if r.err != nil {
@@ -319,7 +366,7 @@ func watchGlance(c *ctx, every time.Duration) (any, int, error) {
 	}
 	c.lines = true
 	file, ok := c.out.(*os.File)
-	if !ok || !term.IsTerminal(int(file.Fd())) || os.Getenv("TERM") == "dumb" {
+	if !ok || !term.IsTerminal(int(file.Fd())) || !term.IsTerminal(int(os.Stdin.Fd())) || os.Getenv("TERM") == "dumb" {
 		v, err := fetch(context.Background())
 		if err == nil {
 			_, err = fmt.Fprintln(c.out, strings.Join(renderGlance(v, 80, int(^uint(0)>>1), 0, "", false, time.Now()), "\n"))

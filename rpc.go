@@ -353,7 +353,9 @@ func (d *dashboard) rpc(w http.ResponseWriter, r *http.Request) {
 	} else {
 		rep = d.rpcRun(r.Context(), id.Machine, req)
 	}
-	d.log.logf("rpc: machine=%s cmd=%s key=%s exit=%d", id.Machine, name, req.RequestKey, rep.Exit)
+	if name != "glance" || rep.Exit != 0 {
+		d.log.logf("rpc: machine=%s cmd=%s key=%s exit=%d", id.Machine, name, req.RequestKey, rep.Exit)
+	}
 	httpJSON(w, http.StatusOK, rep)
 }
 
