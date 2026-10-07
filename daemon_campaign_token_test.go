@@ -204,8 +204,10 @@ func TestDaemonCampaignUnchanged(t *testing.T) {
 	campaignPass(d)
 	before := h.calls("")
 	campaignPass(d)
-	if got := h.calls(""); !reflect.DeepEqual(got, before) {
-		t.Fatalf("unchanged pass called herdr: %q", got)
+	// The root's lead is observed from one agent listing per pass; nothing else runs.
+	want := append(before[:len(before)-1:len(before)-1], "agent|list|", "")
+	if got := h.calls(""); !reflect.DeepEqual(got, want) {
+		t.Fatalf("unchanged pass called herdr: %q, want %q", got, want)
 	}
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	_ "embed"
@@ -76,21 +77,24 @@ func closeDB(c *ctx, db *sql.DB) {
 // migrate adds columns that `create table if not exists` cannot add to an
 // existing ledger. It runs in the schema transaction and is idempotent.
 func migrate(tx *sql.Tx) error {
-	for _, c := range []struct{ table, column string }{
-		{"tasks", "waiting_until"},
-		{"launches", "workspace_id"}, // v0.6: launch --workspace/--tab
-		{"launches", "tab_id"},
-		{"tasks", "machine"}, // v0.10: NULL is the server host
-		{"launches", "machine"},
-		{"launches", "transcript_path"}, // v0.11: harness hook session transcript
-		{"requests", "upload"},          // v0.13: captured documents requested from RPC clients
+	for _, c := range []struct{ table, column, kind string }{
+		{table: "tasks", column: "waiting_until"},
+		{table: "launches", column: "workspace_id"}, // v0.6: launch --workspace/--tab
+		{table: "launches", column: "tab_id"},
+		{table: "tasks", column: "machine"}, // v0.10: NULL is the server host
+		{table: "launches", column: "machine"},
+		{table: "launches", column: "transcript_path"}, // v0.11: harness hook session transcript
+		{table: "requests", column: "upload"},          // v0.13: captured documents requested from RPC clients
+		{table: "tasks", column: "lead_status"},        // v0.15: a root's pane agent as its host last listed it
+		{table: "tasks", column: "lead_present", kind: "integer"},
+		{table: "tasks", column: "lead_observed_at"},
 	} {
 		var n int
 		if err := tx.QueryRow(`select count(*) from pragma_table_info(?) where name = ?`, c.table, c.column).Scan(&n); err != nil {
 			return err
 		}
 		if n == 0 {
-			if _, err := tx.Exec(`alter table ` + c.table + ` add column ` + c.column + ` text`); err != nil {
+			if _, err := tx.Exec(`alter table ` + c.table + ` add column ` + c.column + ` ` + cmp.Or(c.kind, "text")); err != nil {
 				return err
 			}
 		}

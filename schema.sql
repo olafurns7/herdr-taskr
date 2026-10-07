@@ -13,9 +13,15 @@ create table if not exists tasks (
   last_poll_at  text,
   waiting_until text,
   machine       text, -- the task's host; NULL is the server host (v0.10)
+  -- A root's pane agent as its host last listed it (v0.15); lead_observed_at is the last change.
+  lead_status   text, lead_present integer, lead_observed_at text,
   created_at text not null, updated_at text not null, closed_at text
 );
 create index if not exists tasks_parent on tasks(parent_id);
+
+create trigger if not exists tasks_lead_rebind after update of pane_id, machine on tasks
+  when old.pane_id is not new.pane_id or old.machine is not new.machine
+  begin update tasks set lead_status = null, lead_present = null, lead_observed_at = null where id = new.id; end;
 
 create table if not exists events (
   id                integer primary key,
