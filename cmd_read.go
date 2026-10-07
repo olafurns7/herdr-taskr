@@ -180,6 +180,7 @@ func cmdAsks(c *ctx, args []string) (any, int, error) {
 	open := fs.Bool("open", false, "only unanswered asks")
 	tree := fs.Int64("tree", 0, "only asks from this task and its descendants")
 	owner := fs.Bool("owner", false, "only owner asks")
+	all := fs.Bool("all", false, "include unanswered asks from closed askers or closed roots")
 	limit := fs.Int64("limit", 0, "latest N answered asks, 0 for all (default 20)")
 	limitGiven := false
 	if _, err := parseArgs(c, fs, args, 0, 0); err != nil {
@@ -199,6 +200,11 @@ func cmdAsks(c *ctx, args []string) (any, int, error) {
 	}
 	defer closeDB(c, db)
 	where := []string{"e.kind = 'ask'"}
+	prefix := ""
+	if !*all {
+		prefix = glanceTrees
+		where = append(where, "(e.answered_by is not null or (t.status != 'closed' and e.task_id in (select id from tree)))")
+	}
 	var qargs []any
 	if *open {
 		where = append(where, "e.answered_by is null")
@@ -216,7 +222,7 @@ func cmdAsks(c *ctx, args []string) (any, int, error) {
 			qargs = append(qargs, id)
 		}
 	}
-	rows, err := db.Query(`select `+eventCols+`, ans.summary from events e join tasks t on t.id = e.task_id
+	rows, err := db.Query(prefix+`select `+eventCols+`, ans.summary from events e join tasks t on t.id = e.task_id
 		left join events ans on ans.id = e.answered_by where `+strings.Join(where, " and ")+` order by e.id`, qargs...)
 	if err != nil {
 		return nil, 0, dbErr(err)
