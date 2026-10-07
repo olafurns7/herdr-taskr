@@ -250,7 +250,7 @@ func glanceTasks(tx *sql.Tx, at time.Time, roots map[int64]*glanceRoot, tasks ma
 			t.LastEvent = &lastEvent{Kind: kind.String, Summary: clip(summary.String, stateSummaryMax), At: since.String, AgeMS: glanceAge(at, since.String)}
 		}
 		t.Mark = laneMark(&t.stateTask)
-		if t.Role == "gate" && !launched {
+		if t.Role == "gate" && !launched && t.Mark == markWorking {
 			t.Mark = markPlanned
 		}
 		// Freshness is read after closing rows, so the transaction needs no
@@ -585,7 +585,7 @@ func glanceRank(kind string) int {
 var (
 	glanceOwnerEnd    = regexp.MustCompile(`(?m)(?: |^)(?:DONE|HAPPENED|NOW):`)
 	glanceNothing     = regexp.MustCompile(`^nothing(\s+(yet|new|now))?\s*($|[.(])`)
-	glanceUnclear     = regexp.MustCompile(`^(nothing( urgent| to do| needed)?|no (decision|action)( needed)?( now| yet)?)\s*([.;,:]|$)`)
+	glanceUnclear     = regexp.MustCompile(`^(nothing( urgent| to do| needed)?|no (decision|action)( needed)?( now| yet)?)\s*[.;]?\s*$`)
 	glanceOwnerNumber = regexp.MustCompile(`(^|\s)1(\)|\.(\s|$))`)
 )
 

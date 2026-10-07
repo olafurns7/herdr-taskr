@@ -209,13 +209,19 @@ func TestGlanceOwnerUnclear(t *testing.T) {
 		unclear bool
 	}{
 		{"no decision needed now.", true},
-		{"nothing urgent. Verdict …", true},
+		{"nothing urgent. Verdict …", false},
+		{"nothing urgent.", true},
+		{"no decision needed;", true},
+		{"nothing urgent, but approve PR 5 today", false},
+		{"no action: merge PR 4840", false},
+		{"no decision needed now, but approve PR 5 before Friday", false},
 		{"nothing to do.", true},
-		{"NOTHING NEEDED; waiting", true},
+		{"NOTHING NEEDED; waiting", false},
+		{"NOTHING NEEDED", true},
 		{"no action yet", true},
-		{"no decision, waiting", true},
-		{"nothing: waiting", true},
-		{"nothing urgent.\n\x1b[31m" + strings.Repeat("á", 4100), true},
+		{"no decision, waiting", false},
+		{"nothing: waiting", false},
+		{"nothing urgent.\n\x1b[31m" + strings.Repeat("á", 4100), false},
 		{"nothing until you approve X", false},
 		{"nothing urgent until you approve X", false},
 		{"nothingness", false},
@@ -297,6 +303,24 @@ func TestGlanceUnlaunchedGate(t *testing.T) {
 	f.launch(w, "working", true, nil)
 	if v := f.view(); v.Campaigns[0].Lanes != (glanceLanes{Open: 1, Working: 1}) {
 		t.Fatalf("launched gate = %+v", v)
+	}
+	for _, status := range []string{"failed", "ready"} {
+		f := newGlanceFixture(t)
+		r := f.task("root", 0, "open")
+		g := f.task("gate", r, status)
+		f.exec(`update tasks set role = 'gate' where id = ?`, g)
+		f.event(g, 0, 0, "note", "gate ran unlaunched", `{}`, time.Minute)
+		v := f.view()
+		switch status {
+		case "failed":
+			if v.Verdict != "attention" || len(v.Attention) != 1 || v.Attention[0].Kind != "lane_failed" {
+				t.Fatalf("failed unlaunched gate = %+v", v)
+			}
+		case "ready":
+			if len(v.Campaigns) != 1 || v.Campaigns[0].Lanes.Ready != 1 {
+				t.Fatalf("ready unlaunched gate = %+v", v)
+			}
+		}
 	}
 }
 

@@ -183,7 +183,7 @@ func TestRenderGlanceOwnerUnclearAndMissingSince(t *testing.T) {
 		}
 	}
 	rows := renderGlance(busyGlance(), 80, 24, 0, "", false, watchTestNow)
-	if rows[2] != "» copilot-modular  12m  BLOCKING  lane failed  → wN4:p1" {
+	if rows[2] != "» copilot-modular  12m  BLOCKING  → wN4:p1  lane failed" {
 		t.Fatalf("folded cue: %q", rows[2])
 	}
 }

@@ -125,11 +125,11 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 			if n.Blocking != nil && *n.Blocking {
 				first += "  BLOCKING"
 			}
-			if len(n.Also) > 0 {
-				first += "  " + watchText(n.Also[0])
-			}
 			if n.PaneID != "" {
 				first += "  → " + watchText(n.PaneID)
+			}
+			if len(n.Also) > 0 {
+				first += "  " + watchText(n.Also[0])
 			}
 		}
 		groups[0] = append(groups[0], []string{line(first, "31"), line("  "+watchText(text), "")})
