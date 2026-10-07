@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"time"
 )
 
 // Lead liveness: an open root (a campaign lead) has no launch, so its pane's
@@ -11,6 +12,8 @@ import (
 
 // openRoot filters the roots that have a lead to observe or report.
 const openRoot = `parent_id is null and status not in ('closed', 'planned')`
+
+const leadListedKey = "lead_listed_at"
 
 // lead is an open root's pane on one host and its stored observation.
 type lead struct {
@@ -43,7 +46,8 @@ func leadsOn(q queryer, host sql.NullString) ([]lead, error) {
 // observeLeads writes the changed observations of ls against one agent
 // listing of host. lead_observed_at is the time of the last change. Each
 // write holds only while the root is still open at that pane on that host,
-// so a pass that raced an adopt never overwrites the cleared observation.
+// so a pass that raced an adopt to a different pane or host cannot overwrite
+// the cleared observation.
 func observeLeads(db *sql.DB, host sql.NullString, ls []lead, agents map[string]agentObs) error {
 	const still = ` where id = ? and pane_id = ? and machine is ? and ` + openRoot
 	for _, l := range ls {
@@ -77,7 +81,8 @@ type leadObs struct {
 
 // leadObservations reports every open root's lead. A lead is unknown when
 // the root has no pane, was never observed, or its host's daemon is not
-// fresh (a client host's heartbeat, the hub daemon's for the server host):
+// fresh (a client host's heartbeat; for the server host, the hub daemon's
+// heartbeat and its last successful listing):
 // a stored status nobody is refreshing is not a claim. It is gone when its
 // host's last listing did not have the pane.
 func leadObservations(q queryer) (map[int64]leadObs, error) {
@@ -85,6 +90,11 @@ func leadObservations(q queryer) (map[int64]leadObs, error) {
 	if err != nil {
 		return nil, err
 	}
+	listedAt, listed, err := getMeta(q, leadListedKey)
+	if err != nil {
+		return nil, err
+	}
+	hubLive := hub == "fresh" && listed && time.Since(parseTime(listedAt)) < heartbeatFresh
 	type row struct {
 		id            int64
 		pane, machine sql.NullString
@@ -112,7 +122,7 @@ func leadObservations(q queryer) (map[int64]leadObs, error) {
 	fresh := map[string]bool{}
 	out := make(map[int64]leadObs, len(rs))
 	for _, r := range rs {
-		live := hub == "fresh"
+		live := hubLive
 		if r.machine.Valid {
 			f, seen := fresh[r.machine.String]
 			if !seen {

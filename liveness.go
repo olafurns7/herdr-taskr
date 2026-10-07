@@ -293,6 +293,11 @@ func observe(db *sql.DB, sock string, parent *int64, deadline time.Time) (int, e
 	if err != nil {
 		return 0, err
 	}
+	if parent == nil {
+		if err := setMeta(db, leadListedKey, now()); err != nil {
+			return 0, dbErr(err)
+		}
+	}
 	if err := observeLeads(db, serverHost, leads, agents); err != nil {
 		return 0, dbErr(err)
 	}

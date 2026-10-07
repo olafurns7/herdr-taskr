@@ -221,11 +221,20 @@ func TestLeadHostsDoNotCross(t *testing.T) {
 	}
 }
 
-func TestMigrationAddsLeadColumns(t *testing.T) {
+func leadMigrationHarness(t *testing.T) *harness {
+	t.Helper()
 	h := newHarness(t)
 	os.MkdirAll(filepath.Dir(h.db), 0o755)
 	var kept []string
+	var inTrigger bool
 	for _, l := range strings.Split(schemaSQL, "\n") {
+		if strings.Contains(l, "create trigger if not exists tasks_lead_rebind") {
+			inTrigger = true
+		}
+		if inTrigger {
+			inTrigger = !strings.Contains(l, "end;")
+			continue
+		}
 		if !strings.Contains(l, "lead_") {
 			kept = append(kept, l)
 		}
@@ -253,6 +262,11 @@ func TestMigrationAddsLeadColumns(t *testing.T) {
 			t.Fatalf("open %d: lead columns = %q", i, cols)
 		}
 	}
+	return h
+}
+
+func TestMigrationAddsLeadColumns(t *testing.T) {
+	h := leadMigrationHarness(t)
 	db := h.openDB()
 	if got := leadOf(t, db, 1); got != "unknown" {
 		t.Fatalf("legacy root = %s, want unknown", got)
@@ -264,5 +278,99 @@ func TestMigrationAddsLeadColumns(t *testing.T) {
 	}
 	if got := leadOf(t, db, 1); got != "working" {
 		t.Fatalf("legacy root after a pass = %s, want working", got)
+	}
+}
+
+func TestLeadHubListingFreshness(t *testing.T) {
+	h := newHarness(t)
+	root := h.newTask("top", "orchestrator", 0, "--pane", "w1:p1")
+	db := h.openDB()
+	if err := setMeta(db, heartbeatKey, now()); err != nil {
+		t.Fatal(err)
+	}
+	h.setAgents("w1:p1/working/1")
+	pass := func() error {
+		_, err := observe(db, h.herdrSock, nil, time.Now().Add(5*time.Second))
+		return err
+	}
+	if err := pass(); err != nil {
+		t.Fatal(err)
+	}
+	if got := leadOf(t, db, root); got != "working" {
+		t.Fatalf("successful listing: lead = %s, want working", got)
+	}
+	stored := leadRow(t, db, root)
+	stale := stamp(time.Now().Add(-heartbeatFresh - time.Second))
+	if err := setMeta(db, "lead_listed_at", stale); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []struct{ list, exit string }{{"not json", "0"}, {"{}", "1"}} {
+		h.write("list.json", bad.list, 0o644)
+		h.write("list.exit", bad.exit, 0o644)
+		if err := pass(); err == nil {
+			t.Fatal("failed listing reported no error")
+		}
+		at, ok, err := getMeta(db, "lead_listed_at")
+		if err != nil || !ok || at != stale || leadRow(t, db, root) != stored {
+			t.Fatalf("failed listing wrote freshness or observation: at = %q, ok = %v, err = %v", at, ok, err)
+		}
+		if got := leadOf(t, db, root); got != "unknown" {
+			t.Fatalf("failed listing with fresh heartbeat: lead = %s, want unknown", got)
+		}
+	}
+	if _, err := db.Exec(`delete from meta where key = 'lead_listed_at'`); err != nil {
+		t.Fatal(err)
+	}
+	if got := leadOf(t, db, root); got != "unknown" {
+		t.Fatalf("no successful listing marker: lead = %s, want unknown", got)
+	}
+	h.write("list.exit", "0", 0o644)
+	h.setAgents("w1:p1/working/1")
+	if err := pass(); err != nil {
+		t.Fatal(err)
+	}
+	if got := leadOf(t, db, root); got != "working" {
+		t.Fatalf("successful listing recovery: lead = %s, want working", got)
+	}
+	if got := leadRow(t, db, root); got != stored {
+		t.Fatalf("unchanged recovery rewrote the observation: %s", got)
+	}
+}
+
+func TestLeadRebindInvalidatesObservation(t *testing.T) {
+	h := leadMigrationHarness(t)
+	db := h.openDB()
+	for _, key := range []string{heartbeatKey, "lead_listed_at", hostHeartbeatKey("host-a")} {
+		if err := setMeta(db, key, now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, update := range []string{
+		`pane_id = 'wX:p9'`,
+		`machine = 'host-a'`,
+		`machine = null`,
+		`pane_id = null`,
+	} {
+		if _, err := db.Exec(`update tasks set lead_status = 'working', lead_present = 1, lead_observed_at = 'mark' where id = 1`); err != nil {
+			t.Fatal(err)
+		}
+		if got := leadOf(t, db, 1); got != "working" {
+			t.Fatalf("before %s: lead = %s, want working", update, got)
+		}
+		if _, err := db.Exec(`update tasks set pane_id = pane_id, machine = machine where id = 1`); err != nil {
+			t.Fatal(err)
+		}
+		if got := leadRow(t, db, 1); got != "working 1 mark" {
+			t.Fatalf("unchanged binding cleared observation: %s", got)
+		}
+		if _, err := db.Exec(`update tasks set ` + update + ` where id = 1`); err != nil {
+			t.Fatal(err)
+		}
+		if got := leadRow(t, db, 1); got != "- - -" {
+			t.Fatalf("after raw %s: observation = %s, want all NULL", update, got)
+		}
+		if got := leadOf(t, db, 1); got != "unknown" {
+			t.Fatalf("after raw %s: lead = %s, want unknown", update, got)
+		}
 	}
 }

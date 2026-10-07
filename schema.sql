@@ -19,6 +19,10 @@ create table if not exists tasks (
 );
 create index if not exists tasks_parent on tasks(parent_id);
 
+create trigger if not exists tasks_lead_rebind after update of pane_id, machine on tasks
+  when old.pane_id is not new.pane_id or old.machine is not new.machine
+  begin update tasks set lead_status = null, lead_present = null, lead_observed_at = null where id = new.id; end;
+
 create table if not exists events (
   id                integer primary key,
   task_id           integer not null references tasks(id),
