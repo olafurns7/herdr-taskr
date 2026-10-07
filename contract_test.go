@@ -250,7 +250,7 @@ func TestPromptFileSendsPathAndTextSendsLiteral(t *testing.T) {
 	calls := h.calls("agent|prompt|")
 	fa, ta := id(num(file, "attempt_id")), id(num(text, "attempt_id"))
 	if len(calls) != 2 ||
-		!strings.HasPrefix(calls[0], "agent|prompt|w9:p4|First taskr got "+fa+"; read "+abs+"; execute exactly.|--wait|") ||
+		!strings.HasPrefix(calls[0], "agent|prompt|w9:p4|First taskr got "+fa+"; read "+abs+"; execute exactly."+workerContract("implementer")+"|--wait|") ||
 		!strings.HasPrefix(calls[1], "agent|prompt|w9:p4|First taskr got "+ta+". Continue with slice 4.|--wait|") {
 		t.Fatalf("herdr prompt calls = %q", calls)
 	}
@@ -274,6 +274,44 @@ func TestPromptFileSendsPathAndTextSendsLiteral(t *testing.T) {
 	if n := len(h.calls("agent|prompt|")); n != 2 {
 		t.Fatalf("usage errors ran herdr: %d prompt calls", n)
 	}
+}
+
+// A --file prompt to a worker lane carries the worker contract on one line;
+// other roles and --text prompts send today's text.
+func TestPromptFileCarriesWorkerContractByRole(t *testing.T) {
+	h := newHarness(t)
+	top := h.newTask("top", "orchestrator", 0)
+	t.Chdir(h.dir)
+	os.WriteFile(filepath.Join(h.dir, "brief.md"), []byte("HERDR-BRIEF role=x"), 0o644)
+	abs, _ := filepath.Abs("brief.md")
+	for i, role := range []string{"implementer", "researcher", "reviewer", "orchestrator", "sub-orchestrator", "gate"} {
+		pane := fmt.Sprintf("w9:p%d", i+10)
+		w := h.newTask("lane-"+role, role, top, "--pane", pane)
+		h.launch(w)
+		fa := num(h.ok(nil, "prompt", id(w), "--file", "brief.md"), "attempt_id")
+		ta := num(h.ok(nil, "prompt", id(w), "--text", "Continue."), "attempt_id")
+		calls := h.calls("agent|prompt|" + pane + "|")
+		if len(calls) != 2 || calls[1] != "agent|prompt|"+pane+"|First taskr got "+id(ta)+". Continue.|--wait|--until|working|--until|blocked|--timeout|20000|" {
+			t.Fatalf("%s: herdr prompt calls = %q", role, calls)
+		}
+		sent := strings.SplitN(calls[0], "|", 5)[3]
+		base := "First taskr got " + id(fa) + "; read " + abs + "; execute exactly."
+		worker := role == "implementer" || role == "researcher" || role == "reviewer"
+		if !worker && sent != base || worker && sent != base+workerContract(role) ||
+			worker != strings.HasPrefix(sent, base+" Worker: run that got") || strings.Contains(sent, "\n") {
+			t.Fatalf("%s: sent %q", role, sent)
+		}
+		if review := strings.Contains(sent, "load review.md"); review != (role == "reviewer") {
+			t.Fatalf("%s: review.md in %q = %v", role, sent, review)
+		}
+	}
+	for _, role := range []string{"implementer", "researcher", "reviewer"} {
+		if n := len(workerContract(role)); n > 600 {
+			t.Errorf("%s contract is %d bytes, want at most 600", role, n)
+		}
+	}
+	t.Logf("implementer: %s", "First taskr got 123; read /brief.md; execute exactly."+workerContract("implementer"))
+	t.Logf("reviewer: %s", "First taskr got 123; read /brief.md; execute exactly."+workerContract("reviewer"))
 }
 
 func TestGateTaskHasNoLiveness(t *testing.T) {

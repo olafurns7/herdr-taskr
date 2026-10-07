@@ -77,10 +77,10 @@ func cmdPrompt(c *ctx, args []string) (any, int, error) {
 // promptDelivery is a prompt command's delivery: the text, or with abs a
 // file the agent is told to read.
 func promptDelivery(text, abs string, data map[string]any, confirm bool, timeout time.Duration) delivery {
-	compose := func(attempt int64) string { return fmt.Sprintf("First taskr got %d. %s", attempt, text) }
+	compose := func(attempt int64, _ string) string { return fmt.Sprintf("First taskr got %d. %s", attempt, text) }
 	if abs != "" {
-		compose = func(attempt int64) string {
-			return fmt.Sprintf("First taskr got %d; read %s; execute exactly.", attempt, abs)
+		compose = func(attempt int64, role string) string {
+			return fmt.Sprintf("First taskr got %d; read %s; execute exactly.", attempt, abs) + workerContract(role)
 		}
 	}
 	in := bodyDocument([]byte(text), "")
@@ -95,13 +95,33 @@ func promptDelivery(text, abs string, data map[string]any, confirm bool, timeout
 		receiptTimeout: defaultReceiptTimeout}
 }
 
+// workerContract is the rules a --file prompt carries to a worker lane, so its
+// brief need not load the taskr skill. One line: Herdr sends the text, then Enter.
+func workerContract(role string) string {
+	refs := "read recovery.md"
+	switch role {
+	case "implementer", "researcher":
+	case "reviewer":
+		refs = "read recovery.md; load review.md"
+	default:
+		return ""
+	}
+	return " Worker: run that got even if a hook did (dup = success); honor Progress; " +
+		"taskr ready TEXT --report PATH per slice; missing decision: taskr ask TEXT --blocking, stop dependent work, " +
+		"taskr wait --for answer, taskr ack EVENT_ID --as $TASKR_TASK; end: taskr done [TEXT] or fail TEXT; " +
+		"write report at brief's path, reply with it and three lines; " +
+		"no commit, push, PR, issue-tracker write or agent start unless the brief allows; " +
+		"never sleep; taskr wait or herdr pane wait-output; exit 6: stop; qd1: queued, don't resend; " +
+		"other failure: " + refs + " (~/.agents/skills/taskr/references/)."
+}
+
 // delivery is one prompt to send. compose builds the sent text from the
-// attempt id; body is the caller's text, hashed unless data already has a
+// attempt id and the target's role; body is the caller's text, hashed unless data already has a
 // file's hash. Without confirm, a positive receiptTimeout arms a receipt
 // deadline whose alarm goes to receiptRecipient, or else the target's parent.
 type delivery struct {
 	document         *documentInput
-	compose          func(attempt int64) string
+	compose          func(attempt int64, role string) string
 	body             string
 	data             map[string]any
 	related          *int64
@@ -140,7 +160,7 @@ type attempt struct {
 	taskID, id   int64
 	launchID     *int64
 	target, text string
-	agent        string
+	agent, role  string
 }
 
 // errServerLane is beginAttempt's answer to a caller that would deliver on
@@ -196,7 +216,7 @@ func beginAttempt(c *ctx, db *sql.DB, taskID int64, d delivery, here bool, ready
 		if a.target == "" {
 			return usageErr("task %d has no pane or agent name to prompt", taskID)
 		}
-		a.agent = t.AgentName.String
+		a.agent, a.role = t.AgentName.String, t.Role
 		data["target"] = a.target
 		if err := ready(); err != nil {
 			return err
@@ -228,7 +248,7 @@ func beginAttempt(c *ctx, db *sql.DB, taskID int64, d delivery, here bool, ready
 	if err != nil {
 		return a, err
 	}
-	a.text = d.compose(a.id)
+	a.text = d.compose(a.id, a.role)
 	return a, nil
 }
 

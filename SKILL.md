@@ -9,12 +9,7 @@ One ledger: a host with ~/.local/state/taskr/server.url and no TASKR_DB is a cli
 
 Load: [format](references/format.md) before decoding output; [orchestrator](references/orchestrator.md) before orchestration, planning or handover/adopt; [recovery](references/recovery.md) when a command fails, an alarm arrives or a daemon needs a restart; [review](references/review.md) for a reviewer lane.
 
-Worker (a HERDR-BRIEF prompt):
-- `taskr got ATTEMPT` first, on every prompt that names one. A hook may record it first; your `got` then prints `dup`. Run it anyway.
-- Report through the ledger: `ready` per finished slice, `ask --blocking` for a missing decision, `done` or `fail` at the end. Stop dependent work until the answer arrives. Honor the brief's Progress line.
-- No commit, push, PR, issue-tracker write or agent start unless the brief grants it.
-- Write the report to the brief's path, then reply with that path and three lines.
-- Never `sleep` waiting for something. Use `taskr wait`, or `herdr pane wait-output` for a non-agent process.
+Worker (a HERDR-BRIEF prompt): `prompt --file` to an implementer, researcher or reviewer lane appends the worker contract (got first, ledger reports, no unauthorized commit/push/PR/agent start, report path, no sleep, exit codes); workers follow it. Load this skill when the brief names it or a taskr command fails. Commands:
 ```sh
 taskr got ATTEMPT
 taskr start                           # optional

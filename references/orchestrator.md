@@ -9,7 +9,7 @@ Write the brief file on the host running `new` first (before v0.13 it was looked
 Hosts: tasks and launches carry a machine. `new`/`launch --machine H` takes the server, the caller, or a client host with a fresh daemon. `prompt` reaches lanes on your host or the server host only; a lane on a third host exits 5 with no attempt: start a sub-orchestrator on that host. A lane whose host daemon has been silent for 30 s shows `unknown`, not `missing`.
 
 Prompt:
-- `prompt ID --file PATH` requires the file on the caller's host and sends `First taskr got N; read PATH; execute exactly.`; `--text TEXT` sends `First taskr got N. TEXT`. It returns at once after Herdr sees activity: `p1 {...,"due":300000}`.
+- `prompt ID --file PATH` requires the file on the caller's host and sends `First taskr got N; read PATH; execute exactly.`; to an implementer, researcher or reviewer lane it appends the one-line worker contract (reviewers also get review.md), so a brief need not tell the worker to load this skill. Other roles get that sentence alone. `--text TEXT` sends `First taskr got N. TEXT` to every role. The ledger captures the file, not the sent text. It returns at once after Herdr sees activity: `p1 {...,"due":300000}`.
 - It arms a 300000 ms receipt deadline. `--receipt-timeout MS` sets it: 0 disarms, 1-59999 exits 2. A root target arms none.
 - No `got` by the deadline: a `prompt_outcome` `no_receipt` event arrives in your inbox. A `got` after it adds `late_receipt`. Handle both per [recovery.md](recovery.md).
 - `--confirm [--confirm-timeout MS]` blocks for the `got` (default 60000; exit 5 `no_receipt` on timeout). Use it only when you must block. Never use a confirm window under 60000.
