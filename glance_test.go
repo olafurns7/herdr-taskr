@@ -1,0 +1,416 @@
+package main
+
+import (
+	"bytes"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+)
+
+type glanceFixture struct {
+	t  *testing.T
+	db *sql.DB
+	at time.Time
+}
+
+func newGlanceFixture(t *testing.T) *glanceFixture {
+	h := newHarness(t)
+	f := &glanceFixture{t: t, db: h.openDB(), at: parseTime(now())}
+	f.exec(`insert into meta(key, value) values (?, ?)`, heartbeatKey, stamp(f.at))
+	return f
+}
+
+func (f *glanceFixture) exec(q string, args ...any) int64 {
+	f.t.Helper()
+	r, err := f.db.Exec(q, args...)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	id, err := r.LastInsertId()
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return id
+}
+
+func (f *glanceFixture) task(name string, parent int64, status string) int64 {
+	var p any
+	if parent != 0 {
+		p = parent
+	}
+	return f.exec(`insert into tasks(name, parent_id, role, status, pane_id, created_at, updated_at)
+		values (?, ?, 'orchestrator', ?, ?, ?, ?)`, name, p, status, name+":p1", stamp(f.at), stamp(f.at))
+}
+
+func (f *glanceFixture) launch(task int64, status string, present bool, host any) int64 {
+	l := f.exec(`insert into launches(task_id, observed_status, present, machine, observed_at, recorded_at)
+		values (?, ?, ?, ?, ?, ?)`, task, status, present, host, stamp(f.at.Add(-time.Minute)), stamp(f.at))
+	f.exec(`update tasks set current_launch_id = ? where id = ?`, l, task)
+	return l
+}
+
+func (f *glanceFixture) event(task, recipient, launch int64, kind, text, data string, age time.Duration) int64 {
+	var r, l any
+	if recipient != 0 {
+		r = recipient
+	}
+	if launch != 0 {
+		l = launch
+	}
+	return f.exec(`insert into events(task_id, recipient_task_id, launch_id, kind, summary, data, created_at)
+		values (?, ?, ?, ?, ?, ?, ?)`, task, r, l, kind, text, data, stamp(f.at.Add(-age)))
+}
+
+func (f *glanceFixture) view() *glanceView {
+	f.t.Helper()
+	v, err := readGlance(f.db, f.at)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return v
+}
+
+func glanceKinds(v *glanceView) []string {
+	out := []string{}
+	for _, a := range v.Attention {
+		out = append(out, a.Kind)
+	}
+	return out
+}
+
+func TestGlanceOwnerNotes(t *testing.T) {
+	long := strings.Repeat("á", 4100) + " approve the release"
+	for _, tc := range []struct {
+		name, text string
+		age        time.Duration
+		want       []string
+	}{
+		{"older than 48 hours", "OWNER: approve deploy", 72 * time.Hour, []string{"approve deploy"}},
+		{"OWNER value past 4000 runes", "OWNER: " + long + " DONE: checks passed", time.Minute, []string{long}},
+		{"nothing clears", "OWNER: nothing.", time.Minute, nil},
+		{"empty OWNER does not clear", "OWNER: ", time.Minute, []string{""}},
+		{"nothing until approval stays", "OWNER: nothing until you approve X", time.Minute, []string{"nothing until you approve X"}},
+		{"numbered items", " OWNER: 1. approve X\n2) approve Y\nNOW: waiting", time.Minute, []string{"approve X", "approve Y"}},
+		{"single item", "OWNER: approve X HAPPENED: built", time.Minute, []string{"approve X"}},
+		{"newest owner note without OWNER", "bookkeeping", time.Minute, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newGlanceFixture(t)
+			r := f.task("root", 0, "open")
+			f.event(r, 0, 0, "note", "OWNER: old todo", `{"owner":true}`, 100*time.Hour)
+			note := f.event(r, 0, 0, "note", tc.text, `{"owner":true}`, tc.age)
+			// A newer ordinary note does not replace the newest owner note.
+			f.event(r, 0, 0, "note", "ordinary progress", `{}`, 0)
+			v := f.view()
+			if len(tc.want) == 0 {
+				if len(v.NeedsYou) != 0 {
+					t.Fatalf("needs_you = %+v", v.NeedsYou)
+				}
+				return
+			}
+			if len(v.NeedsYou) != 1 {
+				t.Fatalf("needs_you = %+v", v.NeedsYou)
+			}
+			n := v.NeedsYou[0]
+			if n.Kind != "owner_todo" || n.NoteID != note || !reflect.DeepEqual(n.Items, tc.want) || n.AgeMS != tc.age.Milliseconds() || v.Verdict != "needs_you" {
+				t.Fatalf("todo = %+v, want %v", n, tc.want)
+			}
+		})
+	}
+}
+
+func TestGlanceSnapshot(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		run  func(*testing.T, *glanceFixture)
+	}{
+		{"owner ask with folded lane marks and closed exclusions", func(t *testing.T, f *glanceFixture) {
+			r := f.task("root", 0, "open")
+			for i, mark := range []string{"failed", "blocked", "missing"} {
+				status := "open"
+				if mark == "failed" {
+					status = "failed"
+				}
+				w := f.task(mark, r, status)
+				l := f.launch(w, mark, mark != "missing", nil)
+				f.exec(`update tasks set waiting_until = ? where id = ?`, stamp(f.at.Add(time.Minute)), w)
+				text := "whole question\n" + strings.Repeat("q", 4100)
+				f.event(w, r, l, "ask", text, `{"owner":true,"blocking":true}`, time.Duration(3-i)*time.Minute)
+			}
+			closed := f.task("closed", r, "closed")
+			f.event(closed, r, 0, "ask", "closed task ask", `{"owner":true}`, time.Hour)
+			cr := f.task("closed root", 0, "closed")
+			orphan := f.task("open under closed", cr, "open")
+			f.event(orphan, cr, 0, "ask", "closed tree ask", `{"owner":true}`, time.Hour)
+			v := f.view()
+			if len(v.NeedsYou) != 3 || len(v.Attention) != 0 || v.Verdict != "needs_you" {
+				t.Fatalf("snapshot = %+v", v)
+			}
+			for i, n := range v.NeedsYou {
+				mark := []string{"failed", "blocked", "missing"}[i]
+				if !reflect.DeepEqual(n.Also, []string{"lane " + mark}) || n.Asker != mark || !*n.Blocking || !*n.AskerWaiting || n.PaneID != "root:p1" || len(n.Text) < 4100 {
+					t.Fatalf("ask = %+v", n)
+				}
+			}
+		}},
+		{"quiet failed lane and old owner ask", func(t *testing.T, f *glanceFixture) {
+			r := f.task("quiet failed", 0, "open")
+			w := f.task("failed", r, "failed")
+			f.event(w, r, 0, "fail", "old failure", `{}`, 24*time.Hour)
+			ar := f.task("old ask", 0, "open")
+			f.event(ar, 0, 0, "ask", "still needs owner", `{"owner":true}`, 48*time.Hour)
+			v := f.view()
+			if v.Quiet.Count != 1 || v.Quiet.WithBacklog != 1 || !reflect.DeepEqual(v.Quiet.Names, []string{"quiet failed"}) || len(v.Attention) != 0 || len(v.NeedsYou) != 1 || len(v.Campaigns) != 1 || v.Campaigns[0].ID != ar {
+				t.Fatalf("snapshot = %+v", v)
+			}
+		}},
+		{"results at 29 and 31 minutes with waiting and sub recipient", func(t *testing.T, f *glanceFixture) {
+			r := f.task("root", 0, "open")
+			sub := f.task("sub", r, "open")
+			f.exec(`update tasks set role = 'sub-orchestrator' where id = ?`, sub)
+			w := f.task("worker", sub, "done")
+			f.exec(`update tasks set waiting_until = ? where id in (?, ?)`, stamp(f.at.Add(time.Minute)), r, sub)
+			f.event(w, r, 0, "ready", "31", `{}`, 31*time.Minute)
+			f.event(w, r, 0, "done", "29", `{}`, 29*time.Minute)
+			f.event(w, sub, 0, "fail", "sub result", `{}`, time.Hour)
+			v := f.view()
+			if !reflect.DeepEqual(glanceKinds(v), []string{"results_waiting", "results_waiting"}) || v.Verdict != "attention" || v.Campaigns[0].Lead != "waiting" {
+				t.Fatalf("snapshot = %+v", v)
+			}
+			if v.Attention[0].RecipientID != sub || v.Attention[0].AgeMS != time.Hour.Milliseconds() || v.Attention[1].Text != "worker ready: 31" {
+				t.Fatalf("attention = %+v", v.Attention)
+			}
+			for _, a := range v.Attention {
+				if a.Count != 1 || !*a.Waiting {
+					t.Fatalf("attention = %+v", a)
+				}
+			}
+		}},
+		{"old launch stall excluded current included", func(t *testing.T, f *glanceFixture) {
+			r := f.task("root", 0, "open")
+			w := f.task("worker", r, "open")
+			old := f.launch(w, "working", true, nil)
+			f.event(w, r, old, "herdr", "old stall", `{"reason":"stall"}`, time.Hour)
+			current := f.launch(w, "working", true, nil)
+			if len(f.view().Attention) != 0 {
+				t.Fatal("old launch stall was included")
+			}
+			f.event(w, r, current, "herdr", "current stall", `{"reason":"stall"}`, 31*time.Minute)
+			v := f.view()
+			if len(v.Attention) != 1 || v.Attention[0].Count != 1 || v.Attention[0].Text != "worker herdr: current stall" {
+				t.Fatalf("attention = %+v", v.Attention)
+			}
+		}},
+		{"no receipt and quota limit included low excluded", func(t *testing.T, f *glanceFixture) {
+			r := f.task("root", 0, "open")
+			w := f.task("worker", r, "open")
+			old := f.launch(w, "working", true, nil)
+			f.event(w, r, old, "prompt_outcome", "old receipt", `{"outcome":"no_receipt"}`, 2*time.Hour)
+			l := f.launch(w, "working", true, nil)
+			acked := f.event(w, r, l, "ready", "acked", `{}`, 2*time.Hour)
+			f.exec(`update tasks set acked_event_id = ? where id = ?`, acked, r)
+			f.event(w, r, l, "prompt_outcome", "no_receipt", `{"outcome":"no_receipt"}`, time.Hour)
+			f.event(w, r, l, "herdr", "quota limit hit", `{"quota":"limit"}`, 40*time.Minute)
+			f.event(w, r, l, "herdr", "quota low", `{"quota":"low"}`, 35*time.Minute)
+			v := f.view()
+			if len(v.Attention) != 1 || v.Attention[0].Count != 2 || v.Attention[0].Text != "worker herdr: quota limit hit" || v.Attention[0].AgeMS != time.Hour.Milliseconds() || *v.Attention[0].Waiting {
+				t.Fatalf("attention = %+v", v.Attention)
+			}
+		}},
+		{"60 open roots uncapped and per root milestone", func(t *testing.T, f *glanceFixture) {
+			var oldest int64
+			for i := 0; i < 60; i++ {
+				r := f.task(fmt.Sprintf("root-%02d", i), 0, "open")
+				if i == 0 {
+					oldest = r
+				}
+				f.event(r, 0, 0, "decision", fmt.Sprintf("milestone-%d", i), `{}`, time.Duration(60-i)*time.Minute)
+				f.event(r, 0, 0, "ask", fmt.Sprintf("ask-%d", i), `{"owner":true}`, time.Duration(60-i)*time.Minute)
+			}
+			v := f.view()
+			if len(v.Campaigns) != 60 || len(v.NeedsYou) != 60 || v.Campaigns[59].ID != oldest || v.Campaigns[59].Last.Text != "milestone-0" || v.NeedsYou[0].RootID != oldest {
+				t.Fatalf("snapshot = %+v", v)
+			}
+		}},
+		{"stale client host is unknown", func(t *testing.T, f *glanceFixture) {
+			r := f.task("root", 0, "open")
+			f.exec(`update tasks set machine = 'mac' where id = ?`, r)
+			for _, status := range []string{"open", "ready"} {
+				w := f.task(status, r, status)
+				f.launch(w, "blocked", false, "mac")
+			}
+			f.exec(`insert into meta(key, value) values (?, ?)`, hostHeartbeatKey("mac"), stamp(f.at.Add(-time.Hour)))
+			v := f.view()
+			if !reflect.DeepEqual(glanceKinds(v), []string{"host_stale", "lane_unknown", "lane_unknown"}) || v.Verdict != "unknown" || v.Campaigns[0].Lanes.Working != 0 || v.Campaigns[0].Lanes.Ready != 0 || v.Campaigns[0].Host != "mac" {
+				t.Fatalf("snapshot = %+v", v)
+			}
+		}},
+		{"failed lane plus stale host is attention", func(t *testing.T, f *glanceFixture) {
+			r := f.task("root", 0, "open")
+			w := f.task("failed", r, "failed")
+			f.launch(w, "working", true, "mac")
+			f.event(w, r, 0, "fail", "recent failure", `{}`, time.Minute)
+			v := f.view()
+			if !reflect.DeepEqual(glanceKinds(v), []string{"lane_failed", "host_stale"}) || v.Verdict != "attention" {
+				t.Fatalf("snapshot = %+v", v)
+			}
+		}},
+		{"healthy active campaign rolling and ref milestone", func(t *testing.T, f *glanceFixture) {
+			r := f.task("root", 0, "open")
+			w := f.task("working", r, "open")
+			f.launch(w, "working", true, "mac")
+			f.exec(`insert into meta(key, value) values (?, ?)`, hostHeartbeatKey("mac"), stamp(f.at))
+			ready := f.task("ready", r, "ready")
+			f.launch(ready, "working", true, nil)
+			f.event(r, 0, 0, "note", "OWNER: nothing.", `{"owner":true}`, 2*time.Minute)
+			f.event(w, 0, 0, "ref", "ignored summary", `{"key":"pr","value":"123"}`, time.Minute)
+			f.event(w, 0, 0, "ref", "empty ref", `{"key":"pr","value":""}`, 0)
+			v := f.view()
+			if v.Verdict != "rolling" || len(v.Attention) != 0 || len(v.NeedsYou) != 0 || len(v.Campaigns) != 1 || v.Campaigns[0].Lanes != (glanceLanes{Working: 1, Ready: 1, Open: 2}) || v.Campaigns[0].Lead != "reported" || v.Campaigns[0].Last.Text != "pr 123" {
+				t.Fatalf("snapshot = %+v", v)
+			}
+		}},
+		{"owner note milestone uses OWNER value", func(t *testing.T, f *glanceFixture) {
+			r := f.task("root", 0, "open")
+			f.event(r, 0, 0, "note", "OWNER: approve X\nDONE: checks", `{"owner":true}`, time.Minute)
+			if got := f.view().Campaigns[0].Last.Text; got != "approve X" {
+				t.Fatalf("last = %q", got)
+			}
+		}},
+		{"daemon none and stale", func(t *testing.T, f *glanceFixture) {
+			f.exec(`delete from meta where key = ?`, heartbeatKey)
+			v := f.view()
+			if v.Verdict != "unknown" || len(v.Attention) != 1 || v.Attention[0].Text != "the taskr daemon has no live Herdr connection; no heartbeat" {
+				t.Fatalf("snapshot = %+v", v)
+			}
+			f.exec(`insert into meta(key, value) values (?, ?)`, heartbeatKey, stamp(f.at.Add(-time.Hour)))
+			v = f.view()
+			if v.Verdict != "unknown" || v.Attention[0].Text != "the taskr daemon's heartbeat stopped; Herdr events are not arriving" || v.Attention[0].AgeMS != time.Hour.Milliseconds() {
+				t.Fatalf("snapshot = %+v", v)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) { tc.run(t, newGlanceFixture(t)) })
+	}
+}
+
+func TestGlanceCLI(t *testing.T) {
+	h := newHarness(t)
+	for _, tc := range []struct {
+		name string
+		args []string
+		env  map[string]string
+		code int
+	}{
+		{"compact", []string{"glance"}, nil, 0},
+		{"json", []string{"--json", "glance"}, nil, 0},
+		{"json environment", []string{"glance"}, map[string]string{"TASKR_FORMAT": "json"}, 0},
+		{"help", []string{"glance", "-h"}, nil, 0},
+		{"watch refused", []string{"glance", "--watch"}, nil, exitUsage},
+		{"unknown flag", []string{"glance", "--unknown"}, nil, exitUsage},
+		{"positional refused", []string{"glance", "extra"}, nil, exitUsage},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out, errb bytes.Buffer
+			if code := run(tc.args, h.getenv(tc.env), &out, &errb); code != tc.code {
+				t.Fatalf("exit %d: %s %s", code, out.String(), errb.String())
+			}
+			if tc.code != 0 || tc.name == "help" {
+				return
+			}
+			raw := out.String()
+			if tc.name == "compact" {
+				if !strings.HasPrefix(raw, "j1 ") {
+					t.Fatalf("compact = %q", raw)
+				}
+				raw = strings.TrimPrefix(raw, "j1 ")
+			}
+			var v map[string]any
+			if err := json.Unmarshal([]byte(raw), &v); err != nil {
+				t.Fatal(err)
+			}
+			for _, key := range []string{"needs_you", "attention", "campaigns"} {
+				if _, ok := v[key].([]any); !ok {
+					t.Fatalf("%s not an array: %s", key, raw)
+				}
+			}
+		})
+	}
+}
+
+func TestGlanceRPCFresh(t *testing.T) {
+	r := newTwoHost(t)
+	root := r.newTask("server-campaign", "orchestrator", 0)
+	before := r.count(`select count(*) from requests`)
+	first := r.want(0, "host-a", nil, "--request-key", "glance-fresh-key", "glance")
+	if len(first["needs_you"].([]any)) != 0 {
+		t.Fatalf("first = %v", first)
+	}
+	r.ok(nil, "note", "OWNER: approve server deployment", "--owner", "--as", id(root))
+	second := r.want(0, "host-a", nil, "--request-key", "glance-fresh-key", "glance")
+	needs := second["needs_you"].([]any)
+	if len(needs) != 1 || needs[0].(map[string]any)["campaign"] != "server-campaign" || second["verdict"] != "needs_you" {
+		t.Fatalf("second = %v", second)
+	}
+	if r.count(`select count(*) from requests`) != before {
+		t.Fatal("glance stored an RPC request")
+	}
+	r.want(exitUsage, "host-a", nil, "glance", "--watch")
+	if err := filepath.WalkDir(r.homes["host-a"], func(path string, d os.DirEntry, err error) error {
+		if err == nil && strings.HasSuffix(path, ".db") {
+			t.Errorf("client opened a local DB: %s", path)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGlanceSyntheticLatency(t *testing.T) {
+	f := newGlanceFixture(t)
+	lanes, roots := []int64{}, []int64{}
+	for i := 0; i < 60; i++ {
+		r := f.task(fmt.Sprintf("root-%02d", i), 0, "open")
+		roots = append(roots, r)
+		for j := 0; j < 10; j++ {
+			lanes = append(lanes, f.task(fmt.Sprintf("lane-%02d-%02d", i, j), r, "open"))
+		}
+	}
+	tx, err := f.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	stmt, err := tx.Prepare(`insert into events(task_id, recipient_task_id, kind, summary, data, created_at) values (?, ?, ?, ?, '{}', ?)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stmt.Close()
+	for i := 0; i < 100000; i++ {
+		lane := i % len(lanes)
+		kind := "herdr"
+		// Periodic reports on every lane, amid ordinary observation traffic.
+		if (i/len(lanes))%10 == 0 {
+			kind = "ready"
+		}
+		if _, err := stmt.Exec(lanes[lane], roots[lane/10], kind, "synthetic event", stamp(f.at.Add(-time.Duration(100000-i)*time.Second))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	v := f.view()
+	elapsed := time.Since(start)
+	t.Logf("readGlance: 60 roots, 600 lanes, 100000 events: %s", elapsed)
+	if len(v.Campaigns) != 60 {
+		t.Fatalf("campaigns = %d", len(v.Campaigns))
+	}
+}
