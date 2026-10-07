@@ -384,7 +384,7 @@ func TestAmbiguousPromptRecordedWithoutResend(t *testing.T) {
 	}
 	time.Sleep(300 * time.Millisecond)
 	calls := h.calls("agent|prompt|")
-	want := "agent|prompt|w9:p4|First taskr got " + id(num(out, "attempt_id")) + "; read " + brief + "; execute exactly." + workerContract("implementer") + "|--wait|--until|working|--until|blocked|--timeout|20000|"
+	want := "agent|prompt|w9:p4|First taskr got " + id(num(out, "attempt_id")) + "; read " + brief + "; execute exactly." + wantImplementerContract + "|--wait|--until|working|--until|blocked|--timeout|20000|"
 	if len(calls) != 1 || calls[0] != want {
 		t.Fatalf("herdr prompt calls = %q, want exactly one %q", calls, want)
 	}

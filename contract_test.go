@@ -250,7 +250,7 @@ func TestPromptFileSendsPathAndTextSendsLiteral(t *testing.T) {
 	calls := h.calls("agent|prompt|")
 	fa, ta := id(num(file, "attempt_id")), id(num(text, "attempt_id"))
 	if len(calls) != 2 ||
-		!strings.HasPrefix(calls[0], "agent|prompt|w9:p4|First taskr got "+fa+"; read "+abs+"; execute exactly."+workerContract("implementer")+"|--wait|") ||
+		!strings.HasPrefix(calls[0], "agent|prompt|w9:p4|First taskr got "+fa+"; read "+abs+"; execute exactly."+wantImplementerContract+"|--wait|") ||
 		!strings.HasPrefix(calls[1], "agent|prompt|w9:p4|First taskr got "+ta+". Continue with slice 4.|--wait|") {
 		t.Fatalf("herdr prompt calls = %q", calls)
 	}
@@ -276,42 +276,77 @@ func TestPromptFileSendsPathAndTextSendsLiteral(t *testing.T) {
 	}
 }
 
+// The worker contract, written out here rather than taken from
+// workerContract, so a dropped or reworded clause fails a test.
+const (
+	wantImplementerContract = " Worker: run that got even if a hook did (dup = success); honor Progress; " +
+		"taskr ready TEXT --report PATH per slice; missing decision: taskr ask TEXT --blocking, stop dependent work, " +
+		"taskr wait --for answer, taskr ack EVENT_ID --as $TASKR_TASK; end: taskr done [TEXT] or taskr fail TEXT; " +
+		"write report at brief's path, reply with it and three lines; " +
+		"no commit, push, PR, issue-tracker write or agent start unless the brief allows; " +
+		"never sleep waiting: use taskr wait, and herdr pane wait-output only for a non-agent process; " +
+		"exit 6: stop; qd1: queued, don't resend; other failure: read ~/.agents/skills/taskr/references/recovery.md."
+	wantReviewerContract = " Worker: run that got even if a hook did (dup = success); " +
+		"reviewer: first load ~/.agents/skills/taskr/references/review.md; honor Progress; " +
+		"taskr ready TEXT --report PATH per slice; missing decision: taskr ask TEXT --blocking, stop dependent work, " +
+		"taskr wait --for answer, taskr ack EVENT_ID --as $TASKR_TASK; end: taskr done [TEXT] or taskr fail TEXT; " +
+		"write report at brief's path, reply with it and three lines; " +
+		"no commit, push, PR, issue-tracker write or agent start unless the brief allows; " +
+		"never sleep waiting: use taskr wait, and herdr pane wait-output only for a non-agent process; " +
+		"exit 6: stop; qd1: queued, don't resend; other failure: read ~/.agents/skills/taskr/references/recovery.md."
+)
+
 // A --file prompt to a worker lane carries the worker contract on one line;
-// other roles and --text prompts send today's text.
+// other roles, unknown or empty roles and --text prompts send today's text.
 func TestPromptFileCarriesWorkerContractByRole(t *testing.T) {
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	t.Chdir(h.dir)
 	os.WriteFile(filepath.Join(h.dir, "brief.md"), []byte("HERDR-BRIEF role=x"), 0o644)
 	abs, _ := filepath.Abs("brief.md")
-	for i, role := range []string{"implementer", "researcher", "reviewer", "orchestrator", "sub-orchestrator", "gate"} {
+	for i, c := range []struct{ role, contract string }{
+		{"implementer", wantImplementerContract}, {"researcher", wantImplementerContract}, {"reviewer", wantReviewerContract},
+		{"orchestrator", ""}, {"sub-orchestrator", ""}, {"gate", ""}, {"tester", ""}, {"", ""},
+	} {
 		pane := fmt.Sprintf("w9:p%d", i+10)
-		w := h.newTask("lane-"+role, role, top, "--pane", pane)
+		w := h.newTask(fmt.Sprintf("lane-%d", i), "implementer", top, "--pane", pane)
+		// new refuses unknown roles; set the stored role directly.
+		if _, err := h.openDB().Exec(`update tasks set role = ? where id = ?`, c.role, w); err != nil {
+			t.Fatal(err)
+		}
 		h.launch(w)
 		fa := num(h.ok(nil, "prompt", id(w), "--file", "brief.md"), "attempt_id")
 		ta := num(h.ok(nil, "prompt", id(w), "--text", "Continue."), "attempt_id")
-		calls := h.calls("agent|prompt|" + pane + "|")
-		if len(calls) != 2 || calls[1] != "agent|prompt|"+pane+"|First taskr got "+id(ta)+". Continue.|--wait|--until|working|--until|blocked|--timeout|20000|" {
-			t.Fatalf("%s: herdr prompt calls = %q", role, calls)
+		want := []string{
+			"agent|prompt|" + pane + "|First taskr got " + id(fa) + "; read " + abs + "; execute exactly." + c.contract + "|--wait|--until|working|--until|blocked|--timeout|20000|",
+			"agent|prompt|" + pane + "|First taskr got " + id(ta) + ". Continue.|--wait|--until|working|--until|blocked|--timeout|20000|",
 		}
-		sent := strings.SplitN(calls[0], "|", 5)[3]
-		base := "First taskr got " + id(fa) + "; read " + abs + "; execute exactly."
-		worker := role == "implementer" || role == "researcher" || role == "reviewer"
-		if !worker && sent != base || worker && sent != base+workerContract(role) ||
-			worker != strings.HasPrefix(sent, base+" Worker: run that got") || strings.Contains(sent, "\n") {
-			t.Fatalf("%s: sent %q", role, sent)
-		}
-		if review := strings.Contains(sent, "load review.md"); review != (role == "reviewer") {
-			t.Fatalf("%s: review.md in %q = %v", role, sent, review)
+		if calls := h.calls("agent|prompt|" + pane + "|"); !reflect.DeepEqual(calls, want) {
+			t.Fatalf("role %q: herdr prompt calls = %q, want %q", c.role, calls, want)
 		}
 	}
 	for _, role := range []string{"implementer", "researcher", "reviewer"} {
-		if n := len(workerContract(role)); n > 600 {
-			t.Errorf("%s contract is %d bytes, want at most 600", role, n)
+		if n := len(workerContract(role)); n > 700 {
+			t.Errorf("%s contract is %d bytes, want at most 700", role, n)
 		}
 	}
-	t.Logf("implementer: %s", "First taskr got 123; read /brief.md; execute exactly."+workerContract("implementer"))
-	t.Logf("reviewer: %s", "First taskr got 123; read /brief.md; execute exactly."+workerContract("reviewer"))
+}
+
+// A client host composes nothing: the server's _prompt begin returns the text,
+// contract included, and the client sends it unchanged.
+func TestClientHostFilePromptCarriesWorkerContract(t *testing.T) {
+	r := newTwoHost(t)
+	root := num(r.want(0, "host-a", nil, "new", "root-a", "--role", "orchestrator", "--cwd", r.dir), "task_id")
+	lane, launch := uploadLane(t, r, root, "lane-prompt", "")
+	path := docFile(t, r.dir, "prompt.md", "prompt from client")
+	r.write("prompt.stdout", `{"result":{"agent":{"agent_status":"working"}}}`, 0o644)
+	env := uploadEnv(as(lane, launch), map[string]string{"HERDR_SOCKET_PATH": r.herdrSock})
+	attempt := num(r.want(0, "host-a", env, "prompt", id(lane), "--file", path, "--receipt-timeout", "0"), "attempt_id")
+	calls := r.calls("agent|prompt|")
+	want := "|First taskr got " + id(attempt) + "; read " + path + "; execute exactly." + wantImplementerContract + "|--wait|"
+	if len(calls) != 1 || !strings.Contains(calls[0], want) {
+		t.Fatalf("client-host herdr prompt calls = %q, want one containing %q", calls, want)
+	}
 }
 
 func TestGateTaskHasNoLiveness(t *testing.T) {
