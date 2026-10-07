@@ -275,6 +275,7 @@ func cmdClose(c *ctx, args []string) (any, int, error) {
 	defer closeDB(c, db)
 	report := prepareReport(db, id, "", false)
 	out := map[string]any{"ok": true, "task_id": id, "status": "closed"}
+	var orphaned []int64
 	err = withTx(db, func(tx *sql.Tx) error {
 		t, err := loadTask(tx, id)
 		if err != nil {
@@ -287,6 +288,20 @@ func cmdClose(c *ctx, args []string) (any, int, error) {
 		ts := now()
 		if _, err = tx.Exec(`update tasks set status = 'closed', agent_name = null, closed_at = ?, updated_at = ? where id = ?`, ts, ts, id); err != nil {
 			return err
+		}
+		// Only a root's close orphans its open descendants' asks: under an
+		// open root, the root can still answer them.
+		orphaned, err = listIDs(tx, `with recursive sub(id) as (
+			select id from tasks where id = ?
+			union all select t.id from tasks t join sub on t.parent_id = sub.id
+		) select e.id from sub join tasks t on t.id = sub.id join events e on e.task_id = t.id
+			where (t.id = ? or (? and t.status != 'closed')) and e.kind = 'ask' and e.answered_by is null
+			and json_extract(e.data, '$.owner') = 1 order by e.id`, id, id, !t.ParentID.Valid)
+		if err != nil {
+			return err
+		}
+		if len(orphaned) > 0 {
+			out["orphaned_owner_asks"] = orphaned
 		}
 		if err := deleteTaskReceipts(tx, id); err != nil {
 			return err
@@ -306,6 +321,13 @@ func cmdClose(c *ctx, args []string) (any, int, error) {
 	})
 	if err != nil {
 		return nil, 0, err
+	}
+	if len(orphaned) > 0 {
+		ids := make([]string, len(orphaned))
+		for i, ask := range orphaned {
+			ids[i] = fmt.Sprint(ask)
+		}
+		fmt.Fprintf(c.errw, "taskr: closing %d orphans owner ask(s) %s; the owner can no longer answer them\n", id, strings.Join(ids, ", "))
 	}
 	return out, exitOK, nil
 }
