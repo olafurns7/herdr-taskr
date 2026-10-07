@@ -98,12 +98,12 @@ func TestGlanceOwnerNotes(t *testing.T) {
 		{"nothing until approval stays", "OWNER: nothing until you approve X", time.Minute, []string{"nothing until you approve X"}},
 		{"numbered items", " OWNER: 1. approve X\n2) approve Y\nNOW: waiting", time.Minute, []string{"approve X", "approve Y"}},
 		{"single item", "OWNER: approve X HAPPENED: built", time.Minute, []string{"approve X"}},
-		{"newest owner note without OWNER", "bookkeeping", time.Minute, nil},
+		{"newest owner note without OWNER", "bookkeeping", time.Minute, []string{"old todo"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newGlanceFixture(t)
 			r := f.task("root", 0, "open")
-			f.event(r, 0, 0, "note", "OWNER: old todo", `{"owner":true}`, 100*time.Hour)
+			old := f.event(r, 0, 0, "note", "OWNER: old todo", `{"owner":true}`, 100*time.Hour)
 			note := f.event(r, 0, 0, "note", tc.text, `{"owner":true}`, tc.age)
 			// A newer ordinary note does not replace the newest owner note.
 			f.event(r, 0, 0, "note", "ordinary progress", `{}`, 0)
@@ -118,10 +118,123 @@ func TestGlanceOwnerNotes(t *testing.T) {
 				t.Fatalf("needs_you = %+v", v.NeedsYou)
 			}
 			n := v.NeedsYou[0]
-			if n.Kind != "owner_todo" || n.NoteID != note || !reflect.DeepEqual(n.Items, tc.want) || n.AgeMS != tc.age.Milliseconds() || v.Verdict != "needs_you" {
+			age := tc.age
+			if tc.name == "newest owner note without OWNER" {
+				note, age = old, 100*time.Hour
+			}
+			if n.Kind != "owner_todo" || n.NoteID != note || !reflect.DeepEqual(n.Items, tc.want) || n.AgeMS != age.Milliseconds() || v.Verdict != "needs_you" {
 				t.Fatalf("todo = %+v, want %v", n, tc.want)
 			}
 		})
+	}
+}
+
+func TestGlanceOwnerItems(t *testing.T) {
+	pending := "operator look at Pending cases d9ht12nonw5ztqkeah57jpaj (Dec 27-31 2026) and ugp8dnof985qay3seeq1111s (Apr 10-15 2027): no hotel booked."
+	sync := "optional: Sync 9094875544961 (stale Refundable badge, check-in Oct 18)"
+	for _, tc := range []struct {
+		name, value string
+		want        []string
+	}{
+		{"nothing", "nothing", nil},
+		{"nothing period", "nothing.", nil},
+		{"nothing yet", "nothing yet.", nil},
+		{"nothing new live 51498", "nothing new. LANE PLAN (after your amendment): visual slices stay on Claude Opus high", nil},
+		{"nothing now", "nothing now", nil},
+		{"nothing answers live 50929", "nothing (your answers to ask 50880 are recorded as decision 50904).", nil},
+		{"nothing install live 50850", "nothing yet (argent install is yours; I wait for it).", nil},
+		{"nothing answers live 50723", "nothing (A1-A3 answered: in place on /chat; no freeze; nav controls in the rail, rename in the strip header).", nil},
+		{"nothing comma", "nothing, waiting", nil},
+		{"nothing semicolon", "nothing; waiting", nil},
+		{"nothing colon", "nothing: waiting", nil},
+		{"nothing dash", "nothing - waiting", nil},
+		{"trim and lowercase", " \tNOTHING YET. ", nil},
+		{"nothing approval stays", "nothing until you approve X", []string{"nothing until you approve X"}},
+		{"nothing yet approval stays", "nothing yet until you approve X", []string{"nothing yet until you approve X"}},
+		{"no decision live 51793 stays", "no decision needed now.", []string{"no decision needed now."}},
+		{"nothing prefix stays", "nothingness", []string{"nothingness"}},
+		{"no first number", "PR 12. Then section 3) see (2026) here", []string{"PR 12. Then section 3) see (2026) here"}},
+		{"sequential mixed markers", "1. approve PR 12. Then (2026) check\n2) deploy\t3. verify", []string{"approve PR 12. Then (2026) check", "deploy", "verify"}},
+		{"stop at missing number", "1) approve X 3) later 4. still later", []string{"approve X 3) later 4. still later"}},
+		{"later number before expected", "1) approve X 3) aside 2. approve Y 4) later", []string{"approve X 3) aside", "approve Y 4) later"}},
+		{"marker boundary", "1)approve X 2)approve Y", []string{"approve X", "approve Y"}},
+		{"next marker needs whitespace", "1)2) approval", []string{"2) approval"}},
+		{"embedded number stays", "abc1) approve X x2) approve Y", []string{"abc1) approve X x2) approve Y"}},
+		{"intro preserved", "merge choices: 1) approve X 2) approve Y", []string{"merge choices:", "approve X", "approve Y"}},
+		{"51057 dates", "1) " + pending + " 2) " + sync + "; the new auto-sync fixes it only when an Expedia event arrives or the daily refresh reaches it.", []string{pending, sync + "; the new auto-sync fixes it only when an Expedia event arrives or the daily refresh reaches it."}},
+		{"51010 dates", "1) PR #4833 (auto-sync on Expedia notifications) is green and merge-ready at 4f2b12ab3f; say yes to merge (a merge deploys trip-api). 2) " + pending + " 3) " + sync + ".", []string{"PR #4833 (auto-sync on Expedia notifications) is green and merge-ready at 4f2b12ab3f; say yes to merge (a merge deploys trip-api).", pending, sync + "."}},
+		{"50875 dates", "1) PR #4833 (auto-sync on Expedia notifications) is open; review and say yes to merge when CI is green; I do not merge without it. 2) " + pending + " 3) " + sync + ".", []string{"PR #4833 (auto-sync on Expedia notifications) is open; review and say yes to merge when CI is green; I do not merge without it.", pending, sync + "."}},
+		{"50730 dates", "1) have an operator look at 2 Pending manual cases with a future stay and no booked case for the same customer: d9ht12nonw5ztqkeah57jpaj (Dec 27-31 2026) and ugp8dnof985qay3seeq1111s (Apr 10-15 2027); no hotel is booked on them. 4 other future Pending cases look abandoned (a good booking covers the dates). 2) " + sync + ".", []string{"have an operator look at 2 Pending manual cases with a future stay and no booked case for the same customer: d9ht12nonw5ztqkeah57jpaj (Dec 27-31 2026) and ugp8dnof985qay3seeq1111s (Apr 10-15 2027); no hotel is booked on them. 4 other future Pending cases look abandoned (a good booking covers the dates).", sync + "."}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := glanceOwnerItems("OWNER: " + tc.value + " DONE: checks"); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("items = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGlanceBookkeepingKeepsTodo(t *testing.T) {
+	f := newGlanceFixture(t)
+	r := f.task("root", 0, "open")
+	note := f.event(r, 0, 0, "note", "\t\n OWNER: merge #4836 when green. DONE: x", `{"owner":true}`, 5*time.Minute)
+	f.event(r, 0, 0, "note", "LANES (corrected): visual -> Opus", `{"owner":true}`, time.Minute)
+	v := f.view()
+	if v.Verdict != "needs_you" || len(v.NeedsYou) != 1 || v.NeedsYou[0].NoteID != note || !reflect.DeepEqual(v.NeedsYou[0].Items, []string{"merge #4836 when green."}) {
+		t.Fatalf("snapshot = %+v", v)
+	}
+	f.event(r, 0, 0, "note", "\u2003OWNER: nothing yet.", `{"owner":true}`, 0)
+	f.event(r, 0, 0, "note", "bookkeeping after clear", `{"owner":true}`, 0)
+	if v := f.view(); len(v.NeedsYou) != 0 {
+		t.Fatalf("cleared snapshot = %+v", v)
+	}
+}
+
+func TestGlanceQuietBacklogVerdict(t *testing.T) {
+	f := newGlanceFixture(t)
+	r := f.task("quiet", 0, "open")
+	w := f.task("w", r, "done")
+	f.event(w, r, 0, "fail", "unread failure", `{}`, 20*time.Hour)
+	v := f.view()
+	if v.Verdict != "attention" || len(v.Attention) != 0 || v.Quiet.Count != 1 || v.Quiet.WithBacklog != 1 || len(v.Campaigns) != 0 {
+		t.Fatalf("quiet result snapshot = %+v", v)
+	}
+	r2 := f.task("quiet2", 0, "open")
+	w2 := f.task("w2", r2, "failed")
+	f.event(w2, r2, 0, "fail", "failed lane", `{}`, 20*time.Hour)
+	f.exec(`update tasks set acked_event_id = (select max(id) from events) where id = ?`, r2)
+	v = f.view()
+	if v.Verdict != "attention" || len(v.NeedsYou) != 0 || len(v.Attention) != 0 || v.Quiet.Count != 2 || v.Quiet.WithBacklog != 2 || len(v.Campaigns) != 0 {
+		t.Fatalf("quiet backlog snapshot = %+v", v)
+	}
+	f.exec(`delete from meta where key = ?`, heartbeatKey)
+	if v := f.view(); v.Verdict != "attention" || !reflect.DeepEqual(glanceKinds(v), []string{"daemon_unhealthy"}) {
+		t.Fatalf("quiet backlog and unknown snapshot = %+v", v)
+	}
+}
+
+func TestGlanceClosedIntermediate(t *testing.T) {
+	f := newGlanceFixture(t)
+	r := f.task("root", 0, "open")
+	mid := f.task("mid", r, "closed")
+	w := f.task("deep", mid, "open")
+	f.launch(w, "blocked", true, nil)
+	v := f.view()
+	if v.Verdict != "attention" || !reflect.DeepEqual(glanceKinds(v), []string{"lane_blocked"}) || v.Attention[0].LaneID != w || v.Attention[0].RootID != r || len(v.Campaigns) != 1 || v.Campaigns[0].Lanes.Open != 1 {
+		t.Fatalf("snapshot = %+v", v)
+	}
+}
+
+func TestGlanceOwnerAskStaleHost(t *testing.T) {
+	f := newGlanceFixture(t)
+	r := f.task("root", 0, "open")
+	w := f.task("worker", r, "open")
+	l := f.launch(w, "blocked", true, "mac")
+	f.exec(`insert into meta(key, value) values (?, ?)`, hostHeartbeatKey("mac"), stamp(f.at.Add(-time.Hour)))
+	f.event(w, r, l, "ask", "approve X", `{"owner":true,"blocking":true}`, time.Minute)
+	v := f.view()
+	if v.Verdict != "needs_you" || !reflect.DeepEqual(glanceKinds(v), []string{"host_stale", "lane_unknown"}) || len(v.NeedsYou) != 1 || len(v.NeedsYou[0].Also) != 0 || v.NeedsYou[0].Asker != "worker" {
+		t.Fatalf("snapshot = %+v", v)
 	}
 }
 
