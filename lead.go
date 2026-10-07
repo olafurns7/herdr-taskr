@@ -15,6 +15,11 @@ const openRoot = `parent_id is null and status not in ('closed', 'planned')`
 
 const leadListedKey = "lead_listed_at"
 
+// leadListedFresh is how long a successful hub listing stays trusted: longer
+// than the daemon's fallback pass, so a quiet hub's leads do not read
+// unknown between scheduled listings.
+var leadListedFresh = daemonFallback + heartbeatFresh
+
 // lead is an open root's pane on one host and its stored observation.
 type lead struct {
 	TaskID  int64
@@ -94,7 +99,7 @@ func leadObservations(q queryer) (map[int64]leadObs, error) {
 	if err != nil {
 		return nil, err
 	}
-	hubLive := hub == "fresh" && listed && time.Since(parseTime(listedAt)) < heartbeatFresh
+	hubLive := hub == "fresh" && listed && time.Since(parseTime(listedAt)) < leadListedFresh
 	type row struct {
 		id            int64
 		pane, machine sql.NullString

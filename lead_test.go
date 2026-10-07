@@ -300,7 +300,14 @@ func TestLeadHubListingFreshness(t *testing.T) {
 		t.Fatalf("successful listing: lead = %s, want working", got)
 	}
 	stored := leadRow(t, db, root)
-	stale := stamp(time.Now().Add(-heartbeatFresh - time.Second))
+	// A listing older than heartbeatFresh but within the fallback cadence is still trusted.
+	if err := setMeta(db, "lead_listed_at", stamp(time.Now().Add(-daemonFallback+time.Second))); err != nil {
+		t.Fatal(err)
+	}
+	if got := leadOf(t, db, root); got != "working" {
+		t.Fatalf("listing within the fallback cadence: lead = %s, want working", got)
+	}
+	stale := stamp(time.Now().Add(-leadListedFresh - time.Second))
 	if err := setMeta(db, "lead_listed_at", stale); err != nil {
 		t.Fatal(err)
 	}
