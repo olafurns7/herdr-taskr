@@ -945,6 +945,12 @@ func (d *daemon) writeWorkspaceTokens(want map[string]workspaceTokenState) int {
 	return n
 }
 
+// fallbackTick lets failed lists retry. The owner ask cache is a pane list
+// snapshot, so it is dropped too: panes absent from the last list are revisited.
+func (d *daemon) fallbackTick() {
+	d.failedWorkspaceWant, d.failedOwnerAskWant, d.ownerAskTokens = nil, nil, nil
+}
+
 // wantedOwnerAsks maps each server-host pane to its tasks' own open owner asks
 // (n > 0 only). An ask is on the asker's task; --owner only routes it to the root.
 func wantedOwnerAsks(q queryer) (map[string]int64, error) {
@@ -976,7 +982,11 @@ func wantedOwnerAsks(q queryer) (map[string]int64, error) {
 // and clears the token on every listed pane that is not wanted (a moved
 // launch, or an ask answered or a task closed while the daemon was down).
 // A failed list waits for a changed want or the fallback tick; a failed write
-// leaves the cache unequal, so the next pass lists again.
+// or a wanted pane absent from the list leaves the cache unequal, so the next
+// pass lists again. The fallback tick drops the cache, so a stale pane absent
+// from the last list is cleared once it appears. taskr owns the taskr_ token
+// namespace: no other source writes taskr_owner_ask, so the merged list value
+// is taskr's own.
 func (d *daemon) writeOwnerAskTokens() int {
 	want, err := wantedOwnerAsks(d.db)
 	if err != nil {
@@ -1020,12 +1030,6 @@ func (d *daemon) writeOwnerAskTokens() int {
 			delete(d.ownerAskTokens, pane)
 		}
 		n++
-	}
-	for pane, w := range want {
-		if _, exists := panes[pane]; !exists {
-			// An unlisted pane is satisfied without a metadata call.
-			d.ownerAskTokens[pane] = w
-		}
 	}
 	return n
 }
@@ -1132,7 +1136,7 @@ func (d *daemon) run(parent context.Context, sock string) string {
 			}
 			continue
 		case <-fb.C:
-			d.failedWorkspaceWant, d.failedOwnerAskWant = nil, nil
+			d.fallbackTick()
 		case <-dirty:
 			wait := max(daemonSettle, time.Until(last.Add(daemonMinGap)))
 			select {

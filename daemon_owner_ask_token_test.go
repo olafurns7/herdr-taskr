@@ -148,7 +148,7 @@ func TestDaemonOwnerAskTokenRetry(t *testing.T) {
 		t.Fatalf("pane lists after a failed list = %d, want 1", n)
 	}
 	h.write("panes.exit", "0", 0o644)
-	d.failedOwnerAskWant = nil // the fallback tick
+	d.fallbackTick()
 
 	// A failed write is retried on the next pass.
 	h.write("meta.exit", "1", 0o644)
@@ -157,4 +157,42 @@ func TestDaemonOwnerAskTokenRetry(t *testing.T) {
 	d.pass()
 	d.pass()
 	wantCalls(t, writes(), setR, setR)
+}
+
+func TestDaemonOwnerAskTokenUnlistedPane(t *testing.T) {
+	h, d, writes := ownerAskHarness(t)
+
+	// A launchless root registered before its pane exists: the first list is empty.
+	top := h.newTask("top", "orchestrator", 0, "--pane", "w1:p1")
+	h.ok(nil, "ask", "budget?", "--owner", "--as", id(top))
+	ownerAskPanes(h, map[string]string{})
+	d.pass()
+	wantCalls(t, writes())
+
+	// The pane appears without the token; same ask count, then the fallback tick.
+	ownerAskPanes(h, map[string]string{"w1:p1": ""})
+	d.fallbackTick()
+	d.pass()
+	ownerAskPanes(h, map[string]string{"w1:p1": "1"})
+	d.pass()
+	d.fallbackTick()
+	d.pass()
+	wantCalls(t, writes(), setR)
+}
+
+func TestDaemonOwnerAskTokenStaleUnlistedPane(t *testing.T) {
+	h, d, writes := ownerAskHarness(t)
+	h.newTask("top", "orchestrator", 0, "--pane", "w1:p1")
+
+	// A stale-token pane is absent at startup, then listed: the fallback tick clears it.
+	ownerAskPanes(h, map[string]string{})
+	d.pass()
+	ownerAskPanes(h, map[string]string{"w9:p1": "1"})
+	d.pass()
+	wantCalls(t, writes())
+	d.fallbackTick()
+	d.pass()
+	ownerAskPanes(h, map[string]string{"w9:p1": ""})
+	d.pass()
+	wantCalls(t, writes(), clearA)
 }
