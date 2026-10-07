@@ -360,7 +360,7 @@ func cmdAnswer(c *ctx, args []string) (any, int, error) {
 	}
 	body := "taskr answer to ask " + pos[0] + ": " + text
 	d := delivery{
-		compose: func(attempt int64) string {
+		compose: func(attempt int64, _ string) string {
 			return fmt.Sprintf("First taskr got %d. ask %s: %s", attempt, pos[0], text)
 		},
 		body: body, data: map[string]any{"answer_id": answerID}, related: ptr(answerID),

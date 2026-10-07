@@ -260,7 +260,7 @@ func TestStateOwnerNotesContract(t *testing.T) {
 	if _, err := db.Exec(`insert into events (task_id,kind,summary,data,created_at) values (?,'note','lane','{"owner":true}',?)`, lane, stamp(at)); err != nil {
 		t.Fatal(err)
 	}
-	s, err := readState(context.Background(), db, at.Add(time.Second))
+	s, err := readState(context.Background(), db, time.Now().UTC().Add(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
