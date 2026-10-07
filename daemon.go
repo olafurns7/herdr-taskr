@@ -499,8 +499,8 @@ func (l *daemonLog) close() {
 
 // tokenState is what the daemon last wrote to a task's pane.
 type tokenState struct {
-	pane, state      string
-	round, ownerAsks int64
+	pane, state string
+	round       int64
 }
 
 type workspaceTokenState struct {
@@ -520,6 +520,8 @@ type daemon struct {
 	connected       atomic.Bool                    // the subscription is acked and open
 
 	failedWorkspaceWant map[string]workspaceTokenState // wanted pairs at the last failed list
+	ownerAskTokens      map[string]int64               // pane -> taskr_owner_ask; nil until the pane list succeeds
+	failedOwnerAskWant  map[string]int64               // wanted counts at the last failed list
 
 	mu         sync.Mutex
 	want       []string      // the pane set the last pass computed
@@ -593,6 +595,7 @@ func (d *daemon) pass() passResult {
 		d.heartbeat()
 	}
 	r.tokens += d.writeCampaignTokens()
+	r.tokens += d.writeOwnerAskTokens()
 	return r
 }
 
@@ -709,10 +712,8 @@ func taskToken(status string, waiting bool, openAsks int64) string {
 	return "open"
 }
 
-// writeTokens reports taskr_state, taskr_round and taskr_owner_ask (the
-// task's own open owner asks; cleared at 0) on each task's pane whose token
-// changed since the last successful write. A task that leaves the set (closed)
-// gets taskr_owner_ask cleared once if it was set. The first call only records
+// writeTokens reports taskr_state and taskr_round on each task's pane whose
+// token changed since the last successful write. The first call only records
 // the baseline. A task whose launch is observed missing is skipped; a failed
 // write is logged and retried on a later pass. Only server-host panes get
 // tokens: a launchless task's host is its own machine.
@@ -720,9 +721,7 @@ func (d *daemon) writeTokens() int {
 	rows, err := d.db.Query(`select t.id, coalesce(l.pane_id, t.pane_id), t.status, coalesce(t.waiting_until > ?, 0),
 		(select count(*) from events a where a.task_id = t.id and a.kind = 'ask' and a.answered_by is null),
 		(select count(*) from events p where p.task_id = t.id and p.kind = 'prompt' and p.launch_id is t.current_launch_id),
-		coalesce(l.present, 1),
-		(select count(*) from events o where o.task_id = t.id and o.kind = 'ask' and o.answered_by is null
-			and coalesce(json_extract(o.data, '$.owner'), 0))
+		coalesce(l.present, 1)
 		from tasks t left join launches l on l.id = t.current_launch_id
 		where t.status not in ('closed', 'planned') and coalesce(l.pane_id, t.pane_id) is not null
 		and (case when l.id is null then t.machine else l.machine end) is null order by t.id`, now())
@@ -731,22 +730,20 @@ func (d *daemon) writeTokens() int {
 		return 0
 	}
 	cur := map[int64]tokenState{}
-	skipped := map[int64]bool{}
 	var order []int64
 	for rows.Next() {
-		var id, asks, round, ownerAsks int64
+		var id, asks, round int64
 		var pane, status string
 		var waiting, present bool
-		if err := rows.Scan(&id, &pane, &status, &waiting, &asks, &round, &present, &ownerAsks); err != nil {
+		if err := rows.Scan(&id, &pane, &status, &waiting, &asks, &round, &present); err != nil {
 			d.log.logf("token scan failed: %v", err)
 			rows.Close()
 			return 0
 		}
 		if !present {
-			skipped[id] = true
 			continue
 		}
-		cur[id] = tokenState{pane: pane, state: taskToken(status, waiting, asks), round: round, ownerAsks: ownerAsks}
+		cur[id] = tokenState{pane: pane, state: taskToken(status, waiting, asks), round: round}
 		order = append(order, id)
 	}
 	rows.Close()
@@ -760,38 +757,13 @@ func (d *daemon) writeTokens() int {
 		if prev, ok := d.tokens[id]; ok && prev == ts {
 			continue
 		}
-		prev := d.tokens[id]
-		args := []string{"pane", "report-metadata", ts.pane, "--source", "taskr",
-			"--token", "taskr_state=" + ts.state, "--token", "taskr_round=" + strconv.FormatInt(ts.round, 10)}
-		if ts.ownerAsks > 0 {
-			args = append(args, "--token", "taskr_owner_ask="+strconv.FormatInt(ts.ownerAsks, 10))
-		} else if prev.ownerAsks > 0 {
-			args = append(args, "--clear-token", "taskr_owner_ask")
-		}
-		if err := herdrRun(d.sock, args...); err != nil {
+		if err := herdrRun(d.sock, "pane", "report-metadata", ts.pane, "--source", "taskr",
+			"--token", "taskr_state="+ts.state, "--token", "taskr_round="+strconv.FormatInt(ts.round, 10)); err != nil {
 			d.log.logf("token write for task %d failed: %v", id, err)
 			continue
 		}
 		d.tokens[id] = ts
 		n++
-	}
-	var gone []int64
-	for id := range d.tokens {
-		if _, ok := cur[id]; !ok && !skipped[id] {
-			gone = append(gone, id)
-		}
-	}
-	slices.Sort(gone)
-	for _, id := range gone {
-		if prev := d.tokens[id]; prev.ownerAsks > 0 {
-			if err := herdrRun(d.sock, "pane", "report-metadata", prev.pane, "--source", "taskr",
-				"--clear-token", "taskr_owner_ask"); err != nil {
-				d.log.logf("owner ask token clear for task %d failed: %v", id, err)
-				continue
-			}
-			n++
-		}
-		delete(d.tokens, id)
 	}
 	return n
 }
@@ -973,6 +945,138 @@ func (d *daemon) writeWorkspaceTokens(want map[string]workspaceTokenState) int {
 	return n
 }
 
+// wantedOwnerAsks maps each server-host pane to its tasks' own open owner asks
+// (n > 0 only). An ask is on the asker's task; --owner only routes it to the root.
+func wantedOwnerAsks(q queryer) (map[string]int64, error) {
+	rows, err := q.Query(`select coalesce(l.pane_id, t.pane_id), count(*)
+		from tasks t left join launches l on l.id = t.current_launch_id
+		join events o on o.task_id = t.id and o.kind = 'ask' and o.answered_by is null
+			and coalesce(json_extract(o.data, '$.owner'), 0)
+		where t.status not in ('closed', 'planned') and coalesce(l.pane_id, t.pane_id) is not null
+		and (case when l.id is null then t.machine else l.machine end) is null and coalesce(l.present, 1)
+		group by 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	want := map[string]int64{}
+	for rows.Next() {
+		var pane string
+		var n int64
+		if err := rows.Scan(&pane, &n); err != nil {
+			return nil, err
+		}
+		want[pane] = n
+	}
+	return want, rows.Err()
+}
+
+// writeOwnerAskTokens reconciles taskr_owner_ask with the panes Herdr lists,
+// on startup and whenever the wanted counts change: it sets differing counts
+// and clears the token on every listed pane that is not wanted (a moved
+// launch, or an ask answered or a task closed while the daemon was down).
+// A failed list waits for a changed want or the fallback tick; a failed write
+// leaves the cache unequal, so the next pass lists again.
+func (d *daemon) writeOwnerAskTokens() int {
+	want, err := wantedOwnerAsks(d.db)
+	if err != nil {
+		d.log.logf("owner ask token query failed: %v", err)
+		return 0
+	}
+	if d.failedOwnerAskWant != nil && maps.Equal(want, d.failedOwnerAskWant) {
+		return 0
+	}
+	if d.ownerAskTokens != nil && maps.Equal(want, d.ownerAskTokens) {
+		return 0
+	}
+	listed, panes, err := herdrOwnerAskTokens(d.sock)
+	if err != nil {
+		d.failedOwnerAskWant = want
+		d.log.logf("owner ask token list failed: %v", err)
+		return 0
+	}
+	d.failedOwnerAskWant = nil
+	d.ownerAskTokens = listed
+	order := slices.Sorted(maps.Keys(panes))
+	n := 0
+	for _, pane := range order {
+		w, have := want[pane], listed[pane]
+		var args []string
+		switch {
+		case w > 0 && (!panes[pane] || have != w):
+			args = []string{"--token", "taskr_owner_ask=" + strconv.FormatInt(w, 10)}
+		case w == 0 && panes[pane]:
+			args = []string{"--clear-token", "taskr_owner_ask"}
+		default:
+			continue
+		}
+		if err := herdrRun(d.sock, append([]string{"pane", "report-metadata", pane, "--source", "taskr"}, args...)...); err != nil {
+			d.log.logf("owner ask token write for %s failed: %v", pane, err)
+			continue
+		}
+		if w > 0 {
+			d.ownerAskTokens[pane] = w
+		} else {
+			delete(d.ownerAskTokens, pane)
+		}
+		n++
+	}
+	for pane, w := range want {
+		if _, exists := panes[pane]; !exists {
+			// An unlisted pane is satisfied without a metadata call.
+			d.ownerAskTokens[pane] = w
+		}
+	}
+	return n
+}
+
+// herdrOwnerAskTokens lists every pane; panes[p] says whether p carries
+// taskr_owner_ask, and listed holds its count (-1 when not a number).
+func herdrOwnerAskTokens(sock string) (listed map[string]int64, panes map[string]bool, err error) {
+	cx, cancel := context.WithTimeout(context.Background(), herdrListDeadline)
+	defer cancel()
+	cmd, err := herdrCommand(cx, sock, "pane", "list")
+	if err != nil {
+		return nil, nil, err
+	}
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.WaitDelay = herdrWaitDelay
+	if err := cmd.Run(); err != nil {
+		return nil, nil, fmt.Errorf("herdr pane list failed: %w", err)
+	}
+	var resp struct {
+		Result *struct {
+			Panes []struct {
+				ID     string            `json:"pane_id"`
+				Tokens map[string]string `json:"tokens"`
+			} `json:"panes"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
+		return nil, nil, fmt.Errorf("herdr pane list returned malformed JSON: %w", err)
+	}
+	if resp.Result == nil || resp.Result.Panes == nil {
+		return nil, nil, errors.New("herdr pane list returned no result.panes")
+	}
+	listed, panes = map[string]int64{}, map[string]bool{}
+	for _, p := range resp.Result.Panes {
+		if p.ID == "" {
+			return nil, nil, errors.New("herdr pane list entry without pane_id")
+		}
+		v, ok := p.Tokens["taskr_owner_ask"]
+		panes[p.ID] = ok
+		if ok {
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil || n <= 0 {
+				n = -1
+			}
+			listed[p.ID] = n
+		}
+	}
+	return listed, panes, nil
+}
+
 // run is the resident loop: a subscription reader marks the daemon dirty and
 // one worker runs passes. It returns why it stopped.
 func (d *daemon) run(parent context.Context, sock string) string {
@@ -1028,7 +1132,7 @@ func (d *daemon) run(parent context.Context, sock string) string {
 			}
 			continue
 		case <-fb.C:
-			d.failedWorkspaceWant = nil
+			d.failedWorkspaceWant, d.failedOwnerAskWant = nil, nil
 		case <-dirty:
 			wait := max(daemonSettle, time.Until(last.Add(daemonMinGap)))
 			select {
@@ -1049,6 +1153,7 @@ func (d *daemon) run(parent context.Context, sock string) string {
 			attachment = n
 			d.tokens = map[int64]tokenState{}
 			d.workspaceTokens, d.failedWorkspaceWant = nil, nil
+			d.ownerAskTokens, d.failedOwnerAskWant = nil, nil
 		}
 		d.pass()
 		d.refreshPanes()
