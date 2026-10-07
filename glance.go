@@ -67,6 +67,7 @@ type glanceCampaign struct {
 	PaneID        string      `json:"pane_id,omitempty"`
 	Lanes         glanceLanes `json:"lanes"`
 	Lead          string      `json:"lead"`
+	LeadWaiting   bool        `json:"lead_waiting,omitempty"`
 	Last          *glanceLast `json:"last,omitempty"`
 	ActivityAgeMS int64       `json:"activity_age_ms"`
 }
@@ -135,6 +136,7 @@ type glanceRoot struct {
 	active   bool
 	activity string
 	lastID   int64
+	leadAt   string
 }
 
 func readGlance(db *sql.DB, at time.Time) (*glanceView, error) {
@@ -151,6 +153,13 @@ func readGlance(db *sql.DB, at time.Time) (*glanceView, error) {
 	asked := map[int64]bool{}
 	if err := glanceTasks(tx, at, roots, tasks, hosts); err != nil {
 		return nil, err
+	}
+	leads, err := leadObservations(tx)
+	if err != nil {
+		return nil, err
+	}
+	for id, r := range roots {
+		r.Lead, r.leadAt = firstNonEmpty(leads[id].Status, "unknown"), leads[id].ObservedAt
 	}
 	if err := glanceOwnerAsks(tx, at, v, roots, tasks, asked); err != nil {
 		return nil, err
@@ -188,14 +197,13 @@ func glanceTasks(tx *sql.Tx, at time.Time, roots map[int64]*glanceRoot, tasks ma
 		select tree.root, t.id, coalesce(t.parent_id, 0), t.name, t.role, t.status,
 		coalesce(l.pane_id, t.pane_id, ''), coalesce(l.machine, t.machine, ''), coalesce(l.machine, ''),
 		coalesce(t.waiting_until > ?, 0), coalesce(l.observed_status, ''), coalesce(l.observed_at, ''), l.present,
-		le.kind, le.summary, le.created_at, coalesce(ae.created_at, ''), coalesce(own.created_at, ''),
+		le.kind, le.summary, le.created_at, coalesce(ae.created_at, ''),
 		ms.id, ms.kind, ms.summary, ms.created_at, coalesce(json_extract(ms.data, '$.key'), ''),
 		coalesce(json_extract(ms.data, '$.value'), ''), coalesce(json_extract(ms.data, '$.owner'), 0)
 		from tree join tasks t on t.id = tree.id join heads h on h.root = tree.root
 		left join launches l on l.id = t.current_launch_id
 		left join events le on le.id = (select max(x.id) from events x where x.task_id = t.id and x.kind not in `+laneReportSkip+`)
 		left join events ae on ae.id = h.activity_id
-		left join events own on t.parent_id is null and own.id = (select max(x.id) from events x where x.task_id = t.id)
 		left join events ms on ms.id = h.milestone_id
 		where t.status != 'closed'
 		order by tree.root, (t.id = tree.root) desc, t.id`, stamp(at))
@@ -204,25 +212,19 @@ func glanceTasks(tx *sql.Tx, at time.Time, roots map[int64]*glanceRoot, tasks ma
 	}
 	for rows.Next() {
 		t := &glanceTask{}
-		var activity, ownActivity, key, value string
+		var activity, key, value string
 		var present sql.NullBool
 		var kind, summary, since, msKind, msText, msAt sql.NullString
 		var msID sql.NullInt64
 		var owner bool
 		if err := rows.Scan(&t.rootID, &t.ID, &t.ParentID, &t.Name, &t.Role, &t.Status, &t.PaneID, &t.host, &t.launchHost,
-			&t.Waiting, &t.AgentStatus, &t.ObservedAt, &present, &kind, &summary, &since, &activity, &ownActivity,
+			&t.Waiting, &t.AgentStatus, &t.ObservedAt, &present, &kind, &summary, &since, &activity,
 			&msID, &msKind, &msText, &msAt, &key, &value, &owner); err != nil {
 			rows.Close()
 			return err
 		}
 		if t.ParentID == 0 {
-			lead := "quiet"
-			if t.Waiting {
-				lead = "waiting"
-			} else if ownActivity != "" && glanceAge(at, ownActivity) < (10*time.Minute).Milliseconds() {
-				lead = "reported"
-			}
-			roots[t.ID] = &glanceRoot{glanceCampaign: glanceCampaign{ID: t.ID, Name: t.Name, Host: t.host, PaneID: t.PaneID, Lead: lead}}
+			roots[t.ID] = &glanceRoot{glanceCampaign: glanceCampaign{ID: t.ID, Name: t.Name, Host: t.host, PaneID: t.PaneID, LeadWaiting: t.Waiting}}
 		}
 		r := roots[t.rootID]
 		if activity > r.activity {
@@ -494,6 +496,19 @@ func finishGlance(at time.Time, v *glanceView, roots map[int64]*glanceRoot) {
 	v.Attention = kept
 	for _, r := range ordered {
 		if r.active {
+			a := glanceAttention{Campaign: r.Name, RootID: r.ID, PaneID: r.PaneID, Host: r.Host,
+				Since: r.leadAt, AgeMS: glanceAge(at, r.leadAt)}
+			switch r.Lead {
+			case "gone":
+				a.Kind, a.Text = "lead_gone", "lead pane "+r.PaneID+" is not in its host's agent list"
+			case "blocked":
+				a.Kind, a.Text = "lead_blocked", "Herdr sees an approval or question dialog in the lead's pane"
+			case "unknown":
+				a.Kind, a.Text = "lead_unknown", "lead liveness unknown: no pane, never observed, or its host is not reporting"
+			}
+			if a.Kind != "" {
+				v.Attention = append(v.Attention, a)
+			}
 			v.Campaigns = append(v.Campaigns, r.glanceCampaign)
 		} else {
 			v.Quiet.Count++
@@ -519,7 +534,7 @@ func finishGlance(at time.Time, v *glanceView, roots map[int64]*glanceRoot) {
 	})
 	for _, a := range v.Attention {
 		switch a.Kind {
-		case "lane_failed", "lane_blocked", "lane_missing", "results_waiting":
+		case "lane_failed", "lane_blocked", "lane_missing", "lead_blocked", "lead_gone", "results_waiting":
 			v.Verdict = "attention"
 		default:
 			if v.Verdict == "rolling" {
@@ -537,8 +552,12 @@ func finishGlance(at time.Time, v *glanceView, roots map[int64]*glanceRoot) {
 
 func glanceRank(kind string) int {
 	switch kind {
-	case "lane_unknown", "host_stale":
+	case "lane_unknown", "host_stale", "lead_unknown":
 		kind = attentionStale
+	case "lead_blocked":
+		kind = attentionBlocked
+	case "lead_gone":
+		kind = attentionMissing
 	case "results_waiting":
 		kind = attentionWorkWaits
 	}

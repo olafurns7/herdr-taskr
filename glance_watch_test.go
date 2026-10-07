@@ -62,6 +62,10 @@ func TestRenderGlanceGoldens(t *testing.T) {
 		{"narrow-20", busyGlance(), 20, 24, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.name == "busy-46" || tc.name == "busy-80" {
+				tc.v.Attention = append(tc.v.Attention, glanceAttention{Kind: "lead_gone", Campaign: "planner-ui",
+					AgeMS: 5 * time.Minute.Milliseconds(), Text: "lead pane wN5:p1 is not in its host's agent list"})
+			}
 			lines := renderGlance(tc.v, tc.width, tc.height, 2*time.Second, tc.err, false, watchTestNow)
 			checkWatchWidths(t, lines, tc.width, tc.height)
 			got := strings.Join(lines, "\n") + "\n"
@@ -167,11 +171,15 @@ func TestWatchAgesAndAttentionKinds(t *testing.T) {
 		}
 	}
 	v := &glanceView{Verdict: "unknown"}
-	for _, kind := range []string{"lane_failed", "lane_blocked", "lane_missing", "lane_unknown", "results_waiting", "host_stale", "daemon_unhealthy"} {
-		v.Attention = append(v.Attention, glanceAttention{Kind: kind, Host: "mac", Recipient: "lead", Count: 2})
+	for _, kind := range []string{"lane_failed", "lane_blocked", "lane_missing", "lane_unknown", "results_waiting", "host_stale", "daemon_unhealthy", "lead_gone", "lead_blocked", "lead_unknown"} {
+		a := glanceAttention{Kind: kind, Host: "mac", Recipient: "lead", Count: 2}
+		if strings.HasPrefix(kind, "lead_") {
+			a.Campaign = "campaign"
+		}
+		v.Attention = append(v.Attention, a)
 	}
 	got := strings.Join(renderGlance(v, 80, 24, 0, "", false, watchTestNow), "\n")
-	for _, want := range []string{"? unknown", "✗ mac  failed", "! mac  blocked", "? mac  missing", "? mac  unknown", "⌛ lead: 2 waiting", "⚠ mac  stale", "⚠ mac  daemon"} {
+	for _, want := range []string{"? unknown", "✗ mac  failed", "! mac  blocked", "? mac  missing", "? mac  unknown", "⌛ lead: 2 waiting", "⚠ mac  stale", "⚠ mac  daemon", "✗ campaign  lead gone", "! campaign  lead blocked", "? campaign  lead unknown"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q: %s", want, got)
 		}

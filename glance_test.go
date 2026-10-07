@@ -23,6 +23,7 @@ func newGlanceFixture(t *testing.T) *glanceFixture {
 	h := newHarness(t)
 	f := &glanceFixture{t: t, db: h.openDB(), at: parseTime(now())}
 	f.exec(`insert into meta(key, value) values (?, ?)`, heartbeatKey, stamp(f.at))
+	f.exec(`insert into meta(key, value) values (?, ?)`, leadListedKey, stamp(f.at))
 	return f
 }
 
@@ -44,8 +45,17 @@ func (f *glanceFixture) task(name string, parent int64, status string) int64 {
 	if parent != 0 {
 		p = parent
 	}
-	return f.exec(`insert into tasks(name, parent_id, role, status, pane_id, created_at, updated_at)
+	task := f.exec(`insert into tasks(name, parent_id, role, status, pane_id, created_at, updated_at)
 		values (?, ?, 'orchestrator', ?, ?, ?, ?)`, name, p, status, name+":p1", stamp(f.at), stamp(f.at))
+	if parent == 0 {
+		f.lead(task, "working")
+	}
+	return task
+}
+
+func (f *glanceFixture) lead(task int64, status string) {
+	f.exec(`update tasks set lead_status = ?, lead_present = ?, lead_observed_at = ? where id = ?`,
+		status, status != "gone", stamp(f.at.Add(-time.Minute)), task)
 }
 
 func (f *glanceFixture) launch(task int64, status string, present bool, host any) int64 {
@@ -296,7 +306,7 @@ func TestGlanceSnapshot(t *testing.T) {
 			f.event(w, r, 0, "done", "29", `{}`, 29*time.Minute)
 			f.event(w, sub, 0, "fail", "sub result", `{}`, time.Hour)
 			v := f.view()
-			if !reflect.DeepEqual(glanceKinds(v), []string{"results_waiting", "results_waiting"}) || v.Verdict != "attention" || v.Campaigns[0].Lead != "waiting" {
+			if !reflect.DeepEqual(glanceKinds(v), []string{"results_waiting", "results_waiting"}) || v.Verdict != "attention" || v.Campaigns[0].Lead != "working" || !v.Campaigns[0].LeadWaiting {
 				t.Fatalf("snapshot = %+v", v)
 			}
 			if v.Attention[0].RecipientID != sub || v.Attention[0].AgeMS != time.Hour.Milliseconds() || v.Attention[1].Text != "worker ready: 31" {
@@ -357,13 +367,14 @@ func TestGlanceSnapshot(t *testing.T) {
 		{"stale client host is unknown", func(t *testing.T, f *glanceFixture) {
 			r := f.task("root", 0, "open")
 			f.exec(`update tasks set machine = 'mac' where id = ?`, r)
+			f.lead(r, "working")
 			for _, status := range []string{"open", "ready"} {
 				w := f.task(status, r, status)
 				f.launch(w, "blocked", false, "mac")
 			}
 			f.exec(`insert into meta(key, value) values (?, ?)`, hostHeartbeatKey("mac"), stamp(f.at.Add(-time.Hour)))
 			v := f.view()
-			if !reflect.DeepEqual(glanceKinds(v), []string{"host_stale", "lane_unknown", "lane_unknown"}) || v.Verdict != "unknown" || v.Campaigns[0].Lanes.Working != 0 || v.Campaigns[0].Lanes.Ready != 0 || v.Campaigns[0].Host != "mac" {
+			if !reflect.DeepEqual(glanceKinds(v), []string{"host_stale", "lead_unknown", "lane_unknown", "lane_unknown"}) || v.Verdict != "unknown" || v.Campaigns[0].Lanes.Working != 0 || v.Campaigns[0].Lanes.Ready != 0 || v.Campaigns[0].Host != "mac" {
 				t.Fatalf("snapshot = %+v", v)
 			}
 		}},
@@ -388,7 +399,7 @@ func TestGlanceSnapshot(t *testing.T) {
 			f.event(w, 0, 0, "ref", "ignored summary", `{"key":"pr","value":"123"}`, time.Minute)
 			f.event(w, 0, 0, "ref", "empty ref", `{"key":"pr","value":""}`, 0)
 			v := f.view()
-			if v.Verdict != "rolling" || len(v.Attention) != 0 || len(v.NeedsYou) != 0 || len(v.Campaigns) != 1 || v.Campaigns[0].Lanes != (glanceLanes{Working: 1, Ready: 1, Open: 2}) || v.Campaigns[0].Lead != "reported" || v.Campaigns[0].Last.Text != "pr 123" {
+			if v.Verdict != "rolling" || len(v.Attention) != 0 || len(v.NeedsYou) != 0 || len(v.Campaigns) != 1 || v.Campaigns[0].Lanes != (glanceLanes{Working: 1, Ready: 1, Open: 2}) || v.Campaigns[0].Lead != "working" || v.Campaigns[0].Last.Text != "pr 123" {
 				t.Fatalf("snapshot = %+v", v)
 			}
 		}},
@@ -413,6 +424,120 @@ func TestGlanceSnapshot(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) { tc.run(t, newGlanceFixture(t)) })
+	}
+}
+
+func TestGlanceLeads(t *testing.T) {
+	for _, tc := range []struct {
+		name, status, verdict string
+		kinds                 []string
+		age                   time.Duration
+		setup                 func(*glanceFixture, int64)
+	}{
+		{name: "working", status: "working", verdict: "rolling", kinds: []string{}},
+		{name: "idle", status: "idle", verdict: "rolling", kinds: []string{}},
+		{name: "done", status: "done", verdict: "rolling", kinds: []string{}},
+		{name: "gone", status: "gone", verdict: "attention", kinds: []string{"lead_gone"}},
+		{name: "blocked", status: "blocked", verdict: "attention", kinds: []string{"lead_blocked"}},
+		{name: "stale client", status: "unknown", verdict: "unknown", kinds: []string{"host_stale", "lead_unknown"}, setup: func(f *glanceFixture, r int64) {
+			f.exec(`update tasks set machine = 'mac' where id = ?`, r)
+			f.lead(r, "working")
+			f.exec(`insert into meta(key, value) values (?, ?)`, hostHeartbeatKey("mac"), stamp(f.at.Add(-time.Hour)))
+		}},
+		{name: "fresh client", status: "working", verdict: "rolling", kinds: []string{}, setup: func(f *glanceFixture, r int64) {
+			f.exec(`update tasks set machine = 'mac' where id = ?`, r)
+			f.lead(r, "working")
+			f.exec(`insert into meta(key, value) values (?, ?)`, hostHeartbeatKey("mac"), stamp(f.at))
+		}},
+		{name: "quiet gone", status: "gone", verdict: "rolling", kinds: []string{}, age: 13 * time.Hour},
+		{name: "waiting", status: "working", verdict: "rolling", kinds: []string{}, setup: func(f *glanceFixture, r int64) {
+			f.exec(`update tasks set waiting_until = ? where id = ?`, stamp(f.at.Add(time.Minute)), r)
+		}},
+		{name: "never observed", status: "unknown", verdict: "unknown", kinds: []string{"lead_unknown"}, setup: func(f *glanceFixture, r int64) {
+			f.exec(`update tasks set lead_status = null, lead_present = null, lead_observed_at = null where id = ?`, r)
+		}},
+		{name: "no pane", status: "unknown", verdict: "unknown", kinds: []string{"lead_unknown"}, setup: func(f *glanceFixture, r int64) {
+			f.exec(`update tasks set pane_id = null where id = ?`, r)
+		}},
+		{name: "no hub listing", status: "unknown", verdict: "unknown", kinds: []string{"lead_unknown"}, setup: func(f *glanceFixture, r int64) {
+			f.lead(r, "working")
+			f.exec(`delete from meta where key = ?`, leadListedKey)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newGlanceFixture(t)
+			r := f.task("root", 0, "open")
+			f.lead(r, tc.status)
+			f.event(r, 0, 0, "note", "progress", `{}`, tc.age)
+			if tc.setup != nil {
+				tc.setup(f, r)
+			}
+			v := f.view()
+			if v.Verdict != tc.verdict || !reflect.DeepEqual(glanceKinds(v), tc.kinds) {
+				t.Fatalf("snapshot = %+v", v)
+			}
+			if tc.age > glanceQuietAfter {
+				if len(v.Campaigns) != 0 || v.Quiet.Count != 1 || v.Quiet.WithBacklog != 0 {
+					t.Fatalf("quiet snapshot = %+v", v)
+				}
+				return
+			}
+			if len(v.Campaigns) != 1 || v.Campaigns[0].Lead != tc.status || v.Campaigns[0].LeadWaiting != (tc.name == "waiting") {
+				t.Fatalf("campaigns = %+v", v.Campaigns)
+			}
+			raw, err := json.Marshal(v.Campaigns[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(raw), `"lead_waiting":true`) != (tc.name == "waiting") || strings.Contains(string(raw), `"lead_waiting":false`) {
+				t.Fatalf("campaign JSON = %s", raw)
+			}
+			for _, a := range v.Attention {
+				if !strings.HasPrefix(a.Kind, "lead_") {
+					continue
+				}
+				pane, host, since := "root:p1", "", stamp(f.at.Add(-time.Minute))
+				if tc.name == "stale client" {
+					host = "mac"
+				}
+				if tc.name == "no pane" {
+					pane = ""
+				}
+				if tc.name == "never observed" || tc.name == "no pane" {
+					since = ""
+				}
+				text := map[string]string{
+					"lead_gone":    "lead pane root:p1 is not in its host's agent list",
+					"lead_blocked": "Herdr sees an approval or question dialog in the lead's pane",
+					"lead_unknown": "lead liveness unknown: no pane, never observed, or its host is not reporting",
+				}[a.Kind]
+				if a.Campaign != "root" || a.RootID != r || a.PaneID != pane || a.Host != host || a.Since != since || a.AgeMS != glanceAge(f.at, since) || a.Text != text || a.LaneID != 0 {
+					t.Fatalf("lead attention = %+v", a)
+				}
+			}
+		})
+	}
+}
+
+func TestGlanceLeadRanksAndPrecedence(t *testing.T) {
+	for lead, lane := range map[string]string{"lead_blocked": "lane_blocked", "lead_gone": "lane_missing", "lead_unknown": "host_stale"} {
+		if glanceRank(lead) != glanceRank(lane) {
+			t.Errorf("%s rank differs from %s", lead, lane)
+		}
+	}
+	f := newGlanceFixture(t)
+	unknown := f.task("unknown", 0, "open")
+	f.lead(unknown, "unknown")
+	f.event(unknown, 0, 0, "note", "progress", `{}`, 0)
+	gone := f.task("gone", 0, "open")
+	f.lead(gone, "gone")
+	f.event(gone, 0, 0, "note", "progress", `{}`, 0)
+	if v := f.view(); v.Verdict != "attention" || !reflect.DeepEqual(glanceKinds(v), []string{"lead_gone", "lead_unknown"}) {
+		t.Fatalf("actionable plus unknown = %+v", v)
+	}
+	f.event(gone, 0, 0, "ask", "approve", `{"owner":true}`, 0)
+	if v := f.view(); v.Verdict != "needs_you" || len(v.Attention) != 2 {
+		t.Fatalf("owner plus lead attention = %+v", v)
 	}
 }
 

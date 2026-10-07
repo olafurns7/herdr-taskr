@@ -9,6 +9,8 @@ taskr · 17:30 · 2s                                                    2 need y
   lint gate exit 1
 ⌛ orch-hns2: 3 waiting 31h
   reports ready to review
+✗ planner-ui  lead gone 5m
+  lead pane wN5:p1 is not in its host's agent list
 ────────────────────────────────────────────────────────────────────────────────
 ● planner-ui         3/5    2m   S4 merged
 ● copilot-modular    2/2    14m  M1 review ok

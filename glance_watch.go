@@ -113,6 +113,12 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 			sym, word = "✗", "failed"
 		case "lane_blocked":
 			sym, word = "!", "blocked"
+		case "lead_gone":
+			sym, word = "✗", "lead gone"
+		case "lead_blocked":
+			sym, word = "!", "lead blocked"
+		case "lead_unknown":
+			word = "lead unknown"
 		case "lane_missing":
 			word = "missing"
 		case "results_waiting":
@@ -124,7 +130,7 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 		}
 		name := strings.Trim(watchText(a.Campaign)+"/"+watchText(a.Lane), "/")
 		if name == "" {
-			name = watchText(a.Host)
+			name = firstNonEmpty(watchText(a.Host), "hub")
 		}
 		first := fmt.Sprintf("%s %s  %s %s", sym, name, word, ageOf(a.AgeMS))
 		if a.Kind == "results_waiting" {
