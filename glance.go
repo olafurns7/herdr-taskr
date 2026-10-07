@@ -90,8 +90,22 @@ type glanceQuiet struct {
 }
 
 func cmdGlance(c *ctx, args []string) (any, int, error) {
-	if _, err := parseArgs(c, flag.NewFlagSet("glance", flag.ContinueOnError), args, 0, 0); err != nil {
+	fs := flag.NewFlagSet("glance", flag.ContinueOnError)
+	watch := fs.Bool("watch", false, "live terminal view")
+	every := fs.Duration("every", 5*time.Second, "refresh interval (1s to 5m)")
+	if _, err := parseArgs(c, fs, args, 0, 0); err != nil {
 		return nil, 0, err
+	}
+	givenEvery := false
+	fs.Visit(func(f *flag.Flag) { givenEvery = givenEvery || f.Name == "every" })
+	if *every < time.Second || *every > 5*time.Minute || givenEvery && !*watch {
+		return nil, exitUsage, usageErr("--every requires --watch and must be between 1s and 5m")
+	}
+	if *watch {
+		if c.rpc {
+			return nil, exitUsage, usageErr("glance --watch runs on the invoking host")
+		}
+		return watchGlance(c, *every)
 	}
 	db, err := openDB(c)
 	if err != nil {

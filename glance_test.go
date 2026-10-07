@@ -428,7 +428,7 @@ func TestGlanceCLI(t *testing.T) {
 		{"json", []string{"--json", "glance"}, nil, 0},
 		{"json environment", []string{"glance"}, map[string]string{"TASKR_FORMAT": "json"}, 0},
 		{"help", []string{"glance", "-h"}, nil, 0},
-		{"watch refused", []string{"glance", "--watch"}, nil, exitUsage},
+		{"watch fallback", []string{"glance", "--watch"}, nil, exitOK},
 		{"unknown flag", []string{"glance", "--unknown"}, nil, exitUsage},
 		{"positional refused", []string{"glance", "extra"}, nil, exitUsage},
 	} {
@@ -437,7 +437,7 @@ func TestGlanceCLI(t *testing.T) {
 			if code := run(tc.args, h.getenv(tc.env), &out, &errb); code != tc.code {
 				t.Fatalf("exit %d: %s %s", code, out.String(), errb.String())
 			}
-			if tc.code != 0 || tc.name == "help" {
+			if tc.code != 0 || tc.name == "help" || tc.name == "watch fallback" {
 				return
 			}
 			raw := out.String()
@@ -477,7 +477,7 @@ func TestGlanceRPCFresh(t *testing.T) {
 	if r.count(`select count(*) from requests`) != before {
 		t.Fatal("glance stored an RPC request")
 	}
-	r.want(exitUsage, "host-a", nil, "glance", "--watch")
+	r.want(exitOK, "host-a", nil, "glance", "--watch")
 	if err := filepath.WalkDir(r.homes["host-a"], func(path string, d os.DirEntry, err error) error {
 		if err == nil && strings.HasSuffix(path, ".db") {
 			t.Errorf("client opened a local DB: %s", path)
