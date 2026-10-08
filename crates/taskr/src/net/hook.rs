@@ -121,3 +121,57 @@ fn apply(args: &[String], dir: &Path, raw: &str, started: Instant) {
         let _ = queue_until(dir, &req, false, process);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    use taskr_core::store::hook::parse;
+
+    #[test]
+    fn pi_error_codes() {
+        for (name, message, want) in [
+            (
+                "code",
+                json!({"stopReason":"error","diagnostics":[{"type":"provider_transport_failure","error":{"name":"Error","code":"ECONNRESET"}}]}),
+                "ECONNRESET",
+            ),
+            (
+                "numeric code",
+                json!({"stopReason":"error","diagnostics":[{"type":"old","error":{"code":1}},{"type":"provider_transport_failure","error":{"code":529}}]}),
+                "529",
+            ),
+            (
+                "type",
+                json!({"stopReason":"error","diagnostics":[{"type":"bedrock_response_failure","details":{}}]}),
+                "bedrock_response_failure",
+            ),
+            (
+                "uncoded",
+                json!({"stopReason":"error","errorMessage":"API Error: 529 overloaded"}),
+                "unknown",
+            ),
+            (
+                "aborted",
+                json!({"stopReason":"aborted","diagnostics":[{"type":"provider_transport_failure"}]}),
+                "",
+            ),
+            ("stop", json!({"stopReason":"stop"}), ""),
+        ] {
+            let payload = serde_json::to_vec(
+                &json!({"type":"agent_settled","sessionId":"pi-session","message":message}),
+            )
+            .unwrap();
+            let record = parse("pi", "agent_settled", &payload).unwrap();
+            assert_eq!(record.session, "pi-session", "{name}");
+            assert_eq!(record.error, want, "{name}");
+        }
+        assert!(
+            parse(
+                "pi",
+                "session_start",
+                br#"{"type":"session_start","sessionId":"pi-session","sessionFile":"pi.jsonl"}"#
+            )
+            .is_none()
+        );
+    }
+}

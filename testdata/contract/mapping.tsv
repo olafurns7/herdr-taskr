@@ -316,32 +316,32 @@ TestHintMidTurnIdleWithGotEmits		owed_test.go	write:got	a	todo		cmd:daemon;daemo
 TestHintPostReady		owed_test.go	write:ready	a	todo		cmd:daemon;daemon:--once		
 TestHintStartupUnknownSilent		owed_test.go	write:start	a	todo		cmd:daemon;daemon:--once		
 TestHintUnarmedEmits		owed_test.go	write:new	a	todo		cmd:daemon;daemon:--once		
-TestHookClientRPCNormalizedFieldsAndHostCheck		hook_test.go	net:rpc-client	a	todo		cmd:hook;rpc:/api/rpc		
-TestHookCodexBindingSurvivesWorkerIdentity		hook_test.go	write:new	b	todo		cmd:hook;cmd:prompt;cmd:got;cmd:start		
-TestHookCodexBindingSurvivesWorkerIdentity	tc	hook_test.go	write:new	b	todo		cmd:hook;cmd:prompt;cmd:got;cmd:start		
-TestHookCodexRolloutFallback		hook_test.go	write:new	b	todo		cmd:hook;cmd:prompt;cmd:got;cmd:daemon;daemon:--once		
-TestHookCodexRolloutFallback	tc.name	hook_test.go	write:new	b	todo		cmd:hook;cmd:prompt;cmd:got;cmd:daemon;daemon:--once		
-TestHookCodexRolloutReprompt		hook_test.go	write:new	b	todo		cmd:hook;cmd:prompt;cmd:got;cmd:daemon;daemon:--once		
-TestHookDBBusyTimeout		hook_test.go	write:new	c	todo		cmd:hook		
-TestHookDeadlineWithHeldDBLock		hook_test.go	write:new	b	todo		cmd:hook		
-TestHookFixtureFlowsAndReceipts		hook_test.go	write:new	b	todo		cmd:hook;cmd:prompt		
-TestHookFixtureFlowsAndReceipts	tc.name	hook_test.go	write:new	b	todo		cmd:hook;cmd:prompt		
-TestHookLockChild		hook_test.go	write:new	c	todo		cmd:hook		
-TestHookMigrationFromV010		hook_test.go	write:new	b	todo		cmd:hook;migration		
-TestHookNoStallAfterDoneFailOrAsk		hook_test.go	write:done	b	todo		cmd:hook;cmd:prompt;cmd:done		
-TestHookNoStallAfterDoneFailOrAsk	outcome	hook_test.go	write:done	b	todo		cmd:hook;cmd:prompt;cmd:done		
-TestHookOlderBinaryShellGuard		hook_test.go	write:new	b	todo		cmd:hook		
-TestHookOpenCodeUncodedErrorStalls		hook_test.go	write:new	b	todo		cmd:hook;cmd:prompt		
-TestHookPiErrorCodes		hook_test.go	write:new	c	todo		cmd:hook		
-TestHookPiErrorCodes	tc.name	hook_test.go	write:new	c	todo		cmd:hook		
-TestHookPiUncodedErrorStalls		hook_test.go	write:new	b	todo		cmd:hook;cmd:prompt		
-TestHookRoleStalls		hook_test.go	write:new	b	todo		cmd:hook;cmd:prompt		
-TestHookRoleStalls	tc.role	hook_test.go	write:new	b	todo		cmd:hook;cmd:prompt		
-TestHookSessionAndPaneBinding		hook_test.go	write:new	b	todo		cmd:hook;cmd:prompt		
-TestHookSilentNoopsAndPanic		hook_test.go	write:new	b	todo		cmd:hook		
-TestHookUncodedStopFailureStalls		hook_test.go	write:new	b	todo		cmd:hook;cmd:prompt		
-TestHookUncodedStopFailureStalls	role	hook_test.go	write:new	b	todo		cmd:hook;cmd:prompt		
-TestHookedLivenessRule		hook_test.go	write:new	b	todo		cmd:hook;cmd:prompt;cmd:daemon;daemon:--once		
+TestHookClientRPCNormalizedFieldsAndHostCheck		hook_test.go	net:rpc-client	a	blackbox	cargo:hooks_rpc:rpc::client_rpc_normalized_fields_and_host_check	cmd:hook;rpc:/api/rpc	Contract CLI/Rust-hub RPC asserts normalized argv/env, persisted receipt/stalls, prompt privacy and authenticated host-b receipt rejection; host-check mutant fails	opus:rev-s4-hooks
+TestHookCodexBindingSurvivesWorkerIdentity		hook_test.go	write:new	b	blackbox	cargo:hooks:codex_binding_survives_worker_identity	cmd:hook;cmd:prompt;cmd:got;cmd:start	CLI hook-bound Codex session/source/native home survive start, model-first got and nested rebind	opus:rev-s4-hooks
+TestHookCodexBindingSurvivesWorkerIdentity	tc	hook_test.go	write:new	b	blackbox	cargo:hooks:codex_binding_survives_worker_identity	cmd:hook;cmd:prompt;cmd:got;cmd:start	CLI hook-bound Codex session/source/native home survive start, model-first got and nested rebind	opus:rev-s4-hooks
+TestHookCodexRolloutFallback		hook_test.go	write:new	b	blackbox	cargo:hooks:codex_rollout_fallback	cmd:hook;cmd:prompt;cmd:got;cmd:daemon;daemon:--once	CLI daemon scans Codex rollout timestamp/completed_at, newer-user/older-error suppression and coded/uncoded sub-orchestrator errors	opus:rev-s4-hooks
+TestHookCodexRolloutFallback	tc.name	hook_test.go	write:new	b	blackbox	cargo:hooks:codex_rollout_fallback	cmd:hook;cmd:prompt;cmd:got;cmd:daemon;daemon:--once	CLI daemon scans Codex rollout timestamp/completed_at, newer-user/older-error suppression and coded/uncoded sub-orchestrator errors	opus:rev-s4-hooks
+TestHookCodexRolloutReprompt		hook_test.go	write:new	b	blackbox	cargo:hooks:codex_rollout_reprompt	cmd:hook;cmd:prompt;cmd:got;cmd:daemon;daemon:--once	CLI daemon records the error stall once and does not reuse the old rollout error for a fresh prompt	opus:rev-s4-hooks
+TestHookDBBusyTimeout		hook_test.go	write:new	c	dropped		cmd:hook	Go driver introspection; the observable bound is asserted by cargo:hooks:deadline_with_held_db_lock (< 450 ms)	opus:rev-s4-hooks
+TestHookDeadlineWithHeldDBLock		hook_test.go	write:new	b	blackbox	cargo:hooks:deadline_with_held_db_lock	cmd:hook	CLI stays silent under a held DB lock, writes no binding and exits in less than 450 ms	opus:rev-s4-hooks
+TestHookFixtureFlowsAndReceipts		hook_test.go	write:new	b	blackbox	cargo:hooks:fixture_flows_and_receipts	cmd:hook;cmd:prompt	CLI fixture flows for claude, codex, opencode and pi; persisted binding/receipt identities, duplicate got and stall records, model-first got and ready-last markers	opus:rev-s4-hooks
+TestHookFixtureFlowsAndReceipts	tc.name	hook_test.go	write:new	b	blackbox	cargo:hooks:fixture_flows_and_receipts	cmd:hook;cmd:prompt	CLI fixture flows for claude, codex, opencode and pi; persisted binding/receipt identities, duplicate got and stall records, model-first got and ready-last markers	opus:rev-s4-hooks
+TestHookLockChild		hook_test.go	write:new	c	dropped		cmd:hook	Go test-process re-execution/readiness helper; real CLI launched by cargo:hooks:deadline_with_held_db_lock	opus:rev-s4-hooks
+TestHookMigrationFromV010		hook_test.go	write:new	b	blackbox	cargo:hooks:migration_from_v010	cmd:hook;migration	CLI status migrates the legacy ledger, adds transcript_path and preserves observed_version	opus:rev-s4-hooks
+TestHookNoStallAfterDoneFailOrAsk		hook_test.go	write:done	b	blackbox	cargo:hooks:no_stall_after_done_fail_or_ask	cmd:hook;cmd:prompt;cmd:done	CLI Stop emits no stall after done, fail or ask	opus:rev-s4-hooks
+TestHookNoStallAfterDoneFailOrAsk	outcome	hook_test.go	write:done	b	blackbox	cargo:hooks:no_stall_after_done_fail_or_ask	cmd:hook;cmd:prompt;cmd:done	CLI Stop emits no stall after done, fail or ask	opus:rev-s4-hooks
+TestHookOlderBinaryShellGuard		hook_test.go	write:new	b	shell	cargo:hooks:older_binary_shell_guard	cmd:hook	POSIX wrapper silences an older unsupported hook command and exits successfully	opus:rev-s4-hooks
+TestHookOpenCodeUncodedErrorStalls		hook_test.go	write:new	b	blackbox	cargo:hooks:opencode_uncoded_error_stalls	cmd:hook;cmd:prompt	CLI OpenCode session.error records a stall with unknown for an uncoded error	opus:rev-s4-hooks
+TestHookPiErrorCodes		hook_test.go	write:new	c	rust-unit	cargo:taskr:net::hook::tests::pi_error_codes	cmd:hook	Rust parser covers string/numeric diagnostic codes, diagnostic type, uncoded/aborted/normal stops and relative sessionFile rejection	opus:rev-s4-hooks
+TestHookPiErrorCodes	tc.name	hook_test.go	write:new	c	rust-unit	cargo:taskr:net::hook::tests::pi_error_codes	cmd:hook	Rust parser covers string/numeric diagnostic codes, diagnostic type, uncoded/aborted/normal stops and relative sessionFile rejection	opus:rev-s4-hooks
+TestHookPiUncodedErrorStalls		hook_test.go	write:new	b	blackbox	cargo:hooks:pi_uncoded_error_stalls	cmd:hook;cmd:prompt	CLI Pi agent_settled records a stall with unknown for an uncoded error	opus:rev-s4-hooks
+TestHookRoleStalls		hook_test.go	write:new	b	blackbox	cargo:hooks:role_stalls	cmd:hook;cmd:prompt	CLI plain/error stall rules for orchestrator, sub-orchestrator and reviewer	opus:rev-s4-hooks
+TestHookRoleStalls	tc.role	hook_test.go	write:new	b	blackbox	cargo:hooks:role_stalls	cmd:hook;cmd:prompt	CLI plain/error stall rules for orchestrator, sub-orchestrator and reviewer	opus:rev-s4-hooks
+TestHookSessionAndPaneBinding		hook_test.go	write:new	b	blackbox	cargo:hooks:session_and_pane_binding	cmd:hook;cmd:prompt	CLI session binding survives nested starts; rejects quoted receipts, wrong sessions/panes and stale launches	opus:rev-s4-hooks
+TestHookSilentNoopsAndPanic		hook_test.go	write:new	b	blackbox	cargo:hooks:silent_noops	cmd:hook	CLI silent no-ops and missing-ledger noncreation; injected-getenv panic dropped: no injectable getenv in Rust; no reachable panic on the path	opus:rev-s4-hooks
+TestHookUncodedStopFailureStalls		hook_test.go	write:new	b	blackbox	cargo:hooks:uncoded_stop_failure_stalls	cmd:hook;cmd:prompt	CLI uncoded StopFailure records unknown error for orchestrator, sub-orchestrator and implementer	opus:rev-s4-hooks
+TestHookUncodedStopFailureStalls	role	hook_test.go	write:new	b	blackbox	cargo:hooks:uncoded_stop_failure_stalls	cmd:hook;cmd:prompt	CLI uncoded StopFailure records unknown error for orchestrator, sub-orchestrator and implementer	opus:rev-s4-hooks
+TestHookedLivenessRule		hook_test.go	write:new	b	blackbox	cargo:hooks:hooked_liveness_rule	cmd:hook;cmd:prompt;cmd:daemon;daemon:--once	CLI daemon --once asserts hooked idle/unknown/done suppression counters, missing/blocked hints and non-hooked done hint	opus:rev-s4-hooks
 TestHubAdmission		hub_test.go	write:new	b	todo		cmd:daemon;rpc:/api/rpc		
 TestHubHostVariants		hub_test.go	write:new	b	todo		cmd:daemon;rpc:/api/rpc		
 TestHubIPv6Listener		hub_test.go	write:new	b	todo		cmd:daemon;daemon:--status;rpc:/api/rpc		
@@ -396,7 +396,7 @@ TestOwnerNoteRejectsWorkersWithoutWriting		owner_notes_test.go	write:note	a	todo
 TestOwnerNoteStoredAndWhole		owner_notes_test.go	write:note	b	todo		cmd:note;cmd:notes		
 TestOwnerNoteTrustWarning		glance_trust_test.go	write:note	a	todo		cmd:note;cmd:close		
 TestParseAfterDoubleDash		contract_test.go	write:new	a	todo		cmd:new		
-TestPiWorkerIgnoresInheritedCodexThread		hook_test.go	write:new	b	todo		cmd:hook;cmd:start		
+TestPiWorkerIgnoresInheritedCodexThread		hook_test.go	write:new	b	blackbox	cargo:hooks:pi_worker_ignores_inherited_codex_thread	cmd:hook;cmd:start	CLI Pi start ignores inherited CODEX_THREAD_ID and session_start binds the Pi session identity	opus:rev-s4-hooks
 TestPlannedAncestorBlocksSubtree		plan_test.go	write:new	a	todo		cmd:new;cmd:prompt;cmd:wait;cmd:ack		
 TestPlannedLifecycle		plan_test.go	write:new	c	todo		cmd:new;cmd:prompt;cmd:daemon;cmd:status;cmd:close;cmd:got;daemon:--once		
 TestPluginRunShDetaches		daemon_test.go	net:daemon	b	todo		cmd:daemon		

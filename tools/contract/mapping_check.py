@@ -45,11 +45,13 @@ def usage_surfaces():
 def cargo_tests():
     cargo = os.environ.get('CARGO', 'cargo')
     # Merged streams keep each "Running" line (stderr) before its list (stdout).
-    # Default features: a contract build leaves out default-build-only tests.
-    out = subprocess.run([cargo, 'test', '--workspace', '--', '--list'], cwd=ROOT, check=True,
-                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    # Keep default-only tests and include contract-only tests.
+    out = '\n'.join(subprocess.run([cargo, 'test', '--workspace', *features, '--', '--list'],
+                                  cwd=ROOT, check=True, stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, text=True).stdout
+                    for features in ([], ['--features', 'contract']))
     names, binary = set(), None
-    for line in out.stdout.splitlines():
+    for line in out.splitlines():
         m = re.search(r'Running .*\(.*/deps/([A-Za-z0-9_]+)-[0-9a-f]+(?:\.exe)?\)', line)
         if m:
             binary = m.group(1)
