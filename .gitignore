@@ -17,3 +17,4 @@ taskr-install.sh
 /.scratch/
 __pycache__/
 /dist-rust/
+/dist-darwin/
