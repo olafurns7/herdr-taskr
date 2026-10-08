@@ -36,7 +36,7 @@ Documents are captured from the host with the file: briefs from the caller (a no
 
 Close a lane with `taskr close ID --outcome accepted|reworked|rejected|abandoned`: accepted = work taken as delivered; reworked = taken after a fix round; rejected = not taken; abandoned = stopped before a result. Omit the flag to record no outcome; `log` shows it in the closed event's data.
 
-`taskr campaign ROOT [--page N] [--all]` reads goal, plan, lanes, asks, decisions, document metadata, stored PR refs and a 100-event log page. `--all` includes closed lanes; bodies load through `doc get`. Client reads are fresh RPC. Glance includes host/pane targets and sparklines; focus only when row host equals caller_host (both empty on the hub). A new orchestrator without a pane is told to adopt its root with `--pane` as its first act.
+`taskr campaign ROOT [--page N] [--all]` reads goal, plan, lanes, asks, decisions, document metadata, stored PR refs and a 100-event log page. `--all` includes closed lanes; bodies load through `doc get`. Client reads are fresh RPC. Glance includes host/pane targets and sparklines; focus only when row host equals caller_host (both empty on the hub). A new root orchestrator without a pane is told to adopt its root with `--pane` as its first act.
 
 `taskr search QUERY [--root ID] [--kind K] [--limit N] [--raw]` searches latest captured documents and decision/ask/answer/note summaries (default 20, max 100; `--raw` uses FTS5 syntax):
 

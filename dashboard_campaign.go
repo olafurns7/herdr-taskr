@@ -231,10 +231,10 @@ func campaignDocuments(q queryer, root int64) (map[string]any, map[string]any, [
 }
 
 func readCampaign(q queryer, root int64, page int) (map[string]any, error) {
-	return readCampaignDetail(q, root, page, false)
+	return readCampaignDetail(q, root, page, false, true)
 }
 
-func readCampaignDetail(q queryer, root int64, page int, allLanes bool) (map[string]any, error) {
+func readCampaignDetail(q queryer, root int64, page int, unpaged, allLanes bool) (map[string]any, error) {
 	var name, role, status, host, created, closed string
 	err := q.QueryRow(`select name,role,status,coalesce(machine,''),created_at,coalesce(closed_at,'') from tasks where id = ? and parent_id is null`, root).Scan(&name, &role, &status, &host, &created, &closed)
 	if err != nil {
@@ -282,12 +282,12 @@ func readCampaignDetail(q queryer, root int64, page int, allLanes bool) (map[str
 	}
 	const tree = `with recursive tree(id,depth) as (select ?,0 union all select t.id,tree.depth+1 from tasks t join tree on t.parent_id = tree.id) `
 	var total int
-	if err := q.QueryRow(tree+`select count(*) from tree where depth > 0`, root).Scan(&total); err != nil {
+	if err := q.QueryRow(tree+`select count(*) from tree join tasks t on t.id = tree.id where depth > 0 and (? or t.status != 'closed')`, root, allLanes).Scan(&total); err != nil {
 		return nil, err
 	}
 	out := pageMetadata(total, 100, page)
 	laneLimit, laneOffset := 100, (out["page"].(int)-1)*100
-	if allLanes {
+	if unpaged {
 		laneLimit, laneOffset = -1, 0
 	}
 	rows, err := q.Query(tree+`select t.id,t.parent_id,tree.depth,t.name,t.role,t.status,coalesce(case when t.current_launch_id is null then t.machine else l.machine end,''),t.created_at,coalesce(t.closed_at,''),
@@ -296,7 +296,7 @@ func readCampaignDetail(q queryer, root int64, page int, allLanes bool) (map[str
   coalesce(l.pane_id,t.pane_id,''),coalesce(l.observed_status,''),l.present,
   coalesce((select created_at from events e where e.task_id = t.id order by id desc limit 1),t.created_at),
   coalesce((select json_extract(data,'$.outcome') from events e where e.task_id = t.id and kind = 'closed' order by id desc limit 1),'')
-  from tree join tasks t on t.id = tree.id left join launches l on l.id = t.current_launch_id where depth > 0 order by t.id limit ? offset ?`, root, laneLimit, laneOffset)
+  from tree join tasks t on t.id = tree.id left join launches l on l.id = t.current_launch_id where depth > 0 and (? or t.status != 'closed') order by t.id limit ? offset ?`, root, allLanes, laneLimit, laneOffset)
 	if err != nil {
 		return nil, err
 	}

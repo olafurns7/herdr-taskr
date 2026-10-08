@@ -126,7 +126,7 @@ func cmdNew(c *ctx, args []string) (any, int, error) {
 	if *parent == 0 && briefPath == "" {
 		fmt.Fprintf(c.errw, "taskr: no goal recorded for root %d; run `taskr doc set %d goal --file PATH`\n", id, id)
 	}
-	if *role == "orchestrator" && *pane == "" {
+	if *parent == 0 && *role == "orchestrator" && *pane == "" {
 		fmt.Fprintf(c.errw, "taskr: lead has no pane; run `taskr adopt %d --pane <id>` as your first act\n", id)
 	}
 	return map[string]any{"ok": true, "task_id": id, "name": pos[0], "status": status}, exitOK, nil

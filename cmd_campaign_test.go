@@ -26,7 +26,7 @@ func TestCampaignReadContract(t *testing.T) {
 	retired := num(h.ok(nil, "decide", "--as", id(root), "retire this"), "event_id")
 	h.ok(nil, "decide", "--as", id(root), "--revoke", id(retired))
 	h.ok(nil, "close", id(closed), "--outcome", "accepted")
-	h.ok(nil, "set", id(lane), "pr=123", "pr.review=approved")
+	h.ok(nil, "set", id(lane), "pr=123", "pr.backend=123", "pr.frontend=124", "pr.title=Demo PR", "pr.state=open", "pr.ci=pass", "pr.review=approved")
 	h.ok(nil, "next", id(root), "review the sample")
 	ask := num(h.ok(as(lane, launch), "ask", "approve sample", "--owner", "--blocking"), "ask_id")
 	answered := num(h.ok(as(lane, launch), "ask", "which sample"), "ask_id")
@@ -85,8 +85,24 @@ func TestCampaignReadContract(t *testing.T) {
 			t.Fatal(docs)
 		}
 		prs := m["prs"].([]any)
-		if len(prs) != 1 || prs[0].(map[string]any)["value"] != "123" || num(prs[0].(map[string]any), "number") != 123 || prs[0].(map[string]any)["review"] != "approved" || len(prs[0].(map[string]any)["refs"].([]any)) != 2 {
+		if len(prs) != 3 {
 			t.Fatal(prs)
+		}
+		byKey := map[string]map[string]any{}
+		for _, value := range prs {
+			row := value.(map[string]any)
+			byKey[row["key"].(string)] = row
+		}
+		for key, want := range map[string]string{"pr": "123", "pr.backend": "123", "pr.frontend": "124"} {
+			row := byKey[key]
+			if row == nil || row["value"] != want || fmt.Sprint(row["number"]) != want || row["lane"] != "demo-worker" || num(row, "task_id") != lane || len(row["refs"].([]any)) != 7 {
+				t.Fatal(key, row)
+			}
+			for field, want := range map[string]string{"title": "Demo PR", "state": "open", "ci": "pass", "review": "approved"} {
+				if key == "pr" && row[field] != want || key != "pr" && row[field] != nil {
+					t.Fatal(key, field, row)
+				}
+			}
 		}
 	}
 	// Bodies retain the existing raw doc-get contract.
@@ -119,9 +135,18 @@ func TestCampaignReadPagingAndEmpty(t *testing.T) {
 		t.Fatal(out)
 	}
 	// More than 100 lanes are not silently lost; --page affects only the log.
+	f.task("closed-before-open", root, "closed")
 	for i := 0; i < 101; i++ {
 		f.task(fmt.Sprintf("lane-%03d", i), root, "open")
 		f.event(root, 0, 0, "note", fmt.Sprint(i), `{}`, 0)
+	}
+	detail, err := readCampaignDetail(f.db, root, 1, true, false)
+	if err != nil || len(detail["lanes"].([]map[string]any)) != 101 || detail["total"] != 101 {
+		t.Fatalf("SQL lane filter = %v %v", detail, err)
+	}
+	detail, err = readCampaignDetail(f.db, root, 1, true, true)
+	if err != nil || len(detail["lanes"].([]map[string]any)) != 102 {
+		t.Fatalf("all lanes = %v %v", detail, err)
 	}
 	out, err = readTUICampaign(f.db, root, 2, false, f.at)
 	if err != nil {
@@ -184,12 +209,16 @@ func TestCampaignReadValidationAndHint(t *testing.T) {
 			t.Fatal(stderr)
 		}
 	}
+	code, _, stderr := h.compact(nil, "new", "child-orchestrator", "--role", "orchestrator", "--parent", id(root))
+	if code != exitOK || stderr != "" {
+		t.Fatalf("child adopt hint = %d %q", code, stderr)
+	}
 	// A root with a captured goal still gets exactly one pane-registration hint.
 	goalPath := h.dir + "/goal.md"
 	if err := os.WriteFile(goalPath, []byte("# Demo goal"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	code, _, stderr := h.compact(nil, "new", "with-goal", "--role", "orchestrator", "--brief", goalPath)
+	code, _, stderr = h.compact(nil, "new", "with-goal", "--role", "orchestrator", "--brief", goalPath)
 	if code != exitOK || strings.Count(stderr, "\n") != 1 || !strings.Contains(stderr, "taskr adopt") {
 		t.Fatalf("goal hint = %d %q", code, stderr)
 	}
@@ -210,8 +239,12 @@ func TestCampaignReadAsksRefsAndStaleHost(t *testing.T) {
 		f.exec(`update events set answered_by = ? where id = ?`, answer, ask)
 	}
 	f.event(lane, 0, 0, "ref", "", `{"key":"pr","value":"https://example.test/demo/pull/123"}`, 0)
+	f.event(lane, 0, 0, "ref", "", `{"key":"pr.signed","value":"+124"}`, 0)
+	f.event(lane, 0, 0, "ref", "", `{"key":"pr.zero","value":"0"}`, 0)
+	f.event(lane, 0, 0, "ref", "", `{"key":"pr.review","value":"45"}`, 0)
 	f.event(root, 0, 0, "ref", "", `{"key":"pr","value":"2"}`, 0)
 	f.event(root, 0, 0, "ref", "", `{"key":"pr","value":""}`, 0)
+	f.event(root, 0, 0, "ref", "", `{"key":"pr.review","value":"metadata-only"}`, 0)
 	out, err := readTUICampaign(f.db, root, 999, false, f.at)
 	if err != nil {
 		t.Fatal(err)
@@ -225,8 +258,13 @@ func TestCampaignReadAsksRefsAndStaleHost(t *testing.T) {
 		t.Fatal(lanes)
 	}
 	prs := out["prs"].([]map[string]any)
-	if len(prs) != 1 || prs[0]["value"] != "https://example.test/demo/pull/123" || prs[0]["number"] != nil {
+	if len(prs) != 3 || prs[0]["value"] != "https://example.test/demo/pull/123" || prs[0]["number"] != nil || prs[1]["value"] != "+124" || prs[1]["number"] != nil || prs[2]["number"] != uint64(0) {
 		t.Fatal(prs)
+	}
+	for _, row := range prs {
+		if row["key"] == "pr" && row["review"] != "45" || row["key"] != "pr" && row["review"] != nil || len(row["refs"].([]planRef)) != 4 {
+			t.Fatalf("metadata misapplied: %v", row)
+		}
 	}
 	all, err := readTUICampaign(f.db, root, 1, true, f.at)
 	if err != nil || len(all["asks"].([]map[string]any)) != 42 {

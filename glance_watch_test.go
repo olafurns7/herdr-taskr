@@ -632,6 +632,7 @@ func TestRunWatchFetchPanic(t *testing.T) {
 
 func TestGlanceWatchRPCLogging(t *testing.T) {
 	r := newTwoHost(t)
+	root := num(r.want(exitOK, "host-a", nil, "new", "demo-log", "--role", "orchestrator", "--pane", "wDemo:p1"), "task_id")
 	for _, tc := range []struct {
 		key  string
 		args []string
@@ -640,6 +641,9 @@ func TestGlanceWatchRPCLogging(t *testing.T) {
 		{"watch-log-success", []string{"glance"}, 0},
 		{"watch-log-failure", []string{"glance", "--bad-flag"}, exitUsage},
 		{"watch-log-other", []string{"status"}, 0},
+		{"campaign-log-success", []string{"campaign", id(root)}, 0},
+		{"campaign-log-failure", []string{"campaign", id(root), "--bad-flag"}, exitUsage},
+		{"campaign-log-rejected", []string{"campaign", "999999999"}, exitReject},
 	} {
 		status, reply, raw := r.post("host-a", rpcBody(t.TempDir(), nil, tc.key, tc.args...))
 		if status != 200 || reply.Exit != tc.exit {
@@ -650,7 +654,7 @@ func TestGlanceWatchRPCLogging(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(logText), "key=watch-log-success") || !strings.Contains(string(logText), "cmd=glance key=watch-log-failure exit=2") || !strings.Contains(string(logText), "cmd=status key=watch-log-other exit=0") {
+	if strings.Contains(string(logText), "key=campaign-log-success") || !strings.Contains(string(logText), "cmd=campaign key=campaign-log-failure exit=2") || !strings.Contains(string(logText), "cmd=campaign key=campaign-log-rejected exit=6") || strings.Contains(string(logText), "key=watch-log-success") || !strings.Contains(string(logText), "cmd=glance key=watch-log-failure exit=2") || !strings.Contains(string(logText), "cmd=status key=watch-log-other exit=0") {
 		t.Fatalf("RPC audit log: %s", logText)
 	}
 }

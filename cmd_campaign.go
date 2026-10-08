@@ -50,7 +50,7 @@ const campaignTree = `with recursive tree(id) as (
 // lanes. Only the TUI projection changes their shapes; the web API keeps its
 // existing pagination and captured-document metadata.
 func readTUICampaign(q queryer, root int64, page int, all bool, at time.Time) (map[string]any, error) {
-	detail, err := readCampaignDetail(q, root, 1, true)
+	detail, err := readCampaignDetail(q, root, 1, true, all)
 	if err != nil {
 		return nil, err
 	}
@@ -89,9 +89,6 @@ func readTUICampaign(q queryer, root int64, page int, all bool, at time.Time) (m
 	}
 	lanes := []map[string]any{}
 	for _, lane := range detail["lanes"].([]map[string]any) {
-		if !all && lane["status"] == "closed" {
-			continue
-		}
 		for _, kind := range []string{"brief", "report"} {
 			doc, _ := lane[kind].(map[string]any)
 			lane[kind] = doc != nil && doc["captured"] == true
@@ -214,7 +211,7 @@ func campaignLogRows(q queryer, root int64, page int) ([]map[string]any, error) 
 }
 
 // Keep references verbatim. A number is supplied only for an exact numeric
-// `pr` value; titles, CI and GitHub state are unknown unless stored in refs.
+// PR-valued ref; metadata belongs only to the bare pr row.
 func campaignPRRows(q queryer, root int64) ([]map[string]any, error) {
 	rows, err := q.Query(campaignTree+`select e.task_id,t.name,json_extract(e.data,'$.key'),json_extract(e.data,'$.value')
  from events e join tasks t on t.id = e.task_id where e.task_id in (select id from tree) and e.kind = 'ref'
@@ -237,16 +234,29 @@ func campaignPRRows(q queryer, root int64) ([]map[string]any, error) {
 		if pr == nil {
 			pr = map[string]any{"task_id": task, "lane": lane, "refs": []planRef{}}
 			byTask[task] = pr
-			prs = append(prs, pr)
 		}
 		pr["refs"] = append(pr["refs"].([]planRef), planRef{Key: key, Value: value})
-		if key == "pr" {
-			pr["value"] = value
-			if n, err := strconv.ParseUint(value, 10, 32); err == nil && n > 0 {
-				pr["number"] = n
-			}
-		} else if field := strings.TrimPrefix(key, "pr."); field == "title" || field == "state" || field == "ci" || field == "review" {
+		if field := strings.TrimPrefix(key, "pr."); key != "pr" && (field == "title" || field == "state" || field == "ci" || field == "review") {
 			pr[field] = value
+			continue
+		}
+		row := map[string]any{"task_id": task, "lane": lane, "key": key, "value": value}
+		if strings.Trim(value, "0123456789") == "" {
+			if n, err := strconv.ParseUint(value, 10, 32); err == nil {
+				row["number"] = n
+			}
+		}
+		prs = append(prs, row)
+	}
+	for _, row := range prs {
+		lane := byTask[row["task_id"].(int64)]
+		row["refs"] = lane["refs"]
+		if row["key"] == "pr" {
+			for _, field := range []string{"title", "state", "ci", "review"} {
+				if value, ok := lane[field]; ok {
+					row[field] = value
+				}
+			}
 		}
 	}
 	return prs, rows.Err()
