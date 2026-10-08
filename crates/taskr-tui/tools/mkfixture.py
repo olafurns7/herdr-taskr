@@ -111,7 +111,7 @@ lanes = [
     lane(4185, "impl-frames", "implementer", OPUS, "medium", 40 * S, status="open", state="working"),
     lane(4183, "impl-trust-rules", "implementer", SOL, "high", 2 * M, status="open", state="working"),
     lane(4176, "arch-plan-counter2", "researcher", FABLE, "xhigh", 9 * M, status="open", state="ready",
-         summary="Counter-review 2 written: not ready to send until three text fixes land (P1-1 narrow layouts, P1-2 numbers, P1-3 release path)."),
+         summary="Second review done: hold the send until three wording fixes land (P1-1 short rows, P1-2 counts, P1-3 install path)."),
 ]
 closed = [
     ("rs-visual-spec", "researcher", OPUS, "high", 11, "accepted"), ("rs-visual-spec", "researcher", OPUS, "high", 10, "abandoned"),
@@ -142,7 +142,7 @@ campaign = {
     "root": {"id": ROOT, "name": "tui-frames", "status": "open", "created_at": at("08:11:24"), "host": "", "pane_id": "w31:p1",
              "lead": "working", "age_ms": 14 * S,
              "next": "trust rules (lane 4183) and the first frames (lane 4185) -> owner yes on the look -> key handling"},
-    "goal": ["tui-frames: a lightweight terminal inbox and campaign status for the owner",
+    "goal": ["tui-frames: a small terminal view of every campaign and open question",
              "A split pane next to the hub that shows key status updates per campaign and anything urgent that needs the owner."],
     "plan": {"version": 11, "decisions_since": 1, "closed_since": 2},
     "lanes": lanes,

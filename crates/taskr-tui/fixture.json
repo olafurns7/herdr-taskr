@@ -623,7 +623,7 @@
    "next": "trust rules (lane 4183) and the first frames (lane 4185) -> owner yes on the look -> key handling"
   },
   "goal": [
-   "tui-frames: a lightweight terminal inbox and campaign status for the owner",
+   "tui-frames: a small terminal view of every campaign and open question",
    "A split pane next to the hub that shows key status updates per campaign and anything urgent that needs the owner."
   ],
   "plan": {
@@ -741,7 +741,7 @@
     "model": "claude-fable-5-1",
     "effort": "xhigh",
     "pane_id": "w82:p2",
-    "summary": "Counter-review 2 written: not ready to send until three text fixes land (P1-1 narrow layouts, P1-2 numbers, P1-3 release path).",
+    "summary": "Second review done: hold the send until three wording fixes land (P1-1 short rows, P1-2 counts, P1-3 install path).",
     "age_ms": 540000,
     "brief": true,
     "report": true

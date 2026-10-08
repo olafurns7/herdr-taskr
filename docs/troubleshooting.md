@@ -120,10 +120,12 @@ shows `herdr_missing: true`, the daemon cannot find the `herdr` program on its
 
 ## Port 7788 is taken
 
-The log says `listen 127.0.0.1:7788 failed`. The rest of the daemon keeps
-working; only other machines cannot reach this host. Write another loopback
-address to `~/.local/state/taskr/dashboard.addr` (on a hub, `tailnet:PORT`),
-then `taskr daemon --restart`. Clients need the new port in `server.url`.
+The log says `listen 127.0.0.1:7788 failed`. The daemon keeps working, and
+local commands never use this port. On a hub the Tailscale listener is bound
+separately and usually still serves: check `tailnet_url` in
+`taskr daemon --status`. Change the port only when `tailnet_url` is missing
+too: write `tailnet:PORT` to `~/.local/state/taskr/dashboard.addr`, run
+`taskr daemon --restart`, and put the new port in each client's `server.url`.
 
 ## A host still uses hub.url
 

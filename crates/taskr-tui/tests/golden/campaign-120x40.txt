@@ -1,6 +1,6 @@
  taskr ❯ tui-frames #4120  open · started 08:11                           hub atlas · 2s ago   ● 2 need you  3 to check
 ╭ Goal and plan ───────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ tui-frames: a lightweight terminal inbox and campaign status for the owner                            activity · 4 h │
+│ tui-frames: a small terminal view of every campaign and open question                                 activity · 4 h │
 │ A split pane next to the hub that shows key status updates per campaign and anything urge…                    ▅█     │
 │ plan v11  ·  1 decision and 2 lane closes since this version                                ▆    ▄  ▅▂        ██  ▃  │
 │ next trust rules (lane 4183) and the first frames (lane 4185) -> owner yes on the look ->…  █▁█ ▆█▆▇██▆       ███▁█▂ │
@@ -34,7 +34,7 @@
 │ │ ✗ rev-snapshot           review   opus 5.5 medium  atlas  w42:p2   4h││ 14:05 · rs-visual-spec: closed             │
 │ ────────────────────────────────────────────────────────────────────── ││ 14:05 · arch-plan-counter: closed          │
 │ ● arch-plan-counter2  #4176  ready  ·  brief ✓ report ✓  ·  o reads    ││ 14:03 ✓ arch-plan-counter: Counter-review… │
-│ Counter-review 2 written: not ready to send until three text fixes     ││ 14:03 ● arch-plan-counter: counter-review  │
-│ land (P1-1 narrow layouts, P1-2 numbers, P1-3 release path).           ││ 13:58 ◆ tui-frames: D4: one binary for th… │
+│ Second review done: hold the send until three wording fixes land (P1-1 ││ 14:03 ● arch-plan-counter: counter-review  │
+│ short rows, P1-2 counts, P1-3 install path).                           ││ 13:58 ◆ tui-frames: D4: one binary for th… │
 ╰────────────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────╯
  ⏎ go to pane   o report   tab next pane   1-5 jump   / filter   h back   ? help
