@@ -477,7 +477,7 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
     if app.fetch.error.is_some() {
         out.insert(0, hint("r", Some("retry")));
     }
-    if app.detail && wide {
+    if app.detail && wide && !matches!(selected(app), Selected::Nothing) {
         out.splice(0..0, [hint("j k", Some("scroll")), hint("h", Some("list"))]);
     }
     if wide {
@@ -527,7 +527,8 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     let mut list = body;
     if wide {
         // No inset here: the list has its own gutter column.
-        let block = ui::panel(t, "Glance", !app.detail);
+        let detail = app.detail && !matches!(selected(app), Selected::Nothing);
+        let block = ui::panel(t, "Glance", !detail);
         list = block.inner(Rect { width: 60, ..body });
         f.render_widget(block, Rect { width: 60, ..body });
     }
@@ -735,7 +736,7 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
     app.seen.borrow_mut().page = (h, total);
     app.hit(area, Hit::Detail);
     let first = app.scroll.min(total.saturating_sub(h));
-    let title = if total > h {
+    let title = if total > h && h > 0 {
         format!("{title} · {}-{}/{total}", first + 1, first + h)
     } else {
         title

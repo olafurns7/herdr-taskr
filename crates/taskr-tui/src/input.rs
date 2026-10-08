@@ -124,6 +124,8 @@ fn scroll(app: &mut App, by: isize) -> Effect {
 
 fn reset(app: &mut App) {
     (app.row, app.lane, app.scroll) = (0, 0, 0);
+    // A new filter starts a fresh walk of the list.
+    app.detail = false;
 }
 
 /// Typing in the filter: Enter keeps it, Esc clears it.
