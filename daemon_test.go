@@ -185,6 +185,7 @@ func eventLines(n int) string {
 }
 
 type daemonProc struct {
+	pid  int
 	done chan struct{}
 	code int
 	out  bytes.Buffer
@@ -193,12 +194,37 @@ type daemonProc struct {
 // startDaemon runs `taskr daemon` in-process against sock. Cleanup shuts the
 // socket down and waits for the daemon to exit.
 func (h *harness) startDaemon(s *fakeSocket) *daemonProc {
-	p := &daemonProc{done: make(chan struct{})}
+	p := &daemonProc{done: make(chan struct{}), pid: os.Getpid()}
 	env := h.getenv(map[string]string{"HERDR_SOCKET_PATH": s.path})
-	go func() {
-		defer close(p.done)
-		p.code = contractRun(h.t, []string{"--json", "daemon"}, env, &p.out, io.Discard)
-	}()
+	if os.Getenv("TASKR_BIN") != "" {
+		cmd := contractCommand([]string{"--json", "daemon"}, env, &p.out, io.Discard)
+		if err := cmd.Start(); err != nil {
+			h.t.Fatal(err)
+		}
+		p.pid = cmd.Process.Pid
+		go func() {
+			defer close(p.done)
+			err := cmd.Wait()
+			p.code = 0
+			if err != nil {
+				if ex, ok := err.(*exec.ExitError); ok {
+					p.code = ex.ExitCode()
+				} else {
+					p.code = exitHerdr
+				}
+			}
+		}()
+		h.t.Cleanup(func() {
+			if cmd.ProcessState == nil {
+				cmd.Process.Kill()
+			}
+		})
+	} else {
+		go func() {
+			defer close(p.done)
+			p.code = contractRun(h.t, []string{"--json", "daemon"}, env, &p.out, io.Discard)
+		}()
+	}
 	h.t.Cleanup(func() {
 		s.shutdown()
 		p.wait(h.t)
@@ -210,6 +236,10 @@ func (p *daemonProc) wait(t *testing.T) {
 	t.Helper()
 	select {
 	case <-p.done:
+		if p.code == contractNotImplemented {
+			contractMissing.Store(strings.SplitN(t.Name(), "/", 2)[0], true)
+			t.Skip("adapter: daemon not implemented")
+		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("daemon did not exit")
 	}
@@ -270,7 +300,7 @@ func TestDaemonSubscriptionShapeAndWriteSilence(t *testing.T) {
 		return st["daemon"] == "fresh"
 	})
 	st := h.ok(h.sock(s), "daemon", "--status")
-	if st["running"] != true || num(st, "pid") != int64(os.Getpid()) || st["socket"] != s.path {
+	if st["running"] != true || num(st, "pid") != int64(p.pid) || st["socket"] != s.path {
 		t.Fatalf("daemon --status = %v", st)
 	}
 	if _, lines := h.run(nil, "status"); lines[len(lines)-1]["daemon"] != "fresh" {
@@ -280,7 +310,7 @@ func TestDaemonSubscriptionShapeAndWriteSilence(t *testing.T) {
 	s.shutdown()
 	p.wait(t)
 	out := p.lines(t)
-	if p.code != exitOK || len(out) != 1 || out[0]["ok"] != true || out[0]["socket"] != s.path || num(out[0], "pid") != int64(os.Getpid()) {
+	if p.code != exitOK || len(out) != 1 || out[0]["ok"] != true || out[0]["socket"] != s.path || num(out[0], "pid") != int64(p.pid) {
 		t.Fatalf("daemon exit %d, stdout %v", p.code, out)
 	}
 	if st := h.ok(nil, "daemon", "--status"); st["daemon"] != "none" || st["running"] != false {
@@ -380,7 +410,7 @@ func TestDaemonLockRefusesSecondInstance(t *testing.T) {
 	p := h.startDaemon(s)
 	s.next() // the first instance holds the lock before it connects
 	out := h.ok(h.sock(s), "daemon")
-	if out["ok"] != true || out["already_running"] != true || num(out, "pid") != int64(os.Getpid()) {
+	if out["ok"] != true || out["already_running"] != true || num(out, "pid") != int64(p.pid) {
 		t.Fatalf("second daemon = %v", out)
 	}
 	s.shutdown()

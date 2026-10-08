@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 #[repr(u8)]
 pub enum ExitCode {
     Ok = 0,
+    Watch = 1,
     Usage = 2,
     Timeout = 3,
     Database = 4,
@@ -150,12 +151,14 @@ pub fn request_hash(
 }
 
 pub fn frozen_now() -> Result<time::OffsetDateTime, time::error::Parse> {
-    match std::env::var("TASKR_FROZEN_NOW") {
-        Ok(now) if !now.is_empty() => {
-            time::OffsetDateTime::parse(&now, &time::format_description::well_known::Rfc3339)
-        }
-        _ => Ok(time::OffsetDateTime::now_utc()),
+    #[cfg(feature = "contract")]
+    if let Ok(now) = std::env::var("TASKR_FROZEN_NOW")
+        && !now.is_empty()
+    {
+        return time::OffsetDateTime::parse(&now, &time::format_description::well_known::Rfc3339)
+            .map(|t| t.to_offset(time::UtcOffset::UTC));
     }
+    Ok(time::OffsetDateTime::now_utc())
 }
 
 // Event payloads decode through Go's interface{} path: every JSON number is float64.
@@ -176,6 +179,8 @@ pub fn event_data(value: Value) -> Value {
     }
 }
 
+pub mod db;
+pub mod goflag;
 pub mod schema;
 
 #[cfg(test)]
@@ -186,6 +191,8 @@ mod tests {
         let before = time::OffsetDateTime::now_utc();
         let now = frozen_now().unwrap();
         let after = time::OffsetDateTime::now_utc();
+        assert_eq!(now.offset(), time::UtcOffset::UTC);
+        #[cfg(feature = "contract")]
         if let Ok(raw) = std::env::var("TASKR_FROZEN_NOW")
             && !raw.is_empty()
         {
@@ -194,8 +201,25 @@ mod tests {
                 time::OffsetDateTime::parse(&raw, &time::format_description::well_known::Rfc3339)
                     .unwrap()
             );
-        } else {
-            assert!(before <= now && now <= after);
+            return;
+        }
+        assert!(before <= now && now <= after);
+    }
+    #[cfg(not(feature = "contract"))]
+    #[test]
+    fn default_build_ignores_frozen_now() {
+        for frozen in ["2001-01-01T00:00:00Z", "not a timestamp"] {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "tests::clock_follows_environment", "--nocapture"])
+                .env("TASKR_FROZEN_NOW", frozen)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
     }
     #[test]
@@ -252,3 +276,7 @@ mod tests {
         }
     }
 }
+
+pub mod store;
+
+pub use time::Duration;

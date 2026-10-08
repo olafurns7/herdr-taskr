@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"database/sql"
@@ -10,10 +11,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -24,13 +27,16 @@ import (
 // local CLI (h.run) is the server host, with no machine.
 type twoHost struct {
 	*harness
-	d      *dashboard
-	url    string
-	caller atomic.Value // the whois identity of the next request: host-a, host-b, ...
-	homes  map[string]string
+	d           *dashboard
+	url         string
+	caller      atomic.Value // the whois identity of the next request: host-a, host-b, ...
+	homes       map[string]string
+	callerFile  string
+	loopbackURL string
 }
 
 func newTwoHost(t *testing.T) *twoHost {
+	t.Setenv("TASKR_CONTRACT_TAILNET", "1")
 	fakeTailnetHooks(t)
 	setVar(t, &whoisTTL, time.Nanosecond)
 	h := newHarness(t)
@@ -62,8 +68,13 @@ func newTwoHost(t *testing.T) *twoHost {
 	hub.hosts["[::1]:"+port] = true
 	hub.whois.arg = func(net.IP) string { return "as-" + r.caller.Load().(string) }
 	r.d.serverEnv = h.getenv(nil)
-	r.d.serve(ln, func() {})
-	t.Cleanup(r.d.stop)
+	if binary := os.Getenv("TASKR_HUB_BIN"); binary != "" {
+		ln.Close()
+		r.startExternal(binary, self.NodeID)
+	} else {
+		r.d.serve(ln, func() {})
+		t.Cleanup(r.d.stop)
+	}
 	for _, m := range []string{"host-a", "host-b"} {
 		r.homes[m] = r.clientHome(r.url)
 	}
@@ -99,7 +110,7 @@ func clientEnv(home string, env map[string]string) func(string) string {
 // and stderr.
 func (r *twoHost) cli(machine string, env map[string]string, args ...string) (int, map[string]any, string) {
 	r.t.Helper()
-	r.caller.Store(machine)
+	r.setCaller(machine)
 	var out, errb bytes.Buffer
 	code := contractCLIMain(r.t, append([]string{"--json"}, args...), clientEnv(r.homes[machine], env), &out, &errb)
 	return code, lastJSON(out.String()), errb.String()
@@ -125,7 +136,7 @@ func (r *twoHost) want(code int, machine string, env map[string]string, args ...
 // the reply.
 func (r *twoHost) post(caller string, body any, mods ...func(*http.Request)) (int, rpcReply, string) {
 	r.t.Helper()
-	r.caller.Store(caller)
+	r.setCaller(caller)
 	b, ok := body.(string)
 	if !ok {
 		raw, _ := json.Marshal(body)
@@ -207,6 +218,17 @@ func TestHarnessRPCAdmission(t *testing.T) {
 		q.Header.Del("Sec-Fetch-Site")
 		q.Header.Set(rpcHeader, "1")
 	}))
+	if r.loopbackURL != "" {
+		q, _ := http.NewRequest("POST", r.loopbackURL+rpcPath, strings.NewReader(`{"argv":["status"],"cwd":"/","request_key":"admission-loopback"}`))
+		q.Header.Set("Content-Type", "application/json")
+		q.Header.Set(rpcHeader, "1")
+		response, err := http.DefaultClient.Do(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Code = response.StatusCode
+		response.Body.Close()
+	}
 	if w.Code != 403 {
 		t.Fatalf("loopback rpc = %d %s", w.Code, w.Body)
 	}
@@ -288,8 +310,18 @@ func TestHarnessRPCDuplicateFlags(t *testing.T) {
 			}
 
 			var out, errb bytes.Buffer
-			code := clientMain("http://192.168.1.5:7788", fmt.Errorf("sentinel server URL error"),
-				append([]string{"--json"}, tc.args...), clientEnv(r.homes["host-a"], nil), &out, &errb)
+			code := 0
+			if os.Getenv("TASKR_BIN") != "" {
+				// An unreadable server.url is the executable version of readErr.
+				home := t.TempDir()
+				dir := filepath.Join(home, ".local", "state", "taskr")
+				if err := os.MkdirAll(filepath.Join(dir, serverURLFile), 0700); err != nil {
+					t.Fatal(err)
+				}
+				code = contractCLIMain(t, append([]string{"--json"}, tc.args...), clientEnv(home, nil), &out, &errb)
+			} else {
+				code = clientMain("http://192.168.1.5:7788", fmt.Errorf("sentinel server URL error"), append([]string{"--json"}, tc.args...), clientEnv(r.homes["host-a"], nil), &out, &errb)
+			}
 			if code != exitUsage || !strings.Contains(out.String()+errb.String(), want) {
 				t.Fatalf("client %v = exit %d, output %q %q; want %q", tc.args, code, out.String(), errb.String(), want)
 			}
@@ -308,6 +340,11 @@ func TestHarnessWaitAfterAdopt(t *testing.T) {
 	child := num(r.want(0, "host-a", nil, "new", "child", "--role", "gate", "--parent", id(top)), "task_id")
 	done := make(chan rpcReply, 1)
 	go func() {
+		if r.callerFile != "" {
+			_, rep, _ := r.post("host-a", rpcBody(dir, nil, "wait-adopt-01", "wait", "--as", id(top), "--timeout", "5000"))
+			done <- rep
+			return
+		}
 		done <- r.d.rpcRun(context.Background(), "host-a", rpcBody(dir, nil, "wait-adopt-01", "wait", "--as", id(top), "--timeout", "5000"))
 	}()
 	deadline := time.Now().Add(3 * time.Second)
@@ -434,7 +471,11 @@ func (r *twoHost) promptTarget() int64 {
 
 func TestHarnessRetry(t *testing.T) {
 	contractGuard(t)
-	setVar(t, &rpcRetryWindow, func([]string) time.Duration { return 120 * time.Millisecond })
+	window := 120 * time.Millisecond
+	if os.Getenv("TASKR_HUB_BIN") != "" {
+		window = 2 * time.Second
+	} // subprocess dispatch includes process startup
+	setVar(t, &rpcRetryWindow, func([]string) time.Duration { return window })
 	r := newTwoHost(t)
 	dir := t.TempDir()
 	top := num(r.want(0, "host-a", nil, "new", "top", "--role", "orchestrator", "--cwd", dir), "task_id")
@@ -478,7 +519,20 @@ func TestHarnessRetry(t *testing.T) {
 	w := r.promptTarget()
 	started, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	setVar(t, &receiptPolled, func(int64) { once.Do(func() { close(started); <-release }) })
+	if r.callerFile == "" {
+		setVar(t, &receiptPolled, func(int64) { once.Do(func() { close(started); <-release }) })
+	} else {
+		go func() {
+			deadline := time.Now().Add(20 * time.Second)
+			for time.Now().Before(deadline) {
+				if r.count(`select count(*) from events where task_id=? and kind='prompt_outcome' and summary='activity_observed'`, w) > 0 {
+					close(started)
+					return
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}()
+	}
 	cx, cancel := context.WithCancel(context.Background())
 	body, _ := json.Marshal(rpcBody(dir, nil, "retry-key-4", "prompt", id(w), "--text", "go", "--confirm", "--confirm-timeout", "300"))
 	q, _ := http.NewRequestWithContext(cx, http.MethodPost, r.url+rpcPath, bytes.NewReader(body))
@@ -692,5 +746,68 @@ func TestHarnessRPCPaths(t *testing.T) {
 	r.openDB().QueryRow(`select data from events where kind = 'handover' and task_id = ?`, top).Scan(&data)
 	if strings.Contains(data, `"out"`) {
 		t.Fatalf("the server recorded an --out path: %s", data)
+	}
+}
+
+// startExternal replaces the server half, keeping the existing CLI and SQL assertions.
+// The Rust fixture flag and loopback whois overrides are absent from default builds.
+func (r *twoHost) startExternal(binary, nodeID string) {
+	t := r.t
+	r.callerFile = filepath.Join(r.bin, "hub-caller")
+	r.setCaller("host-a")
+	wrapper := strings.Replace(fakeTailscale, `f="$d/ts.whois.$3"`, `peer="$3"
+  [ "$peer" = ::1 ] && peer="as-$(cat "$d/hub-caller")"
+  f="$d/ts.whois.$peer"`, 1)
+	r.write("tailscale", wrapper, 0755)
+	cmd := exec.Command(binary, "--contract-hub", nodeID)
+	cmd.Env = []string{"HOME=" + r.dir, "TASKR_DB=" + r.db, "PATH=" + os.Getenv("PATH"), "HERDR_SOCKET_PATH=" + r.herdrSock, "TASKR_CONTRACT_TAILNET=1", "TASKR_CONTRACT_ORACLE=1", "LANG=C.UTF-8", "TZ=UTC"}
+	stderr, err := os.Create(filepath.Join(r.dir, "hub-stderr.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.Stderr = stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	var waitErr error
+	go func() { waitErr = cmd.Wait(); close(done) }()
+	t.Cleanup(func() {
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			_ = cmd.Process.Kill()
+			<-done
+		}
+		stderr.Close()
+	})
+	lines := make(chan string, 2)
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			lines <- scanner.Text()
+		}
+	}()
+	for _, target := range []*string{&r.url, &r.loopbackURL} {
+		select {
+		case *target = <-lines:
+		case <-done:
+			t.Fatalf("external hub stopped: %v", waitErr)
+		case <-time.After(10 * time.Second):
+			t.Fatal("external hub did not announce listeners")
+		}
+	}
+}
+func (r *twoHost) setCaller(machine string) {
+	r.caller.Store(machine)
+	if r.callerFile != "" {
+		if err := os.WriteFile(r.callerFile, []byte(machine), 0600); err != nil {
+			r.t.Fatal(err)
+		}
 	}
 }

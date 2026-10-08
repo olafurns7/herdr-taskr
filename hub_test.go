@@ -24,22 +24,22 @@ import (
 // (with ts.whois.<ip>.sleep and ts.whois.<ip>.exit). A missing file is a
 // failure, like a stopped tailscaled. Any other command is refused.
 const fakeTailscale = `#!/bin/sh
-d="$(dirname "$0")"
+d="${0%/*}"
 printf '%s|' "$@" >> "$d/ts.calls"
 echo >> "$d/ts.calls"
 case "$1" in
 ip)
-  [ "$2" = "-4" ] && [ -f "$d/ts.ip" ] && cat "$d/ts.ip" && exit 0
+  [ "$2" = "-4" ] && [ -f "$d/ts.ip" ] && exec cat "$d/ts.ip"
   echo "not running" >&2; exit 1 ;;
 status)
-  [ "$2" = "--json" ] && [ -f "$d/ts.status" ] && cat "$d/ts.status" && exit 0
+  [ "$2" = "--json" ] && [ -f "$d/ts.status" ] && exec cat "$d/ts.status"
   echo "not running" >&2; exit 1 ;;
 whois)
   f="$d/ts.whois.$3"
   [ "$2" = "--json" ] || exit 2
   [ -f "$f.sleep" ] && sleep "$(cat "$f.sleep")"
   [ -f "$f.exit" ] && exit "$(cat "$f.exit")"
-  [ -f "$f" ] && cat "$f" && exit 0
+  [ -f "$f" ] && exec cat "$f"
   echo "no match for IP:port" >&2; exit 1 ;;
 *)
   echo "refused" >&2; exit 2 ;;
@@ -125,6 +125,7 @@ func (h *harness) tsCalls(prefix string) int {
 // fakeTailnetHooks makes ::1 a tailnet address that goes through whois, so
 // two daemons on one host can play hub and peer. Tests only.
 func fakeTailnetHooks(t *testing.T) {
+	t.Setenv("TASKR_CONTRACT_TAILNET", "1")
 	in, lo, arg := inTailnet, loopbackPeer, hubWhoisArg
 	inTailnet = func(ip net.IP) bool { return cgnat.Contains(ip) || ip.Equal(net.IPv6loopback) }
 	loopbackPeer = func(ip net.IP) bool { return ip.Equal(net.IPv4(127, 0, 0, 1)) }

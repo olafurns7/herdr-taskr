@@ -362,7 +362,7 @@ func TestSpoolOwnerNoteAndFreshRPCNotes(t *testing.T) {
 		t.Fatalf("queued owner flag/task lost: %v", err)
 	}
 	r.caller.Store(host)
-	if sent, err := sendSpool(spoolStateDir(home), r.url, nil); err != nil || sent != 1 {
+	if sent, err := contractNetSendSpool(t, spoolStateDir(home), r.url, nil); err != nil || sent != 1 {
 		t.Fatalf("delivery = %d %v", sent, err)
 	}
 	if files, err := readSpoolFiles(spoolQueuePath(home)); err != nil || len(files) != 0 {

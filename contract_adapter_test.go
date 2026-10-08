@@ -90,6 +90,9 @@ func contractGuard(t *testing.T) {
 		contractFiltered.Store(root, true)
 		t.Skip("adapter: outside selected family " + filter)
 	}
+	if contractNetConverted[root] {
+		class.Ready = "yes"
+	}
 	if class.Ready != "yes" {
 		t.Skip("adapter: " + class.Reason)
 	}
@@ -123,9 +126,13 @@ func contractSummary() {
 
 // The target gets a deliberate environment, never the worker's task identity or HOME.
 func contractCommand(args []string, getenv func(string) string, stdout, stderr io.Writer) *exec.Cmd {
+	getenv = contractNetEnv(args, getenv)
 	cmd := exec.Command(os.Getenv("TASKR_BIN"), args...)
 	cmd.Stdout, cmd.Stderr = stdout, stderr
-	for _, key := range []string{"HOME", "TASKR_DB", "PATH", "HERDR_SOCKET_PATH", "TASKR_FORMAT", "TASKR_TASK", "TASKR_LAUNCH", "HERDR_ENV", "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID", "INVOCATION_ID", "SYSTEMD_EXEC_PID", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "CODEX_THREAD_ID"} {
+	if name, _ := rpcCommand(args); name == "hook" {
+		cmd.Stdin = os.Stdin
+	}
+	for _, key := range []string{"HOME", "TASKR_DB", "PATH", "HERDR_SOCKET_PATH", "TASKR_FORMAT", "TASKR_TASK", "TASKR_LAUNCH", "HERDR_ENV", "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID", "INVOCATION_ID", "SYSTEMD_EXEC_PID", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "CODEX_THREAD_ID", "TASKR_CONTRACT_TAILNET", "TASKR_CONTRACT_RETRY_MS", "TASKR_FROZEN_NOW"} {
 		value := getenv(key)
 		if key == "PATH" && value == "" {
 			value = os.Getenv("PATH")

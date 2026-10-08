@@ -375,13 +375,16 @@ func TestRetryNonRetryable(t *testing.T) {
 				io.WriteString(w, tc.body)
 			})
 			go srv.Serve(ln)
-			code, _, stderr := retryCLI(t, r.clientHome(url), "status")
+			code, output, stderr := retryCLI(t, r.clientHome(url), "status")
 			if code == exitOK || attempts.Load() != 1 || strings.Contains(stderr, "retrying until") {
-				t.Fatalf("non-retryable = %d, attempts %d, %s", code, attempts.Load(), stderr)
+				t.Fatalf("non-retryable = %d, attempts %d, stdout %q, stderr %s", code, attempts.Load(), output, stderr)
 			}
 		})
 	}
 	t.Run("unverified connection", func(t *testing.T) {
+		if os.Getenv("TASKR_BIN") != "" {
+			t.Skip("internal: Go-only RoundTripper substitution; Rust pins the verified socket")
+		}
 		r := newTwoHost(t)
 		setVar(t, &rpcHTTPTransport, func() http.RoundTripper {
 			return retryRoundTripper(func(*http.Request) (*http.Response, error) {
