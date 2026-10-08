@@ -6,6 +6,7 @@ use taskr_core::{
     db::{self, Connection, OptionalExtension, params, params_from_iter, rusqlite},
     goflag::{self, FlagSet},
 };
+mod campaign;
 mod glance;
 mod queries;
 type Result<T> = std::result::Result<T, Error>;
@@ -102,6 +103,14 @@ fn flags(cmd: &str, json: bool) -> FlagSet {
                 .bool("versions", false, "include every version")
                 .int("limit", 100, "newest N documents; 0 for all (default 100)");
         }
+        "campaign" => {
+            f.int("page", 1, "log page, newest first (100 events per page)")
+                .bool(
+                    "all",
+                    false,
+                    "include closed lanes and their unanswered asks",
+                );
+        }
         "glance" => {
             f.bool("watch", false, "live terminal view").duration(
                 "every",
@@ -159,6 +168,7 @@ pub fn dispatch(json: bool, args: &[String]) -> Option<ExitCode> {
             | "log"
             | "search"
             | "glance"
+            | "campaign"
             | "doc ls"
             | "doc get"
             | "help"
@@ -168,7 +178,7 @@ pub fn dispatch(json: bool, args: &[String]) -> Option<ExitCode> {
     }
     let mut f = flags(&name, json);
     let (min, max) = match name.as_str() {
-        "search" | "log" | "doc ls" | "doc get" => (1, 1),
+        "search" | "log" | "doc ls" | "doc get" | "campaign" => (1, 1),
         "help" => (0, 1),
         _ => (0, 0),
     };
@@ -197,6 +207,7 @@ pub fn dispatch(json: bool, args: &[String]) -> Option<ExitCode> {
         "doc ls" => queries::doc_ls(&f),
         "doc get" => queries::doc_get(&f),
         "glance" => glance::run(&f),
+        "campaign" => campaign::run(&f),
         "version" => {
             let version = option_env!("TASKR_VERSION").unwrap_or("dev");
             println!(

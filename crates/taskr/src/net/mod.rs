@@ -1,5 +1,6 @@
 //! Client-host routing, verified RPC, and the Go-compatible offline spool.
 mod doc;
+pub(crate) mod events;
 mod hook;
 mod prompt;
 mod rpc;

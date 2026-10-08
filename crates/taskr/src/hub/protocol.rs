@@ -84,6 +84,7 @@ pub(super) fn stored(argv: &[String]) -> bool {
                 | "version"
                 | "help"
                 | "glance"
+                | "campaign"
         )
         && !(name == "doc"
             && args
@@ -377,6 +378,7 @@ mod tests {
         assert!(stored(&argv(&["_hook", "claude"])));
         for args in [
             vec!["wait"],
+            vec!["campaign", "1"],
             vec!["doc", "backfill"],
             vec!["note", "--help"],
             vec!["_host", "observe"],

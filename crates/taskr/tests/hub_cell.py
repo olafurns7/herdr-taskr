@@ -42,6 +42,24 @@ class RustHub(Cell):
 def checks(cell):
     root=json.loads(cell.record(['new','hub-root','--role','orchestrator']).stdout)['task_id']
     assert cell.count('select machine from tasks where id=?',(root,))=='host-a'
+    # Both executable clients read caller/server identity and fresh campaign data.
+    for binary in (cell.go,cell.rust):
+        glance=cell.obj(binary,['glance'])
+        assert glance['caller_host']=='host-a' and glance['server_host'],glance
+        key=cell.key()
+        args=['--json','--request-key',key,'campaign',str(root)]
+        before=json.loads(cell.want(binary,args).stdout)
+        assert before['root']['host']=='host-a' and len(before['spark'])==24,before
+        next_text='campaign fresh '+key
+        cell.record(['next',str(root),next_text])
+        after=json.loads(cell.want(binary,args).stdout)
+        assert after['root']['next']==next_text,after
+        assert cell.count('select count(*) from requests where key=?',(key,))==0
+    log_file=cell.hub_home/'.local/state/taskr/daemon.log'
+    logged=log_file.read_text() if log_file.exists() else ''
+    assert not any('cmd='+name+' ' in line and 'exit=0' in line for line in logged.splitlines() for name in ('glance','campaign')),logged
+    cell.results.append({'glance_hosts_campaign_fresh_and_quiet_success_both_clients':True,'pass':True})
+
     for args in (['status'],['log',str(root)],['notes','--root',str(root)],['version']):cell.compare(['--json',*args])
     key=cell.key();args=['--json','--request-key',key,'note','once <&> Þ😀','--as',str(root)]
     cell.compare(args);cell.compare(args)

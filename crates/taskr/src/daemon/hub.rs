@@ -11,6 +11,7 @@ fn cfg(
     identity: Option<crate::hub::HubIdentity>,
     hosts: BTreeSet<String>,
     tailscale_bin: PathBuf,
+    log: Arc<Log>,
 ) -> crate::hub::HubConfig {
     crate::hub::HubConfig {
         listeners,
@@ -20,9 +21,15 @@ fn cfg(
         hosts,
         home,
         tailscale_bin,
+        log,
     }
 }
-fn loopback_cfg(listener: TcpListener, path: &Path, home: &Path) -> crate::hub::HubConfig {
+fn loopback_cfg(
+    listener: TcpListener,
+    path: &Path,
+    home: &Path,
+    log: Arc<Log>,
+) -> crate::hub::HubConfig {
     let port = listener.local_addr().expect("bound listener").port();
     let hosts = [
         format!("127.0.0.1:{port}"),
@@ -38,6 +45,7 @@ fn loopback_cfg(listener: TcpListener, path: &Path, home: &Path) -> crate::hub::
         None,
         hosts,
         find_bin("tailscale").unwrap_or_else(|| PathBuf::from("tailscale")),
+        log,
     )
 }
 async fn serve(
@@ -101,7 +109,7 @@ pub(super) fn start(
             let url = format!("http://{addr}/");
             set_meta(db, "dashboard_url", &url)?;
             first["dashboard_url"] = json!(url);
-            loopback = Some(loopback_cfg(listener, &path, &home));
+            loopback = Some(loopback_cfg(listener, &path, &home, log.clone()));
         }
         Err(e) => {
             log.line(&format!(
@@ -142,7 +150,7 @@ pub(super) fn start(
     Ok(Some(rt.spawn(async move{
         let mut tasks=tokio::task::JoinSet::new();let mut stopped=stopped;
         if let Some(cfg)=loopback{tasks.spawn(serve(cfg,stopped.clone(),log.clone(),Some("dashboard_url")));}
-        else if stay{let path=path.clone();let home=home.clone();let addr=config.addr.clone();let log=log.clone();let mut stop=stopped.clone();tasks.spawn(async move{loop{tokio::select!{_=stop.changed()=>return,_=tokio::time::sleep(Duration::from_secs(2))=>{}}match TcpListener::bind(&addr){Ok(listener)=>{let url=format!("http://{}/",listener.local_addr().unwrap());let meta_path=path.clone();let _=tokio::task::spawn_blocking(move||{if let Ok(db)=db::open(&meta_path){let _=set_meta(&db,"dashboard_url",&url);}}).await;serve(loopback_cfg(listener,&path,&home),stop,log,Some("dashboard_url")).await;return},Err(e)=>log.limited("loopback-retry",Duration::from_secs(60),&format!("dashboard: listen {addr} failed: {e}; retrying"))}}});}
+        else if stay{let path=path.clone();let home=home.clone();let addr=config.addr.clone();let log=log.clone();let mut stop=stopped.clone();tasks.spawn(async move{loop{tokio::select!{_=stop.changed()=>return,_=tokio::time::sleep(Duration::from_secs(2))=>{}}match TcpListener::bind(&addr){Ok(listener)=>{let url=format!("http://{}/",listener.local_addr().unwrap());let meta_path=path.clone();let _=tokio::task::spawn_blocking(move||{if let Ok(db)=db::open(&meta_path){let _=set_meta(&db,"dashboard_url",&url);}}).await;serve(loopback_cfg(listener,&path,&home,log.clone()),stop,log,Some("dashboard_url")).await;return},Err(e)=>log.limited("loopback-retry",Duration::from_secs(60),&format!("dashboard: listen {addr} failed: {e}; retrying"))}}});}
         if config.tailnet{
             let path=path.clone();let home=home.clone();let log=log.clone();let mut stop=stopped.clone();
             tasks.spawn(async move{
@@ -153,7 +161,7 @@ pub(super) fn start(
                     if let Some(discovery)=initial.as_ref(){
                         let mut listeners=std::mem::take(&mut initial_bound);
                         for addr in &discovery.addresses{if !bound.contains(addr)&&!listeners.iter().any(|l|l.local_addr().ok()==Some(*addr))&&let Ok(listener)=TcpListener::bind(addr){listeners.push(listener);}}
-                        if !listeners.is_empty(){for listener in &listeners{bound.insert(listener.local_addr().unwrap());}let url=discovery.url.clone();let meta_path=path.clone();let _=tokio::task::spawn_blocking(move||{if let Ok(db)=db::open(&meta_path){let _=set_meta(&db,"hub_tailnet_url",&url);}}).await;servers.spawn(serve(cfg(listeners,path.clone(),home.clone(),Some(discovery.identity.clone()),discovery.hosts.clone(),discovery.tailscale_bin.clone()),stop.clone(),log.clone(),None));}
+                        if !listeners.is_empty(){for listener in &listeners{bound.insert(listener.local_addr().unwrap());}let url=discovery.url.clone();let meta_path=path.clone();let _=tokio::task::spawn_blocking(move||{if let Ok(db)=db::open(&meta_path){let _=set_meta(&db,"hub_tailnet_url",&url);}}).await;servers.spawn(serve(cfg(listeners,path.clone(),home.clone(),Some(discovery.identity.clone()),discovery.hosts.clone(),discovery.tailscale_bin.clone(),log.clone()),stop.clone(),log.clone(),None));}
                         if discovery.addresses.iter().all(|a|bound.contains(a)){let _=stop.changed().await;break}
                     }
                     tokio::select!{_=stop.changed()=>break,_=tokio::time::sleep(delay)=>{}}delay=(delay*2).min(Duration::from_secs(60));

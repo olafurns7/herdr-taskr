@@ -84,7 +84,7 @@ def fixtures(directory, live):
     return paths
 
 
-def execute(binary, args, home, db, extra_env, timeout, client_url=None):
+def execute(binary, args, home, db, extra_env, timeout, client_url=None, child_mode=None, caller=None):
     home.mkdir()
     fake = home / 'bin'
     fake.mkdir()
@@ -101,8 +101,14 @@ def execute(binary, args, home, db, extra_env, timeout, client_url=None):
         state.mkdir(parents=True)
         (state / 'server.url').write_text(client_url + '\n')
         env['TASKR_DB'] = ''
+    input_bytes = None
+    if caller:
+        env.update(TASKR_RPC_CALLER=caller, TASKR_RPC_CWD=str(home))
+        request = {'argv': args, 'cwd': str(home), 'env': {}, 'request_key': 'synthetic-child'}
+        input_bytes = json.dumps(request).encode()
+        args = ['--contract-rpc-child', caller] if child_mode == 'go' else ['--hub-child', *args]
     try:
-        process = subprocess.run([str(binary), *args], env=env, capture_output=True, timeout=timeout)
+        process = subprocess.run([str(binary), *args], env=env, input=input_bytes, capture_output=True, timeout=timeout)
         return process.returncode, process.stdout, process.stderr
     except subprocess.TimeoutExpired:
         return -999, b'', b'contract: process timeout\n'
@@ -114,6 +120,7 @@ def main():
     parser.add_argument('--go', required=True, type=Path)
     parser.add_argument('--rust', required=True, type=Path)
     parser.add_argument('--family', action='append', help='exact family or read/write/net/schema prefix; repeatable')
+    parser.add_argument('--catchup-fixtures', action='store_true', help='synthetic P1a/P1b trust, campaign and spark corpus')
     parser.add_argument('--cases', type=Path, default=ROOT / 'testdata/contract/cases.json')
     parser.add_argument('--live-snapshot', type=Path, help='already backed-up corpus; never the live ledger')
     parser.add_argument('--require-live', action='store_true')
@@ -144,15 +151,35 @@ def main():
     if not cases:
         parser.error('no cases selected')
     summary, results = defaultdict(lambda: defaultdict(int)), []
+    groups = defaultdict(lambda: defaultdict(int))
     with tempfile.TemporaryDirectory(prefix='taskr-contract-', dir=scratch_root) as scratch:
         directory = Path(scratch)
         corpus = fixtures(directory, options.live_snapshot)
+        if options.catchup_fixtures:
+            from catchup_fixtures import fixtures as catchup_fixtures
+            corpus.update(catchup_fixtures(directory, (ROOT / 'schema.sql').read_text()))
         baseline = {name: logical(path) for name, path in corpus.items()}
+        # An internal RPC child always receives its hub's already-migrated ledger.
+        child_corpus = {}
+        if any(case.get('rpc_caller') for case in cases):
+            child_dir = directory / 'rpc-fixtures'
+            child_dir.mkdir()
+            for name, source in corpus.items():
+                path = child_dir / (name + '.db')
+                clone(source, path)
+                code, _, stderr = execute(go, ['--contract-migrate'], child_dir / (name + '-home'), path, {}, options.timeout)
+                if code != 0:
+                    raise RuntimeError(f'RPC fixture migration failed: {name}: {code}: {stderr!r}')
+                child_corpus[name] = path
         for i, case in enumerate(cases):
             for fixture_name, fixture in corpus.items():
                 if fixture_name not in case.get('fixtures', corpus):
                     continue
-                before = baseline[fixture_name]
+                if case.get('rpc_caller'):
+                    fixture = child_corpus[fixture_name]
+                    before = logical(fixture)
+                else:
+                    before = baseline[fixture_name]
                 root = directory / f'{i}-{fixture_name}'
                 root.mkdir()
                 # Both executions see exactly the same pathname/env; restore private state between them.
@@ -165,7 +192,7 @@ def main():
                         Path(str(db) + suffix).unlink(missing_ok=True)
                     clone(fixture, db)
                     steps = case.get('sequence', [case['argv']])
-                    executions = [execute(binary, argv, root / f'home{step}', db, case.get('env', {}), options.timeout, case.get('client_url'))
+                    executions = [execute(binary, argv, root / f'home{step}', db, case.get('env', {}), options.timeout, case.get('client_url'), 'go' if binary == go else 'rust', case.get('rpc_caller'))
                                   for step, argv in enumerate(steps)]
                     outcomes.append(executions)
                     after.append(logical(db))
@@ -190,12 +217,15 @@ def main():
                     status = 'mismatch' if differences else 'pass'
                 family = case['family']
                 summary[family][status] += 1
+                case_groups = list(case.get('groups', []))
+                for group in case_groups:
+                    groups[group][status] += 1
                 result = {'family': family, 'fixture': fixture_name, 'argv': case.get('sequence', case['argv']), 'status': status,
-                          'go_exit': go_codes if 'sequence' in case else go_codes[0], 'rust_exit': rust_codes if 'sequence' in case else rust_codes[0], 'differences': differences}
+                          'groups': case_groups, 'go_exit': go_codes if 'sequence' in case else go_codes[0], 'rust_exit': rust_codes if 'sequence' in case else rust_codes[0], 'differences': differences}
                 results.append(result)
                 if status == 'mismatch':
                     print(json.dumps(result, ensure_ascii=True))
-        payload = {'fixtures': list(corpus), 'summary': dict(summary), 'results': results,
+        payload = {'fixtures': list(corpus), 'summary': dict(summary), 'groups': dict(groups), 'results': results,
                    'go': str(go), 'rust': str(rust), 'clock': '2026-10-08T00:00:00Z', 'sqlite_version': sqlite3.sqlite_version}
     for family, counts in sorted(summary.items()):
         print(f"{family}: pass={counts['pass']} not-implemented={counts['not-implemented']} mismatch={counts['mismatch']}")

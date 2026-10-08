@@ -18,3 +18,4 @@ taskr-install.sh
 /target/
 /.scratch/
 __pycache__/
+/dist-rust/

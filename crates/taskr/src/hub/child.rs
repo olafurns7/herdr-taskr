@@ -171,7 +171,12 @@ fn fixture_server(args: &[String]) -> ExitCode {
             .map(|p| p.join("tailscale"))
             .find(|p| p.is_file())
             .ok_or_else(|| anyhow::anyhow!("fixture tailscale missing"))?;
+        let home = std::path::PathBuf::from(store::env("HOME"));
+        let log = std::sync::Arc::new(crate::daemon::Log::open(
+            &home.join(".local/state/taskr/daemon.log"),
+        ));
         let cfg = super::HubConfig {
+            log,
             listeners: vec![listener, loopback],
             db_path: db::path().map_err(anyhow::Error::msg)?,
             clock: || taskr_core::frozen_now().expect("clock"),

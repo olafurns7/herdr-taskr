@@ -321,7 +321,7 @@ func readCampaignDetail(q queryer, root int64, page int, unpaged, allLanes bool)
 		if status == "closed" {
 			mark = "closed"
 		}
-		lanes = append(lanes, map[string]any{"state": mark, "pane_id": pane, "outcome": outcome, "age_ms": glanceAge(time.Now(), activity), "id": id, "parent_id": parent, "depth": depth, "name": name, "role": role, "status": status, "host": host, "created_at": created, "closed_at": closed, "provider": provider, "model": model, "effort": effort, "summary": clip(summary, 300)})
+		lanes = append(lanes, map[string]any{"state": mark, "pane_id": pane, "outcome": outcome, "age_ms": glanceAge(clockNow(), activity), "id": id, "parent_id": parent, "depth": depth, "name": name, "role": role, "status": status, "host": host, "created_at": created, "closed_at": closed, "provider": provider, "model": model, "effort": effort, "summary": clip(summary, 300)})
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {

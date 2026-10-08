@@ -263,107 +263,113 @@ impl Client {
             short: me.short,
         })
     }
+    pub(super) fn connect_verified(&self, timeout: Duration) -> Result<TcpStream> {
+        let deadline = Instant::now() + timeout;
+        let addr = self
+            .authority
+            .to_socket_addrs()
+            .map_err(|e| Error::transport(e.to_string(), true, false))?;
+        let mut connected = None;
+        let mut last = "no addresses".to_string();
+        for addr in addr {
+            match TcpStream::connect_timeout(
+                &addr,
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .min(Duration::from_secs(10))
+                    .max(Duration::from_millis(1)),
+            ) {
+                Ok(s) => {
+                    connected = Some(s);
+                    break;
+                }
+                Err(e) => last = e.to_string(),
+            }
+        }
+        let stream = connected.ok_or_else(|| Error::transport(last, true, false))?;
+        let peer = stream
+            .peer_addr()
+            .map_err(|e| Error::transport(e.to_string(), true, false))?;
+        if !tailnet(peer.ip()) {
+            return Err(Error::transport(
+                format!("hub address {peer} is not on the tailnet"),
+                true,
+                false,
+            ));
+        }
+        let who = if fixture() {
+            format!("hub-{}", peer.ip())
+        } else {
+            peer.ip().to_string()
+        };
+        let lookup = || -> Result<Value> {
+            let w: Value = serde_json::from_slice(&ts_out(&["whois", "--json", &who])?)
+                .map_err(|_| Error::transport(format!("whois {who}: bad JSON"), true, false))?;
+            let object_or_null = |v: &Value| v.is_null() || v.is_object();
+            let string_or_null = |v: &Value| v.is_null() || v.is_string();
+            if !object_or_null(&w)
+                || !object_or_null(&w["Node"])
+                || !object_or_null(&w["UserProfile"])
+                || !string_or_null(&w["Node"]["StableID"])
+                || !string_or_null(&w["Node"]["Name"])
+                || !string_or_null(&w["UserProfile"]["LoginName"])
+                || (!w["Node"]["Tags"].is_null()
+                    && !w["Node"]["Tags"]
+                        .as_array()
+                        .is_some_and(|tags| tags.iter().all(string_or_null)))
+            {
+                return Err(Error::transport(
+                    format!("whois {who}: bad JSON"),
+                    true,
+                    false,
+                ));
+            }
+            Ok(w)
+        };
+        let w = lookup().map_err(|mut e| {
+            e.message = format!("hub not verified: {}", e.message);
+            e
+        })?;
+        let node = &w["Node"];
+        let name = node["Name"].as_str().unwrap_or("");
+        let short = name
+            .trim_end_matches('.')
+            .split('.')
+            .next()
+            .unwrap_or("")
+            .to_lowercase()
+            .chars()
+            .take(63)
+            .collect::<String>();
+        let refuse = if node["StableID"].as_str().unwrap_or("").is_empty()
+            || name.is_empty()
+            || w["UserProfile"].is_null()
+        {
+            Some(format!("whois {who}: incomplete answer"))
+        } else if node["Tags"].as_array().is_some_and(|a| !a.is_empty()) {
+            Some(format!("whois {who}: tagged node {short}"))
+        } else if w["UserProfile"]["LoginName"].as_str() != Some(&self.login) {
+            Some(format!("whois {who}: node {short} belongs to another user"))
+        } else {
+            None
+        };
+        if let Some(msg) = refuse {
+            return Err(Error::transport(
+                format!("hub not verified: {msg}"),
+                true,
+                false,
+            ));
+        }
+        Ok(stream)
+    }
     pub fn call(&self, request: &Value, timeout: Duration, fallback: bool) -> Result<Value> {
         let mut request = request.clone();
         let deadline = Instant::now() + timeout;
         loop {
             let argv: Vec<String> = serde_json::from_value(request["argv"].clone())
                 .map_err(|e| Error::usage(e.to_string()))?;
-            let addr = self
-                .authority
-                .to_socket_addrs()
-                .map_err(|e| Error::transport(e.to_string(), true, false))?;
-            let mut connected = None;
-            let mut last = "no addresses".to_string();
-            for addr in addr {
-                match TcpStream::connect_timeout(
-                    &addr,
-                    deadline
-                        .saturating_duration_since(Instant::now())
-                        .min(Duration::from_secs(10))
-                        .max(Duration::from_millis(1)),
-                ) {
-                    Ok(s) => {
-                        connected = Some(s);
-                        break;
-                    }
-                    Err(e) => last = e.to_string(),
-                }
-            }
-            let mut stream = connected.ok_or_else(|| Error::transport(last, true, false))?;
-            let peer = stream
-                .peer_addr()
-                .map_err(|e| Error::transport(e.to_string(), true, false))?;
-            if !tailnet(peer.ip()) {
-                return Err(Error::transport(
-                    format!("hub address {peer} is not on the tailnet"),
-                    true,
-                    false,
-                ));
-            }
-            let who = if fixture() {
-                format!("hub-{}", peer.ip())
-            } else {
-                peer.ip().to_string()
-            };
-            let lookup = || -> Result<Value> {
-                let w: Value = serde_json::from_slice(&ts_out(&["whois", "--json", &who])?)
-                    .map_err(|_| Error::transport(format!("whois {who}: bad JSON"), true, false))?;
-                let object_or_null = |v: &Value| v.is_null() || v.is_object();
-                let string_or_null = |v: &Value| v.is_null() || v.is_string();
-                if !object_or_null(&w)
-                    || !object_or_null(&w["Node"])
-                    || !object_or_null(&w["UserProfile"])
-                    || !string_or_null(&w["Node"]["StableID"])
-                    || !string_or_null(&w["Node"]["Name"])
-                    || !string_or_null(&w["UserProfile"]["LoginName"])
-                    || (!w["Node"]["Tags"].is_null()
-                        && !w["Node"]["Tags"]
-                            .as_array()
-                            .is_some_and(|tags| tags.iter().all(string_or_null)))
-                {
-                    return Err(Error::transport(
-                        format!("whois {who}: bad JSON"),
-                        true,
-                        false,
-                    ));
-                }
-                Ok(w)
-            };
-            let w = lookup().map_err(|mut e| {
-                e.message = format!("hub not verified: {}", e.message);
-                e
-            })?;
-            let node = &w["Node"];
-            let name = node["Name"].as_str().unwrap_or("");
-            let short = name
-                .trim_end_matches('.')
-                .split('.')
-                .next()
-                .unwrap_or("")
-                .to_lowercase()
-                .chars()
-                .take(63)
-                .collect::<String>();
-            let refuse = if node["StableID"].as_str().unwrap_or("").is_empty()
-                || name.is_empty()
-                || w["UserProfile"].is_null()
-            {
-                Some(format!("whois {who}: incomplete answer"))
-            } else if node["Tags"].as_array().is_some_and(|a| !a.is_empty()) {
-                Some(format!("whois {who}: tagged node {short}"))
-            } else if w["UserProfile"]["LoginName"].as_str() != Some(&self.login) {
-                Some(format!("whois {who}: node {short} belongs to another user"))
-            } else {
-                None
-            };
-            if let Some(msg) = refuse {
-                return Err(Error::transport(
-                    format!("hub not verified: {msg}"),
-                    true,
-                    false,
-                ));
-            }
+            let mut stream =
+                self.connect_verified(deadline.saturating_duration_since(Instant::now()))?;
             let remaining = deadline
                 .saturating_duration_since(Instant::now())
                 .max(Duration::from_millis(1));

@@ -21,6 +21,9 @@ func TestMain(m *testing.M) {
 	dashboardDefaultAddr = "127.0.0.1:0" // never the owner's 7788
 	tailscaleFallbacks = nil             // never the real tailscale
 	if os.Getenv("TASKR_CONTRACT_ORACLE") == "1" {
+		if len(os.Args) == 3 && os.Args[1] == "--contract-rpc-child" {
+			os.Exit(contractRPCChild())
+		}
 		if len(os.Args) == 2 && os.Args[1] == "--contract-migrate" {
 			db, err := openDB(&ctx{getenv: os.Getenv, out: os.Stdout, errw: os.Stderr})
 			if err != nil {

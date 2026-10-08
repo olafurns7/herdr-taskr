@@ -12,6 +12,9 @@ fn run(mut args: Vec<String>) -> ExitCode {
     if let Some(code) = hub::child_dispatch(&mut args) {
         return code;
     }
+    if let Some(code) = net::events::dispatch(json, &args) {
+        return code;
+    }
     if let Some(code) = net::route(json, &args) {
         return code;
     }

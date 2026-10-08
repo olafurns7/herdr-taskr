@@ -117,7 +117,8 @@ pub fn trailer(json_mode: bool, value: Value) {
 pub const COMMANDS: &[&str] = &[
     "version", "new", "launch", "close", "start", "got", "note", "ready", "ask", "done", "fail",
     "prompt", "answer", "hook", "wait", "ack", "next", "decide", "set", "handover", "adopt",
-    "status", "asks", "log", "notes", "glance", "search", "daemon", "doc", "spool", "help",
+    "status", "asks", "log", "notes", "glance", "campaign", "search", "daemon", "doc", "spool",
+    "help",
 ];
 pub fn known(name: &str) -> bool {
     COMMANDS.contains(&name)

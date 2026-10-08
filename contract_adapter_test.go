@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -214,4 +215,23 @@ func TestContractVersionAdapter(t *testing.T) {
 			t.Fatalf("version %v: (%d,%q,%q), want (%d,%q,%q)", args, code, out.String(), errb.String(), wantCode, wantOut.String(), wantErr.String())
 		}
 	}
+}
+
+// Contract-only dispatch in TestMain; the Go RPC context is the caller-host oracle.
+func contractRPCChild() int {
+	var req rpcRequest
+	if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return exitDB
+	}
+	db, err := openDB(&ctx{getenv: os.Getenv})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return exitDB
+	}
+	defer db.Close()
+	rep := (&dashboard{db: db}).rpcRun(context.Background(), os.Args[2], req)
+	fmt.Fprint(os.Stdout, rep.Stdout)
+	fmt.Fprint(os.Stderr, rep.Stderr)
+	return rep.Exit
 }

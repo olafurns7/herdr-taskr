@@ -41,6 +41,21 @@ python3 tools/contract/run.py --go .scratch/taskr-oracle --rust target/release/t
 
 The runner compares stdout and stderr bytes separately, exit codes, schema and sorted logical rows (including visible FTS content/rowids, excluding FTS shadow tables). It validates integrity/FKs. Default cases additionally cover the read/write families; unsupported Rust commands are counted separately and must leave their DB unchanged. Repeated `--family` selects exact families or read/write/net prefixes. `--cases FILE` accepts more argv/env cases in the same JSON format. Process timeouts always fail parity, including when the Rust command is not implemented. `python3 tools/contract/selfcheck.py` checks clone identity, changed rows, visible FTS rows and shadow exclusion.
 
+P1a/P1b catch-up: pass `--catchup-fixtures` to the same runner with the glance,
+campaign and set families. It adds synthetic lead states and leases, owner note
+boundaries, parking/re-parking, quiet roots, closed intermediates, PR metadata,
+101-lane paging, and ten-minute spark edges. `rpc_caller` vectors use Go's
+contract-only `rpcRun` dispatch and Rust's actual `--hub-child` context with
+synthetic stdin and the frozen clock. The whole HTTP hub stays on real time:
+Go's frozen socket write deadline can otherwise land in the past. Results
+include per-family and named coverage-group counts. Example:
+
+```sh
+python3 tools/contract/run.py --go .scratch/taskr-oracle --rust target/release/taskr \
+  --catchup-fixtures --family read:glance --family read:campaign --family read:hub-context --family write:set --family write:new \
+  --out .scratch/catchup-parity.json
+```
+
 All committed fixture definitions/vectors are synthetic. Private runs and any live-corpus copies remain under the ignored worktree `.scratch/` directory.
 
 Fixtures are empty, legacy v0.9.1, and a nested busy tree with closed tasks, launches, events and documents. For live-corpus evidence, take the specifically authorized read-only SQLite backup first, then pass **the backup** to `--live-snapshot PATH --require-live`. The runner never discovers or backs up the live ledger; it rejects live snapshots or live-run output paths outside this worktree `.scratch/`. It retains counts/hashes, not corpus content, in its results. Delete the exact backup path after validation. If system SQLite cannot read a recent FTS index, install a user-space Python engine (`python3 -m pip install --target /home/olinn/.cache/taskr-tools/python pysqlite3-binary==0.5.4.post2`) and pass `--sqlite-module pysqlite3` with that directory on PYTHONPATH. Integrity failures must be diagnosed, not bypassed; repairing a private corpus requires authorization and separate before/after evidence.

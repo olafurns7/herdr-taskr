@@ -185,7 +185,8 @@ pub fn write(db: &mut Connection, w: Write<'_>) -> Result<Value> {
     } else {
         None
     };
-    transaction(db, |tx| {
+    let mut warn_owner_items = false;
+    let out = transaction(db, |tx| {
         if w.kind == "note" && w.owner && (!env("TASKR_TASK").is_empty() || w.as_id == 0) {
             return Err(reject("--owner: only a root orchestrator's own note"));
         }
@@ -218,6 +219,10 @@ pub fn write(db: &mut Connection, w: Write<'_>) -> Result<Value> {
                 }
                 return Ok(out);
             }
+        }
+        if w.kind == "note" && w.owner && plan::owner_has_items(w.summary) {
+            let has_ask: bool = tx.query_row("with recursive tree(id) as (select ? union all select t.id from tasks t join tree on t.parent_id=tree.id) select exists(select 1 from tree join tasks t on t.id=tree.id join events e on e.task_id=t.id where t.status!='closed' and e.kind='ask' and e.answered_by is null and json_extract(e.data,'$.owner')=1)",[t.id],|r|r.get(0))?;
+            warn_owner_items = !has_ask;
         }
         let to = if matches!(w.kind, "note" | "start") {
             None
@@ -260,7 +265,11 @@ pub fn write(db: &mut Connection, w: Write<'_>) -> Result<Value> {
         }
         documents::capture_report(tx, t.id, eid, report.as_ref())?;
         Ok(out)
-    })
+    })?;
+    if warn_owner_items {
+        eprintln!("owner actions must be asks: taskr ask --owner ...");
+    }
+    Ok(out)
 }
 pub fn got(db: &mut Connection, attempt: i64) -> Result<Value> {
     transaction(db, |tx| got_tx(tx, attempt, None))

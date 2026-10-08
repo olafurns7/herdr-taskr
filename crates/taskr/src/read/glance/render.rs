@@ -82,12 +82,9 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64) -> Vec<String> {
     let attention = v["attention"].as_array().unwrap();
     let campaigns = v["campaigns"].as_array().unwrap();
     let right = match s(v, "verdict") {
-        "rolling" => "✓ all rolling".into(),
+        "rolling" => "✓ no owner action".into(),
         "needs_you" => format!("{} need you", needs.len()),
-        "attention" => format!(
-            "{} to check",
-            attention.len() + n(&v["quiet"], "with_backlog") as usize
-        ),
+        "attention" | "unknown" => format!("{} to check", attention.len()),
         _ => "? unknown".into(),
     };
     let mut full = format!("{left} · {}", age(age_ms));
@@ -113,68 +110,45 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64) -> Vec<String> {
             clean(s(need, "campaign")),
             age(n(need, "age_ms") + age_ms)
         );
-        let mut text = s(need, "text").to_string();
-        if need["kind"] == "owner_todo" {
-            first = format!(
-                "! {}  {}",
-                clean(s(need, "campaign")),
-                age(n(need, "age_ms") + age_ms)
-            );
-            let items = need["items"].as_array().unwrap();
-            text = items
-                .first()
-                .and_then(Value::as_str)
-                .map(clean)
-                .unwrap_or_default();
-            if items.len() > 1 {
-                text.push_str(&format!("  (+{} more)", items.len() - 1));
-            }
-        } else {
-            if need["blocking"] == true {
-                first.push_str("  BLOCKING");
-            }
-            if !s(need, "pane_id").is_empty() {
-                first.push_str(&format!("  → {}", clean(s(need, "pane_id"))));
-            }
-            if let Some(also) = need["also"]
-                .as_array()
-                .and_then(|a| a.first())
-                .and_then(Value::as_str)
-            {
-                first.push_str(&format!("  {}", clean(also)));
-            }
+        let text = s(need, "text");
+        if need["blocking"] == true {
+            first.push_str("  BLOCKING");
+        }
+        if !s(need, "pane_id").is_empty() {
+            first.push_str(&format!("  → {}", clean(s(need, "pane_id"))));
+        }
+        if let Some(also) = need["also"]
+            .as_array()
+            .and_then(|a| a.first())
+            .and_then(Value::as_str)
+        {
+            first.push_str(&format!("  {}", clean(also)));
         }
         groups[0].push(vec![
             truncate(&first, w),
-            truncate(&format!("  {}", clean(&text)), w),
+            truncate(&format!("  {}", clean(text)), w),
         ]);
     }
     for a in attention {
-        let (sym, word) = match s(a, "kind") {
-            "lane_failed" => ("✗", "failed"),
-            "lane_blocked" => ("!", "blocked"),
-            "lead_gone" => ("✗", "lead gone"),
-            "lead_blocked" => ("!", "lead blocked"),
-            "lead_unknown" => ("?", "lead unknown"),
-            "owner_unclear" => ("?", "owner unclear"),
-            "lane_missing" => ("?", "missing"),
-            "results_waiting" => ("⌛", "waiting"),
-            "host_stale" => ("⚠", "stale"),
-            "daemon_unhealthy" => ("⚠", "daemon"),
-            _ => ("?", "unknown"),
+        let (sym, mut word) = match s(a, "kind") {
+            "lead_gone" => ("✗", "lead gone".to_string()),
+            "lead_blocked" => ("!", "lead blocked".to_string()),
+            "lead_unknown" => ("?", "lead unknown".to_string()),
+            "lead_idle_results" => ("⌛", "waiting".to_string()),
+            "parked_active" => ("?", "parked but active".to_string()),
+            "lead_unregistered_silent" => ("?", "unregistered".to_string()),
+            "host_stale" => ("⚠", "stale".to_string()),
+            "daemon_unhealthy" => ("⚠", "daemon".to_string()),
+            _ => ("?", "unknown".to_string()),
         };
-        let name = format!("{}/{}", clean(s(a, "campaign")), clean(s(a, "lane")))
-            .trim_matches('/')
-            .to_string();
-        let name = if name.is_empty() {
-            if s(a, "host").is_empty() {
+        let mut name = clean(s(a, "campaign"));
+        if name.is_empty() {
+            name = if s(a, "host").is_empty() {
                 "hub".into()
             } else {
                 clean(s(a, "host"))
-            }
-        } else {
-            name
-        };
+            };
+        }
         let when = if !s(a, "since").is_empty() {
             format!(" {}", age(n(a, "age_ms") + age_ms))
         } else if a["kind"] == "lead_unknown" {
@@ -182,65 +156,98 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64) -> Vec<String> {
         } else {
             String::new()
         };
-        let first = if a["kind"] == "results_waiting" {
-            format!(
-                "{sym} {}: {} waiting{when}",
-                clean(s(a, "recipient")),
-                n(a, "count")
-            )
-        } else {
-            format!("{sym} {name}  {word}{when}")
+        if a["kind"] == "lead_idle_results" {
+            name = clean(s(a, "recipient"));
+            word = format!("idle · {} results", n(a, "count"));
+        }
+        let name = truncate(
+            &name,
+            width(&name)
+                .min(8)
+                .max(w.saturating_sub(width(&format!("{sym}   {word}{when}")))),
+        );
+        let text = match s(a, "kind") {
+            "lead_unregistered_silent" => "lead silent with open lanes",
+            "parked_active" => "new activity; re-park to hold again",
+            _ => s(a, "text"),
         };
         groups[1].push(vec![
-            truncate(&first, w),
-            truncate(&format!("  {}", clean(s(a, "text"))), w),
+            truncate(&format!("{sym} {name}  {word}{when}"), w),
+            truncate(&format!("  {}", clean(text)), w),
         ]);
     }
     for c in campaigns {
-        let last = &c["last"];
-        let (text, ms) = if last.is_null() {
-            ("", n(c, "activity_age_ms"))
+        let mut sym = if n(&c["lanes"], "working") > 0 {
+            "●"
         } else {
-            (s(last, "text"), n(last, "age_ms"))
+            "○"
         };
-        groups[2].push(vec![truncate(
-            &format!(
-                "{} {} {} {} {}",
-                if n(&c["lanes"], "working") > 0 {
-                    "●"
+        let mut text = s(&c["last"], "text").to_string();
+        let mut detail = String::new();
+        if !c["owner_note"].is_null() {
+            let note = &c["owner_note"];
+            let text = owner_value(s(note, "text")).unwrap_or_else(|| s(note, "text").into());
+            detail = format!("  {} · {}", age(n(note, "age_ms") + age_ms), clean(&text));
+        }
+        if c["parked"] == true {
+            sym = "·";
+            text = format!("parked · {}", age(n(c, "park_age_ms") + age_ms));
+            if c["parked_active"] == true {
+                text = if w < 60 {
+                    "parked active"
                 } else {
-                    "○"
-                },
+                    "parked but active"
+                }
+                .into();
+            }
+        } else if matches!(s(c, "lead"), "waiting" | "unregistered") {
+            if detail.is_empty() && !text.is_empty() {
+                detail = format!("  {}", clean(&text));
+            }
+            text = if c["lead"] == "waiting" {
+                "lead waiting"
+            } else {
+                "unregistered"
+            }
+            .into();
+        }
+        let mut row = vec![truncate(
+            &format!(
+                "{sym} {} {} {} {}",
                 pad(s(c, "name"), 18),
                 pad(
                     &format!("{}/{}", n(&c["lanes"], "working"), n(&c["lanes"], "open")),
                     6
                 ),
-                pad(&age(ms + age_ms), 4),
-                clean(text)
+                pad(&age(n(c, "activity_age_ms") + age_ms), 4),
+                clean(&text)
             ),
             w,
-        )]);
+        )];
+        if !detail.is_empty() {
+            row.push(truncate(&detail, w));
+        }
+        groups[2].push(row);
     }
     let quiet = if n(&v["quiet"], "count") > 0 {
-        let base = truncate(&format!("· {} quiet", n(&v["quiet"], "count")), w);
-        if n(&v["quiet"], "with_backlog") > 0 {
-            format!(
-                "{base}{}",
-                truncate(
-                    &format!(" ({} with backlog)", n(&v["quiet"], "with_backlog")),
-                    w - width(&base)
-                )
-            )
-        } else {
-            base
-        }
+        truncate(&format!("· {} quiet", n(&v["quiet"], "count")), w)
     } else {
         String::new()
     };
     let mut keep = [groups[0].len(), groups[1].len(), groups[2].len()];
     let compose = |keep: [usize; 3]| {
         let mut out = vec![header.clone(), rule.clone()];
+        if n(v, "owner_notes_pending") > 0 {
+            let word = if n(v, "owner_notes_pending") == 1 {
+                "note still carries"
+            } else {
+                "notes still carry"
+            };
+            out.push(truncate(
+                &format!("{} {word} OWNER items", n(v, "owner_notes_pending")),
+                w,
+            ));
+        }
         for (g, items) in groups.iter().enumerate() {
             for item in &items[..keep[g]] {
                 out.extend(item.clone());
@@ -298,6 +305,9 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64) -> Vec<String> {
         }
     }
     out.truncate(h);
+    for row in &mut out {
+        row.truncate(row.trim_end_matches(' ').len());
+    }
     out
 }
 #[cfg(test)]
@@ -316,22 +326,39 @@ mod parity_tests {
     use super::*;
     fn busy() -> Value {
         json!({"now":"2026-10-07T17:30:00.000Z","verdict":"needs_you","needs_you":[
-            {"kind":"owner_ask","campaign":"copilot-modular","age_ms":720000,"blocking":true,"also":["lane failed"],"pane_id":"wN4:p1","text":"Merge #4840 now or wait for M3?"},
-            {"kind":"owner_todo","campaign":"booked-vs-resolved","age_ms":3600000,"items":["1. approve prod deploy of #4833","2. approve next rollout"]}],
-            "attention":[{"kind":"lane_failed","campaign":"mobile-screens","lane":"impl-tabs","since":"2026-10-07T17:26:00.000Z","age_ms":240000,"text":"lint gate exit 1"},{"kind":"results_waiting","recipient":"orch-hns2","count":3,"since":"2026-10-06T10:30:00.000Z","age_ms":111600000,"text":"reports ready to review"}],
-            "campaigns":[{"name":"planner-ui","lanes":{"working":3,"open":5},"last":{"age_ms":120000,"text":"S4 merged"}},{"name":"copilot-modular","lanes":{"working":2,"open":2},"last":{"age_ms":840000,"text":"M1 review ok"}},{"name":"booked-vs-resolved","lanes":{"working":0,"open":1},"activity_age_ms":1680000}],
-            "quiet":{"count":13,"with_backlog":4}})
+            {"kind":"owner_ask","campaign":"checkout-redesign","age_ms":720000,"blocking":true,"also":["lane failed"],"pane_id":"wDemoA:p1","text":"Merge #104 now or wait for M3?"},
+            {"kind":"owner_ask","campaign":"billing-fix","age_ms":3600000,"text":"approve prod deploy of #103"}],
+            "attention":[{"kind":"lead_blocked","campaign":"settings-form","lane":"impl-tabs","since":"2026-10-07T17:26:00.000Z","age_ms":240000,"text":"lint gate exit 1"},{"kind":"lead_idle_results","recipient":"lead-docs","count":3,"since":"2026-10-06T10:30:00.000Z","age_ms":111600000,"text":"reports ready to review"}],
+            "campaigns":[{"name":"docs-site","activity_age_ms":120000,"lanes":{"working":3,"open":5},"last":{"age_ms":120000,"text":"S4 merged"}},{"name":"checkout-redesign","activity_age_ms":840000,"lanes":{"working":2,"open":2},"last":{"age_ms":840000,"text":"M1 review ok"}},{"name":"billing-fix","lanes":{"working":0,"open":1},"activity_age_ms":1680000}],
+            "quiet":{"count":13}})
     }
     #[test]
     fn existing_go_frame_goldens_and_all_widths() {
         let mut b = busy();
-        b["attention"].as_array_mut().unwrap().push(json!({"kind":"lead_gone","campaign":"planner-ui","since":"2026-10-07T17:25:00.000Z","age_ms":300000,"text":"lead pane wN5:p1 is not in its host's agent list"}));
+        b["attention"].as_array_mut().unwrap().push(json!({"kind":"lead_gone","campaign":"docs-site","since":"2026-10-07T17:25:00.000Z","age_ms":300000,"text":"lead pane wDemoB:p1 is not in its host's agent list"}));
         let mut rolling = busy();
         rolling["verdict"] = json!("rolling");
         rolling["needs_you"] = json!([]);
         rolling["attention"] = json!([]);
         rolling["quiet"]["with_backlog"] = json!(0);
+        let trust = json!({"now":"2026-10-07T17:30:00.000Z","verdict":"attention","needs_you":[],"owner_notes_pending":1,
+            "attention":[{"kind":"lead_unregistered_silent","campaign":"checkout-redesign","since":"synthetic","age_ms":10800000},{"kind":"lead_idle_results","recipient":"checkout-redesign","count":3,"since":"synthetic","age_ms":1860000,"text":"worker ready: synthetic report"},{"kind":"parked_active","campaign":"billing-fix","since":"synthetic","age_ms":60000}],
+            "campaigns":[{"name":"held","parked":true,"park_age_ms":10800000,"activity_age_ms":60000},{"name":"billing-fix","parked":true,"parked_active":true,"activity_age_ms":60000},{"name":"waiting","lead":"waiting","activity_age_ms":10000,"owner_note":{"text":"OWNER: approve demo","age_ms":10800000}},{"name":"unregistered","lead":"unregistered","activity_age_ms":60000,"owner_note":{"text":"OWNER: review demo","age_ms":18000000}}],"quiet":{"count":0}});
+        let unregistered = json!({"now":"2026-10-07T17:30:00.000Z","verdict":"attention","needs_you":[],"campaigns":[],"quiet":{"count":0},
+            "attention":[{"kind":"lead_unregistered_silent","campaign":"checkout-redesign","since":"synthetic","age_ms":3600000,"text":"lead silent with open lanes"},{"kind":"lead_unknown","campaign":"never-observed","text":"lead has never been observed"},{"kind":"host_stale","host":"mac","text":"no heartbeat recorded"}]});
         for (v, w, h, want) in [
+            (
+                trust,
+                46,
+                30,
+                include_str!("../../../../../testdata/glance/trust-46.golden"),
+            ),
+            (
+                unregistered,
+                46,
+                24,
+                include_str!("../../../../../testdata/glance/unregistered-46.golden"),
+            ),
             (
                 b.clone(),
                 46,

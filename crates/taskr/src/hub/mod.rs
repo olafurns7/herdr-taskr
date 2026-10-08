@@ -1,6 +1,7 @@
 //! HTTP hub. Browser routes and peer push are retired by the migration scope.
 mod child;
 mod documents;
+mod events;
 mod hidden;
 mod http;
 mod protocol;
@@ -53,6 +54,7 @@ pub(crate) struct HubConfig {
     pub identity: Option<HubIdentity>,
     pub hosts: BTreeSet<String>,
     pub home: PathBuf,
+    pub log: Arc<crate::daemon::Log>,
     pub tailscale_bin: PathBuf,
 }
 
@@ -60,6 +62,7 @@ struct Hub {
     cfg: HubConfig,
     whois: Mutex<BTreeMap<IpAddr, (time::OffsetDateTime, Option<HubIdentity>)>>,
     usage: usage::Usage,
+    events: Arc<events::Events>,
     shutdown: watch::Receiver<bool>,
     stored_requests: StdMutex<JoinSet<()>>,
     reapers: Arc<StdMutex<JoinSet<()>>>,
@@ -71,10 +74,12 @@ pub(crate) async fn serve(
 ) -> anyhow::Result<()> {
     let listeners = std::mem::take(&mut cfg.listeners);
     let (stop, stopped) = watch::channel(false);
+    let events = events::Events::shared(&cfg.db_path);
     let hub = Arc::new(Hub {
         cfg,
         whois: Mutex::default(),
         usage: usage::Usage::default(),
+        events,
         shutdown: stopped,
         stored_requests: StdMutex::default(),
         reapers: Arc::default(),
@@ -85,12 +90,7 @@ pub(crate) async fn serve(
         let listener = tokio::net::TcpListener::from_std(listener)?;
         let stopped = hub.shutdown.clone();
         let router = Router::new().fallback(handle).with_state(hub.clone());
-        servers.spawn(http::listen(
-            listener,
-            router,
-            stopped,
-            hub.cfg.home.clone(),
-        ));
+        servers.spawn(http::listen(listener, router, stopped, hub.cfg.log.clone()));
     }
     let mut minute = tokio::time::interval(Duration::from_secs(60));
     minute.tick().await;
@@ -196,6 +196,30 @@ async fn handle_inner(hub: &Arc<Hub>, peer: SocketAddr, req: Request<Body>) -> R
     let header = |key: &str| headers.get(key).and_then(|v| v.to_str().ok()).unwrap_or("");
     if !hub.cfg.hosts.contains(&header("host").to_lowercase()) {
         return http_error(StatusCode::MISDIRECTED_REQUEST, "unexpected Host header");
+    }
+    if req.uri().path() == "/api/events" {
+        if loopback {
+            let host = header("host");
+            let local_host = host.rsplit_once(':').map(|(h, _)| h);
+            if !matches!(local_host, Some("127.0.0.1" | "[::1]" | "localhost")) {
+                return http_error(
+                    StatusCode::MISDIRECTED_REQUEST,
+                    "local events need a loopback Host",
+                );
+            }
+        } else {
+            let (Some(identity), Some(server)) = (identity.as_ref(), hub.cfg.identity.as_ref())
+            else {
+                return http_error(StatusCode::FORBIDDEN, "events need a tailnet identity");
+            };
+            if identity.node_id == server.node_id
+                || identity.machine.is_empty()
+                || identity.machine == store::local_machine()
+            {
+                return http_error(StatusCode::FORBIDDEN, "this node is the server");
+            }
+        }
+        return events::handle(hub, req).await;
     }
     if req.uri().path() != "/api/rpc" {
         return (StatusCode::NOT_FOUND, "404 page not found\n").into_response();
@@ -305,7 +329,7 @@ async fn handle_inner(hub: &Arc<Hub>, peer: SocketAddr, req: Request<Body>) -> R
     } else {
         run(hub, &identity.machine, &req).await.into_reply()
     };
-    if log_name != "glance" || rep.exit != 0 {
+    if !matches!(log_name.as_str(), "glance" | "campaign") || rep.exit != 0 {
         crate::daemon::rpc_log(
             &hub.cfg.home,
             &format!(
@@ -583,6 +607,7 @@ async fn run(hub: &Hub, machine: &str, req: &RpcRequest) -> Execution {
                 stderr.read_to_end(&mut err),
                 process.wait()
             )?;
+            hub.events.check();
             writer.await??;
             let exit = status
                 .code()

@@ -176,6 +176,13 @@ pub fn new(db: &mut Connection, fs: &FlagSet) -> Result<Value> {
             "taskr: no goal recorded for root {id}; run `taskr doc set {id} goal --file PATH`"
         );
     }
+    if fs.get_int("parent") == 0
+        && fs.get_string("role") == "orchestrator"
+        && fs.get_string("pane").is_empty()
+    {
+        let id = &out["task_id"];
+        eprintln!("taskr: lead has no pane; run `taskr adopt {id} --pane <id>` as your first act");
+    }
     Ok(out)
 }
 pub fn launch(db: &mut Connection, id: i64, fs: &FlagSet) -> Result<Value> {
@@ -363,7 +370,13 @@ pub fn answer(db: &mut Connection, ask: i64, text: &str, as_id: Option<i64>) -> 
 }
 pub fn set(db: &mut Connection, id: i64, pairs: &[(String, String)]) -> Result<Value> {
     transaction(db, |tx| {
-        open_task(tx, id)?;
+        let t = open_task(tx, id)?;
+        if pairs.iter().any(|(k, _)| k == "glance.state") {
+            if t.parent.is_some() || t.launch.is_some() {
+                return Err(reject("glance.state is for a root orchestrator only"));
+            }
+            check_host(tx, id)?;
+        }
         let mut stmt=tx.prepare("select json_extract(data,'$.key'),json_extract(data,'$.value') from events where id in(select max(id) from events where task_id=? and kind='ref' group by json_extract(data,'$.key')) order by 1")?;
         let mut have = std::collections::BTreeMap::<String, String>::new();
         for row in stmt.query_map([id], |r| {
@@ -376,7 +389,9 @@ pub fn set(db: &mut Connection, id: i64, pairs: &[(String, String)]) -> Result<V
         }
         let mut changed = Vec::new();
         for (k, v) in pairs {
-            if have.get(k).map_or("", String::as_str) == v {
+            if have.get(k).map_or("", String::as_str) == v
+                && !(k == "glance.state" && v == "parked")
+            {
                 continue;
             }
             changed.push((k, v));

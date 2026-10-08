@@ -218,6 +218,9 @@ func main() {
 }
 
 func family(name, file string) string {
+	if file == "cmd_campaign_test.go" {
+		return "read:campaign"
+	}
 	text := name
 	if strings.Contains(name, "Documents") {
 		switch {

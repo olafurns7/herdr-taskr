@@ -734,6 +734,7 @@ func TestGlanceWatchClientFetchErrors(t *testing.T) {
 }
 
 func TestRenderGlanceReviewFixes(t *testing.T) {
+	contractGuard(t)
 	v := &glanceView{Verdict: "attention", Attention: []glanceAttention{
 		{Kind: "lead_blocked", Campaign: "checkout-redesign", Since: "synthetic", AgeMS: time.Minute.Milliseconds()},
 		{Kind: "lead_idle_results", Recipient: "billing-fix", Count: 3, Since: "synthetic", AgeMS: time.Minute.Milliseconds()},

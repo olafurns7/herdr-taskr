@@ -3,7 +3,6 @@ use hyper_util::{rt::TokioIo, service::TowerToHyperService};
 use std::{
     future::Future,
     io,
-    path::PathBuf,
     pin::Pin,
     sync::{Arc, Mutex},
     task::{Context, Poll},
@@ -23,6 +22,7 @@ struct Phase {
     reply_ready: bool,
     read_started: Instant,
     write_deadline: Option<Instant>,
+    streaming: bool,
 }
 struct Socket {
     stream: TcpStream,
@@ -79,11 +79,13 @@ impl AsyncWrite for Socket {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        self.phase
-            .lock()
-            .expect("phase")
-            .write_deadline
-            .get_or_insert_with(|| Instant::now() + Duration::from_secs(15));
+        {
+            let mut phase = self.phase.lock().expect("phase");
+            let seconds = if phase.streaming { 30 } else { 15 };
+            phase
+                .write_deadline
+                .get_or_insert_with(|| Instant::now() + Duration::from_secs(seconds));
+        }
         if let Err(error) = self.check_write_timeout(cx) {
             return Poll::Ready(Err(error));
         }
@@ -96,7 +98,10 @@ impl AsyncWrite for Socket {
         let result = Pin::new(&mut self.stream).poll_flush(cx);
         if matches!(result, Poll::Ready(Ok(()))) {
             let mut phase = self.phase.lock().expect("phase");
-            if phase.reply_ready {
+            if phase.streaming {
+                phase.write_deadline = None;
+                phase.reply_ready = false;
+            } else if phase.reply_ready {
                 phase.reply_ready = false;
                 phase.idle = true;
                 phase.deadline = Some(Instant::now() + Duration::from_secs(60));
@@ -114,7 +119,7 @@ pub(super) async fn listen(
     listener: TcpListener,
     router: Router,
     mut shutdown: watch::Receiver<bool>,
-    home: PathBuf,
+    log: Arc<crate::daemon::Log>,
 ) -> io::Result<()> {
     let mut connections = JoinSet::new();
     let mut last_logged: Option<Instant> = None;
@@ -127,21 +132,27 @@ pub(super) async fn listen(
                     Ok(accepted)=>accepted,
                     Err(error)=>{
                         if last_logged.is_none_or(|at|at.elapsed()>=Duration::from_secs(10)) {
-                            crate::daemon::rpc_log(&home,&format!("HTTP accept error: {error} ({suppressed} similar suppressed)"));
+                            log.line(&format!("HTTP accept error: {error} ({suppressed} similar suppressed)"));
                             last_logged=Some(Instant::now());suppressed=0;
                         }else {suppressed=suppressed.saturating_add(1);}
                         tokio::select! {_=shutdown.changed()=>break,_=tokio::time::sleep(Duration::from_millis(200))=>{}}
                         continue;
                     }
                 };
-                let phase=Arc::new(Mutex::new(Phase{deadline:Some(Instant::now()+Duration::from_secs(5)),idle:false,reply_ready:false,read_started:Instant::now(),write_deadline:None}));
+                let phase=Arc::new(Mutex::new(Phase{deadline:Some(Instant::now()+Duration::from_secs(5)),idle:false,reply_ready:false,read_started:Instant::now(),write_deadline:None,streaming:false}));
                 let socket=Socket{stream,phase:phase.clone(),timer:Box::pin(tokio::time::sleep(Duration::from_secs(5))),write_timer:Box::pin(tokio::time::sleep(Duration::from_secs(15)))};
                 let service=TowerToHyperService::new(router.clone());
                 let service=hyper::service::service_fn(move |mut req| {
                     req.extensions_mut().insert(ConnectInfo(peer));
                     {let mut state=phase.lock().expect("phase");req.extensions_mut().insert(ReadDeadline(state.read_started+Duration::from_secs(10)));state.deadline=None;state.idle=false;state.reply_ready=false;state.write_deadline=None;}
                     let phase=phase.clone();let future=hyper::service::Service::call(&service,req);
-                    async move {let response=future.await;phase.lock().expect("phase").reply_ready=true;response}
+                    async move {
+                        let response=future.await;
+                        let streaming=response.as_ref().is_ok_and(|r|r.headers().get("content-type").is_some_and(|v|v=="text/event-stream"));
+                        let mut state=phase.lock().expect("phase");
+                        state.streaming=streaming;state.reply_ready=true;
+                        response
+                    }
                 });
                 let mut stopped=shutdown.clone();
                 connections.spawn(async move {

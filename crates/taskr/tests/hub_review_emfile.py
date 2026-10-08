@@ -58,7 +58,9 @@ with tempfile.TemporaryDirectory(prefix='rev-r2-emfile-') as tmp:
             r = c.execute("select value from meta where key='dashboard_url'").fetchone()
         res['dashboard_url_meta'] = r[0] if r else None
         logf = state / 'daemon.log'
-        res['daemon_log_tail'] = logf.read_text().splitlines()[-4:] if logf.exists() else []
+        text = logf.read_text() if logf.exists() else ''
+        res['daemon_log_tail'] = text.splitlines()[-4:]
+        res['accept_error_logged'] = 'HTTP accept error:' in text
         p.send_signal(signal.SIGTERM)
         try: p.wait(timeout=20)
         except subprocess.TimeoutExpired: p.kill(); p.wait()
@@ -70,5 +72,7 @@ for kind, result in out.items():
     assert result['before'].startswith('HTTP/1.1 403'), (kind, result)
     assert result['after'].startswith('HTTP/1.1 403'), (kind, result)
     assert result['daemon_alive'] and result['dashboard_url_meta'], (kind, result)
+    if kind == 'Rust':
+        assert result['accept_error_logged'], (kind, result)
 
 print(json.dumps(out, indent=2))

@@ -95,6 +95,7 @@ func glanceKinds(v *glanceView) []string {
 }
 
 func TestGlanceNeedsYouOrder(t *testing.T) {
+	contractGuard(t)
 	f := newGlanceFixture(t)
 	r := f.task("root", 0, "open")
 	f.event(r, 0, 0, "note", "OWNER: approve oldest todo", `{"owner":true}`, 48*time.Hour)
@@ -117,6 +118,7 @@ func TestGlanceNeedsYouOrder(t *testing.T) {
 }
 
 func TestGlanceUnlaunchedGate(t *testing.T) {
+	contractGuard(t)
 	f := newGlanceFixture(t)
 	r := f.task("root", 0, "open")
 	w := f.task("gate", r, "open")
@@ -154,6 +156,7 @@ func TestGlanceUnlaunchedGate(t *testing.T) {
 }
 
 func TestGlanceQuietBacklogVerdict(t *testing.T) {
+	contractGuard(t)
 	f := newGlanceFixture(t)
 	r := f.task("quiet", 0, "open")
 	w := f.task("w", r, "done")
@@ -177,6 +180,7 @@ func TestGlanceQuietBacklogVerdict(t *testing.T) {
 }
 
 func TestGlanceClosedIntermediate(t *testing.T) {
+	contractGuard(t)
 	f := newGlanceFixture(t)
 	r := f.task("root", 0, "open")
 	mid := f.task("mid", r, "closed")
@@ -189,6 +193,7 @@ func TestGlanceClosedIntermediate(t *testing.T) {
 }
 
 func TestGlanceOwnerAskStaleHost(t *testing.T) {
+	contractGuard(t)
 	f := newGlanceFixture(t)
 	r := f.task("root", 0, "open")
 	w := f.task("worker", r, "open")
@@ -202,6 +207,7 @@ func TestGlanceOwnerAskStaleHost(t *testing.T) {
 }
 
 func TestGlanceSnapshot(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct {
 		name string
 		run  func(*testing.T, *glanceFixture)
@@ -372,6 +378,7 @@ func TestGlanceSnapshot(t *testing.T) {
 }
 
 func TestGlanceLeads(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct {
 		name, status, verdict string
 		kinds                 []string
@@ -467,6 +474,7 @@ func TestGlanceLeads(t *testing.T) {
 }
 
 func TestGlanceLeadRanksAndPrecedence(t *testing.T) {
+	contractGuard(t)
 	for lead, lane := range map[string]string{"lead_blocked": "lane_blocked", "lead_gone": "lane_missing", "lead_unknown": "host_stale"} {
 		if glanceRank(lead) != glanceRank(lane) {
 			t.Errorf("%s rank differs from %s", lead, lane)
@@ -489,6 +497,7 @@ func TestGlanceLeadRanksAndPrecedence(t *testing.T) {
 }
 
 func TestGlanceCLI(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	for _, tc := range []struct {
 		name string
@@ -506,7 +515,7 @@ func TestGlanceCLI(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out, errb bytes.Buffer
-			if code := run(tc.args, h.getenv(tc.env), &out, &errb); code != tc.code {
+			if code := contractRun(t, tc.args, h.getenv(tc.env), &out, &errb); code != tc.code {
 				t.Fatalf("exit %d: %s %s", code, out.String(), errb.String())
 			}
 			if tc.code != 0 || tc.name == "help" || tc.name == "watch fallback" {
@@ -533,6 +542,7 @@ func TestGlanceCLI(t *testing.T) {
 }
 
 func TestGlanceRPCFresh(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := r.newTask("server-campaign", "orchestrator", 0)
 	before := r.count(`select count(*) from requests`)
@@ -561,6 +571,7 @@ func TestGlanceRPCFresh(t *testing.T) {
 }
 
 func TestGlanceSyntheticLatency(t *testing.T) {
+	contractGuard(t)
 	f := newGlanceFixture(t)
 	lanes, roots := []int64{}, []int64{}
 	for i := 0; i < 60; i++ {

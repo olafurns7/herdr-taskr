@@ -113,12 +113,12 @@ fn held(path: &Path) -> std::io::Result<bool> {
         Err(e) => Err(e.into()),
     }
 }
-struct Log {
+pub(crate) struct Log {
     file: Mutex<Option<fs::File>>,
     limited: Mutex<BTreeMap<String, (Instant, usize)>>,
 }
 impl Log {
-    fn open(path: &Path) -> Self {
+    pub(crate) fn open(path: &Path) -> Self {
         Self {
             file: Mutex::new(
                 fs::OpenOptions::new()
@@ -131,7 +131,7 @@ impl Log {
             limited: Mutex::new(BTreeMap::new()),
         }
     }
-    fn line(&self, text: &str) {
+    pub(crate) fn line(&self, text: &str) {
         if let Some(file) = self.file.lock().unwrap().as_mut() {
             if file.metadata().is_ok_and(|m| m.len() > 1 << 20) {
                 let _ = file.set_len(0);

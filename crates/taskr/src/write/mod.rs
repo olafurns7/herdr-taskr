@@ -612,7 +612,7 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
         "wait" => inbox::wait(f),
         "set" => {
             let id = store::id(&p[0], "task id")?;
-            let mut pairs = Vec::new();
+            let mut pairs: Vec<(String, String)> = Vec::new();
             let mut seen = std::collections::BTreeSet::new();
             for s in &p[1..] {
                 let Some((k, v)) = s.split_once('=') else {
@@ -646,6 +646,16 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
                     )));
                 }
                 pairs.push((k.into(), v.into()));
+            }
+            if let Some((_, value)) = pairs.iter().find(|(k, _)| k == "glance.state") {
+                if !store::env("TASKR_TASK").is_empty() || !store::env("TASKR_LAUNCH").is_empty() {
+                    return Err(store::reject(
+                        "glance.state is root-only; TASKR_TASK and TASKR_LAUNCH must be unset",
+                    ));
+                }
+                if !value.is_empty() && value != "parked" {
+                    return Err(store::usage("glance.state must be parked or empty"));
+                }
             }
             orch::set(&mut open()?, id, &pairs)
         }

@@ -71,3 +71,45 @@ pub fn decide(db: &mut Connection, id: i64, text: &str, revoke: i64) -> Result<V
         Ok(json!({"ok":true,"task_id":id,"event_id":eid,"kind":"revoke","revoked":revoke}))
     })
 }
+
+pub fn owner_value(text: &str) -> Option<String> {
+    let (offset, _) = text.match_indices("OWNER:").find(|(i, _)| {
+        *i == 0
+            || text[..*i]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_whitespace)
+    })?;
+    let value = &text[offset + 6..];
+    let end = ["DONE:", "HAPPENED:", "NOW:"]
+        .iter()
+        .filter_map(|label| {
+            value
+                .match_indices(label)
+                .find(|(i, _)| {
+                    *i == 0
+                        || value[..*i]
+                            .chars()
+                            .next_back()
+                            .is_some_and(char::is_whitespace)
+                })
+                .map(|(i, _)| i)
+        })
+        .min()
+        .unwrap_or(value.len());
+    Some(value[..end].trim().into())
+}
+pub fn owner_has_items(text: &str) -> bool {
+    let Some(value) = owner_value(text) else {
+        return false;
+    };
+    let value = value.to_lowercase();
+    !["nothing", "nothing yet", "nothing new", "nothing now"]
+        .iter()
+        .any(|empty| {
+            value.strip_prefix(empty).is_some_and(|tail| {
+                let tail = tail.trim();
+                tail.is_empty() || tail.starts_with(['.', '('])
+            })
+        })
+}
