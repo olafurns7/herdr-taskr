@@ -224,6 +224,7 @@ func TestGlanceBookkeepingKeepsMigration(t *testing.T) {
 	r := f.task("quiet-root", 0, "open")
 	f.event(r, 0, 0, "note", "OWNER: approve synthetic release", `{"owner":true}`, 25*time.Hour)
 	f.event(r, 0, 0, "note", "LANES: inventory updated", `{"owner":true}`, 24*time.Hour)
+	f.event(r, 0, 0, "note", "LANES: moved (OWNER: approved earlier)", `{"owner":true}`, 24*time.Hour)
 	v := f.view()
 	if v.OwnerNotesPending != 1 || !reflect.DeepEqual(v.OwnerNoteRootIDs, []int64{r}) || v.Quiet.Count != 1 {
 		t.Fatalf("migration hidden: %+v", v)
@@ -271,5 +272,38 @@ func TestGlanceSyntheticOwnerParser(t *testing.T) {
 		if got := ownerNoteHasItems(tc.text); got != tc.items {
 			t.Errorf("%q: %v", tc.text, got)
 		}
+	}
+}
+
+func TestGlanceBookkeepingGluedOwner(t *testing.T) {
+	for _, newer := range []string{"LANES: moved (OWNER: approved earlier)", "XOWNER: nothing", "LANES: moved, see note"} {
+		t.Run(newer, func(t *testing.T) {
+			f := newGlanceFixture(t)
+			r := f.task("demo-root", 0, "open")
+			f.event(r, 0, 0, "note", "OWNER: approve demo", `{"owner":true}`, 25*time.Hour)
+			f.event(r, 0, 0, "note", newer, `{"owner":true}`, 24*time.Hour)
+			v := f.view()
+			if v.OwnerNotesPending != 1 || !reflect.DeepEqual(v.OwnerNoteRootIDs, []int64{r}) || v.Quiet.Count != 1 {
+				t.Fatalf("glued label hid migration: %+v", v)
+			}
+		})
+	}
+}
+
+func TestGlanceOwnerSQLSegmentBoundaries(t *testing.T) {
+	f := newGlanceFixture(t)
+	r := f.task("demo-root", 0, "open")
+	f.event(r, 0, 0, "note", "OWNER: approve demo", `{"owner":true}`, time.Hour)
+	// Every unicode.IsSpace boundary must select the newest clearing segment.
+	for _, boundary := range []string{"", " ", "\t", "\n", "\r", "\v", "\f", "\u0085", "\u00a0", "\u1680", "\u2000", "\u200a", "\u2028", "\u2029", "\u202f", "\u205f", "\u3000"} {
+		text := boundary + "OWNER: nothing"
+		if boundary != "" {
+			text = "DONE: demo" + text
+		}
+		f.event(r, 0, 0, "note", text, `{"owner":true}`, 0)
+		if v := f.view(); v.OwnerNotesPending != 0 || v.Campaigns[0].OwnerNote.Text != clip(oneLine(text), 120) {
+			t.Fatalf("boundary %q: %+v", boundary, v)
+		}
+		f.event(r, 0, 0, "note", "OWNER: approve demo", `{"owner":true}`, 0)
 	}
 }

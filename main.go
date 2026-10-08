@@ -129,7 +129,7 @@ func commandTable() map[string]command {
 		"wait": cmdWait, "ack": cmdAck,
 		"next": cmdNext, "decide": cmdDecide, "set": cmdSet, "handover": cmdHandover, "adopt": cmdAdopt,
 		"status": cmdStatus, "asks": cmdAsks, "log": cmdLog, "notes": cmdNotes, "glance": cmdGlance,
-		"search": cmdSearch,
+		"search": cmdSearch, "campaign": cmdCampaign,
 		"daemon": cmdDaemon, "doc": cmdDoc, "spool": cmdSpool,
 	}
 }
@@ -146,6 +146,7 @@ handover:     handover --as ID [--note TEXT] [--out PATH] | adopt ID [--workspac
 inbox:        wait [--as ID] [--for KIND[,KIND...]] [--from NAME|ID]... [--ack EVENT_ID] [--timeout MS] [--scan-quota] | ack EVENT_ID --as ID
 hooks:        hook <harness> <event> (JSON on stdin)
 read:         status [--tree ID] [--all] | asks [--open] [--tree ID] [--owner] [--limit N] [--all] | log ID [--tree] [--since EVENT_ID] [--before EVENT_ID] [--limit N]
+              campaign ID [--page N] [--all]   (campaign detail; --all includes closed lanes)
               glance [--watch [--every 5s]]   (owner snapshot; --watch is the live split-pane view)
               notes [--owner] [--root ID] [--since EVENT|DURATION] [--limit N]   (root notes, newest first; default 48h, 50)
 search:       search QUERY [--root ID] [--kind K] [--limit N] [--raw]   (documents and decision/ask/answer/note; default 20, max 100)

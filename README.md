@@ -87,8 +87,8 @@ A dim **N notes still carry OWNER items** count tracks notes awaiting
 conversion to asks. Write `OWNER: nothing` once legacy items are cleared. `note --owner` warns when an OWNER item has no open ask.
 
 Park a campaign with `taskr set ROOT glance.state=parked`; clear it with
-`taskr set ROOT glance.state=`. Only a root orchestrator with TASKR_TASK unset
-can set this root ref. Parked campaigns stay dim and keep owner asks red;
+`taskr set ROOT glance.state=`. Only a root orchestrator with TASKR_TASK and TASKR_LAUNCH unset,
+on the root's host, can set this root ref. Parked campaigns stay dim and keep owner asks red;
 new tree events after parking turn the row amber as **parked but active**.
 Run `taskr set ROOT glance.state=parked` again to renew the hold.
 
@@ -97,6 +97,20 @@ idle or done leads without a live wait lease holding results older than
 30 minutes, and unregistered leads silent for 2 hours with lanes open.
 Live wait leases read **waiting**. Lane trouble and ordinary inbox backlog
 remain in task detail rather than the owner's alarm list.
+
+`taskr campaign ROOT [--page N] [--all]` reads a campaign: goal, plan version
+and age, lane tree, asks and answers, decisions, document metadata, stored PR
+refs, and a 100-event log page (newest first). `--all` includes closed lanes
+and their unanswered asks. Document bodies load with `taskr doc get DOC_ID`.
+Compact output is one `j1` frame; `--json` returns the same snapshot without
+the tag. Client hosts read it fresh through the hub.
+
+Glance JSON carries `server_host`, `caller_host`, asking-lane targets,
+`quiet.root_ids`, and 24 ten-minute `spark` buckets per campaign (oldest
+first, with the current bucket partial). An empty row host is the hub;
+Enter is local only when the row host equals `caller_host`, also empty on
+the hub. Server identity uses the hub's hostname; caller identity comes
+from authenticated RPC admission. No GitHub state is fetched for PR refs.
 
 ## Install
 

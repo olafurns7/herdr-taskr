@@ -24,7 +24,7 @@ Root only: owner notes (`note --owner`) and `taskr notes`: see [orchestrator](re
 Every current owner action is an owner ask, blocking only when it stops work;
 notes summarize context and link ask IDs. Glance red means open owner asks
 only; sound is blocking-only, badges count all. `set ROOT glance.state=parked`
-(and `glance.state=` to resume) requires TASKR_TASK unset and a root target.
+(and `glance.state=` to resume) requires TASKR_TASK and TASKR_LAUNCH unset, on the root's host, and a root target.
 Parking suppresses coordination alarms, keeps asks red, and turns amber if
 new tree events appear. The clear verdict is "no owner action".
 
@@ -35,6 +35,8 @@ Client records: `got`, `ready`, `done`, `fail`, `decide`, `next`, `note` and `cl
 Documents are captured from the host with the file: briefs from the caller (a non-planned, non-gate `new` refuses a missing file), `prompt --file` from the caller (must exist there), reports from the lane's host when that host runs the command, goal/plan via `doc set --file` from the caller. No copy to the ledger host; `doc set` and `doc backfill` work from any host. See [Documents](references/orchestrator.md#documents).
 
 Close a lane with `taskr close ID --outcome accepted|reworked|rejected|abandoned`: accepted = work taken as delivered; reworked = taken after a fix round; rejected = not taken; abandoned = stopped before a result. Omit the flag to record no outcome; `log` shows it in the closed event's data.
+
+`taskr campaign ROOT [--page N] [--all]` reads goal, plan, lanes, asks, decisions, document metadata, stored PR refs and a 100-event log page. `--all` includes closed lanes; bodies load through `doc get`. Client reads are fresh RPC. Glance includes host/pane targets and sparklines; focus only when row host equals caller_host (both empty on the hub). A new root orchestrator without a pane is told to adopt its root with `--pane` as its first act.
 
 `taskr search QUERY [--root ID] [--kind K] [--limit N] [--raw]` searches latest captured documents and decision/ask/answer/note summaries (default 20, max 100; `--raw` uses FTS5 syntax):
 

@@ -470,12 +470,12 @@ func TestDocumentsHandover(t *testing.T) {
 // 12. New root hints go only to stderr; --brief records an eventless goal.
 func TestDocumentsNew(t *testing.T) {
 	h := newHarness(t)
-	code, out, stderr := h.compact(nil, "new", "root", "--role", "orchestrator", "--cwd", h.dir)
+	code, out, stderr := h.compact(nil, "new", "root", "--role", "orchestrator", "--cwd", h.dir, "--pane", "wDemo:p1")
 	if code != 0 || out != "n1 1\n" || stderr != "taskr: no goal recorded for root 1; run `taskr doc set 1 goal --file PATH`\n" {
 		t.Fatalf("%d %q %q", code, out, stderr)
 	}
 	path := docFile(t, h.dir, "goal.md", "goal")
-	root := h.newTask("withgoal", "orchestrator", 0, "--brief", path)
+	root := h.newTask("withgoal", "orchestrator", 0, "--brief", path, "--pane", "wDemo:p2")
 	d := docLatest(t, h.openDB(), root, "goal", "")
 	if !d.Captured || d.EventID.Valid || h.lastStderr() != "" {
 		t.Fatalf("%+v", d)
