@@ -76,14 +76,16 @@ pub fn relay(
     if rep["exit"] != 0 {
         return Err(Error::new(
             exit(rep["exit"].as_i64().unwrap()),
-            if b["kind"] == "usage" {
-                "usage"
-            } else if b["kind"] == "transport" {
-                "transport"
-            } else if b["kind"] == "herdr" {
-                "herdr"
-            } else {
-                "rejected"
+            match b["kind"].as_str() {
+                Some("usage") => "usage",
+                Some("transport") => "transport",
+                Some("herdr") => "herdr",
+                Some("database") => "database",
+                Some("watch") => "watch",
+                Some("timeout") => "timeout",
+                Some("no_receipt") => "no_receipt",
+                Some("route") => "route",
+                _ => "rejected",
             },
             reply_error(&rep),
         ));

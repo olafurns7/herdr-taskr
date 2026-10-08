@@ -1,3 +1,4 @@
+#[cfg(feature = "contract")]
 use std::path::PathBuf;
 mod cli;
 mod daemon;
@@ -8,7 +9,7 @@ mod write;
 use taskr_core::ExitCode;
 fn run(mut args: Vec<String>) -> ExitCode {
     let mut json = std::env::var("TASKR_FORMAT").is_ok_and(|v| v == "json");
-    if let Some(code) = hub::child_dispatch(&args) {
+    if let Some(code) = hub::child_dispatch(&mut args) {
         return code;
     }
     if let Some(code) = net::route(json, &args) {
@@ -19,6 +20,9 @@ fn run(mut args: Vec<String>) -> ExitCode {
         args.remove(0);
     }
     let cmd = args.first().map(String::as_str).unwrap_or("");
+    if !args.is_empty() && cmd.is_empty() {
+        return cli::unknown(json, cmd);
+    }
     if cmd == "--request-key" || cmd.starts_with("--request-key=") {
         let message = "--request-key is only for client mode (a server.url without TASKR_DB)";
         let value = if json {
@@ -33,6 +37,7 @@ fn run(mut args: Vec<String>) -> ExitCode {
         );
         return ExitCode::Usage;
     }
+    #[cfg(feature = "contract")]
     if cmd == "--contract-migrate" && args.len() == 1 {
         let path = taskr_core::db::path()
             .map_err(anyhow::Error::msg)

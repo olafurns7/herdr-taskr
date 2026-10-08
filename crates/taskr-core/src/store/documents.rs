@@ -453,18 +453,21 @@ fn record_upload(
     backfill: i64,
 ) {
     use std::io::Write;
+    let Some(context) = rpc_context() else {
+        return;
+    };
     if backfill != 0
         || input.reason != "client"
-        || caller_machine().as_deref() != Some(input.host.as_str())
-        || env("TASKR_RPC_DOC_UPLOAD") != "1"
+        || context.caller != input.host
+        || !context.doc_upload
+        || context.upload_file.as_os_str().is_empty()
     {
         return;
     }
-    let path = env("TASKR_RPC_UPLOAD_FILE");
-    if path.is_empty() {
-        return;
-    }
-    if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(path) {
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&context.upload_file)
+    {
         let want = json!({"task":task,"kind":kind,"name":name,"path":input.path,"event_id":event});
         let _ = writeln!(file, "{}", compact_json(&want).expect("upload JSON"));
     }

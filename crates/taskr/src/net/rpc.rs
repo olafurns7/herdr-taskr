@@ -265,6 +265,7 @@ impl Client {
     }
     pub fn call(&self, request: &Value, timeout: Duration, fallback: bool) -> Result<Value> {
         let mut request = request.clone();
+        let deadline = Instant::now() + timeout;
         loop {
             let argv: Vec<String> = serde_json::from_value(request["argv"].clone())
                 .map_err(|e| Error::usage(e.to_string()))?;
@@ -272,11 +273,16 @@ impl Client {
                 .authority
                 .to_socket_addrs()
                 .map_err(|e| Error::transport(e.to_string(), true, false))?;
-            let deadline = Instant::now() + timeout;
             let mut connected = None;
             let mut last = "no addresses".to_string();
             for addr in addr {
-                match TcpStream::connect_timeout(&addr, timeout.min(Duration::from_secs(10))) {
+                match TcpStream::connect_timeout(
+                    &addr,
+                    deadline
+                        .saturating_duration_since(Instant::now())
+                        .min(Duration::from_secs(10))
+                        .max(Duration::from_millis(1)),
+                ) {
                     Ok(s) => {
                         connected = Some(s);
                         break;
@@ -370,7 +376,7 @@ impl Client {
             let b = taskr_core::compact_json(&request).unwrap();
             write!(stream, "POST /api/rpc HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nX-Taskr-RPC: 1\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{}", self.authority, b.len(), b)
                 .map_err(|e| Error::transport(e.to_string(), true, true))?;
-            let (status, body) = response(stream)?;
+            let (status, body) = response(stream, deadline)?;
             let parsed: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
             if status == 400 && fallback {
                 let msg = parsed["error"].as_str().unwrap_or("");
@@ -417,9 +423,27 @@ impl Client {
 fn reply_shape(v: &Value) -> bool {
     v["exit"].is_i64() && v["stdout"].is_string() && v["stderr"].is_string()
 }
-fn response(stream: TcpStream) -> Result<(u16, Vec<u8>)> {
+// Re-arm every socket read, including read_exact and BufRead's internal loops.
+struct DeadlineReader {
+    stream: TcpStream,
+    deadline: Instant,
+}
+impl Read for DeadlineReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let remaining = self.deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "RPC deadline exceeded",
+            ));
+        }
+        self.stream.set_read_timeout(Some(remaining))?;
+        self.stream.read(buf)
+    }
+}
+fn response(stream: TcpStream, deadline: Instant) -> Result<(u16, Vec<u8>)> {
     let err = |s: String| Error::transport(format!("reply cut off: {s}"), true, true);
-    let mut r = BufReader::new(stream);
+    let mut r = BufReader::new(DeadlineReader { stream, deadline });
     let mut line = String::new();
     r.by_ref()
         .take(65537)
@@ -545,15 +569,18 @@ pub fn budget(argv: &[String]) -> Duration {
     }
     let ms = |k, d| {
         flag(args, k)
-            .and_then(|(v, _, _)| v.parse::<u64>().ok())
+            .and_then(|(v, _, _)| v.parse::<i64>().ok())
+            .filter(|n| *n >= 0)
             .unwrap_or(d)
     };
     match cmd {
-        "wait" => Duration::from_millis(ms("timeout", 540000)),
+        "wait" => Duration::from_nanos(ms("timeout", 540000).wrapping_mul(1_000_000).max(0) as u64),
         "prompt" | "_prompt" => {
             Duration::from_secs(30)
                 + if super::flag_true(args, "confirm") {
-                    Duration::from_millis(ms("confirm-timeout", 60000))
+                    Duration::from_nanos(
+                        ms("confirm-timeout", 60000).wrapping_mul(1_000_000).max(0) as u64,
+                    )
                 } else {
                     Duration::ZERO
                 }
@@ -561,7 +588,9 @@ pub fn budget(argv: &[String]) -> Duration {
         "answer" if super::flag_true(args, "prompt") => {
             Duration::from_secs(30)
                 + if super::flag_true(args, "confirm") {
-                    Duration::from_millis(ms("confirm-timeout", 60000))
+                    Duration::from_nanos(
+                        ms("confirm-timeout", 60000).wrapping_mul(1_000_000).max(0) as u64,
+                    )
                 } else {
                     Duration::ZERO
                 }
@@ -598,9 +627,37 @@ mod tests {
             let (mut peer, _) = listener.accept().unwrap();
             peer.write_all(bytes).unwrap();
         });
-        let result = response(stream);
+        let result = response(stream, Instant::now() + Duration::from_secs(1));
         peer.join().unwrap();
         result
+    }
+    #[test]
+    fn trickling_response_obeys_absolute_deadline() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let start = Instant::now();
+        let peer = std::thread::spawn(move || {
+            let (mut peer, _) = listener.accept().unwrap();
+            for byte in b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n" {
+                if peer.write_all(&[*byte]).is_err() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        });
+        assert!(response(stream, start + Duration::from_millis(150)).is_err());
+        assert!(start.elapsed() < Duration::from_millis(600));
+        peer.join().unwrap();
+    }
+    #[test]
+    fn huge_timeout_matches_go_duration_wrap() {
+        let argv = ["wait", "--timeout", "300000000000000"].map(String::from);
+        let duration = budget(&argv);
+        assert_eq!(
+            duration.as_nanos(),
+            300000000000000_i64.wrapping_mul(1_000_000) as u128
+        );
+        assert!(time::Duration::try_from(duration).is_ok());
     }
     #[test]
     fn go_command_budgets() {

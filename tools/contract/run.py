@@ -156,38 +156,42 @@ def main():
                 root = directory / f'{i}-{fixture_name}'
                 root.mkdir()
                 # Both executions see exactly the same pathname/env; restore private state between them.
-                home, db = root / 'home', root / 'ledger.db'
+                db = root / 'ledger.db'
                 outcomes, after = [], []
                 for binary in (go, rust):
-                    if home.exists():
-                        shutil.rmtree(home)
+                    for old_home in root.glob('home*'):
+                        shutil.rmtree(old_home)
                     for suffix in ('', '-wal', '-shm'):
                         Path(str(db) + suffix).unlink(missing_ok=True)
                     clone(fixture, db)
-                    outcomes.append(execute(binary, case['argv'], home, db, case.get('env', {}), options.timeout, case.get('client_url')))
+                    steps = case.get('sequence', [case['argv']])
+                    executions = [execute(binary, argv, root / f'home{step}', db, case.get('env', {}), options.timeout, case.get('client_url'))
+                                  for step, argv in enumerate(steps)]
+                    outcomes.append(executions)
                     after.append(logical(db))
                 differences = []
-                if outcomes[0][0] < 0 or outcomes[0][0] == NOT_IMPLEMENTED or outcomes[1][0] == -999:
+                go_codes = [out[0] for out in outcomes[0]]
+                rust_codes = [out[0] for out in outcomes[1]]
+                if any(code < 0 or code == NOT_IMPLEMENTED for code in go_codes) or -999 in rust_codes:
                     status = 'mismatch'
                     differences.append('oracle-unavailable-or-process-timeout')
-                elif outcomes[1][0] == NOT_IMPLEMENTED:
+                elif NOT_IMPLEMENTED in rust_codes:
                     status = 'not-implemented'
                     if after[1] != before:
                         status = 'mismatch'
                         differences.append('not-implemented command mutated DB')
                 else:
-                    for field, lhs, rhs in zip(('exit', 'stdout', 'stderr'), outcomes[0], outcomes[1]):
-                        if lhs != rhs:
-                            differences.append(field)
+                    for step, (lhs, rhs) in enumerate(zip(outcomes[0], outcomes[1])):
+                        for field, a, b in zip(('exit', 'stdout', 'stderr'), lhs, rhs):
+                            if a != b:
+                                differences.append(f'{step}:{field}' if 'sequence' in case else field)
                     if after[0] != after[1]:
                         differences.append('logical-db')
-                    if -999 in (outcomes[0][0], outcomes[1][0]):
-                        differences.append('timeout')
                     status = 'mismatch' if differences else 'pass'
                 family = case['family']
                 summary[family][status] += 1
-                result = {'family': family, 'fixture': fixture_name, 'argv': case['argv'], 'status': status,
-                          'go_exit': outcomes[0][0], 'rust_exit': outcomes[1][0], 'differences': differences}
+                result = {'family': family, 'fixture': fixture_name, 'argv': case.get('sequence', case['argv']), 'status': status,
+                          'go_exit': go_codes if 'sequence' in case else go_codes[0], 'rust_exit': rust_codes if 'sequence' in case else rust_codes[0], 'differences': differences}
                 results.append(result)
                 if status == 'mismatch':
                     print(json.dumps(result, ensure_ascii=True))

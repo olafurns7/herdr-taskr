@@ -647,7 +647,7 @@ pub fn run(f: &FlagSet) -> Result<()> {
             "--every requires --watch and must be between 1s and 5m",
         ));
     }
-    if f.get_bool("watch") && std::env::var("TASKR_RPC_CALLER").is_ok_and(|s| !s.is_empty()) {
+    if f.get_bool("watch") && taskr_core::store::caller_machine().is_some() {
         return Err(usage("glance --watch runs on the invoking host"));
     }
     use std::io::IsTerminal;
@@ -662,10 +662,12 @@ pub fn run(f: &FlagSet) -> Result<()> {
         });
     }
     if f.get_bool("watch")
-        && let Some(result) =
-            crate::net::glance_watch_snapshot(std::time::Duration::from_nanos(every as u64))
+        && let Some(result) = crate::net::glance_watch_client()
     {
-        let mut v = result.map_err(|(code, text)| Error { code, text })?;
+        let client = result.map_err(|(code, text)| Error { code, text })?;
+        let mut v = client
+            .snapshot(std::time::Duration::from_nanos(every as u64))
+            .map_err(|(code, text)| Error { code, text })?;
         v["now"] = json!(q::now());
         println!("{}", render::frame(&v, 80, usize::MAX, 0).join("\n"));
         return Ok(());

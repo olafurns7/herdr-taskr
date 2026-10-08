@@ -21,7 +21,7 @@ use std::{
     net::{IpAddr, SocketAddr, TcpListener},
     path::PathBuf,
     process::Stdio,
-    sync::Arc,
+    sync::{Arc, Mutex as StdMutex},
     time::Duration,
 };
 use taskr_core::{
@@ -61,6 +61,8 @@ struct Hub {
     whois: Mutex<BTreeMap<IpAddr, (time::OffsetDateTime, Option<HubIdentity>)>>,
     usage: usage::Usage,
     shutdown: watch::Receiver<bool>,
+    stored_requests: StdMutex<JoinSet<()>>,
+    reapers: Arc<StdMutex<JoinSet<()>>>,
 }
 
 pub(crate) async fn serve(
@@ -74,6 +76,8 @@ pub(crate) async fn serve(
         whois: Mutex::default(),
         usage: usage::Usage::default(),
         shutdown: stopped,
+        stored_requests: StdMutex::default(),
+        reapers: Arc::default(),
     });
     let mut servers = JoinSet::new();
     for listener in listeners {
@@ -81,7 +85,12 @@ pub(crate) async fn serve(
         let listener = tokio::net::TcpListener::from_std(listener)?;
         let stopped = hub.shutdown.clone();
         let router = Router::new().fallback(handle).with_state(hub.clone());
-        servers.spawn(http::listen(listener, router, stopped));
+        servers.spawn(http::listen(
+            listener,
+            router,
+            stopped,
+            hub.cfg.home.clone(),
+        ));
     }
     let mut minute = tokio::time::interval(Duration::from_secs(60));
     minute.tick().await;
@@ -97,16 +106,33 @@ pub(crate) async fn serve(
             }
         }
     }
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
     stop.send_replace(true);
-    while let Some(result) = servers.join_next().await {
-        result??;
-    }
+    drain(&mut servers, deadline).await;
+    let mut stored_requests =
+        std::mem::take(&mut *hub.stored_requests.lock().expect("stored requests"));
+    drain(&mut stored_requests, deadline).await;
+    let mut reapers = std::mem::take(&mut *hub.reapers.lock().expect("reapers"));
+    drain(
+        &mut reapers,
+        tokio::time::Instant::now() + Duration::from_secs(1),
+    )
+    .await;
     flush(hub).await
+}
+
+async fn drain<T: 'static>(tasks: &mut JoinSet<T>, deadline: tokio::time::Instant) {
+    let _ = tokio::time::timeout_at(deadline, async {
+        while tasks.join_next().await.is_some() {}
+    })
+    .await;
+    tasks.abort_all();
+    while tasks.join_next().await.is_some() {}
 }
 
 async fn flush(hub: Arc<Hub>) -> anyhow::Result<()> {
     tokio::task::spawn_blocking(move || {
-        let mut db = db::open(&hub.cfg.db_path).map_err(anyhow::Error::msg)?;
+        let mut db = db::open_migrated(&hub.cfg.db_path).map_err(anyhow::Error::msg)?;
         hub.usage
             .flush(&mut db, (hub.cfg.clock)())
             .map_err(|e| anyhow::Error::msg(e.message))
@@ -258,9 +284,17 @@ async fn handle_inner(hub: &Arc<Hub>, peer: SocketAddr, req: Request<Body>) -> R
         }
         .to_string();
     let rep = if protocol::stored(&req.argv) {
-        let hub = hub.clone();
         // Stored writes survive a disconnected caller; only shutdown/budget cancels them.
-        match tokio::spawn(async move { stored(hub, identity.machine, req).await }).await {
+        let (send, reply) = tokio::sync::oneshot::channel();
+        {
+            let hub_task = hub.clone();
+            let mut tasks = hub.stored_requests.lock().expect("stored requests");
+            while tasks.try_join_next().is_some() {}
+            tasks.spawn(async move {
+                let _ = send.send(stored(hub_task, identity.machine, req).await);
+            });
+        }
+        match reply.await {
             Ok(reply) => reply,
             Err(_) => RpcReply {
                 exit: 4,
@@ -269,7 +303,7 @@ async fn handle_inner(hub: &Arc<Hub>, peer: SocketAddr, req: Request<Body>) -> R
             },
         }
     } else {
-        run(hub, &identity.machine, &req).await
+        run(hub, &identity.machine, &req).await.into_reply()
     };
     if log_name != "glance" || rep.exit != 0 {
         crate::daemon::rpc_log(
@@ -394,7 +428,7 @@ async fn stored(hub: Arc<Hub>, machine: String, req: RpcRequest) -> RpcReply {
     let hash = taskr_core::request_hash(Some(&req.argv), req.document.as_ref()).expect("hash");
     let claim_machine = machine.clone();
     let claim = tokio::task::spawn_blocking(move || -> store::Result<Option<RpcReply>> {
-        let mut db = db::open(&db_hub.cfg.db_path).map_err(|message| store::Error { code: taskr_core::ExitCode::Database, message })?;
+        let mut db = db::open_migrated(&db_hub.cfg.db_path).map_err(|message| store::Error { code: taskr_core::ExitCode::Database, message })?;
         store::transaction(&mut db, |tx| {
             tx.execute("delete from requests where created_at < ?", [store::stamp((db_hub.cfg.clock)() - time::Duration::days(7))])?;
             let old = tx.query_row("select coalesce(machine,''),argv_sha,state,coalesce(exit,0),coalesce(stdout,''),coalesce(stderr,''),upload from requests where key=?", [&key], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i32>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(5)?, r.get::<_, Option<String>>(6)?))).optional()?;
@@ -431,109 +465,176 @@ async fn stored(hub: Arc<Hub>, machine: String, req: RpcRequest) -> RpcReply {
         }
         Err(e) => return protocol::error(&req, 4, "database", &e.to_string()),
     }
-    let rep = run(&hub, &machine, &req).await;
+    let result = run(&hub, &machine, &req).await;
+    if matches!(&result, Execution::Unknown(_)) {
+        return result.into_reply();
+    }
+    let exited = matches!(&result, Execution::Exited(_));
+    let rep = result.into_reply();
     let upload = serde_json::to_string(&rep.upload).expect("upload");
     let (exit, stdout, stderr) = (rep.exit, rep.stdout.clone(), rep.stderr.clone());
     let _ = tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let db = db::open(&hub.cfg.db_path)?;
-        db.execute(
-            "update requests set state='done',exit=?,stdout=?,stderr=?,upload=? where key=?",
-            db::params![exit, stdout, stderr, upload, req.request_key],
-        )
-        .map_err(|e| e.to_string())?;
+        let db = db::open_migrated(&hub.cfg.db_path)?;
+        if exited {
+            db.execute(
+                "update requests set state='done',exit=?,stdout=?,stderr=?,upload=? where key=?",
+                db::params![exit, stdout, stderr, upload, req.request_key],
+            )
+            .map_err(|e| e.to_string())?;
+        } else {
+            db.execute(
+                "delete from requests where key=? and state='running'",
+                [req.request_key],
+            )
+            .map_err(|e| e.to_string())?;
+        }
         Ok(())
     })
     .await;
     rep
 }
 
-async fn run(hub: &Hub, machine: &str, req: &RpcRequest) -> RpcReply {
-    if let Err(message) = protocol::check_args(&req.argv) {
-        return protocol::error(req, 2, "usage", &message);
+enum Execution {
+    Exited(RpcReply),
+    NotStarted(RpcReply),
+    Unknown(RpcReply),
+}
+impl Execution {
+    fn into_reply(self) -> RpcReply {
+        match self {
+            Self::Exited(reply) | Self::NotStarted(reply) | Self::Unknown(reply) => reply,
+        }
     }
-    let result = async {
-        let uploads = UploadFile::new()?;
-        // ponytail: one process per request (~19/min); use in-process dispatch if RPC volume warrants it.
-        let mut cmd = Command::new(std::env::current_exe()?);
-        cmd.args(&req.argv)
-            .env_clear()
-            .env("HOME", &hub.cfg.home)
-            .env("TASKR_DB", &hub.cfg.db_path)
-            .env("TASKR_RPC_CALLER", machine)
-            .env("TASKR_RPC_CWD", &req.cwd)
-            .env("TASKR_RPC_UPLOAD_FILE", uploads.dir.join("uploads"))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        for key in ["PATH", "HERDR_SOCKET_PATH"] {
-            if let Some(value) = std::env::var_os(key) {
-                cmd.env(key, value);
+}
+
+async fn run(hub: &Hub, machine: &str, req: &RpcRequest) -> Execution {
+    if let Err(message) = protocol::check_args(&req.argv) {
+        return Execution::NotStarted(protocol::error(req, 2, "usage", &message));
+    }
+    let mut spawned = false;
+    let finished = {
+        let result = async {
+            let uploads = UploadFile::new()?;
+            // ponytail: one process per request (~19/min); use in-process dispatch if RPC volume warrants it.
+            let executable = std::env::current_exe()?;
+            #[cfg(target_os = "linux")]
+            let mut cmd = Command::new("/proc/self/exe");
+            #[cfg(not(target_os = "linux"))]
+            let mut cmd = Command::new(&executable);
+            #[cfg(unix)]
+            {
+                use std::os::unix::process::CommandExt;
+                cmd.as_std_mut().arg0(&executable);
             }
-        }
-        for key in [
-            "TASKR_TASK",
-            "TASKR_LAUNCH",
-            "TASKR_FORMAT",
-            "HERDR_PANE_ID",
-            "HERDR_WORKSPACE_ID",
-            "HERDR_TAB_ID",
-            "CODEX_HOME",
-            "CODEX_THREAD_ID",
-            "CLAUDE_CONFIG_DIR",
-        ] {
-            if let Some(value) = req.env.get(key).filter(|s| !s.is_empty()) {
-                cmd.env(key, value);
+            cmd.arg("--hub-child")
+                .args(&req.argv)
+                .env_clear()
+                .env("HOME", &hub.cfg.home)
+                .env("TASKR_DB", &hub.cfg.db_path)
+                .env("TASKR_RPC_CALLER", machine)
+                .env("TASKR_RPC_CWD", &req.cwd)
+                .env("TASKR_RPC_UPLOAD_FILE", uploads.dir.join("uploads"))
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true);
+            for key in ["PATH", "HERDR_SOCKET_PATH"] {
+                if let Some(value) = std::env::var_os(key) {
+                    cmd.env(key, value);
+                }
             }
-        }
-        if req.capabilities.iter().any(|s| s == "doc-upload") {
-            cmd.env("TASKR_RPC_DOC_UPLOAD", "1");
-        }
-        #[cfg(feature = "contract")]
-        if let Ok(now) = std::env::var("TASKR_FROZEN_NOW") {
-            cmd.env("TASKR_FROZEN_NOW", now);
-        }
-        let mut child = ChildGuard(Some(cmd.spawn()?));
-        let process = child.0.as_mut().expect("child");
-        let mut stdout = process.stdout.take().expect("stdout");
-        let mut stderr = process.stderr.take().expect("stderr");
-        let mut stdin = process.stdin.take().expect("stdin");
-        let input = serde_json::to_vec(req)?;
-        let writer = tokio::spawn(async move { stdin.write_all(&input).await });
-        let mut out = Vec::new();
-        let mut err = Vec::new();
-        let (_, _, status) = tokio::try_join!(
-            stdout.read_to_end(&mut out),
-            stderr.read_to_end(&mut err),
-            process.wait()
-        )?;
-        writer.await??;
-        let exit = status.code().unwrap_or(4);
-        let upload = if exit == 0 && req.capabilities.iter().any(|s| s == "doc-upload") {
-            let raw = std::fs::read_to_string(uploads.dir.join("uploads"))?;
-            let wants = raw
-                .lines()
-                .map(serde_json::from_str)
-                .collect::<Result<Vec<protocol::DocWant>, _>>()?;
-            if wants.is_empty() { None } else { Some(wants) }
-        } else {
-            None
+            for key in [
+                "TASKR_TASK",
+                "TASKR_LAUNCH",
+                "TASKR_FORMAT",
+                "HERDR_PANE_ID",
+                "HERDR_WORKSPACE_ID",
+                "HERDR_TAB_ID",
+                "CODEX_HOME",
+                "CODEX_THREAD_ID",
+                "CLAUDE_CONFIG_DIR",
+            ] {
+                if let Some(value) = req.env.get(key).filter(|s| !s.is_empty()) {
+                    cmd.env(key, value);
+                }
+            }
+            if req.capabilities.iter().any(|s| s == "doc-upload") {
+                cmd.env("TASKR_RPC_DOC_UPLOAD", "1");
+            }
+            #[cfg(feature = "contract")]
+            if let Ok(now) = std::env::var("TASKR_FROZEN_NOW") {
+                cmd.env("TASKR_FROZEN_NOW", now);
+            }
+            let mut child = ChildGuard {
+                child: Some(cmd.spawn()?),
+                reapers: hub.reapers.clone(),
+            };
+            spawned = true;
+            let process = child.child.as_mut().expect("child");
+            let mut stdout = process.stdout.take().expect("stdout");
+            let mut stderr = process.stderr.take().expect("stderr");
+            let mut stdin = process.stdin.take().expect("stdin");
+            let input = serde_json::to_vec(req)?;
+            let writer = tokio::spawn(async move { stdin.write_all(&input).await });
+            let mut out = Vec::new();
+            let mut err = Vec::new();
+            let (_, _, status) = tokio::try_join!(
+                stdout.read_to_end(&mut out),
+                stderr.read_to_end(&mut err),
+                process.wait()
+            )?;
+            writer.await??;
+            let exit = status
+                .code()
+                .ok_or_else(|| anyhow::anyhow!("RPC child terminated without an exit code"))?;
+            let upload = if exit == 0 && req.capabilities.iter().any(|s| s == "doc-upload") {
+                let raw = std::fs::read_to_string(uploads.dir.join("uploads"))?;
+                let wants = raw
+                    .lines()
+                    .map(serde_json::from_str)
+                    .collect::<Result<Vec<protocol::DocWant>, _>>()?;
+                if wants.is_empty() { None } else { Some(wants) }
+            } else {
+                None
+            };
+            Ok::<_, anyhow::Error>(RpcReply {
+                exit,
+                stdout: String::from_utf8_lossy(&out).into_owned(),
+                stderr: String::from_utf8_lossy(&err).into_owned(),
+                upload,
+            })
         };
-        Ok::<_, anyhow::Error>(RpcReply {
-            exit,
-            stdout: String::from_utf8_lossy(&out).into_owned(),
-            stderr: String::from_utf8_lossy(&err).into_owned(),
-            upload,
-        })
+        tokio::pin!(result);
+        let mut stopped = hub.shutdown.clone();
+        tokio::select! {
+            result = tokio::time::timeout(protocol::budget(&req.argv) + Duration::from_secs(10), &mut result) => result.map_err(|_|"request execution deadline exceeded"),
+            _ = stopped.changed() => {
+                if protocol::stored(&req.argv) {
+                    tokio::time::timeout(Duration::from_secs(2),&mut result).await.map_err(|_|"server stopped during request")
+                }else {Err("server stopped during request")}
+            },
+        }
     };
-    let mut stopped = hub.shutdown.clone();
-    tokio::select! {
-        result = tokio::time::timeout(protocol::budget(&req.argv) + Duration::from_secs(10), result) => match result {
-            Ok(Ok(rep)) => rep,
-            Ok(Err(e)) => protocol::error(req, 4, "database", &e.to_string()),
-            Err(_) => protocol::error(req, 5, "herdr", "request execution deadline exceeded"),
-        },
-        _ = stopped.changed() => protocol::error(req, 5, "herdr", "server stopped during request"),
+    match finished {
+        Ok(Ok(reply)) => Execution::Exited(reply),
+        Ok(Err(error)) if !spawned => {
+            Execution::NotStarted(protocol::error(req, 4, "database", &error.to_string()))
+        }
+        error => {
+            let message = if protocol::stored(&req.argv) {
+                format!(
+                    "request {}: outcome unknown (still running, or the server stopped during it); inspect `taskr log` before any resend",
+                    req.request_key
+                )
+            } else {
+                match error {
+                    Ok(Err(error)) => error.to_string(),
+                    Err(message) => message.into(),
+                    Ok(Ok(_)) => unreachable!(),
+                }
+            };
+            Execution::Unknown(protocol::error(req, 5, "herdr", &message))
+        }
     }
 }
 
@@ -575,17 +676,22 @@ impl Drop for UploadFile {
     }
 }
 
-struct ChildGuard(Option<tokio::process::Child>);
+struct ChildGuard {
+    child: Option<tokio::process::Child>,
+    reapers: Arc<StdMutex<JoinSet<()>>>,
+}
 impl Drop for ChildGuard {
     fn drop(&mut self) {
-        if let Some(mut child) = self.0.take()
+        if let Some(mut child) = self.child.take()
             && let Some(pid) = child.id()
         {
             if let Some(pid) = rustix::process::Pid::from_raw(pid as i32) {
                 let _ = rustix::process::kill_process(pid, rustix::process::Signal::TERM);
             }
             // Let wait's signal handler clear its exact waiting marker, then reap or kill.
-            tokio::spawn(async move {
+            let mut reapers = self.reapers.lock().expect("reapers");
+            while reapers.try_join_next().is_some() {}
+            reapers.spawn(async move {
                 if tokio::time::timeout(Duration::from_secs(1), child.wait())
                     .await
                     .is_err()

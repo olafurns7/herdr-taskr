@@ -3,6 +3,7 @@ use hyper_util::{rt::TokioIo, service::TowerToHyperService};
 use std::{
     future::Future,
     io,
+    path::PathBuf,
     pin::Pin,
     sync::{Arc, Mutex},
     task::{Context, Poll},
@@ -21,11 +22,27 @@ struct Phase {
     idle: bool,
     reply_ready: bool,
     read_started: Instant,
+    write_deadline: Option<Instant>,
 }
 struct Socket {
     stream: TcpStream,
     phase: Arc<Mutex<Phase>>,
     timer: Pin<Box<Sleep>>,
+    write_timer: Pin<Box<Sleep>>,
+}
+impl Socket {
+    fn check_write_timeout(&mut self, cx: &mut Context<'_>) -> io::Result<()> {
+        if let Some(deadline) = self.phase.lock().expect("phase").write_deadline {
+            self.write_timer.as_mut().reset(deadline);
+            if self.write_timer.as_mut().poll(cx).is_ready() {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "HTTP write timeout",
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 impl AsyncRead for Socket {
     fn poll_read(
@@ -62,9 +79,20 @@ impl AsyncWrite for Socket {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
+        self.phase
+            .lock()
+            .expect("phase")
+            .write_deadline
+            .get_or_insert_with(|| Instant::now() + Duration::from_secs(15));
+        if let Err(error) = self.check_write_timeout(cx) {
+            return Poll::Ready(Err(error));
+        }
         Pin::new(&mut self.stream).poll_write(cx, buf)
     }
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        if let Err(error) = self.check_write_timeout(cx) {
+            return Poll::Ready(Err(error));
+        }
         let result = Pin::new(&mut self.stream).poll_flush(cx);
         if matches!(result, Poll::Ready(Ok(()))) {
             let mut phase = self.phase.lock().expect("phase");
@@ -72,6 +100,7 @@ impl AsyncWrite for Socket {
                 phase.reply_ready = false;
                 phase.idle = true;
                 phase.deadline = Some(Instant::now() + Duration::from_secs(60));
+                phase.write_deadline = None;
             }
         }
         result
@@ -85,19 +114,32 @@ pub(super) async fn listen(
     listener: TcpListener,
     router: Router,
     mut shutdown: watch::Receiver<bool>,
+    home: PathBuf,
 ) -> io::Result<()> {
     let mut connections = JoinSet::new();
+    let mut last_logged: Option<Instant> = None;
+    let mut suppressed = 0_u64;
     loop {
         tokio::select! {
             _=shutdown.changed()=>break,
             accepted=listener.accept()=>{
-                let(stream,peer)=accepted?;
-                let phase=Arc::new(Mutex::new(Phase{deadline:Some(Instant::now()+Duration::from_secs(5)),idle:false,reply_ready:false,read_started:Instant::now()}));
-                let socket=Socket{stream,phase:phase.clone(),timer:Box::pin(tokio::time::sleep(Duration::from_secs(5)))};
+                let(stream,peer)=match accepted {
+                    Ok(accepted)=>accepted,
+                    Err(error)=>{
+                        if last_logged.is_none_or(|at|at.elapsed()>=Duration::from_secs(10)) {
+                            crate::daemon::rpc_log(&home,&format!("HTTP accept error: {error} ({suppressed} similar suppressed)"));
+                            last_logged=Some(Instant::now());suppressed=0;
+                        }else {suppressed=suppressed.saturating_add(1);}
+                        tokio::select! {_=shutdown.changed()=>break,_=tokio::time::sleep(Duration::from_millis(200))=>{}}
+                        continue;
+                    }
+                };
+                let phase=Arc::new(Mutex::new(Phase{deadline:Some(Instant::now()+Duration::from_secs(5)),idle:false,reply_ready:false,read_started:Instant::now(),write_deadline:None}));
+                let socket=Socket{stream,phase:phase.clone(),timer:Box::pin(tokio::time::sleep(Duration::from_secs(5))),write_timer:Box::pin(tokio::time::sleep(Duration::from_secs(15)))};
                 let service=TowerToHyperService::new(router.clone());
                 let service=hyper::service::service_fn(move |mut req| {
                     req.extensions_mut().insert(ConnectInfo(peer));
-                    {let mut state=phase.lock().expect("phase");req.extensions_mut().insert(ReadDeadline(state.read_started+Duration::from_secs(10)));state.deadline=None;state.idle=false;state.reply_ready=false;}
+                    {let mut state=phase.lock().expect("phase");req.extensions_mut().insert(ReadDeadline(state.read_started+Duration::from_secs(10)));state.deadline=None;state.idle=false;state.reply_ready=false;state.write_deadline=None;}
                     let phase=phase.clone();let future=hyper::service::Service::call(&service,req);
                     async move {let response=future.await;phase.lock().expect("phase").reply_ready=true;response}
                 });
@@ -109,7 +151,7 @@ pub(super) async fn listen(
                     tokio::pin!(connection);
                     tokio::select! {
                         _=&mut connection=>{},
-                        _=stopped.changed()=>{connection.as_mut().graceful_shutdown();let _=connection.await;}
+                        _=stopped.changed()=>{connection.as_mut().graceful_shutdown();let _=tokio::time::timeout(Duration::from_secs(2),connection).await;}
                     }
                 });
             }

@@ -14,6 +14,9 @@ pub fn path() -> Result<PathBuf, String> {
     Ok(PathBuf::from(home).join(".local/state/taskr/taskr.db"))
 }
 pub fn open(path: &Path) -> Result<Connection, String> {
+    if crate::store::rpc_context().is_some() {
+        return open_migrated(path);
+    }
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent).map_err(|e| {
             if let Some(file) = parent
@@ -32,6 +35,11 @@ pub fn open(path: &Path) -> Result<Connection, String> {
         })?;
     }
     crate::schema::open(path).map_err(|e| error_text(&e))
+}
+/// The daemon already migrated this ledger; RPC reads must not take a write lock.
+pub fn open_migrated(path: &Path) -> Result<Connection, String> {
+    crate::schema::connect(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
+        .map_err(|e| error_text(&e))
 }
 pub fn error_text(e: &rusqlite::Error) -> String {
     match e {
@@ -96,6 +104,26 @@ pub fn error_text(e: &rusqlite::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn migrated_reader_does_not_take_the_writer_lock_or_create_a_ledger() {
+        let root = std::env::temp_dir().join(format!("taskr-migrated-db-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("ledger.db");
+        let writer = open(&path).unwrap();
+        writer.execute_batch("begin immediate").unwrap();
+        let reader = open_migrated(&path).unwrap();
+        let count: i64 = reader
+            .query_row("select count(*) from tasks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        writer.execute_batch("rollback").unwrap();
+        drop(reader);
+        drop(writer);
+        let absent = root.join("absent.db");
+        assert!(open_migrated(&absent).is_err());
+        assert!(!absent.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn open_pragmas_and_go_error_text() {
         let root = std::env::temp_dir().join(format!("taskr-read-db-{}", std::process::id()));

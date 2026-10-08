@@ -19,6 +19,7 @@ struct Error {
     message: String,
     retryable: bool,
     reached: bool,
+    body: Option<Value>,
 }
 type Result<T> = std::result::Result<T, Error>;
 impl Error {
@@ -35,6 +36,7 @@ impl Error {
             message: s.into(),
             retryable: false,
             reached: false,
+            body: None,
         }
     }
     fn transport(s: impl Into<String>, retryable: bool, reached: bool) -> Self {
@@ -48,18 +50,16 @@ impl Error {
         Self::new(ExitCode::Database, "database", e.to_string())
     }
     fn emit(&self, json_mode: bool, cmd: &str) -> ExitCode {
+        let mut body = self.body.clone().unwrap_or_else(|| json!({}));
         if json_mode {
+            body["error"] = json!(self.message);
+            body["kind"] = json!(self.kind);
             eprintln!("taskr {cmd}: {}", self.message);
-            println!(
-                "{}",
-                compact_json(&json!({"error":self.message,"kind":self.kind})).unwrap()
-            );
+            println!("{}", compact_json(&body).unwrap());
         } else {
-            println!(
-                "x1 {} {}",
-                self.code as u8,
-                compact_json(&json!({"err":self.message,"k":self.kind})).unwrap()
-            );
+            body["err"] = json!(self.message);
+            body["k"] = json!(self.kind);
+            println!("x1 {} {}", self.code as u8, compact_json(&body).unwrap());
         }
         self.code
     }
@@ -581,7 +581,9 @@ pub fn route(mut json_mode: bool, raw_args: &[String]) -> Option<ExitCode> {
             && !flag_true(&cargs, "planned")
         {
             if flag(&cargs, "machine").is_none_or(|(m, _, _)| m == cl.short) {
-                let p = flag(&cargs, "cwd").map_or(cwd_text.as_ref(), |(p, _, _)| p);
+                let p = flag(&cargs, "cwd")
+                    .filter(|(p, _, _)| !p.is_empty())
+                    .map_or(cwd_text.as_ref(), |(p, _, _)| p);
                 if !Path::new(p).is_dir() {
                     return Err(Error::usage(format!("directory {p} does not exist")));
                 }
@@ -678,6 +680,7 @@ fn call_retry(cl: &rpc::Client, request: &Value, json_mode: bool, retry: &str) -
         window
     };
     let deadline = Instant::now() + window;
+    let announced_deadline = now() + time::Duration::try_from(window).unwrap();
     let mut reached = false;
     let mut announced = false;
     let mut backoff = Duration::from_secs(1);
@@ -714,8 +717,11 @@ fn call_retry(cl: &rpc::Client, request: &Value, json_mode: bool, retry: &str) -
             }
             let time = if spoolable(&argv) {
                 deadline.saturating_duration_since(Instant::now())
+            } else if cmd == "wait" {
+                deadline.saturating_duration_since(Instant::now()) + Duration::from_secs(10)
             } else {
-                budget + Duration::from_secs(10)
+                (budget + Duration::from_secs(10))
+                    .max(deadline.saturating_duration_since(Instant::now()))
             }
             .max(Duration::from_millis(1));
             let result = if cmd == "wait" {
@@ -757,6 +763,9 @@ fn call_retry(cl: &rpc::Client, request: &Value, json_mode: bool, retry: &str) -
                     last_reply = Some(rep.clone());
                     reason = "request still running";
                     if Instant::now() >= deadline {
+                        if let Some(e) = last_error.take() {
+                            return Err(e);
+                        }
                         return Ok(rep);
                     }
                 }
@@ -775,7 +784,7 @@ fn call_retry(cl: &rpc::Client, request: &Value, json_mode: bool, retry: &str) -
                 }
             }
             if !announced && !spoolable(&argv) {
-                let end = (now() + time::Duration::try_from(window).unwrap())
+                let end = announced_deadline
                     .replace_nanosecond(0)
                     .unwrap()
                     .format(&time::format_description::well_known::Rfc3339)
@@ -848,9 +857,8 @@ fn spool_failure(e: Error, retry: &str) -> Error {
 }
 
 /// A watch renders on its invoking host, but a client's snapshot comes from the hub.
-pub(crate) fn glance_watch_snapshot(
-    every: Duration,
-) -> Option<std::result::Result<Value, (ExitCode, String)>> {
+pub(crate) fn glance_watch_client()
+-> Option<std::result::Result<GlanceWatchClient, (ExitCode, String)>> {
     if std::env::var("TASKR_DB").is_ok_and(|s| !s.is_empty()) {
         return None;
     }
@@ -860,34 +868,51 @@ pub(crate) fn glance_watch_snapshot(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
         Err(e) => return Some(Err((ExitCode::Usage, format!("server.url: {e}")))),
     };
-    let run = || -> Result<Value> {
-        let cl = rpc::Client::new(raw.lines().next().unwrap_or("").trim())?;
-        let cwd = std::env::current_dir().map_err(Error::io)?;
-        let argv = ["--json", "glance"].map(String::from);
-        let rep = cl
-            .call(
-                &rpc::request(
-                    &argv,
-                    &cwd.to_string_lossy(),
-                    &new_key()?,
-                    Value::Null,
-                    None,
-                ),
-                every.min(Duration::from_secs(10)),
-                true,
-            )
-            .map_err(|e| Error::new(ExitCode::Watch, "watch", e.message))?;
-        if rep["exit"] != 0 {
-            return Err(Error::new(
-                ExitCode::Watch,
-                "watch",
-                format!("glance: {}", rep["stdout"].as_str().unwrap_or("").trim()),
-            ));
-        }
-        serde_json::from_str(rep["stdout"].as_str().unwrap_or(""))
-            .map_err(|e| Error::new(ExitCode::Watch, "watch", e.to_string()))
+    let run = || -> Result<GlanceWatchClient> {
+        Ok(GlanceWatchClient {
+            client: rpc::Client::new(raw.lines().next().unwrap_or("").trim())?,
+            cwd: std::env::current_dir().map_err(Error::io)?,
+        })
     };
     Some(run().map_err(|e| (e.code, e.message)))
+}
+pub(crate) struct GlanceWatchClient {
+    client: rpc::Client,
+    cwd: PathBuf,
+}
+impl GlanceWatchClient {
+    pub(crate) fn snapshot(
+        &self,
+        every: Duration,
+    ) -> std::result::Result<Value, (ExitCode, String)> {
+        let run = || -> Result<Value> {
+            let argv = ["--json", "glance"].map(String::from);
+            let rep = self
+                .client
+                .call(
+                    &rpc::request(
+                        &argv,
+                        &self.cwd.to_string_lossy(),
+                        &new_key()?,
+                        Value::Null,
+                        None,
+                    ),
+                    every.min(Duration::from_secs(10)),
+                    true,
+                )
+                .map_err(|e| Error::new(ExitCode::Watch, "watch", e.message))?;
+            if rep["exit"] != 0 {
+                return Err(Error::new(
+                    ExitCode::Watch,
+                    "watch",
+                    format!("glance: {}", rep["stdout"].as_str().unwrap_or("").trim()),
+                ));
+            }
+            serde_json::from_str(rep["stdout"].as_str().unwrap_or(""))
+                .map_err(|e| Error::new(ExitCode::Watch, "watch", e.to_string()))
+        };
+        run().map_err(|e| (e.code, e.message))
+    }
 }
 
 fn transport_failure(mut e: Error, retry: &str) -> Error {

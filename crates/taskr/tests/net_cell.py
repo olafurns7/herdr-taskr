@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Real Go hub / Rust client contract cell; synthetic HOME, DB and tailnet only."""
 import argparse
+from datetime import datetime
 import fcntl
 import hashlib
 import json
@@ -218,6 +219,7 @@ def run(cell):
     cell.record(['note','fresh'],env=old)
     cell.record(['launch',str(lane),'--provider','codex','--model','fixture','--effort','high'])
     cell.record(['note','stale'],6,old)
+    cell.record(['new', 'empty-cwd', '--role', 'orchestrator', '--cwd', ''])
     # Document upload originates on the client, including an empty text body.
     report=cell.tmp/'client.md';report.write_text('report <&> Þ😀\n')
     current=cell.count('select current_launch_id from tasks where id=?',(lane,))
@@ -370,6 +372,89 @@ def run(cell):
     assert not (cell.client_home/'.local/state/taskr/taskr.db').exists()
     return cell.results
 
+def isolated_uploads(go, rust):
+    """Each uploader starts with a fresh Go hub, without a prior same-key write."""
+    outcomes = []
+    for client in (go, rust):
+        with tempfile.TemporaryDirectory(prefix='taskr-doc-cell-') as tmp:
+            cell = Cell(go, rust, tmp)
+            result = {}
+            try:
+                def obj(args, env=None):
+                    return cell.obj(client, args, env=env)
+                root = obj(['new', 'root', '--role', 'orchestrator', '--cwd', str(cell.tmp)])['task_id']
+                files = {'text': b'report <&> \xc3\x9e\xf0\x9f\x98\x80\n', 'empty': b'',
+                         'binary': b'a\x00b', 'large': b'x' * ((1 << 20) + 5), 'badutf8': b'\xff\xfe ok',
+                         'missing': None, 'dir': None}
+                for name, body in files.items():
+                    lane = obj(['new', f'lane-{name}', '--role', 'implementer', '--parent', str(root), '--cwd', str(cell.tmp)])['task_id']
+                    launch = obj(['launch', str(lane), '--provider', 'codex', '--model', 'fixture', '--effort', 'high'])['launch_id']
+                    path = cell.tmp / f'{name}.md'
+                    if name == 'dir': path.mkdir()
+                    elif body is not None: path.write_bytes(body)
+                    worker = {'TASKR_TASK': str(lane), 'TASKR_LAUNCH': str(launch)}
+                    for cmd in ('ready', 'done'):
+                        args = [cmd, f'{cmd} {name}']
+                        if cmd == 'ready': args += ['--report', str(path)]
+                        reply = cell.cli(client, ['--json', *args], worker)
+                        result[f'{cmd}-{name}'] = (reply.returncode, reply.stderr.decode().replace(str(cell.tmp), '<tmp>'))
+                plan = cell.tmp / 'plan.md'; plan.write_text('plan body\n')
+                result['plan'] = cell.want(client, ['doc', 'set', str(root), 'plan', '--name', 'p1', '--file', str(plan)]).returncode
+                result['backfill'] = cell.want(client, ['doc', 'backfill', '--dry-run']).stdout.decode().replace(str(cell.tmp), '<tmp>')
+                with sqlite3.connect(cell.db) as db:
+                    result['documents'] = db.execute(
+                        "select t.name,d.kind,coalesce(d.name,''),d.version,d.captured,d.bytes,d.sha256,coalesce(d.reason,''),coalesce(d.source_host,'') "
+                        "from documents d join tasks t on t.id=d.task_id order by t.name,d.kind,d.version").fetchall()
+                    for sha, size, body in db.execute('select sha256,bytes,body from doc_blobs'):
+                        assert hashlib.sha256(body.encode()).hexdigest() == sha
+                        assert len(body.encode()) == size
+                assert any(row[4] and row[5] == 0 for row in result['documents']), result
+                outcomes.append(result)
+            finally:
+                cell.close()
+    assert outcomes[0] == outcomes[1], {'Go uploader': outcomes[0], 'Rust uploader': outcomes[1]}
+    return {'args': ['isolated document upload: ready/done, text/empty/binary/UTF8/size/missing/directory, doc set/backfill'], 'pass': True}
+
+
+def malformed_spool_heads(cell):
+    for index, binary in enumerate((cell.go, cell.rust)):
+        home = cell.tmp / f'badargv-{index}'
+        state = home / '.local/state/taskr'
+        queue = state / 'spool/queue'; queue.mkdir(parents=True)
+        (state / 'server.url').write_text('http://[::1]:1\n')
+        for seq, argv in ((1, ['note', 7]), (2, ['note', 'valid'])):
+            key = f'badargv-probe-{seq}'
+            record = {'v': 1, 'seq': seq, 'request_key': key, 'queued_at': '2026-10-08T00:00:00Z',
+                      'request': {'argv': argv, 'cwd': str(cell.tmp), 'env': {}, 'request_key': key}}
+            (queue / f'{seq:06}-{key}.json').write_text(json.dumps(record))
+        p = cell.want(binary, ['--json', 'spool', 'send'], env={'HOME': str(home)})
+        assert json.loads(p.stdout) == {'ok': True, 'sent': 0, 'queued': 1, 'refused': 0}, p.stdout
+        assert len(list(queue.glob('*.json'))) == 1
+        assert len(list((state / 'spool/bad').glob('*.json'))) == 1
+        (state / 'server.url').write_text('https://100.64.0.1:9\n')
+        failure = cell.want(binary, ['--json', 'spool', 'send'], code=2, env={'HOME': str(home)})
+        body = json.loads(failure.stdout)
+        assert {k: body[k] for k in ('ok', 'sent', 'queued', 'refused')} == {'ok': False, 'sent': 0, 'queued': 1, 'refused': 0}
+        assert body['kind'] == 'usage' and body['error'], body
+        (state / 'server.url').write_text('http://[::1]:1\n')
+        started = time.time()
+        caller = subprocess.Popen([str(binary), 'wait', '--timeout', '300000000000000', '--as', '1'],
+                                  env={**cell.client_env, 'HOME': str(home)}, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            ready, _, _ = select.select([caller.stderr], [], [], 10)
+            assert ready, 'huge wait did not announce retry'
+            line = caller.stderr.readline().decode()
+            assert 'retrying until ' in line, line
+            end = datetime.fromisoformat(line.split('until ', 1)[1].strip().replace('Z', '+00:00')).timestamp()
+            wrapped_seconds = (300000000000000 * 1000000 % (1 << 64)) / 1000000000
+            assert abs(end - started - wrapped_seconds) < 10, line
+            assert caller.poll() is None, 'huge wait exited instead of retrying'
+        finally:
+            caller.terminate()
+            caller.communicate(timeout=15)
+    cell.results.append({'args': ['malformed spool head quarantined; next valid record survives'], 'pass': True})
+
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--go',type=Path)
@@ -384,6 +469,8 @@ def main():
         cell=Cell(go.resolve(),args.rust.resolve(),tmp)
         try:
             results=run(cell)
+            malformed_spool_heads(cell)
+            results.append(isolated_uploads(go.resolve(), args.rust.resolve()))
             result={'cell':'Rust-client/Go-hub','pass':len(results),'mismatch':0,'checks':results}
             if args.out: args.out.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
             print(json.dumps(result,ensure_ascii=False))

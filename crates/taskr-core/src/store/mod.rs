@@ -2,6 +2,7 @@
 use crate::{ExitCode, compact_json, frozen_now};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde_json::{Value, json};
+use std::{path::PathBuf, sync::OnceLock};
 
 pub mod documents;
 pub mod handover;
@@ -193,20 +194,30 @@ pub fn local_machine() -> String {
     }
 }
 
+/// Set once by explicit hub-child dispatch, never inferred from inherited env.
+pub struct RpcContext {
+    pub caller: String,
+    pub cwd: String,
+    pub doc_upload: bool,
+    pub upload_file: PathBuf,
+}
+static RPC_CONTEXT: OnceLock<RpcContext> = OnceLock::new();
+
+pub fn init_rpc_context(context: RpcContext) -> bool {
+    !context.caller.is_empty() && RPC_CONTEXT.set(context).is_ok()
+}
+pub fn rpc_context() -> Option<&'static RpcContext> {
+    RPC_CONTEXT.get()
+}
 pub fn caller_machine() -> Option<String> {
-    let caller = env("TASKR_RPC_CALLER");
-    if caller.is_empty() {
-        None
-    } else {
-        Some(caller)
-    }
+    rpc_context().map(|context| context.caller.clone())
 }
 pub fn machine_name(host: Option<&str>) -> String {
     host.map_or_else(local_machine, str::to_owned)
 }
 pub fn caller_cwd() -> Result<String> {
-    if caller_machine().is_some() {
-        return Ok(env("TASKR_RPC_CWD"));
+    if let Some(context) = rpc_context() {
+        return Ok(context.cwd.clone());
     }
     std::env::current_dir()
         .map(|p| p.to_string_lossy().into_owned())

@@ -231,7 +231,8 @@ fn help(f: &FlagSet) -> Result<()> {
     let args = vec![cmd.clone(), "--help".into()];
     let code = crate::net::route(f.json(), &args)
         .or_else(|| dispatch(f.json(), &args))
-        .or_else(|| crate::write::dispatch(f.json(), &args));
+        .or_else(|| crate::write::dispatch(f.json(), &args))
+        .or_else(|| crate::daemon::dispatch(f.json(), &args));
     if code.is_none() {
         return Err(Error {
             code: ExitCode::NotImplemented,

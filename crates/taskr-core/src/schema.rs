@@ -6,11 +6,16 @@ pub const SEARCH_TRIGGER: &str = include_str!("search-trigger.sql");
 pub const SEARCH_REBUILD: &str = include_str!("search-rebuild.sql");
 
 pub fn open(path: &Path) -> rusqlite::Result<Connection> {
-    let mut db = Connection::open(path)?;
+    let mut db = connect(path, rusqlite::OpenFlags::default())?;
+    migrate(&mut db)?;
+    Ok(db)
+}
+
+pub(crate) fn connect(path: &Path, flags: rusqlite::OpenFlags) -> rusqlite::Result<Connection> {
+    let db = Connection::open_with_flags(path, flags)?;
     db.busy_timeout(std::time::Duration::from_secs(5))?;
     db.pragma_update(None, "journal_mode", "WAL")?;
     db.pragma_update(None, "foreign_keys", true)?;
-    migrate(&mut db)?;
     Ok(db)
 }
 

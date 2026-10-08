@@ -293,6 +293,14 @@ fn run(
         return restart::restart(db.as_ref(), &dir, &lock_path).map(Some);
     }
     let log = Arc::new(Log::open(&dir.join("daemon.log")));
+    // Match Go's runtime: give the resident daemon its available descriptor budget.
+    let mut nofile = rustix::process::getrlimit(rustix::process::Resource::Nofile);
+    if nofile.current != nofile.maximum {
+        nofile.current = nofile.maximum;
+        if let Err(error) = rustix::process::setrlimit(rustix::process::Resource::Nofile, nofile) {
+            log.line(&format!("raise RLIMIT_NOFILE: {error}"));
+        }
+    }
     let sock = herdr::socket();
     let mut state = State {
         tokens: tokens::Tokens::default(),

@@ -17,3 +17,4 @@ taskr-install.sh
 !.env.example
 /target/
 /.scratch/
+__pycache__/

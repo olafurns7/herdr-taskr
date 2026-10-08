@@ -7,13 +7,28 @@ thread_local! {
     static REQUEST: RefCell<Option<RpcRequest>> = const { RefCell::new(None) };
 }
 
-pub(crate) fn dispatch(args: &[String]) -> Option<ExitCode> {
+pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<ExitCode> {
     #[cfg(feature = "contract")]
     if args.first().is_some_and(|s| s == "--contract-hub") {
         return Some(fixture_server(args));
     }
-    if taskr_core::store::env("TASKR_RPC_CALLER").is_empty() {
+    if args.first().is_none_or(|s| s != "--hub-child") {
         return None;
+    }
+    args.remove(0);
+    let context = store::RpcContext {
+        caller: store::env("TASKR_RPC_CALLER"),
+        cwd: store::env("TASKR_RPC_CWD"),
+        doc_upload: store::env("TASKR_RPC_DOC_UPLOAD") == "1",
+        upload_file: store::env("TASKR_RPC_UPLOAD_FILE").into(),
+    };
+    if context.caller.is_empty() {
+        return Some(crate::cli::error(
+            false,
+            "rpc",
+            "invalid internal RPC context",
+            ExitCode::Usage,
+        ));
     }
     let mut input = Vec::new();
     let parsed = std::io::stdin()
@@ -32,19 +47,25 @@ pub(crate) fn dispatch(args: &[String]) -> Option<ExitCode> {
             ));
         }
     };
+    if !store::init_rpc_context(context) {
+        return Some(crate::cli::error(
+            false,
+            "rpc",
+            "invalid internal RPC context",
+            ExitCode::Usage,
+        ));
+    }
     REQUEST.with(|r| r.replace(Some(req)));
     #[cfg(feature = "contract")]
     if args.first().is_some_and(|s| s == "--contract-env") {
-        let value = [
-            "PATH",
-            "HERDR_SOCKET_PATH",
-            "HOME",
-            "TASKR_DB",
+        let mut value = ["PATH", "HERDR_SOCKET_PATH", "HOME", "TASKR_DB"]
+            .into_iter()
+            .map(|k| (k, store::env(k)))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        value.insert(
             "TASKR_RPC_CALLER",
-        ]
-        .into_iter()
-        .map(|k| (k, store::env(k)))
-        .collect::<std::collections::BTreeMap<_, _>>();
+            store::caller_machine().unwrap_or_default(),
+        );
         println!(
             "{}",
             taskr_core::compact_json(&serde_json::json!(value)).expect("JSON")
@@ -58,7 +79,7 @@ pub(crate) fn dispatch(args: &[String]) -> Option<ExitCode> {
         let result = REQUEST.with(|r| {
             let r = r.borrow();
             let req = r.as_ref().expect("request");
-            if store::env("TASKR_RPC_DOC_UPLOAD") != "1" {
+            if !store::rpc_context().is_some_and(|context| context.doc_upload) {
                 return Err(store::reject("_doc requires the doc-upload capability"));
             }
             match tail.first().map(String::as_str) {
@@ -131,7 +152,7 @@ pub(crate) fn document_set_input(
         let Some(p) = payload else {
             return Err(store::usage("file not found on the server host; in this release the file must be on that host's disk"));
         };
-        if store::env("TASKR_RPC_DOC_UPLOAD") != "1" || p.task != id || p.kind != kind || p.name != name || p.path != path || p.event_id.is_some() || p.backfill || p.dry_run {
+        if !store::rpc_context().is_some_and(|context| context.doc_upload) || p.task != id || p.kind != kind || p.name != name || p.path != path || p.event_id.is_some() || p.backfill || p.dry_run {
             return Err(store::reject("doc set body does not match its request"));
         }
         super::documents::input(p)

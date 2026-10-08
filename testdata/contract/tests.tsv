@@ -1,7 +1,7 @@
 test	family	adapter-ready	group	reason
 TestAccountLabel	write:new	no	c	github.com/olafurns7/herdr-taskr.accountLabel; no executable CLI seam
-TestAdopt	write:new	no	b	github.com/olafurns7/herdr-taskr.md; in-process global handoverNow: replace clock hook with TASKR_FROZEN_NOW
-TestAdoptWithoutHandover	write:new	no	b	in-process global handoverNow: replace clock hook with TASKR_FROZEN_NOW
+TestAdopt	write:new	no	b	github.com/olafurns7/herdr-taskr.md; TASKR_FROZEN_NOW seam exists; remaining direct Go handover/md assertions need executable conversion (handover/adopt sequences covered in cases.json)
+TestAdoptWithoutHandover	write:new	no	b	TASKR_FROZEN_NOW seam exists; remaining direct Go handover/md assertions need executable conversion (handover/adopt sequences covered in cases.json)
 TestAmbiguousPromptRecordedWithoutResend	write:prompt	yes	a	CLI through executable seam; Go SQL seed/read helpers and data types only
 TestAnswerPromptReceiptRouting	write:answer	yes	a	CLI through executable seam; Go SQL seed/read helpers and data types only
 TestAnswerRecipientAndHandoverOutputContracts	write:answer	yes	a	CLI through executable seam; Go SQL seed/read helpers and data types only
@@ -188,7 +188,7 @@ TestDocUploadReportSamePathNewHostCapturesLatest	read:doc	no	b	Go HTTP/dashboard
 TestDocUploadReportStaysOnTaskHost	read:doc	no	b	Go HTTP/dashboard fixture: replace with standalone fixture server; github.com/olafurns7/herdr-taskr.captureReport; github.com/olafurns7/herdr-taskr.clientDocPayload; github.com/olafurns7/herdr-taskr.localMachine; github.com/olafurns7/herdr-taskr.prepareReport; github.com/olafurns7/herdr-taskr.tailscaleSelf; in-process global cgnat: move injected configuration to fixture server/target process; in-process global hubWhoisArg: move injected configuration to fixture server/target process; in-process global inTailnet: move injected configuration to fixture server/target process; in-process global loopbackPeer: move injected configuration to fixture server/target process; in-process global whoisTTL: move injected configuration to fixture server/target process; type ctx; type rpcDocWant; type rpcReply; type rpcRequest
 TestDocumentsBackfill	write:doc	no	b	Go HTTP/dashboard fixture: replace with standalone fixture server; github.com/olafurns7/herdr-taskr.localMachine; github.com/olafurns7/herdr-taskr.tailscaleSelf; in-process global cgnat: move injected configuration to fixture server/target process; in-process global hubWhoisArg: move injected configuration to fixture server/target process; in-process global inTailnet: move injected configuration to fixture server/target process; in-process global loopbackPeer: move injected configuration to fixture server/target process; in-process global whoisTTL: move injected configuration to fixture server/target process; type rpcReply; type rpcRequest
 TestDocumentsBackfillSameBasename	write:doc	yes	a	CLI through executable seam; Go SQL seed/read helpers and data types only
-TestDocumentsCaptureIsolation	write:doc	no	b	github.com/olafurns7/herdr-taskr.md; in-process global handoverNow: replace clock hook with TASKR_FROZEN_NOW
+TestDocumentsCaptureIsolation	write:doc	no	b	github.com/olafurns7/herdr-taskr.md; TASKR_FROZEN_NOW seam exists; remaining direct Go handover/md assertions need executable conversion (handover/adopt sequences covered in cases.json)
 TestDocumentsCompactContract	write:doc	no	b	(*github.com/olafurns7/herdr-taskr.ctx).emit; github.com/olafurns7/herdr-taskr.storedCommand; in-process global kindCodes: move injected configuration to fixture server/target process; type ctx
 TestDocumentsFixBackfillHistory	write:doc	yes	a	CLI through executable seam; Go SQL seed/read helpers and data types only
 TestDocumentsFixCapturePanic	write:doc	no	c	github.com/olafurns7/herdr-taskr.captureDocument
@@ -243,8 +243,8 @@ TestGlanceWatchClientFetchErrors	read:glance	no	b	Go HTTP/dashboard fixture: rep
 TestGlanceWatchFlagsAndRPCRefusal	net:rpc-client	yes	a	R1 executable client; Go synthetic hub/queue seeds and SQL assertions only
 TestGlanceWatchRPCLogging	net:rpc-client	no	c	internal/R2: raw Go hub request logging, no R1 client CLI invocation
 TestHandoverClosedSinceByEventID	write:close	no	c	github.com/olafurns7/herdr-taskr.handoverMarks; github.com/olafurns7/herdr-taskr.loadHandover; github.com/olafurns7/herdr-taskr.md; type handoverMark
-TestHandoverEscapesLedgerText	write:new	no	b	github.com/olafurns7/herdr-taskr.md; in-process global handoverNow: replace clock hook with TASKR_FROZEN_NOW
-TestHandoverGolden	write:new	no	b	github.com/olafurns7/herdr-taskr.loadHandover; github.com/olafurns7/herdr-taskr.md; github.com/olafurns7/herdr-taskr.renderHandover; in-process global handoverNow: replace clock hook with TASKR_FROZEN_NOW
+TestHandoverEscapesLedgerText	write:new	no	b	github.com/olafurns7/herdr-taskr.md; TASKR_FROZEN_NOW seam exists; remaining direct Go handover/md assertions need executable conversion (handover/adopt sequences covered in cases.json)
+TestHandoverGolden	write:new	no	b	github.com/olafurns7/herdr-taskr.loadHandover; github.com/olafurns7/herdr-taskr.md; github.com/olafurns7/herdr-taskr.renderHandover; TASKR_FROZEN_NOW seam exists; remaining direct Go handover/md assertions need executable conversion (handover/adopt sequences covered in cases.json)
 TestHarnessHostIdentity	net:rpc-client	yes	a	R1 executable client; Go synthetic hub/queue seeds and SQL assertions only
 TestHarnessRPCAdmission	net:rpc-client	no	c	internal: raw HTTP tests of Go hub admission; Rust connected-peer admission independently exercised by real-hub cell
 TestHarnessRPCDroppedConnection	net:rpc-client	yes	a	R1 executable client; Go synthetic hub/queue seeds and SQL assertions only

@@ -1,6 +1,7 @@
 use super::rpc::Client;
 use super::{Error, Result, command, flag, reply_error, timestamp, valid_key};
 use rustix::fs::{FlockOperation, flock};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     fs::{self, DirBuilder, File, OpenOptions},
@@ -128,6 +129,10 @@ fn read(path: &Path) -> Result<Value> {
     let stuck = r["stuck_since"].as_str().unwrap_or("");
     if r["seq"].as_i64().unwrap_or(0) <= 0
         || !valid_key(key)
+        || !r["request"].is_object()
+        || !r["request"]["argv"]
+            .as_array()
+            .is_some_and(|argv| argv.iter().all(Value::is_string))
         || r["request"]["request_key"] != key
         || parsed_time(r["queued_at"].as_str().unwrap_or("")).is_none()
         || (!stuck.is_empty() && parsed_time(stuck).is_none())
@@ -345,17 +350,21 @@ fn transient(e: &Error) -> bool {
             .is_some_and(|s| s >= 500)
 }
 pub fn send(dir: &Path, raw: &str) -> Result<usize> {
+    let mut sent = 0;
+    send_count(dir, raw, &mut sent)?;
+    Ok(sent)
+}
+fn send_count(dir: &Path, raw: &str, sent: &mut usize) -> Result<()> {
     if files(&root(dir).join("queue"))?.is_empty() {
-        return Ok(0);
+        return Ok(());
     }
     let Some(_sender) = lock(dir, "send.lock", true)? else {
-        return Ok(0);
+        return Ok(());
     };
     let Some(mut first) = head(dir)? else {
-        return Ok(0);
+        return Ok(());
     };
     let cl = Client::new(raw)?;
-    let mut sent = 0;
     loop {
         let (p, r) = first;
         let mut req = r["request"].clone();
@@ -377,14 +386,14 @@ pub fn send(dir: &Path, raw: &str) -> Result<usize> {
         ) {
             Err(e) => {
                 if e.retryable || e.kind == "transport" {
-                    return Ok(sent);
+                    return Ok(());
                 }
                 if http_stuck(&e) {
                     stuck(dir, &p, &e.message)?;
-                    return Ok(sent);
+                    return Ok(());
                 }
                 if transient(&e) {
-                    return Ok(sent);
+                    return Ok(());
                 }
                 refuse(dir, &p, r, e.code as i64, &e.message)?;
             }
@@ -399,7 +408,7 @@ pub fn send(dir: &Path, raw: &str) -> Result<usize> {
                     if super::now() - parsed_time(r["stuck_since"].as_str().unwrap()).unwrap()
                         < time::Duration::minutes(10)
                     {
-                        return Ok(sent);
+                        return Ok(());
                     }
                     refuse(dir, &p, r, 5, UNKNOWN)?;
                 } else if command(&argv).0 == "_hook"
@@ -425,7 +434,7 @@ pub fn send(dir: &Path, raw: &str) -> Result<usize> {
                     ) {
                         Ok(()) => {
                             remove(dir, &p)?;
-                            sent += 1;
+                            *sent += 1;
                         }
                         Err(e)
                             if e.message.starts_with("document upload refused:")
@@ -446,7 +455,7 @@ pub fn send(dir: &Path, raw: &str) -> Result<usize> {
         if let Some(next) = head(dir)? {
             first = next;
         } else {
-            return Ok(sent);
+            return Ok(());
         }
     }
 }
@@ -483,6 +492,30 @@ fn age_text(seconds: i64) -> String {
     } else {
         format!("{seconds}s")
     }
+}
+// Go serializes these struct fields in declaration order.
+#[derive(Default, Deserialize, Serialize)]
+#[serde(default)]
+struct ListItem {
+    seq: i64,
+    name: String,
+    age: String,
+    command: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    task: Option<i64>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    kind: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    error: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    stuck_since: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    stuck_reason: String,
+}
+fn listing_json(value: Value) -> String {
+    let items: std::collections::BTreeMap<String, Vec<ListItem>> =
+        serde_json::from_value(value).unwrap();
+    taskr_core::escape_json(&serde_json::to_string(&items).unwrap())
 }
 fn listing(dir: &Path) -> Result<Value> {
     let mut out = json!({"queued":[],"refused":[],"bad":[]});
@@ -559,15 +592,18 @@ pub fn dispatch(
     raw: Option<&str>,
 ) -> taskr_core::ExitCode {
     let mut f = taskr_core::goflag::FlagSet::new("spool", json_mode);
-    let mut run = || -> Result<Value> {
+    let mut run = || -> Result<String> {
         f.parse(args, 1, 2).map_err(Error::usage)?;
+        if f.help() {
+            return Ok(String::new());
+        }
         let pos = &f.positional;
         match pos[0].as_str() {
             "ls" => {
                 if pos.len() != 1 {
                     return Err(Error::usage("spool ls takes no arguments"));
                 }
-                listing(dir)
+                listing(dir).map(listing_json)
             }
             "send" => {
                 if pos.len() != 1 {
@@ -576,10 +612,16 @@ pub fn dispatch(
                 let raw = raw
                     .filter(|s| !s.is_empty())
                     .ok_or_else(|| Error::usage("spool send is only available on a client host"))?;
-                let sent = send(dir, raw)?;
-                Ok(
-                    json!({"ok":true,"sent":sent,"queued":files(&root(dir).join("queue"))?.len(),"refused":files(&root(dir).join("refused"))?.len()}),
-                )
+                let mut sent = 0;
+                let result = send_count(dir, raw, &mut sent);
+                let body = json!({"ok":result.is_ok(),"sent":sent,"queued":files(&root(dir).join("queue")).map_or(0, |f| f.len()),"refused":files(&root(dir).join("refused")).map_or(0, |f| f.len())});
+                match result {
+                    Ok(()) => Ok(taskr_core::compact_json(&body).unwrap()),
+                    Err(mut e) => {
+                        e.body = Some(body);
+                        Err(e)
+                    }
+                }
             }
             "rm" => {
                 if pos.len() != 2 {
@@ -596,7 +638,10 @@ pub fn dispatch(
                     ));
                 }
                 rm(dir, t)?;
-                Ok(json!({"ok":true,"removed":t.parse::<i64>().map_or(json!(t),|n|json!(n))}))
+                Ok(taskr_core::compact_json(
+                    &json!({"ok":true,"removed":t.parse::<i64>().map_or(json!(t),|n|json!(n))}),
+                )
+                .unwrap())
             }
             _ => Err(Error::usage("spool: expected ls, send or rm SEQ|FILE")),
         }
@@ -608,7 +653,7 @@ pub fn dispatch(
     }
     match result {
         Ok(v) => {
-            crate::cli::emit(f.json(), &v, false);
+            println!("{}{}", if f.json() { "" } else { "j1 " }, v);
             taskr_core::ExitCode::Ok
         }
         Err(e) => e.emit(f.json(), "spool"),
@@ -777,6 +822,44 @@ pub fn notify(dir: &Path, sock: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn malformed_argv_head_is_quarantined_and_next_record_survives() {
+        let dir = std::env::temp_dir().join(format!(
+            "taskr-badargv-{}",
+            super::super::new_key().unwrap()
+        ));
+        let req = super::super::rpc::request(
+            &["note", "valid"].map(String::from),
+            "/tmp/client",
+            "badargv-request-1",
+            json!({}),
+            None,
+        );
+        queue(&dir, &req, None, false).unwrap();
+        let first = files(&root(&dir).join("queue")).unwrap().remove(0);
+        let mut bad = read(&first).unwrap();
+        bad["request"]["argv"] = json!(["note", 7]);
+        atomic(&first, &bad).unwrap();
+        let mut good = req.clone();
+        good["request_key"] = json!("badargv-request-2");
+        queue(&dir, &good, None, false).unwrap();
+        assert_eq!(
+            head(&dir).unwrap().unwrap().1["request"]["argv"],
+            good["argv"]
+        );
+        assert_eq!(files(&root(&dir).join("queue")).unwrap().len(), 1);
+        assert_eq!(files(&root(&dir).join("bad")).unwrap().len(), 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn listing_uses_go_struct_field_order() {
+        assert_eq!(
+            listing_json(
+                json!({"queued":[{"seq":1,"name":"a","age":"0s","command":"note","task":2}],"refused":[],"bad":[]})
+            ),
+            r#"{"bad":[],"queued":[{"seq":1,"name":"a","age":"0s","command":"note","task":2}],"refused":[]}"#
+        );
+    }
     #[test]
     fn durable_queue_hashes_permissions_and_sender_lock() {
         let dir = std::env::temp_dir().join(format!(

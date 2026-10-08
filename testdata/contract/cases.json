@@ -303,5 +303,233 @@
       "--help"
     ],
     "client_url": "http://100.64.0.1:7788"
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "--help"
+    ]
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "--help"
+    ],
+    "client_url": "http://100.64.0.1:9"
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "-h"
+    ]
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "-h"
+    ],
+    "client_url": "http://100.64.0.1:9"
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "--help=true"
+    ]
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "--help=true"
+    ],
+    "client_url": "http://100.64.0.1:9"
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "--json",
+      "--help"
+    ]
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "--json",
+      "--help"
+    ],
+    "client_url": "http://100.64.0.1:9"
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "help",
+      "spool"
+    ]
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "help",
+      "spool"
+    ],
+    "client_url": "http://100.64.0.1:9"
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "--json",
+      "help",
+      "spool"
+    ]
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "--json",
+      "help",
+      "spool"
+    ],
+    "client_url": "http://100.64.0.1:9"
+  },
+  {
+    "family": "net:daemon",
+    "argv": [
+      "help",
+      "daemon"
+    ]
+  },
+  {
+    "family": "net:daemon",
+    "argv": [
+      "--json",
+      "help",
+      "daemon"
+    ]
+  },
+  {
+    "family": "read:handover",
+    "argv": [
+      "handover",
+      "--as",
+      "1",
+      "--note",
+      "next: <&> `code` | pipe *star* Þ😀"
+    ],
+    "sequence": [
+      [
+        "handover",
+        "--as",
+        "1",
+        "--note",
+        "next: <&> `code` | pipe *star* Þ😀"
+      ]
+    ]
+  },
+  {
+    "family": "read:handover",
+    "argv": [
+      "--json",
+      "adopt",
+      "1"
+    ],
+    "sequence": [
+      [
+        "handover",
+        "--as",
+        "1"
+      ],
+      [
+        "adopt",
+        "1",
+        "--workspace",
+        "w9",
+        "--tab",
+        "t9",
+        "--pane",
+        "p9"
+      ],
+      [
+        "handover",
+        "--as",
+        "1"
+      ],
+      [
+        "--json",
+        "adopt",
+        "1"
+      ]
+    ]
+  },
+  {
+    "family": "read:handover",
+    "argv": [
+      "handover",
+      "--as",
+      "1"
+    ],
+    "sequence": [
+      [
+        "handover",
+        "--as",
+        "2"
+      ],
+      [
+        "adopt",
+        "2"
+      ],
+      [
+        "adopt",
+        "1"
+      ],
+      [
+        "handover",
+        "--as",
+        "1"
+      ]
+    ]
+  },
+  {
+    "family": "read:handover",
+    "argv": [
+      "handover",
+      "--as",
+      "1"
+    ],
+    "sequence": [
+      [
+        "close",
+        "3",
+        "--outcome",
+        "accepted"
+      ],
+      [
+        "decide",
+        "--as",
+        "1",
+        "use <b>x</b>"
+      ],
+      [
+        "next",
+        "1",
+        "then | this"
+      ],
+      [
+        "set",
+        "1",
+        "pr=12"
+      ],
+      [
+        "handover",
+        "--as",
+        "1"
+      ]
+    ]
   }
 ]
