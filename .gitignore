@@ -4,8 +4,6 @@
 *.db-shm
 dist/
 /herdr-taskr
-web/node_modules/
-!web/dist/
 .DS_Store
 Thumbs.db
 *.test

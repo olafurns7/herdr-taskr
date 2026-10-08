@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -808,36 +807,6 @@ func TestReceiptTimeoutFlag(t *testing.T) {
 	if _, ok := receiptRow(h, num(unk, "attempt_id")); !ok || unk["outcome"] != "delivery_unknown" {
 		t.Fatalf("delivery_unknown dropped its deadline: %v", unk)
 	}
-}
-
-// Acceptance: the dashboard's lane report ignores prompt_outcome.
-func TestDashboardLaneReportIgnoresReceiptAlarm(t *testing.T) {
-	contractGuard(t)
-	h := newHarness(t)
-	top, w, l := receiptLane(h)
-	h.ok(as(w, l), "ready", "slice one")
-	a := num(h.ok(nil, "prompt", id(w), "--text", "Go."), "attempt_id")
-	overdue(h, a)
-	pollAlarm(h, top)
-	h.ok(as(w, l), "got", id(a)) // and its late_receipt
-	if alarms(h, "no_receipt", a) != 1 || alarms(h, "late_receipt", a) != 1 {
-		t.Fatal("setup: no alarm pair")
-	}
-	s, err := readState(context.Background(), h.openDB(), time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, o := range s.Orchestrators {
-		for _, st := range o.Tasks {
-			if st.ID == w {
-				if st.LastEvent == nil || st.LastEvent.Kind != "ready" || st.LastEvent.Summary != "slice one" {
-					t.Fatalf("lane report = %+v", st.LastEvent)
-				}
-				return
-			}
-		}
-	}
-	t.Fatalf("lane %d not on the dashboard", w)
 }
 
 // answer --prompt arms the default window; an answer --as routes the alarm

@@ -545,7 +545,7 @@ func handoverMarks(q queryer, root int64, n int) ([]handoverMark, error) {
 	return ms, rows.Err()
 }
 
-// ageText is a coarse age of ts at now, like the dashboard's.
+// ageText is a coarse age of ts at now.
 func ageText(now time.Time, ts string) string {
 	t := parseTime(ts)
 	if t.IsZero() {

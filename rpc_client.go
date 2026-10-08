@@ -467,7 +467,7 @@ func (cl *rpcClient) callOnceRequest(parent context.Context, reqBody rpcRequest,
 	defer cancel()
 	whois := newWhoisCache(cl.self.Login)
 	whois.arg = hubWhoisArg
-	conn, err := (&pusher{hubWhois: whois}).dial(cx, "tcp", u.Host)
+	conn, err := dialHub(cx, whois, "tcp", u.Host)
 	if err != nil {
 		return unreachable(err.Error(), true, false)
 	}

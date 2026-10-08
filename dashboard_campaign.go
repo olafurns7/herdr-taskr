@@ -3,11 +3,11 @@ package main
 import (
 	"database/sql"
 	"errors"
-	"net/http"
-	"strconv"
-	"strings"
 	"time"
 )
+
+// The campaign reads behind `taskr campaign` and the TUI: goal, plan,
+// decisions, handovers, lanes and documents of one root.
 
 type campaignNote struct {
 	ID    int64  `json:"id"`
@@ -36,69 +36,9 @@ func campaignNotes(q queryer, root int64, at time.Time) ([]campaignNote, error) 
 	return notes, rows.Err()
 }
 
-func campaignPage(r *http.Request) int {
-	n, err := strconv.Atoi(r.URL.Query().Get("page"))
-	if err != nil || n < 1 {
-		return 1
-	}
-	return n
-}
-
 func pageMetadata(total, size, page int) map[string]any {
 	pages := max(1, (total+size-1)/size)
 	return map[string]any{"page": min(page, pages), "pages": pages, "total": total}
-}
-
-// All reads share the dashboard admission gate and one ledger snapshot.
-func (d *dashboard) campaignRead(w http.ResponseWriter, r *http.Request, read func(*sql.Tx) (any, error)) {
-	tx, err := d.db.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		httpError(w, 500, "database error")
-		return
-	}
-	defer tx.Rollback()
-	value, err := read(tx)
-	if errors.Is(err, sql.ErrNoRows) {
-		httpError(w, 404, "not found")
-		return
-	}
-	if err != nil {
-		httpError(w, 500, "database error")
-		return
-	}
-	httpJSON(w, 200, value)
-}
-func (d *dashboard) campaigns(w http.ResponseWriter, r *http.Request) {
-	d.campaignRead(w, r, func(tx *sql.Tx) (any, error) { return readCampaigns(tx, campaignPage(r)) })
-}
-func campaignRouteID(r *http.Request) (int64, error) {
-	value := r.PathValue("id")
-	if value == "" || value[0] == '0' || strings.Trim(value, "0123456789") != "" {
-		return 0, sql.ErrNoRows
-	}
-	n, err := strconv.ParseInt(value, 10, 64)
-	if err != nil || n < 1 {
-		return 0, sql.ErrNoRows
-	}
-	return n, nil
-}
-func (d *dashboard) campaign(w http.ResponseWriter, r *http.Request) {
-	d.campaignRead(w, r, func(tx *sql.Tx) (any, error) {
-		id, err := campaignRouteID(r)
-		if err != nil {
-			return nil, err
-		}
-		return readCampaign(tx, id, campaignPage(r))
-	})
-}
-func (d *dashboard) doc(w http.ResponseWriter, r *http.Request) {
-	d.campaignRead(w, r, func(tx *sql.Tx) (any, error) {
-		id, err := campaignRouteID(r)
-		if err != nil {
-			return nil, err
-		}
-		return readDashboardDocument(tx, id)
-	})
 }
 
 func dashboardDocument(q queryer, task int64, kind string) (map[string]any, error) {
@@ -110,81 +50,6 @@ func dashboardDocument(q queryer, task int64, kind string) (map[string]any, erro
 		return nil, err
 	}
 	return d.record(), nil
-}
-
-// Keep goal selection identical to the handover: latest captured, otherwise latest miss.
-func dashboardGoal(q queryer, root int64) (document, error) {
-	return scanDocument(q.QueryRow(`select `+documentCols+` from documents where task_id = ? and kind = 'goal' and name = ''
-		order by captured desc, version desc limit 1`, root))
-}
-
-func readCampaigns(q queryer, page int) (map[string]any, error) {
-	var total int
-	if err := q.QueryRow(`select count(*) from tasks where parent_id is null`).Scan(&total); err != nil {
-		return nil, err
-	}
-	out := pageMetadata(total, 50, page)
-	rows, err := q.Query(`select id, name, status, created_at, coalesce(closed_at, '') from tasks
-  where parent_id is null order by id desc limit 50 offset ?`, (out["page"].(int)-1)*50)
-	if err != nil {
-		return nil, err
-	}
-	items := []map[string]any{}
-	for rows.Next() {
-		var id int64
-		var name, status, created, closed string
-		if err := rows.Scan(&id, &name, &status, &created, &closed); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		items = append(items, map[string]any{"id": id, "name": name, "status": status, "created_at": created, "closed_at": closed})
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	for _, item := range items {
-		root := item["id"].(int64)
-		counts := map[string]int{}
-		rows, err := q.Query(`with recursive tree(id) as (select ? union all select t.id from tasks t join tree on t.parent_id = tree.id)
-   select status, count(*) from tasks where id in (select id from tree) and id != ? group by status`, root, root)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var status string
-			var count int
-			if err := rows.Scan(&status, &count); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			counts[status] = count
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
-		item["lane_counts"] = counts
-		item["goal"] = ""
-		doc, err := dashboardGoal(q, root)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return nil, err
-		}
-		if err == nil && doc.Captured {
-			var body string
-			if err := q.QueryRow(`select body from doc_blobs where sha256 = ?`, doc.Hash.String).Scan(&body); err != nil {
-				return nil, err
-			}
-			for _, line := range strings.Split(body, "\n") {
-				if strings.TrimSpace(line) != "" {
-					item["goal"] = clip(line, 160)
-					break
-				}
-			}
-		}
-	}
-	out["campaigns"] = items
-	return out, nil
 }
 
 func campaignDocuments(q queryer, root int64) (map[string]any, map[string]any, []map[string]any, error) {
@@ -228,10 +93,6 @@ func campaignDocuments(q queryer, root int64) (map[string]any, map[string]any, [
 		plan["decisions_since"], plan["closed_since"] = decisions, closed
 	}
 	return goal, plan, named, nil
-}
-
-func readCampaign(q queryer, root int64, page int) (map[string]any, error) {
-	return readCampaignDetail(q, root, page, false, true)
 }
 
 func readCampaignDetail(q queryer, root int64, page int, unpaged, allLanes bool) (map[string]any, error) {

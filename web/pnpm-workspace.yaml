@@ -1,3 +1,0 @@
-# web/ is its own pnpm project; this file prevents adopting an enclosing workspace when checked out inside one.
-packages:
-  - '.'
