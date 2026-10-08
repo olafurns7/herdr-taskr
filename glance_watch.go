@@ -64,7 +64,7 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 		return nil
 	}
 	line := func(s, tint string) string {
-		s = ansi.Truncate(s, width, "…")
+		s = strings.TrimRight(ansi.Truncate(s, width, "…"), " ")
 		if color && tint != "" {
 			return "\x1b[" + tint + "m" + s + "\x1b[0m"
 		}
@@ -127,30 +127,24 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 	for _, a := range v.Attention {
 		sym, word := "?", "unknown"
 		switch a.Kind {
-		case "lane_failed":
-			sym, word = "✗", "failed"
-		case "lane_blocked":
-			sym, word = "!", "blocked"
 		case "lead_gone":
 			sym, word = "✗", "lead gone"
 		case "lead_blocked":
 			sym, word = "!", "lead blocked"
 		case "lead_unknown":
 			word = "lead unknown"
-		case "lane_missing":
-			word = "missing"
 		case "lead_idle_results":
 			sym, word = "⌛", "waiting"
 		case "parked_active":
 			word = "parked but active"
 		case "lead_unregistered_silent":
-			word = "lead unregistered and silent"
+			word = "unregistered"
 		case "host_stale":
 			sym, word = "⚠", "stale"
 		case "daemon_unhealthy":
 			sym, word = "⚠", "daemon"
 		}
-		name := strings.Trim(watchText(a.Campaign)+"/"+watchText(a.Lane), "/")
+		name := watchText(a.Campaign)
 		if name == "" {
 			name = firstNonEmpty(watchText(a.Host), "hub")
 		}
@@ -160,11 +154,19 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 		} else if a.Kind == "lead_unknown" {
 			when = " never"
 		}
-		first := fmt.Sprintf("%s %s  %s%s", sym, name, word, when)
 		if a.Kind == "lead_idle_results" {
-			first = fmt.Sprintf("%s %s: lead idle with %d results%s", sym, watchText(a.Recipient), a.Count, when)
+			name, word = watchText(a.Recipient), fmt.Sprintf("idle · %d results", a.Count)
 		}
-		groups[1] = append(groups[1], []string{line(first, "33"), line("  "+watchText(a.Text), "")})
+		name = ansi.Truncate(name, max(1, width-ansi.StringWidth(sym+"   "+word+when)), "…")
+		first := fmt.Sprintf("%s %s  %s%s", sym, name, word, when)
+		text := a.Text
+		if a.Kind == "lead_unregistered_silent" {
+			text = "lead silent with open lanes"
+		}
+		if a.Kind == "parked_active" {
+			text = "new activity since hold; re-park to hold again"
+		}
+		groups[1] = append(groups[1], []string{line(first, "33"), line("  "+watchText(text), "")})
 	}
 	pad := func(s string, n int) string {
 		s = ansi.Truncate(watchText(s), n, "…")
@@ -175,26 +177,41 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 		if c.Lanes.Working > 0 {
 			sym = "●"
 		}
-		note := c.Last
-		if c.OwnerNote != nil {
-			note = c.OwnerNote
+		if c.Last != nil {
+			text = c.Last.Text
 		}
-		if note != nil {
-			text, ms = note.Text, note.AgeMS
+		detail := ""
+		if c.OwnerNote != nil {
+			noteText := c.OwnerNote.Text
+			if value, ok := glanceOwnerValue(noteText); ok {
+				noteText = value
+			}
+			detail = "  " + ageOf(c.OwnerNote.AgeMS) + " · " + watchText(noteText)
+			text = ""
 		}
 		tint := ""
 		if c.Parked {
-			sym, text, ms, tint = "·", "parked · "+ageOf(c.ParkAgeMS), c.ParkAgeMS, "2"
+			sym, text, tint = "·", "parked · "+ageOf(c.ParkAgeMS), "2"
 			if c.ParkedActive {
 				text, tint = "parked but active", "33"
+				if width < 60 {
+					text = "parked active"
+				}
 			}
 		} else if c.Lead == "waiting" || c.Lead == "unregistered" {
-			if c.Lead == "unregistered" {
-				tint = "2"
+			if detail == "" && text != "" {
+				detail = "  " + watchText(text)
 			}
-			text = "lead " + c.Lead + " · " + text
+			text = "lead waiting"
+			if c.Lead == "unregistered" {
+				text, tint = "unregistered", "2"
+			}
 		}
-		groups[2] = append(groups[2], []string{line(sym+" "+pad(c.Name, 18)+" "+pad(fmt.Sprintf("%d/%d", c.Lanes.Working, c.Lanes.Open), 6)+" "+pad(ageOf(ms), 4)+" "+watchText(text), tint)})
+		row := []string{line(sym+" "+pad(c.Name, 18)+" "+pad(fmt.Sprintf("%d/%d", c.Lanes.Working, c.Lanes.Open), 6)+" "+pad(ageOf(ms), 4)+" "+watchText(text), tint)}
+		if detail != "" {
+			row = append(row, line(detail, tint))
+		}
+		groups[2] = append(groups[2], row)
 	}
 	quiet := ""
 	if v.Quiet.Count > 0 {
@@ -206,7 +223,11 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 	compose := func() []string {
 		rows := []string{header, rule}
 		if v.OwnerNotesPending > 0 {
-			rows = append(rows, line(fmt.Sprintf("%d notes still carry OWNER items", v.OwnerNotesPending), "2"))
+			word := "notes still carry"
+			if v.OwnerNotesPending == 1 {
+				word = "note still carries"
+			}
+			rows = append(rows, line(fmt.Sprintf("%d %s OWNER items", v.OwnerNotesPending, word), "2"))
 		}
 		for g, items := range groups {
 			for _, item := range items[:keep[g]] {

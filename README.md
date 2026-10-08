@@ -84,12 +84,13 @@ Red means an open owner ask, blocking or non-blocking. Sound notifications
 fire only for blocking owner asks; pane badges count all owner asks.
 Notes are context, with the newest owner note and its age on the campaign.
 A dim **N notes still carry OWNER items** count tracks notes awaiting
-conversion to asks. `note --owner` warns when an OWNER item has no open ask.
+conversion to asks. Write `OWNER: nothing` once legacy items are cleared. `note --owner` warns when an OWNER item has no open ask.
 
 Park a campaign with `taskr set ROOT glance.state=parked`; clear it with
 `taskr set ROOT glance.state=`. Only a root orchestrator with TASKR_TASK unset
 can set this root ref. Parked campaigns stay dim and keep owner asks red;
 new tree events after parking turn the row amber as **parked but active**.
+Run `taskr set ROOT glance.state=parked` again to renew the hold.
 
 Amber marks visibility gaps, active registered leads gone/blocked/unknown,
 idle or done leads without a live wait lease holding results older than

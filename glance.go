@@ -24,6 +24,7 @@ type glanceView struct {
 	Campaigns         []glanceCampaign  `json:"campaigns"`
 	Quiet             glanceQuiet       `json:"quiet"`
 	OwnerNotesPending int               `json:"owner_notes_pending"`
+	OwnerNoteRootIDs  []int64           `json:"owner_note_root_ids"`
 }
 
 type glanceNeed struct {
@@ -46,9 +47,6 @@ type glanceAttention struct {
 	Kind        string `json:"kind"`
 	Campaign    string `json:"campaign,omitempty"`
 	RootID      int64  `json:"root_id,omitempty"`
-	NoteID      int64  `json:"note_id,omitempty"`
-	Lane        string `json:"lane,omitempty"`
-	LaneID      int64  `json:"lane_id,omitempty"`
 	Text        string `json:"text"`
 	AgeMS       int64  `json:"age_ms"`
 	Since       string `json:"since,omitempty"`
@@ -90,9 +88,8 @@ type glanceLast struct {
 }
 
 type glanceQuiet struct {
-	Count       int      `json:"count"`
-	WithBacklog int      `json:"with_backlog"`
-	Names       []string `json:"names"`
+	Count int      `json:"count"`
+	Names []string `json:"names"`
 }
 
 func cmdGlance(c *ctx, args []string) (any, int, error) {
@@ -153,7 +150,7 @@ func readGlance(db *sql.DB, at time.Time) (*glanceView, error) {
 	}
 	defer tx.Rollback()
 	v := &glanceView{Now: stamp(at), Verdict: "rolling", NeedsYou: []glanceNeed{},
-		Attention: []glanceAttention{}, Campaigns: []glanceCampaign{}, Quiet: glanceQuiet{Names: []string{}}}
+		Attention: []glanceAttention{}, Campaigns: []glanceCampaign{}, Quiet: glanceQuiet{Names: []string{}}, OwnerNoteRootIDs: []int64{}}
 	roots := map[int64]*glanceRoot{}
 	tasks := map[int64]*glanceTask{}
 	hosts := map[string]bool{}
@@ -177,9 +174,10 @@ func readGlance(db *sql.DB, at time.Time) (*glanceView, error) {
 	if err := glanceBacklog(tx, at, v, roots, tasks, hosts); err != nil {
 		return nil, err
 	}
-	rows, err := tx.Query(`select task_id, id, created_at from events where id in
- (select max(id) from events where kind = 'ref' and json_extract(data, '$.key') = 'glance.state' group by task_id)
- and json_extract(data, '$.value') = 'parked'`)
+	rows, err := tx.Query(`select t.id, e.id, e.created_at from tasks t
+ join events e on e.id = (select max(id) from events where task_id = t.id
+ and kind = 'ref' and json_extract(data, '$.key') = 'glance.state')
+ where t.parent_id is null and t.status != 'closed' and json_extract(e.data, '$.value') = 'parked'`)
 	if err != nil {
 		return nil, err
 	}
@@ -370,9 +368,11 @@ func glanceOwnerAsks(tx *sql.Tx, at time.Time, v *glanceView, roots map[int64]*g
 // Newest owner note is context indefinitely; legacy OWNER items only count
 // toward migration when this root has no open owner ask.
 func glanceOwnerNotes(tx *sql.Tx, at time.Time, v *glanceView, roots map[int64]*glanceRoot) error {
-	rows, err := tx.Query(`select t.id, e.id, coalesce(e.summary, ''), e.created_at from tasks t
- join events e on e.id = (select max(id) from events where task_id = t.id and kind = 'note' and json_extract(data, '$.owner') = 1)
- where t.parent_id is null and t.status != 'closed'`)
+	rows, err := tx.Query(`select t.id, e.id, coalesce(e.summary, ''), e.created_at,
+ coalesce((select summary from events where task_id = t.id and kind = 'note'
+ and json_extract(data, '$.owner') = 1 and instr(summary, 'OWNER:') > 0 order by id desc limit 1), '')
+ from tasks t join events e on e.id = (select max(id) from events where task_id = t.id and kind = 'note' and json_extract(data, '$.owner') = 1)
+ where t.parent_id is null and t.status != 'closed' order by t.id`)
 	if err != nil {
 		return err
 	}
@@ -383,14 +383,15 @@ func glanceOwnerNotes(tx *sql.Tx, at time.Time, v *glanceView, roots map[int64]*
 	}
 	for rows.Next() {
 		var rootID, noteID int64
-		var text, since string
-		if err := rows.Scan(&rootID, &noteID, &text, &since); err != nil {
+		var text, since, ownerText string
+		if err := rows.Scan(&rootID, &noteID, &text, &since, &ownerText); err != nil {
 			return err
 		}
 		r := roots[rootID]
 		r.OwnerNote = &glanceLast{EventID: noteID, Kind: "note", Text: clip(oneLine(text), 120), AgeMS: glanceAge(at, since)}
-		if ownerNoteHasItems(text) && !asked[rootID] {
+		if ownerNoteHasItems(ownerText) && !asked[rootID] {
 			v.OwnerNotesPending++
+			v.OwnerNoteRootIDs = append(v.OwnerNoteRootIDs, rootID)
 		}
 	}
 	return rows.Err()
@@ -511,12 +512,12 @@ func finishGlance(at time.Time, v *glanceView, roots map[int64]*glanceRoot) {
 					a.Kind, a.Text, a.Since, a.AgeMS = "lead_unregistered_silent", "lead unregistered and silent", r.activity, r.ActivityAgeMS
 				}
 			case "unknown":
-				a.Kind, a.Text = "lead_unknown", "lead liveness unknown: no pane, never observed, or its host is not reporting"
+				a.Kind, a.Text = "lead_unknown", "lead liveness unknown: never observed or its host is not reporting"
 			}
 			if a.Kind != "" {
 				v.Attention = append(v.Attention, a)
 			}
-			if r.LeadWaiting && r.PaneID != "" {
+			if r.LeadWaiting && r.PaneID != "" && (r.Lead == "idle" || r.Lead == "done" || r.Lead == "working") {
 				r.Lead = "waiting"
 			}
 			v.Campaigns = append(v.Campaigns, r.glanceCampaign)
@@ -542,8 +543,8 @@ func finishGlance(at time.Time, v *glanceView, roots map[int64]*glanceRoot) {
 		if a.AgeMS != b.AgeMS {
 			return a.AgeMS > b.AgeMS
 		}
-		if a.LaneID != b.LaneID {
-			return a.LaneID < b.LaneID
+		if a.RootID != b.RootID {
+			return a.RootID < b.RootID
 		}
 		return a.Host < b.Host
 	})
@@ -564,7 +565,7 @@ func finishGlance(at time.Time, v *glanceView, roots map[int64]*glanceRoot) {
 
 func glanceRank(kind string) int {
 	switch kind {
-	case "lane_unknown", "host_stale", "lead_unknown":
+	case "host_stale", "lead_unknown":
 		kind = attentionStale
 	case "lead_blocked":
 		kind = attentionBlocked

@@ -16,7 +16,7 @@ func TestGlanceTrustNotes(t *testing.T) {
 		{"OWNER: merge X DONE: built", 1}, {"DONE: built OWNER: merge X", 1},
 		{"OWNER: nothing.", 0}, {"OWNER: nothing yet (waiting)", 0},
 		{"OWNER: nothing urgent", 1}, {"OWNER: nothing until approval", 1},
-		{"OWNER: no decision needed", 1}, {"bookkeeping", 0},
+		{"OWNER: no decision needed", 1}, {"bookkeeping", 1},
 	} {
 		t.Run(tc.text, func(t *testing.T) {
 			f := newGlanceFixture(t)
@@ -72,7 +72,7 @@ func TestGlanceTrustParking(t *testing.T) {
 }
 
 func TestGlanceTrustIdleResults(t *testing.T) {
-	for _, state := range []string{"idle", "done", "working", "unknown"} {
+	for _, state := range []string{"idle", "done", "working", "unknown", "blocked", "gone"} {
 		for _, lease := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/lease=%v", state, lease), func(t *testing.T) {
 				f := newGlanceFixture(t)
@@ -91,8 +91,8 @@ func TestGlanceTrustIdleResults(t *testing.T) {
 				if !lease && (state == "idle" || state == "done") {
 					want = append(want, "lead_idle_results")
 				}
-				if state == "unknown" {
-					want = append(want, "lead_unknown")
+				if state == "unknown" || state == "blocked" || state == "gone" {
+					want = append(want, "lead_"+state)
 				}
 				if !reflect.DeepEqual(glanceKinds(v), want) {
 					t.Fatalf("view = %+v", v)
@@ -100,8 +100,11 @@ func TestGlanceTrustIdleResults(t *testing.T) {
 				if len(want) > 0 && want[0] == "lead_idle_results" && (v.Attention[0].Count != 1 || v.Attention[0].AgeMS != (31*time.Minute).Milliseconds()) {
 					t.Fatalf("results = %+v", v.Attention)
 				}
-				if lease && v.Campaigns[0].Lead != "waiting" {
+				if lease && (state == "idle" || state == "done" || state == "working") && v.Campaigns[0].Lead != "waiting" {
 					t.Fatalf("lease = %+v", v.Campaigns)
+				}
+				if lease && (state == "unknown" || state == "blocked" || state == "gone") && v.Campaigns[0].Lead != state {
+					t.Fatalf("lease hid state: %+v", v.Campaigns)
 				}
 				f.exec(`update tasks set acked_event_id = ? where id = ?`, result, r)
 				for _, a := range f.view().Attention {
@@ -186,7 +189,7 @@ func TestRenderGlanceTrust(t *testing.T) {
 	}}
 	rows := renderGlance(v, 80, 24, 0, "", true, watchTestNow)
 	all := strings.Join(rows, "\n")
-	for _, want := range []string{"no owner action", "2 notes still carry OWNER items", "parked · 3h", "lead unregistered", "lead waiting", "OWNER: merge X", "3d"} {
+	for _, want := range []string{"no owner action", "2 notes still carry OWNER items", "parked · 3h", "unregistered", "lead waiting", "merge X", "3d"} {
 		if !strings.Contains(all, want) {
 			t.Fatalf("missing %q: %q", want, rows)
 		}
@@ -213,5 +216,60 @@ func TestGlanceTrustUnregisteredQuietLanes(t *testing.T) {
 	v := f.view()
 	if !reflect.DeepEqual(glanceKinds(v), []string{"lead_unregistered_silent"}) || len(v.Campaigns) != 1 {
 		t.Fatalf("silent unregistered tree must not fold away: %+v", v)
+	}
+}
+
+func TestGlanceBookkeepingKeepsMigration(t *testing.T) {
+	f := newGlanceFixture(t)
+	r := f.task("quiet-root", 0, "open")
+	f.event(r, 0, 0, "note", "OWNER: approve synthetic release", `{"owner":true}`, 25*time.Hour)
+	f.event(r, 0, 0, "note", "LANES: inventory updated", `{"owner":true}`, 24*time.Hour)
+	v := f.view()
+	if v.OwnerNotesPending != 1 || !reflect.DeepEqual(v.OwnerNoteRootIDs, []int64{r}) || v.Quiet.Count != 1 {
+		t.Fatalf("migration hidden: %+v", v)
+	}
+	f.event(r, 0, 0, "note", "OWNER: nothing", `{"owner":true}`, 23*time.Hour)
+	if v := f.view(); v.OwnerNotesPending != 0 || len(v.OwnerNoteRootIDs) != 0 {
+		t.Fatalf("not cleared: %+v", v)
+	}
+}
+
+func TestGlanceReparkAndHostGuard(t *testing.T) {
+	h := newHarness(t)
+	r := h.newTask("root", "orchestrator", 0)
+	h.one(exitReject, map[string]string{"TASKR_LAUNCH": "1"}, "set", id(r), "glance.state=parked")
+	first := h.ok(nil, "set", id(r), "glance.state=parked")
+	second := h.ok(nil, "set", id(r), "glance.state=parked")
+	if len(first["event_ids"].([]any)) != 1 || len(second["event_ids"].([]any)) != 1 || reflect.DeepEqual(first["event_ids"], second["event_ids"]) {
+		t.Fatalf("repark = %v / %v", first, second)
+	}
+	db := h.openDB()
+	if _, err := db.Exec(`update tasks set machine = 'other-host' where id = ?`, r); err != nil {
+		t.Fatal(err)
+	}
+	h.one(exitReject, nil, "set", id(r), "glance.state=parked")
+}
+
+func TestGlanceSyntheticOwnerParser(t *testing.T) {
+	for _, tc := range []struct {
+		text  string
+		items bool
+	}{
+		{"OWNER: merge demo", true}, {"DONE: built OWNER: deploy demo NOW: checking", true},
+		{"plain bookkeeping", false}, {"LANES: updated", false}, {"XOWNER: merge", false},
+		{"OWNER: nothing", false}, {"OWNER: NOTHING.", false}, {"OWNER: nothing yet", false},
+		{"OWNER: nothing new", false}, {"OWNER: nothing now", false}, {"OWNER: nothing (waiting)", false},
+		{"OWNER: nothing yet (waiting)", false}, {"OWNER: nothing new.", false}, {"OWNER: nothing now.", false},
+		{"OWNER: nothing urgent", true}, {"OWNER: nothing until approval", true}, {"OWNER: no decision needed", true},
+		{"OWNER: no action", true}, {"OWNER: 1. approve 2. deploy", true}, {"OWNER: review 2.5", true},
+		{"OWNER: review 2027", true}, {"OWNER:", true}, {"OWNER: none", true},
+		{"OWNER: nothing\tDONE: built", false}, {"OWNER: nothing\nNOW: checking", false},
+		{"HAPPENED: built OWNER: approve DONE: checked", true}, {"OWNER: nothing DONE: approve", false},
+		{"OWNER: nothingness", true}, {"OWNER: Nothing new (waiting)", false}, {"OWNER: nothing; approve", true},
+		{"\tOWNER: approve", true},
+	} {
+		if got := ownerNoteHasItems(tc.text); got != tc.items {
+			t.Errorf("%q: %v", tc.text, got)
+		}
 	}
 }

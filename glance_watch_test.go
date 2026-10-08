@@ -28,17 +28,17 @@ func busyGlance() *glanceView {
 	return &glanceView{
 		Verdict: "needs_you",
 		NeedsYou: []glanceNeed{
-			{Kind: "owner_ask", Campaign: "copilot-modular", AgeMS: 12 * time.Minute.Milliseconds(), Blocking: &blocking, Also: []string{"lane failed"}, PaneID: "wN4:p1", Text: "Merge #4840 now or wait for M3?"},
-			{Kind: "owner_ask", Campaign: "booked-vs-resolved", AgeMS: time.Hour.Milliseconds(), Text: "approve prod deploy of #4833"},
+			{Kind: "owner_ask", Campaign: "checkout-redesign", AgeMS: 12 * time.Minute.Milliseconds(), Blocking: &blocking, Also: []string{"lane failed"}, PaneID: "wDemoA:p1", Text: "Merge #104 now or wait for M3?"},
+			{Kind: "owner_ask", Campaign: "billing-fix", AgeMS: time.Hour.Milliseconds(), Text: "approve prod deploy of #103"},
 		},
 		Attention: []glanceAttention{
-			{Kind: "lead_blocked", Campaign: "mobile-screens", Since: stamp(watchTestNow.Add(-4 * time.Minute)), AgeMS: 4 * time.Minute.Milliseconds(), Text: "lint gate exit 1"},
-			{Kind: "lead_idle_results", Recipient: "orch-hns2", Count: 3, Since: stamp(watchTestNow.Add(-31 * time.Hour)), AgeMS: 31 * time.Hour.Milliseconds(), Text: "reports ready to review"},
+			{Kind: "lead_blocked", Campaign: "settings-form", Since: stamp(watchTestNow.Add(-4 * time.Minute)), AgeMS: 4 * time.Minute.Milliseconds(), Text: "lint gate exit 1"},
+			{Kind: "lead_idle_results", Recipient: "lead-docs", Count: 3, Since: stamp(watchTestNow.Add(-31 * time.Hour)), AgeMS: 31 * time.Hour.Milliseconds(), Text: "reports ready to review"},
 		},
 		Campaigns: []glanceCampaign{
-			{Name: "planner-ui", Lanes: glanceLanes{Working: 3, Open: 5}, Last: &glanceLast{AgeMS: 2 * time.Minute.Milliseconds(), Text: "S4 merged"}},
-			{Name: "copilot-modular", Lanes: glanceLanes{Working: 2, Open: 2}, Last: &glanceLast{AgeMS: 14 * time.Minute.Milliseconds(), Text: "M1 review ok"}},
-			{Name: "booked-vs-resolved", Lanes: glanceLanes{Open: 1}, ActivityAgeMS: 28 * time.Minute.Milliseconds()},
+			{Name: "docs-site", Lanes: glanceLanes{Working: 3, Open: 5}, Last: &glanceLast{AgeMS: 2 * time.Minute.Milliseconds(), Text: "S4 merged"}},
+			{Name: "checkout-redesign", Lanes: glanceLanes{Working: 2, Open: 2}, Last: &glanceLast{AgeMS: 14 * time.Minute.Milliseconds(), Text: "M1 review ok"}},
+			{Name: "billing-fix", Lanes: glanceLanes{Open: 1}, ActivityAgeMS: 28 * time.Minute.Milliseconds()},
 		},
 		Quiet: glanceQuiet{Count: 13},
 	}
@@ -49,28 +49,38 @@ func TestRenderGlanceGoldens(t *testing.T) {
 	rolling.Verdict = "rolling"
 	rolling.NeedsYou = nil
 	rolling.Attention = nil
-	rolling.Quiet.WithBacklog = 0
-	unclear := &glanceView{Verdict: "attention", Attention: []glanceAttention{
-		{Kind: "lead_unregistered_silent", Campaign: "copilot-modular", Since: stamp(watchTestNow.Add(-time.Hour)), AgeMS: time.Hour.Milliseconds(), Text: "no decision needed now."},
+	unregistered := &glanceView{Verdict: "attention", Attention: []glanceAttention{
+		{Kind: "lead_unregistered_silent", Campaign: "checkout-redesign", Since: stamp(watchTestNow.Add(-time.Hour)), AgeMS: time.Hour.Milliseconds(), Text: "lead silent with open lanes"},
 		{Kind: "lead_unknown", Campaign: "never-observed", Text: "lead has never been observed"},
 		{Kind: "host_stale", Host: "mac", Text: "no heartbeat recorded"},
 	}}
+	trust := &glanceView{Verdict: "attention", OwnerNotesPending: 1,
+		Attention: []glanceAttention{
+			{Kind: "lead_unregistered_silent", Campaign: "checkout-redesign", Since: "synthetic", AgeMS: 3 * time.Hour.Milliseconds()},
+			{Kind: "lead_idle_results", Recipient: "checkout-redesign", Count: 3, Since: "synthetic", AgeMS: 31 * time.Minute.Milliseconds(), Text: "worker ready: synthetic report"},
+			{Kind: "parked_active", Campaign: "billing-fix", Since: "synthetic", AgeMS: time.Minute.Milliseconds()},
+		}, Campaigns: []glanceCampaign{
+			{Name: "held", Parked: true, ParkAgeMS: 3 * time.Hour.Milliseconds(), ActivityAgeMS: time.Minute.Milliseconds()},
+			{Name: "billing-fix", Parked: true, ParkedActive: true, ActivityAgeMS: time.Minute.Milliseconds()},
+			{Name: "waiting", Lead: "waiting", ActivityAgeMS: 10 * time.Second.Milliseconds(), OwnerNote: &glanceLast{Text: "OWNER: approve demo", AgeMS: 3 * time.Hour.Milliseconds()}},
+			{Name: "unregistered", Lead: "unregistered", ActivityAgeMS: time.Minute.Milliseconds(), OwnerNote: &glanceLast{Text: "OWNER: review demo", AgeMS: 5 * time.Hour.Milliseconds()}},
+		}}
 	for _, tc := range []struct {
 		name          string
 		v             *glanceView
 		width, height int
 		err           string
 	}{
-		{"rolling-46", &rolling, 46, 24, ""}, {"busy-46", busyGlance(), 46, 24, ""},
+		{"trust-46", trust, 46, 30, ""}, {"rolling-46", &rolling, 46, 24, ""}, {"busy-46", busyGlance(), 46, 24, ""},
 		{"no-data-46", nil, 46, 24, ""}, {"stale-46", busyGlance(), 46, 24, "server unreachable"},
 		{"busy-80", busyGlance(), 80, 24, ""}, {"overflow-8", busyGlance(), 46, 8, ""},
 		{"narrow-20", busyGlance(), 20, 24, ""},
-		{"unclear-46", unclear, 46, 24, ""},
+		{"unregistered-46", unregistered, 46, 24, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.name == "busy-46" || tc.name == "busy-80" {
-				tc.v.Attention = append(tc.v.Attention, glanceAttention{Kind: "lead_gone", Campaign: "planner-ui",
-					Since: stamp(watchTestNow.Add(-5 * time.Minute)), AgeMS: 5 * time.Minute.Milliseconds(), Text: "lead pane wN5:p1 is not in its host's agent list"})
+				tc.v.Attention = append(tc.v.Attention, glanceAttention{Kind: "lead_gone", Campaign: "docs-site",
+					Since: stamp(watchTestNow.Add(-5 * time.Minute)), AgeMS: 5 * time.Minute.Milliseconds(), Text: "lead pane wDemoB:p1 is not in its host's agent list"})
 			}
 			lines := renderGlance(tc.v, tc.width, tc.height, 2*time.Second, tc.err, false, watchTestNow)
 			checkWatchWidths(t, lines, tc.width, tc.height)
@@ -92,7 +102,7 @@ func TestRenderGlanceGoldens(t *testing.T) {
 				t.Fatalf("frame mismatch\ngot:\n%s\nwant:\n%s", got, want)
 			}
 			if tc.height == 8 {
-				for _, s := range []string{"2 need you", "+2 more need you", "+2 more to check", "+3 more campaigns", "13 quiet", "13 quiet"} {
+				for _, s := range []string{"2 need you", "+2 more need you", "+2 more to check", "+3 more campaigns", "13 quiet"} {
 					if !strings.Contains(got, s) {
 						t.Errorf("missing count %q: %s", s, got)
 					}
@@ -126,7 +136,6 @@ func TestRenderGlanceSanitizingAndColor(t *testing.T) {
 	v.NeedsYou[0].Also[0] = hostile
 	v.NeedsYou[1].Text = hostile
 	v.Attention[0].Campaign = hostile
-	v.Attention[0].Lane = hostile
 	v.Attention[0].Text = hostile
 	v.Campaigns[0].Name = hostile
 	v.Campaigns[0].Last.Text = hostile
@@ -154,7 +163,7 @@ func TestRenderGlanceSanitizingAndColor(t *testing.T) {
 	if !strings.HasPrefix(rows[2], "\x1b[31m» ") || !strings.HasSuffix(rows[2], "\x1b[0m") || !strings.HasPrefix(rows[7], "\x1b[33m! ") {
 		t.Fatalf("first-row colours: %q", rows)
 	}
-	if rows[3] != "  Merge #4840 now or wait for M3?" {
+	if rows[3] != "  Merge #104 now or wait for M3?" {
 		t.Fatalf("indent = %q", rows[3])
 	}
 	for _, height := range []int{0, 1, 2, 4, 8} {
@@ -162,9 +171,9 @@ func TestRenderGlanceSanitizingAndColor(t *testing.T) {
 	}
 }
 
-func TestRenderGlanceOwnerUnclearAndMissingSince(t *testing.T) {
+func TestRenderGlanceUnregisteredAndMissingSince(t *testing.T) {
 	v := &glanceView{Verdict: "attention", Attention: []glanceAttention{
-		{Kind: "lead_unregistered_silent", Campaign: "campaign", Text: "nothing urgent.\x1b[31m\n" + strings.Repeat("x", 100)},
+		{Kind: "lead_unregistered_silent", Campaign: "campaign", Text: "context.\x1b[31m\n" + strings.Repeat("x", 100)},
 		{Kind: "lead_unknown", Campaign: "campaign"},
 		{Kind: "lead_unknown", Campaign: "observed", Since: stamp(watchTestNow.Add(-time.Minute)), AgeMS: time.Minute.Milliseconds()},
 		{Kind: "lead_idle_results", Recipient: "lead", Count: 2},
@@ -172,10 +181,10 @@ func TestRenderGlanceOwnerUnclearAndMissingSince(t *testing.T) {
 	for _, color := range []bool{false, true} {
 		rows := renderGlance(v, 46, 24, time.Second, "", color, watchTestNow)
 		checkWatchWidths(t, rows, 46, 24)
-		if ansi.Strip(rows[2]) != "? campaign  lead unregistered and silent" || ansi.Strip(rows[4]) != "? campaign  lead unknown never" || ansi.Strip(rows[6]) != "? observed  lead unknown 1m" || ansi.Strip(rows[8]) != "⌛ lead: lead idle with 2 results" {
+		if ansi.Strip(rows[2]) != "? campaign  unregistered" || ansi.Strip(rows[4]) != "? campaign  lead unknown never" || ansi.Strip(rows[6]) != "? observed  lead unknown 1m" || ansi.Strip(rows[8]) != "⌛ lead  idle · 2 results" {
 			t.Fatalf("attention ages: %q", rows)
 		}
-		if !strings.HasSuffix(rows[3], "…") || strings.Contains(ansi.Strip(rows[3]), "\x1b") || strings.ContainsAny(rows[3], "\n\r") {
+		if ansi.Strip(rows[3]) != "  lead silent with open lanes" {
 			t.Fatalf("unclear text not sanitised and truncated: %q", rows[3])
 		}
 		if color && (!strings.HasPrefix(rows[2], "\x1b[33m? ") || strings.Contains(rows[0], "\x1b[32m")) {
@@ -183,7 +192,7 @@ func TestRenderGlanceOwnerUnclearAndMissingSince(t *testing.T) {
 		}
 	}
 	rows := renderGlance(busyGlance(), 80, 24, 0, "", false, watchTestNow)
-	if rows[2] != "» copilot-modular  12m  BLOCKING  → wN4:p1  lane failed" {
+	if rows[2] != "» checkout-redesign  12m  BLOCKING  → wDemoA:p1  lane failed" {
 		t.Fatalf("folded cue: %q", rows[2])
 	}
 }
@@ -212,7 +221,7 @@ func TestWatchAgesAndAttentionKinds(t *testing.T) {
 		v.Attention = append(v.Attention, a)
 	}
 	got := strings.Join(renderGlance(v, 80, 24, 0, "", false, watchTestNow), "\n")
-	for _, want := range []string{"8 to check", "⌛ lead: lead idle with 2 results", "⚠ mac  stale", "⚠ mac  daemon", "✗ campaign  lead gone", "! campaign  lead blocked", "? campaign  lead unknown"} {
+	for _, want := range []string{"8 to check", "⌛ lead  idle · 2 results", "⚠ mac  stale", "⚠ mac  daemon", "✗ campaign  lead gone", "! campaign  lead blocked", "? campaign  lead unknown"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q: %s", want, got)
 		}
@@ -394,7 +403,7 @@ func TestRunWatchResizeAndAge(t *testing.T) {
 	var width, seconds atomic.Int64
 	width.Store(46)
 	h := newWatchHarness(t, func(context.Context) (*glanceView, error) { calls.Add(1); return busyGlance(), nil }, time.Hour, func() (int, int) { return int(width.Load()), 24 }, func() time.Time { return watchTestNow.Add(time.Duration(seconds.Load()) * time.Second) })
-	h.out.wait(t, func(s string) bool { return strings.Contains(lastWatchFrame(s), "planner-ui") })
+	h.out.wait(t, func(s string) bool { return strings.Contains(lastWatchFrame(s), "docs-site") })
 	width.Store(20)
 	h.resize <- syscall.SIGWINCH
 	h.out.wait(t, func(s string) bool {
@@ -519,7 +528,7 @@ func TestRunWatchFrameProtocol(t *testing.T) {
 
 func TestRunWatchFullWidthRow(t *testing.T) {
 	h := newWatchHarness(t, func(context.Context) (*glanceView, error) { return busyGlance(), nil }, time.Hour, watchSize, fixedWatchNow)
-	h.out.wait(t, func(s string) bool { return strings.Contains(lastWatchFrame(s), "planner-ui") })
+	h.out.wait(t, func(s string) bool { return strings.Contains(lastWatchFrame(s), "docs-site") })
 	frame := lastWatchFrame(h.out.text())
 	for i, row := range renderGlance(busyGlance(), 46, 24, 0, "", false, watchTestNow) {
 		if ansi.StringWidth(row) == 46 && !strings.Contains(frame, fmt.Sprintf("\x1b[%d;1H\x1b[2K%s\x1b[%d;1H", i+1, row, i+2)) {
@@ -573,7 +582,7 @@ func TestRenderGlanceOverflowSkipsUnhelpfulDrop(t *testing.T) {
 	rows := renderGlance(v, 46, 12, 0, "", false, watchTestNow)
 	got := strings.Join(rows, "\n")
 	checkWatchWidths(t, rows, 46, 12)
-	for _, want := range []string{"planner-ui", "+1 more to check", "mobile-screens", "Merge #4840"} {
+	for _, want := range []string{"docs-site", "+1 more to check", "settings-form", "Merge #104"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("overflow missing %q: %s", want, got)
 		}
@@ -589,7 +598,7 @@ func TestRenderGlanceMoreCampaignsThanHeightKeepsCounts(t *testing.T) {
 	rows := renderGlance(v, 46, 8, 0, "", false, watchTestNow)
 	checkWatchWidths(t, rows, 46, 8)
 	got := strings.Join(rows, "\n")
-	for _, want := range []string{"2 need you", "+2 more need you", "+2 more to check", "+20 more campaigns", "13 quiet", "13 quiet"} {
+	for _, want := range []string{"2 need you", "+2 more need you", "+2 more to check", "+20 more campaigns", "13 quiet"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("overflow missing %q: %s", want, got)
 		}

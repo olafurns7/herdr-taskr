@@ -159,7 +159,7 @@ func TestGlanceQuietBacklogVerdict(t *testing.T) {
 	w := f.task("w", r, "done")
 	f.event(w, r, 0, "fail", "unread failure", `{}`, 20*time.Hour)
 	v := f.view()
-	if v.Verdict != "rolling" || len(v.Attention) != 0 || v.Quiet.Count != 1 || v.Quiet.WithBacklog != 0 || len(v.Campaigns) != 0 {
+	if v.Verdict != "rolling" || len(v.Attention) != 0 || v.Quiet.Count != 1 || len(v.Campaigns) != 0 {
 		t.Fatalf("quiet result snapshot = %+v", v)
 	}
 	r2 := f.task("quiet2", 0, "open")
@@ -167,7 +167,7 @@ func TestGlanceQuietBacklogVerdict(t *testing.T) {
 	f.event(w2, r2, 0, "fail", "failed lane", `{}`, 20*time.Hour)
 	f.exec(`update tasks set acked_event_id = (select max(id) from events) where id = ?`, r2)
 	v = f.view()
-	if v.Verdict != "rolling" || len(v.NeedsYou) != 0 || len(v.Attention) != 0 || v.Quiet.Count != 2 || v.Quiet.WithBacklog != 0 || len(v.Campaigns) != 0 {
+	if v.Verdict != "rolling" || len(v.NeedsYou) != 0 || len(v.Attention) != 0 || v.Quiet.Count != 2 || len(v.Campaigns) != 0 {
 		t.Fatalf("quiet backlog snapshot = %+v", v)
 	}
 	f.exec(`delete from meta where key = ?`, heartbeatKey)
@@ -242,7 +242,7 @@ func TestGlanceSnapshot(t *testing.T) {
 			ar := f.task("old ask", 0, "open")
 			f.event(ar, 0, 0, "ask", "still needs owner", `{"owner":true}`, 48*time.Hour)
 			v := f.view()
-			if v.Quiet.Count != 1 || v.Quiet.WithBacklog != 0 || !reflect.DeepEqual(v.Quiet.Names, []string{"quiet failed"}) || len(v.Attention) != 0 || len(v.NeedsYou) != 1 || len(v.Campaigns) != 1 || v.Campaigns[0].ID != ar {
+			if v.Quiet.Count != 1 || !reflect.DeepEqual(v.Quiet.Names, []string{"quiet failed"}) || len(v.Attention) != 0 || len(v.NeedsYou) != 1 || len(v.Campaigns) != 1 || v.Campaigns[0].ID != ar {
 				t.Fatalf("snapshot = %+v", v)
 			}
 		}},
@@ -424,7 +424,7 @@ func TestGlanceLeads(t *testing.T) {
 				t.Fatalf("snapshot = %+v", v)
 			}
 			if tc.age > glanceQuietAfter {
-				if len(v.Campaigns) != 0 || v.Quiet.Count != 1 || v.Quiet.WithBacklog != 0 {
+				if len(v.Campaigns) != 0 || v.Quiet.Count != 1 {
 					t.Fatalf("quiet snapshot = %+v", v)
 				}
 				return
@@ -456,9 +456,9 @@ func TestGlanceLeads(t *testing.T) {
 				text := map[string]string{
 					"lead_gone":    "lead pane root:p1 is not in its host's agent list",
 					"lead_blocked": "Herdr sees an approval or question dialog in the lead's pane",
-					"lead_unknown": "lead liveness unknown: no pane, never observed, or its host is not reporting",
+					"lead_unknown": "lead liveness unknown: never observed or its host is not reporting",
 				}[a.Kind]
-				if a.Campaign != "root" || a.RootID != r || a.PaneID != pane || a.Host != host || a.Since != since || a.AgeMS != glanceAge(f.at, since) || a.Text != text || a.LaneID != 0 {
+				if a.Campaign != "root" || a.RootID != r || a.PaneID != pane || a.Host != host || a.Since != since || a.AgeMS != glanceAge(f.at, since) || a.Text != text {
 					t.Fatalf("lead attention = %+v", a)
 				}
 			}
