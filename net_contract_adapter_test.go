@@ -138,3 +138,10 @@ func contractNetR2(t *testing.T, name string, check func(*testing.T)) {
 		check(t)
 	})
 }
+
+// Hub-only conversions require the external server seam; retain the R1 client registry.
+func init() {
+	if os.Getenv("TASKR_HUB_BIN") != "" {
+		contractNetConverted["TestHarnessRPCAdmission"] = true
+	}
+}

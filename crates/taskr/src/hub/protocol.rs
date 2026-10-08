@@ -356,6 +356,23 @@ mod tests {
     }
     #[test]
     fn rpc_flag_and_storage_contract() {
+        let req=decode(br#"{"argv":[null,"status"],"cwd":null,"env":{"TASKR_TASK":null},"request_key":"null-request"}"#).unwrap();
+        assert_eq!(req.argv, ["", "status"]);
+        assert_eq!(req.cwd, "");
+        assert_eq!(req.env["TASKR_TASK"], "");
+        assert_eq!(
+            decode(br#"{"machine":"forged"}"#).unwrap_err(),
+            "json: unknown field \"machine\""
+        );
+        assert_eq!(
+            decode(br#"{"document":{"forged":true}}"#).unwrap_err(),
+            "json: unknown field \"forged\""
+        );
+        assert_eq!(
+            decode(br#"{} {}"#).unwrap_err(),
+            "trailing data after the JSON object"
+        );
+
         assert!(stored(&argv(&["--json", "note", "once"])));
         assert!(stored(&argv(&["_hook", "claude"])));
         for args in [

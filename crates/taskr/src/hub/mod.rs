@@ -212,8 +212,12 @@ async fn handle_inner(hub: &Arc<Hub>, peer: SocketAddr, req: Request<Body>) -> R
     if header("x-taskr-rpc") != "1" {
         return http_error(StatusCode::BAD_REQUEST, "X-Taskr-RPC: 1 is required");
     }
-    let bytes = match tokio::time::timeout(
-        Duration::from_secs(10),
+    let deadline = req.extensions().get::<http::ReadDeadline>().map_or_else(
+        || tokio::time::Instant::now() + Duration::from_secs(10),
+        |v| v.0,
+    );
+    let bytes = match tokio::time::timeout_at(
+        deadline,
         to_bytes(req.into_body(), protocol::BODY_MAX),
     )
     .await

@@ -20,6 +20,7 @@ struct Phase {
     deadline: Option<Instant>,
     idle: bool,
     reply_ready: bool,
+    read_started: Instant,
 }
 struct Socket {
     stream: TcpStream,
@@ -48,6 +49,7 @@ impl AsyncRead for Socket {
             let mut phase = self.phase.lock().expect("phase");
             if phase.idle {
                 phase.idle = false;
+                phase.read_started = Instant::now();
                 phase.deadline = Some(Instant::now() + Duration::from_secs(5));
             }
         }
@@ -90,12 +92,12 @@ pub(super) async fn listen(
             _=shutdown.changed()=>break,
             accepted=listener.accept()=>{
                 let(stream,peer)=accepted?;
-                let phase=Arc::new(Mutex::new(Phase{deadline:Some(Instant::now()+Duration::from_secs(5)),idle:false,reply_ready:false}));
+                let phase=Arc::new(Mutex::new(Phase{deadline:Some(Instant::now()+Duration::from_secs(5)),idle:false,reply_ready:false,read_started:Instant::now()}));
                 let socket=Socket{stream,phase:phase.clone(),timer:Box::pin(tokio::time::sleep(Duration::from_secs(5)))};
                 let service=TowerToHyperService::new(router.clone());
                 let service=hyper::service::service_fn(move |mut req| {
                     req.extensions_mut().insert(ConnectInfo(peer));
-                    {let mut state=phase.lock().expect("phase");state.deadline=None;state.idle=false;state.reply_ready=false;}
+                    {let mut state=phase.lock().expect("phase");req.extensions_mut().insert(ReadDeadline(state.read_started+Duration::from_secs(10)));state.deadline=None;state.idle=false;state.reply_ready=false;}
                     let phase=phase.clone();let future=hyper::service::Service::call(&service,req);
                     async move {let response=future.await;phase.lock().expect("phase").reply_ready=true;response}
                 });
@@ -117,3 +119,6 @@ pub(super) async fn listen(
     while connections.join_next().await.is_some() {}
     Ok(())
 }
+
+#[derive(Clone, Copy)]
+pub(super) struct ReadDeadline(pub Instant);

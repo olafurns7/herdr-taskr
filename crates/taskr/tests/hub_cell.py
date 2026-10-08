@@ -133,14 +133,20 @@ def cross_hub(go,rust,tmp):
         sequence.append({'argv':argv,'pass':True});return json.loads(outputs[0][1])
     try:
         pair('cross-new-root',['--json','new','parity-root','--role','orchestrator'])
-        pair('cross-new-lane',['--json','new','parity-lane','--role','implementer','--parent','1'])
+        pair('cross-new-lane',['--json','new','parity-lane','--role','implementer','--parent','1','--pane','wTEST:p1'])
         pair('cross-launch-01',['--json','launch','2','--provider','codex','--model','fixture','--effort','high'])
+        prompt=pair('cross-prompt-begin',['--json','_prompt','begin','2','--text','synthetic prompt <&> Þ😀','--local-herdr','--receipt-timeout','0'])
+        attempt=json.loads(prompt['stdout'])['attempt_id']
+        pair('cross-prompt-outcome',['--json','_prompt','outcome',str(attempt),'--outcome','activity_observed','--detail','{"agent_status":"working"}'])
+        pair('cross-prompt-repeat',['--json','_prompt','outcome',str(attempt),'--outcome','activity_observed'])
+        pair('cross-host-observe',['--json','_host','observe','--agents','[{"pane_id":"wTEST:p1","agent_status":"working"}]'])
         argv=['--json','note','same <&> Þ😀','--as','1'];pair('cross-note-once',argv);pair('cross-note-once',argv)
         pair('cross-note-once',['--json','note','different','--as','1'])
         reply=pair('cross-ready-01',['--json','ready','uploaded','--report','/synthetic/report.md'],{'TASKR_TASK':'2','TASKR_LAUNCH':'1'},caps=['doc-upload'])
         event=json.loads(reply['stdout'])['event_id'];body='report <&> Þ😀\n'.encode()
         payload={'task':2,'kind':'report','name':'','path':'/synthetic/report.md','event_id':event,'body':base64.b64encode(body).decode(),'sha256':hashlib.sha256(body).hexdigest(),'bytes':len(body)}
         pair('cross-upload-01',['--json','_doc','put'],document=payload,caps=['doc-upload'])
+        pair('cross-doc-wanted',['--json','_doc','wanted','--tree','1'],caps=['doc-upload'])
         # Freeze only synthetic stored rows for event-read bytes; network timers keep real time.
         for cell in cells:
             with sqlite3.connect(cell.db) as db:
