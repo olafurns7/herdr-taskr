@@ -22,6 +22,7 @@ class Herdr:
         self.path = home / 'h.sock'
         self.streams = []
         self.requests = []
+        self.subscriptions = {}
         self.extra_bytes = []
         self.stop = threading.Event()
         self.listener = socket.socket(socket.AF_UNIX)
@@ -75,6 +76,7 @@ print(json.dumps({'result':result}))
             assert all(s.get('pane_id') for s in req['params']['subscriptions'] if s['type'] == 'pane.agent_status_changed'), req
             self.requests.append(req)
             self.streams.append(conn)
+            self.subscriptions[conn] = req['params']['subscriptions']
             conn.sendall(b'{"id":"taskr-daemon","result":{"type":"subscription_started"}}\n')
             while not self.stop.is_set():
                 try:
@@ -87,14 +89,21 @@ print(json.dumps({'result':result}))
         except (OSError, ValueError):
             pass
         finally:
+            self.subscriptions.pop(conn, None)
             conn.close()
 
-    def wake(self):
+    def wake(self, pane_id='wLane:p1'):
+        sent = 0
         for conn in list(self.streams):
+            if not any(s['type'] == 'pane.agent_status_changed' and s.get('pane_id') == pane_id
+                       for s in self.subscriptions.get(conn, [])):
+                continue
             try:
-                conn.sendall(b'{"event":"pane.agent_status_changed"}\n')
+                conn.sendall((json.dumps({'event': 'pane.agent_status_changed', 'pane_id': pane_id}) + '\n').encode())
+                sent += 1
             except OSError:
                 pass
+        return sent
 
     def close(self):
         self.stop.set()
@@ -235,7 +244,7 @@ def run(go, rust, output):
             record(rust,e,'answer',str(silent),'done')
             record(rust,e,'answer',str(audible),'done')
             record(rust,we,'ready','slice')
-            fake.wake()
+            fake.wake('w1:p1')
             def ready_token():
                 return any('taskr_state=ready' in json.loads(line) for line in (home/'calls').read_text().splitlines())
             eventually(ready_token)

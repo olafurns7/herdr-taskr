@@ -333,7 +333,7 @@ fn run(
         uplink: uplink::Uplink::default(),
     };
     if once {
-        let (observed, notified, error) = state.pass(db.as_mut(), false, true);
+        let (observed, notified, error) = state.pass(db.as_mut(), false);
         if let Some(error) = error {
             if client.is_some() {
                 let mut out = json!({"ok":false,"once":true,"mode":"client","watch":if state.watch.is_empty(){Value::Null}else{json!(state.watch)},"error":error.message});
@@ -542,7 +542,6 @@ impl State {
         &mut self,
         db: Option<&mut db::Connection>,
         connected: bool,
-        refresh: bool,
     ) -> (usize, usize, Option<Error>) {
         if let Some(db) = db {
             if let Err(e) = store::inbox::expire(db) {
@@ -594,7 +593,7 @@ impl State {
             (observed, notified, error)
         } else {
             let sent = self.uplink.sent();
-            let result = self.relay(refresh);
+            let result = self.relay();
             if result.is_err() {
                 self.uplink.resync = true;
             }
@@ -626,24 +625,14 @@ impl State {
             (0, 0, result.err())
         }
     }
-    fn relay(&mut self, refresh: bool) -> Result<()> {
+    fn relay(&mut self) -> Result<()> {
         if !herdr::up(&self.sock) {
             return Err(transport(format!(
                 "Herdr server not reachable at {}; nothing sent",
                 self.sock
             )));
         }
-        let result = if !refresh && self.uplink.epoch.is_some() && !self.uplink.resync {
-            match self.uplink.heartbeat(self.raw.as_ref().unwrap(), &self.dir) {
-                Ok(reply) => reply,
-                Err(error) => {
-                    self.log
-                        .line(&format!("heartbeat failed; full resync: {}", error.message));
-                    self.uplink.resync = true;
-                    return self.relay(true);
-                }
-            }
-        } else {
+        let result = {
             let output = herdr::command(&self.sock, &["agent", "list"], Duration::from_secs(10))
                 .map_err(transport)?;
             if output.code != Some(0) {
@@ -678,7 +667,7 @@ impl State {
                     self.uplink.resync = true;
                     self.log
                         .line(&format!("uplink failed; full resync: {}", error.message));
-                    return self.relay(true);
+                    return self.relay();
                 }
                 Err(error) => return Err(error),
             }
@@ -807,7 +796,7 @@ fn resident(
     let mut relay = Instant::now() + uplink::LEGACY;
     let mut last = Instant::now() - Duration::from_secs(1);
     if state.raw.is_some() {
-        state.pass(None, false, true);
+        state.pass(None, false);
         if state.uplink.epoch.is_some() {
             relay = Instant::now() + state.uplink.interval();
         }
@@ -864,10 +853,13 @@ fn resident(
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return "socket removed",
             Err(_) => {}
         }
-        if !periodic && !fallback_due && !pending.is_some_and(|p| Instant::now() >= p) {
+        // Client token fallback is reconciled by the next uplink tick, avoiding an extra idle listing.
+        if !periodic
+            && !(fallback_due && state.raw.is_none())
+            && !pending.is_some_and(|p| Instant::now() >= p)
+        {
             continue;
         }
-        let refresh = pending.is_some() || state.uplink.resync || state.uplink.epoch.is_none();
         pending = None;
         while let Ok(event) = recv.try_recv() {
             if matches!(event, subscription::Wake::Gone) {
@@ -886,7 +878,7 @@ fn resident(
         last = Instant::now();
         let sent = state.uplink.sent();
         let was_capable = state.uplink.epoch.is_some();
-        state.pass(db.as_deref_mut(), connected.load(Ordering::SeqCst), refresh);
+        state.pass(db.as_deref_mut(), connected.load(Ordering::SeqCst));
         // Go's 5s ticker is independent of event-triggered uploads. Only the
         // capability-gated liveness timer moves after a successful uplink.
         if state.raw.is_some()

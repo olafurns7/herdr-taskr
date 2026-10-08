@@ -91,3 +91,68 @@ if __name__ == '__main__':
             assert not (cell.client_home / '.local/state/taskr/taskr.db').exists()
         finally:
             cell.close()
+
+# A tall view retains its header within the terminal; dumb terminals get one frame.
+with tempfile.TemporaryDirectory(prefix='taskr-tty-height-') as tmp:
+    env = {'PATH': '/usr/bin:/bin', 'HOME': tmp, 'TASKR_DB': tmp + '/ledger.db',
+           'HERDR_SOCKET_PATH': tmp + '/absent.sock', 'TERM': 'xterm', 'LANG': 'C.UTF-8', 'TZ': 'UTC'}
+    for i in range(30):
+        subprocess.run([str(binary), '--json', 'new', f'camp-{i:02d}', '--role', 'orchestrator', '--pane', f'wDemo{i}:p1'],
+                       env=env, capture_output=True, check=True)
+    for term in ('xterm', 'dumb'):
+        master, slave = pty.openpty()
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 20, 46, 0, 0))
+        p = subprocess.Popen([str(binary), 'glance', '--watch', '--every', '1s'], env={**env, 'TERM': term},
+                             stdin=slave, stdout=slave, stderr=subprocess.PIPE)
+        data = bytearray()
+        try:
+            deadline = time.monotonic() + 4
+            while time.monotonic() < deadline and (term == 'dumb' or data.count(CLEAR) < 2):
+                if not select.select([master], [], [], .2)[0]:
+                    if term == 'dumb': break
+                    continue
+                data.extend(os.read(master, 65536))
+            if term == 'dumb':
+                p.wait(timeout=5)
+                assert p.returncode == 0
+                assert CLEAR not in data and len(data.splitlines()) > 20, data
+            else:
+                frame = bytes(data).split(CLEAR)[1]
+                assert frame.startswith('taskr'.encode()) and len(frame.splitlines()) <= 20, frame
+                assert not frame.endswith(b'\n'), frame
+                p.terminate(); p.wait(timeout=3)
+                assert p.returncode == 0
+            print(f'PASS: {term}, 46x20 height clipping / one-shot dumb mode')
+        finally:
+            if p.poll() is None: p.kill(); p.wait(timeout=3)
+            os.close(slave); os.close(master); p.stderr.close()
+
+# A failed remote fetch keeps the last good frame and remains alive until signalled.
+with tempfile.TemporaryDirectory(prefix='taskr-tty-error-') as tmp:
+    cell = RustHub(binary, binary, tmp)
+    master, slave = pty.openpty()
+    fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 96, 0, 0))
+    root = subprocess.run([str(binary), '--json', 'new', 'last-good-campaign', '--role', 'orchestrator', '--pane', 'wDemo:p1'],
+                          env=cell.client_env, capture_output=True, check=True)
+    p = subprocess.Popen([str(binary), 'glance', '--watch', '--every', '1s'], env={**cell.client_env, 'TERM': 'xterm'},
+                         stdin=slave, stdout=slave, stderr=subprocess.PIPE)
+    data = bytearray()
+    def read_until(predicate, timeout=5):
+        deadline = time.monotonic()+timeout
+        while not predicate(bytes(data)):
+            assert p.poll() is None, (p.returncode, data)
+            assert select.select([master], [], [], max(0, deadline-time.monotonic()))[0], data
+            data.extend(os.read(master, 65536))
+    try:
+        read_until(lambda d: b'last-good-campaign' in d)
+        cell.close()
+        read_until(lambda d: len(d.split(CLEAR)) >= 3 and b'taskr:' in d.split(CLEAR)[-1] and b'last-good-campaign' in d.split(CLEAR)[-1])
+        frame = bytes(data).split(CLEAR)[-1]
+        assert frame.startswith(b'taskr:') and len(frame.splitlines()) <= 12, frame
+        assert p.poll() is None
+        p.terminate(); p.wait(timeout=3)
+        assert p.returncode == 0
+        print('PASS: failed fetch keeps the last good campaign, clips error+frame to 12 rows, continues and exits on SIGTERM')
+    finally:
+        if p.poll() is None: p.kill(); p.wait(timeout=3)
+        os.close(slave); os.close(master); p.stderr.close(); cell.close()

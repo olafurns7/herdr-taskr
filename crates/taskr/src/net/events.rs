@@ -1,4 +1,5 @@
 //! Verified notification stream. Ledger snapshots remain ordinary RPC calls.
+//! Every notification triggers a re-read; kinds are hints, never a reason to skip one.
 use super::{Error, Result, rpc, state_dir};
 use serde::Deserialize;
 use std::{

@@ -153,13 +153,13 @@ def run(binary, idle):
             assert r.status == 200 and reply['exit'] == 0, reply
             _, host_event = sub.event()
             assert host_event['rev'] == before, host_event
-            assert host_event['kinds'] == ['hosts'], host_event
+            assert host_event['kinds'] == ['state'], host_event
             results['host_without_event'] = True
-            # Metadata-only local commits report hosts, with no event revision.
+            # Metadata-only local commits report state, with no event revision.
             with sqlite3.connect(cell.db) as db:
                 db.execute("insert into meta values('lead_listed_at','synthetic-new-listing') on conflict(key) do update set value=excluded.value")
             _, meta_event = sub.event()
-            assert meta_event['rev'] == before and meta_event['kinds'] == ['hosts'], meta_event
+            assert meta_event['rev'] == before and meta_event['kinds'] == ['state'], meta_event
             results['honest_kinds'] = True
             # A committed batch advances the revision by more than one: reset.
             with sqlite3.connect(cell.db) as db:

@@ -578,7 +578,9 @@ fn watch(every: std::time::Duration, mut fetch: impl FnMut() -> Result<Value>) -
         atomic::{AtomicBool, Ordering},
     };
     use std::time::{Duration, Instant};
-    let tty = std::io::stdout().is_terminal() && std::io::stdin().is_terminal();
+    let tty = std::io::stdout().is_terminal()
+        && std::io::stdin().is_terminal()
+        && std::env::var("TERM").as_deref() != Ok("dumb");
     let stopped = Arc::new(AtomicBool::new(false));
     let mut signals = Vec::new();
     let mut run = || -> std::io::Result<()> {
@@ -588,29 +590,53 @@ fn watch(every: std::time::Duration, mut fetch: impl FnMut() -> Result<Value>) -
             }
         }
         let mut out = std::io::stdout().lock();
+        let mut last = None;
+        let mut fetched_at = Instant::now();
         while !stopped.load(Ordering::Relaxed) {
             let start = Instant::now();
             let v = fetch();
             if stopped.load(Ordering::Relaxed) {
                 break;
             }
-            let v = v.map_err(|e| std::io::Error::other(e.text))?;
-            let width = if tty {
-                rustix::termios::tcgetwinsize(std::io::stdout())
-                    .ok()
-                    .filter(|size| size.ws_col > 0)
-                    .map_or(80, |size| usize::from(size.ws_col))
-            } else {
-                80
+            let error = match v {
+                Ok(v) => {
+                    last = Some(v);
+                    fetched_at = Instant::now();
+                    None
+                }
+                Err(e) if tty => Some(e.text),
+                Err(e) => return Err(std::io::Error::other(e.text)),
             };
+            let size = tty
+                .then(|| rustix::termios::tcgetwinsize(std::io::stdout()).ok())
+                .flatten();
+            let width = size
+                .filter(|s| s.ws_col > 0)
+                .map_or(80, |s| usize::from(s.ws_col));
+            let height = if tty {
+                size.filter(|s| s.ws_row > 0)
+                    .map_or(24, |s| usize::from(s.ws_row))
+            } else {
+                usize::MAX
+            };
+            let mut lines = Vec::new();
+            if let Some(error) = error {
+                lines.push(render::pad(&format!("taskr: {error}"), width));
+            }
+            if let Some(v) = &last {
+                lines.extend(render::frame(
+                    v,
+                    width,
+                    height.saturating_sub(lines.len()),
+                    fetched_at.elapsed().as_millis().min(i64::MAX as u128) as i64,
+                ));
+            }
             if tty {
                 write!(out, "\x1b[H\x1b[2J")?;
+                write!(out, "{}", lines.join("\n"))?;
+            } else {
+                writeln!(out, "{}", lines.join("\n"))?;
             }
-            writeln!(
-                out,
-                "{}",
-                render::frame(&v, width, usize::MAX, 0).join("\n")
-            )?;
             out.flush()?;
             if !tty {
                 break;

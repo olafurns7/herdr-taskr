@@ -183,7 +183,7 @@ async fn poll(events: Arc<Events>, db: db::Connection) {
                     change.kind = if change.rev != inner.current.rev {
                         "events"
                     } else {
-                        "hosts"
+                        "state"
                     };
                     change.reset = change.rev < inner.current.rev
                         || change.rev > inner.current.rev.saturating_add(1);

@@ -165,15 +165,30 @@ def run(go, rust, out, idle_seconds):
             assert calls and all(c['argv'][2] == 'heartbeat' for c in calls), calls
             assert after['full'] == before['full'] and after['delta'] == before['delta'], (before, after)
             assert after['heartbeat']-before['heartbeat'] == len(calls), (after, before, calls)
-            assert (cell.client_home/'calls').read_text().count('["agent", "list"]') == lists_before
+            agent_lists = (cell.client_home/'calls').read_text().count('["agent", "list"]') - lists_before
+            assert 0 < agent_lists <= len(calls), (agent_lists, calls)
             print('Rust idle window complete', flush=True)
-            evidence['idle'] = {'seconds': time.monotonic()-began, 'before': before, 'after': after, 'host_requests': len(calls), 'max_heartbeat_age_seconds': max_age, 'agent_lists': 0}
+            evidence['idle'] = {'seconds': time.monotonic()-began, 'before': before, 'after': after, 'host_requests': len(calls), 'max_heartbeat_age_seconds': max_age, 'agent_lists': agent_lists}
             out.with_suffix('.partial.json').write_text(json.dumps(evidence, indent=2)+'\n')
             print(json.dumps({'idle': evidence['idle']}), flush=True)
+            agents = agent(1)
+            agents[1].update(agent_status='blocked', state_change_seq=2)
+            (cell.client_home/'agents.json').write_text(json.dumps(agents))
+            assert fake.wake('wRoot:p0') == 0
             began = time.monotonic()
-            (cell.client_home/'agents.json').write_text(json.dumps(agent(2, 'blocked')))
+            eventually(lambda: cell.count('select lead_status from tasks where id=?', (top,)) == 'blocked', timeout=12)
+            assert 'lead_blocked' in [r['kind'] for r in cell.obj(rust, ['glance'])['attention']]
+            evidence['unsubscribed_lead_blocked'] = {'seconds': time.monotonic()-began, 'status': 'blocked', 'lead_blocked': True}
+            agents[0].update(agent_status='idle', state_change_seq=2)
+            (cell.client_home/'agents.json').write_text(json.dumps(agents))
+            began = time.monotonic()
+            eventually(lambda: snapshot(cell, launch) == ('idle', 2, 1), timeout=12)
+            evidence['lost_lane_event'] = {'seconds': time.monotonic()-began, 'status': 'idle', 'event_sent': False}
+            began = time.monotonic()
+            agents[0].update(agent_status='blocked', state_change_seq=3)
+            (cell.client_home/'agents.json').write_text(json.dumps(agents))
             fake.wake()
-            eventually(lambda: snapshot(cell, launch) == ('blocked', 2, 1), timeout=1)
+            eventually(lambda: snapshot(cell, launch) == ('blocked', 3, 1), timeout=1)
             latency = time.monotonic()-began
             assert latency < 1, latency
             delta = next(c for c in reversed(tap.hosts()) if c['argv'][2] == 'delta')
@@ -186,28 +201,28 @@ def run(go, rust, out, idle_seconds):
             eventually(lambda: status(cell, rust)['skipped_unchanged'] > after['skipped_unchanged'])
             assert all(c['argv'][2] == 'heartbeat' for c in tap.hosts()[sent:])
             # A removed pane travels in --removed and updates the same missing CAS as Go.
-            (cell.client_home/'agents.json').write_text(json.dumps(agent(2)[1:]))
+            (cell.client_home/'agents.json').write_text(json.dumps(agent(3)[1:]))
             fake.wake()
             eventually(lambda: snapshot(cell, launch)[2] == 0, timeout=1)
             assert json.loads(tap.hosts()[-1]['argv'][tap.hosts()[-1]['argv'].index('--removed')+1]) == ['wLane:p1']
-            (cell.client_home/'agents.json').write_text(json.dumps(agent(3)))
+            (cell.client_home/'agents.json').write_text(json.dumps(agent(4)))
             fake.wake()
-            eventually(lambda: snapshot(cell, launch) == ('working', 3, 1), timeout=1)
+            eventually(lambda: snapshot(cell, launch) == ('working', 4, 1), timeout=12)
             # A hub restart changes the epoch even when contract time is frozen.
             before = status(cell, rust)
             old_epoch = acknowledged(cell)['epoch']
             restart_hub(cell, rust, tap)
             eventually(lambda: status(cell, rust)['full'] > before['full'] and acknowledged(cell)['epoch'] != old_epoch, timeout=15)
-            assert snapshot(cell, launch) == ('working', 3, 1)
+            assert snapshot(cell, launch) == ('working', 4, 1)
             evidence['restart'] = {'before': before, 'after': status(cell, rust), 'fresh_age': fresh(cell)}
             # A lost successful delta reply causes a fresh full snapshot, never a reused base.
             before = status(cell, rust)
             generation = acknowledged(cell)['generation']
             tap.drop = True
-            (cell.client_home/'agents.json').write_text(json.dumps(agent(4)))
+            (cell.client_home/'agents.json').write_text(json.dumps(agent(5)))
             fake.wake()
             eventually(lambda: status(cell, rust)['full'] > before['full'] and acknowledged(cell)['generation'] >= generation+2, timeout=15)
-            assert snapshot(cell, launch) == ('working', 4, 1)
+            assert snapshot(cell, launch) == ('working', 5, 1)
             evidence['lost_reply_resync'] = status(cell, rust)
             # Herdr reconnect similarly invalidates the acknowledged snapshot.
             before = status(cell, rust)
@@ -237,7 +252,7 @@ def run(go, rust, out, idle_seconds):
             # heartbeat requests a full application for the new launch.
             before = status(cell, rust)
             launch = cell.obj(rust, ['launch', str(worker), '--provider', 'fixture', '--model', 'fixture', '--effort', 'medium'])['launch_id']
-            eventually(lambda: snapshot(cell, launch) == ('working', 4, 1) and status(cell, rust)['full'] > before['full'], timeout=12)
+            eventually(lambda: snapshot(cell, launch) == ('working', 5, 1) and status(cell, rust)['full'] > before['full'], timeout=12)
             evidence['unchanged_pane_new_launch_resync'] = status(cell, rust)
             out.with_suffix('.partial.json').write_text(json.dumps(evidence, indent=2)+'\n')
             # An idle heartbeat also reconciles owner-token inputs from the hub.

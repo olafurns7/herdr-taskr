@@ -17,7 +17,7 @@ def run(go, rust, out):
     with tempfile.TemporaryDirectory(prefix='taskr-hostd-wire-') as tmp:
         cell = Cell(rust, go, tmp)
         try:
-            _, _, launch = setup(cell, rust)
+            top, _, launch = setup(cell, rust)
             def rpc(kind, agents=None, removed=None, epoch=None, base=None, code=0):
                 argv = ['--json', '_host', kind]
                 for flag, value in [('agents', agents), ('removed', removed), ('epoch', epoch), ('base', base)]:
@@ -48,6 +48,24 @@ def run(go, rust, out):
             assert heartbeat['observed'] == 0 and heartbeat['hostd']['generation'] == base
             assert meta('hostd_snapshot:host-a') == before
             checks.append('heartbeat does not rewrite snapshot or apply observations')
+            stored = json.loads(meta('hostd_snapshot:host-a'))
+            assert next(row for row in stored['inputs'] if row[0] == top)[5:] == [1, 'working'], stored
+            cell.want(rust, ['adopt', str(top), '--pane', 'wRoot:p0'])
+            rpc('heartbeat', epoch=epoch, base=base, code=6)
+            _, reply = rpc('observe', agent(1))
+            base = reply['hostd']['generation']
+            assert cell.count('select lead_status from tasks where id=?', (top,)) == 'working'
+            rpc('heartbeat', epoch=epoch, base=base)
+            checks.append('same-pane adopt invalidates lead inputs; post-observe inputs stabilize heartbeat')
+            closed = cell.obj(rust, ['new', 'archived', '--role', 'orchestrator'])['task_id']
+            cell.obj(rust, ['close', str(closed)])
+            _, reply = rpc('observe', agent(1))
+            base = reply['hostd']['generation']
+            assert closed not in [row[0] for row in json.loads(meta('hostd_snapshot:host-a'))['inputs']]
+            with sqlite3.connect(cell.db) as db:
+                db.execute("update tasks set lead_status='blocked',lead_present=0 where id=?", (closed,))
+            rpc('heartbeat', epoch=epoch, base=base)
+            checks.append('closed tasks excluded from inputs and cannot invalidate a heartbeat')
             for bad_epoch, bad_base in [(epoch, base+1), ('old-epoch', base)]:
                 before = meta('daemon_heartbeat:host-a')
                 rpc('heartbeat', epoch=bad_epoch, base=bad_base, code=6)

@@ -1,7 +1,7 @@
 use super::*;
 
 // host.go/liveness.go expire host heartbeats after 30s. Ten seconds leaves
-// two missed intervals of headroom without re-running the observation pass.
+// two missed intervals of headroom; each timer pass also re-lists local agents.
 pub(super) const HEARTBEAT: Duration = Duration::from_secs(10);
 pub(super) const LEGACY: Duration = Duration::from_secs(5);
 #[derive(Default)]

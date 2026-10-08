@@ -47,7 +47,7 @@ fn put(db: &db::Connection, key: &str, value: &str) -> Result<()> {
 fn inputs(db: &db::Connection, host: &str) -> Result<Value> {
     // A new launch or a released waiter needs the cached pane state applied
     // even if Herdr itself has not changed since the last observation.
-    let mut query = db.prepare("select t.id,t.current_launch_id,coalesce(l.pane_id,t.pane_id),t.status,case when t.waiting_until>?2 then t.waiting_until else null end from tasks t left join launches l on l.id=t.current_launch_id where t.machine is ?1 or l.machine is ?1 order by t.id")?;
+    let mut query = db.prepare("select t.id,t.current_launch_id,coalesce(l.pane_id,t.pane_id),t.status,case when t.waiting_until>?2 then t.waiting_until else null end,t.lead_present,t.lead_status from tasks t left join launches l on l.id=t.current_launch_id where (t.machine is ?1 or l.machine is ?1) and t.status!='closed' order by t.id")?;
     let rows = query
         .query_map(db::params![host, store::now()], |r| {
             Ok(json!([
@@ -55,7 +55,9 @@ fn inputs(db: &db::Connection, host: &str) -> Result<Value> {
                 r.get::<_, Option<i64>>(1)?,
                 r.get::<_, Option<String>>(2)?,
                 r.get::<_, String>(3)?,
-                r.get::<_, Option<String>>(4)?
+                r.get::<_, Option<String>>(4)?,
+                r.get::<_, Option<i64>>(5)?,
+                r.get::<_, Option<String>>(6)?
             ]))
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -130,6 +132,7 @@ fn apply(db: &mut db::Connection, host: &str, flags: &FlagSet) -> Result<Value> 
         generation = generation
             .checked_add(1)
             .ok_or_else(|| store::reject("host snapshot generation exhausted"))?;
+        let reply = crate::daemon::observe_host(db, host, &agents)?;
         let snapshot =
             compact_json(&json!({"epoch":epoch,"generation":generation,"agents":agents,"inputs":inputs(db, host)?}))
                 .expect("snapshot");
@@ -138,7 +141,6 @@ fn apply(db: &mut db::Connection, host: &str, flags: &FlagSet) -> Result<Value> 
                 "host snapshot is too large; send a full observe",
             ));
         }
-        let reply = crate::daemon::observe_host(db, host, &agents)?;
         put(db, &key, &snapshot)?;
         reply
     };

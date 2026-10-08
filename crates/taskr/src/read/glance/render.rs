@@ -57,7 +57,7 @@ fn truncate(s: &str, w: usize) -> String {
     out.push('…');
     out
 }
-fn pad(s: &str, n: usize) -> String {
+pub(super) fn pad(s: &str, n: usize) -> String {
     let s = truncate(&clean(s), n);
     format!("{s}{}", " ".repeat(n.saturating_sub(width(&s))))
 }
