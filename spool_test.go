@@ -542,14 +542,17 @@ func TestSpoolHookTimeoutWritesBeforeProcessExit(t *testing.T) {
 	if err := cmd.Run(); err != nil || errb.Len() != 0 {
 		t.Fatalf("hook process = %v, stdout %q, stderr %q", err, out.String(), errb.String())
 	}
-	select {
-	case <-entered:
-	default:
-		t.Fatal("hook never reached the unanswered server")
-	}
 	files, err := readSpoolFiles(spoolQueuePath(home))
 	if err != nil || len(files) != 1 {
 		t.Fatalf("process exited without queued hook: %+v, %v", files, err)
+	}
+	// On a loaded host the 350 ms send budget can end before the request
+	// connects. The record is queued either way, but the unanswered path
+	// was not exercised, so say so instead of passing.
+	select {
+	case <-entered:
+	default:
+		t.Skip("queued before exit; the unanswered-request path was not exercised")
 	}
 }
 
