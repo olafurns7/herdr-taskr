@@ -1,0 +1,30 @@
+ taskr ❯ answer        2s ago   ● 2 need you
+ ask 61367 · ios-widgets
+ not blocking · waiting · 6m · laptop ↗
+
+ WIDGET BATCH: 19 of 23 merged (14:02-14:09Z,
+ squash). STOPPED, per your rule (conflict on
+ the way): #641 and the three stacked
+ children #638, #655, #652. A worker merged
+ main into each branch, resolved the
+ conflicts and pushed. Hosted CI is green on
+ all four heads.
+ Question:
+ If there is no answer in 15 minutes, I take
+ (B).
+
+  ❯ A  merge these four now (#641, #638,
+       #655, #652), then one beta build from
+       main  recommended
+    B  build now with the 19; these four
+       wait for a later build
+    …  write your own answer
+
+ ────────────────────────────────────────────
+  answer  A: merge these four now (#641,
+          #638, #655, #652), then one beta
+          build from main
+
+
+
+ j k choose   tab edit   ⏎ review   esc cancel

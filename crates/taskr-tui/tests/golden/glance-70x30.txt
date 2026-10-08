@@ -1,0 +1,30 @@
+ taskr                              2s ago   ● 2 need you  3 to check
+ 3 notes still carry OWNER items
+ NEEDS YOU ──────────────────────────────────────────────────────── 2
+▌? tui-frames           BLOCKING                                ⏎  41s
+▌  Frames follow-up is ready: PR #212 (orphaned asks hidden, close w…
+ ? ios-widgets                                           laptop ↗   6m
+   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). STOPPED, pe…
+ TO CHECK ───────────────────────────────────────────────────────── 3
+ ! map-tiles-polish                                        laptop   2h
+   lead unregistered and silent
+ ! infra-layout                                                     2h
+   lead idle with 3 results
+ ! host build-mini                                           mini  12m
+   host stale: no heartbeat for 12 m
+ CAMPAIGNS ─────────────────────────────────────────────────────── 10
+ ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃                    19s
+   Research complete: reports/ranking-options.md compares three scor…
+ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█                    29s
+   Implementation slice: key rollover job, fake-clock tests, install…
+ ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁                    33s
+•○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂                     2m
+ ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█                     3m
+ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁              laptop  7m
+ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆                     8m
+ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃                    12m
+ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁                    14m
+ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                    54m
+ ‖ legacy-importer                                          parked  3h
+ · 2 quiet
+ ⏎ go   a answer   l open   ? help

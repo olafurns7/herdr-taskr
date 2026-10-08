@@ -1,0 +1,255 @@
+{
+ "glance": {
+  "now": "2026-01-01T12:00:00.000Z",
+  "server_host": "demo-hub",
+  "caller_host": "",
+  "verdict": "needs_you",
+  "needs_you": [
+   {
+    "kind": "owner_ask",
+    "campaign": "demo-checkout",
+    "root_id": 1,
+    "asker_task_id": 2,
+    "ask_id": 20,
+    "text": "Approve the demo?",
+    "host": "demo-laptop",
+    "pane_id": "wDemo:p2",
+    "since": "2026-01-01T11:59:00.000Z",
+    "age_ms": 60000,
+    "blocking": true,
+    "asker": "demo-worker",
+    "asker_waiting": true
+   }
+  ],
+  "attention": [],
+  "campaigns": [
+   {
+    "id": 1,
+    "name": "demo-checkout",
+    "host": "",
+    "pane_id": "wDemo:p1",
+    "lead": "waiting",
+    "lead_waiting": true,
+    "lanes": {
+     "working": 1,
+     "ready": 0,
+     "open": 1
+    },
+    "activity_age_ms": 60000,
+    "last": {
+     "event_id": 19,
+     "kind": "ready",
+     "text": "Demo ready",
+     "age_ms": 120000
+    },
+    "owner_note": {
+     "event_id": 18,
+     "kind": "note",
+     "text": "OWNER: nothing.",
+     "age_ms": 180000
+    },
+    "spark": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     3
+    ]
+   }
+  ],
+  "quiet": {
+   "count": 1,
+   "names": [
+    "demo-archive"
+   ],
+   "root_ids": [
+    3
+   ]
+  },
+  "owner_notes_pending": 0,
+  "owner_note_root_ids": []
+ },
+ "campaign": {
+  "root": {
+   "id": 1,
+   "name": "demo-checkout",
+   "status": "open",
+   "created_at": "2026-01-01T11:00:00.000Z",
+   "host": "",
+   "pane_id": "wDemo:p1",
+   "next": "Review the demo",
+   "lead": "waiting",
+   "age_ms": 3600000
+  },
+  "goal": [
+   "# Demo checkout",
+   "Ship the sample."
+  ],
+  "plan": {
+   "id": 10,
+   "version": 1,
+   "age_ms": 1800000,
+   "decisions_since": 1,
+   "closed_since": 0
+  },
+  "lanes": [
+   {
+    "id": 2,
+    "parent_id": 1,
+    "depth": 1,
+    "name": "demo-worker",
+    "role": "implementer",
+    "status": "open",
+    "state": "working",
+    "outcome": "",
+    "host": "demo-laptop",
+    "pane_id": "wDemo:p2",
+    "provider": "demo-provider",
+    "model": "demo-model",
+    "effort": "high",
+    "summary": "Demo ready",
+    "age_ms": 60000,
+    "brief": true,
+    "report": true
+   }
+  ],
+  "asks": [
+   {
+    "id": 20,
+    "kind": "ask",
+    "at": "2026-01-01T11:59:00.000Z",
+    "lane": "demo-worker",
+    "text": "Approve the demo?",
+    "open": true,
+    "owner": true,
+    "blocking": true
+   }
+  ],
+  "decisions": [
+   {
+    "id": 17,
+    "kind": "decision",
+    "at": "2026-01-01T11:30:00.000Z",
+    "lane": "",
+    "text": "Keep the sample small",
+    "owner": false
+   }
+  ],
+  "docs": [
+   {
+    "id": 10,
+    "kind": "plan",
+    "name": "",
+    "lane": "demo-checkout",
+    "version": 1,
+    "captured": true
+   },
+   {
+    "id": 11,
+    "kind": "brief",
+    "name": "",
+    "lane": "demo-worker",
+    "version": 1,
+    "captured": true
+   }
+  ],
+  "prs": [
+   {
+    "task_id": 2,
+    "lane": "demo-worker",
+    "value": "123",
+    "number": 123,
+    "review": "approved",
+    "refs": [
+     {
+      "key": "pr",
+      "value": "123"
+     },
+     {
+      "key": "pr.review",
+      "value": "approved"
+     }
+    ],
+    "key": "pr"
+   },
+   {
+    "task_id": 2,
+    "lane": "demo-worker",
+    "key": "pr.backend",
+    "value": "demo-org/demo#124",
+    "refs": [
+     {
+      "key": "pr",
+      "value": "123"
+     },
+     {
+      "key": "pr.review",
+      "value": "approved"
+     }
+    ]
+   }
+  ],
+  "log": [
+   {
+    "id": 20,
+    "kind": "ask",
+    "at": "2026-01-01T11:59:00.000Z",
+    "lane": "demo-worker",
+    "text": "Approve the demo?",
+    "open": true,
+    "owner": true,
+    "blocking": true
+   }
+  ],
+  "log_page": {
+   "page": 1,
+   "pages": 1,
+   "total": 1
+  },
+  "spark": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   3
+  ]
+ }
+}

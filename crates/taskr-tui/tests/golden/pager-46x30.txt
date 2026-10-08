@@ -1,0 +1,30 @@
+ taskr ❯ report        2s ago   ● 2 need you
+ report · arch-plan-counter2 · v1 ─── 1-27/94
+ Counter-review 2: the phase 3 plan (rev 3)
+
+ Task 4176 (arch-plan-counter2). Read-only.
+
+ Verdict first
+
+ Not ready to send until three text fixes
+ land (P1-1, P1-2, P1-3). Rev 3 honours every
+ fix from the first review except one that
+ the owner's later input overrides. The
+ research behind it is sound. What is wrong
+ is at the edges the owner will touch first.
+
+ Findings, ranked
+
+ P1-1. The 46-column spec covers the glance
+ only
+
+ The campaign view, answer dialog, help,
+ all-campaigns list and pager have no narrow
+ layout, and the glance itself wastes a
+ quarter of the pane.
+
+   | Frame | Size | Blank rows |
+   | glance-narrow | 46x30 | 7 of 30 |
+   | row-detail | 46x30 | 7 |
+   | stale | 46x30 | 6 |
+ space page   y copy   q close
