@@ -6,7 +6,7 @@ taskr · 17:30 · 2s                  3 to check
 ⌛ checkout-redesign  idle · 3 results 31m
   worker ready: synthetic report
 ? billing-fix  parked but active 1m
-  new activity since hold; re-park to hold ag…
+  new activity; re-park to hold again
 ──────────────────────────────────────────────
 · held               0/0    1m   parked · 3h
 · billing-fix        0/0    1m   parked active

@@ -231,6 +231,10 @@ func campaignDocuments(q queryer, root int64) (map[string]any, map[string]any, [
 }
 
 func readCampaign(q queryer, root int64, page int) (map[string]any, error) {
+	return readCampaignDetail(q, root, page, false)
+}
+
+func readCampaignDetail(q queryer, root int64, page int, allLanes bool) (map[string]any, error) {
 	var name, role, status, host, created, closed string
 	err := q.QueryRow(`select name,role,status,coalesce(machine,''),created_at,coalesce(closed_at,'') from tasks where id = ? and parent_id is null`, root).Scan(&name, &role, &status, &host, &created, &closed)
 	if err != nil {
@@ -282,10 +286,17 @@ func readCampaign(q queryer, root int64, page int) (map[string]any, error) {
 		return nil, err
 	}
 	out := pageMetadata(total, 100, page)
+	laneLimit, laneOffset := 100, (out["page"].(int)-1)*100
+	if allLanes {
+		laneLimit, laneOffset = -1, 0
+	}
 	rows, err := q.Query(tree+`select t.id,t.parent_id,tree.depth,t.name,t.role,t.status,coalesce(case when t.current_launch_id is null then t.machine else l.machine end,''),t.created_at,coalesce(t.closed_at,''),
   coalesce(l.provider,''),coalesce(l.model,''),coalesce(l.effort,''),
-  coalesce((select summary from events e where e.task_id = t.id and kind in ('done','fail','ready') order by id desc limit 1),'')
-  from tree join tasks t on t.id = tree.id left join launches l on l.id = t.current_launch_id where depth > 0 order by t.id limit 100 offset ?`, root, (out["page"].(int)-1)*100)
+  coalesce((select summary from events e where e.task_id = t.id and kind in ('done','fail','ready') order by id desc limit 1),''),
+  coalesce(l.pane_id,t.pane_id,''),coalesce(l.observed_status,''),l.present,
+  coalesce((select created_at from events e where e.task_id = t.id order by id desc limit 1),t.created_at),
+  coalesce((select json_extract(data,'$.outcome') from events e where e.task_id = t.id and kind = 'closed' order by id desc limit 1),'')
+  from tree join tasks t on t.id = tree.id left join launches l on l.id = t.current_launch_id where depth > 0 order by t.id limit ? offset ?`, root, laneLimit, laneOffset)
 	if err != nil {
 		return nil, err
 	}
@@ -293,18 +304,39 @@ func readCampaign(q queryer, root int64, page int) (map[string]any, error) {
 	for rows.Next() {
 		var id, parent int64
 		var depth int
-		var name, role, status, host, created, closed, provider, model, effort, summary string
-		if err := rows.Scan(&id, &parent, &depth, &name, &role, &status, &host, &created, &closed, &provider, &model, &effort, &summary); err != nil {
+		var name, role, status, host, created, closed, provider, model, effort, summary, pane, observed, activity, outcome string
+		var present sql.NullBool
+		if err := rows.Scan(&id, &parent, &depth, &name, &role, &status, &host, &created, &closed, &provider, &model, &effort, &summary, &pane, &observed, &present, &activity, &outcome); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		lanes = append(lanes, map[string]any{"id": id, "parent_id": parent, "depth": depth, "name": name, "role": role, "status": status, "host": host, "created_at": created, "closed_at": closed, "provider": provider, "model": model, "effort": effort, "summary": clip(summary, 300)})
+		state := stateTask{Status: status, AgentStatus: observed}
+		if present.Valid {
+			state.Present = &present.Bool
+		}
+		mark := laneMark(&state)
+		if mark == markWorking && (observed == "idle" || observed == "done" || observed == "unknown") {
+			mark = observed
+		}
+		if status == "closed" {
+			mark = "closed"
+		}
+		lanes = append(lanes, map[string]any{"state": mark, "pane_id": pane, "outcome": outcome, "age_ms": glanceAge(time.Now(), activity), "id": id, "parent_id": parent, "depth": depth, "name": name, "role": role, "status": status, "host": host, "created_at": created, "closed_at": closed, "provider": provider, "model": model, "effort": effort, "summary": clip(summary, 300)})
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	for _, l := range lanes {
+		if host := l["host"].(string); host != "" && (l["status"] == "open" || l["status"] == "ready") {
+			fresh, err := hostFresh(q, host)
+			if err != nil {
+				return nil, err
+			}
+			if !fresh {
+				l["state"] = "unknown"
+			}
+		}
 		for _, kind := range []string{"brief", "report"} {
 			doc, err := dashboardDocument(q, l["id"].(int64), kind)
 			if err != nil {

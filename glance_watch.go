@@ -157,14 +157,14 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 		if a.Kind == "lead_idle_results" {
 			name, word = watchText(a.Recipient), fmt.Sprintf("idle · %d results", a.Count)
 		}
-		name = ansi.Truncate(name, max(1, width-ansi.StringWidth(sym+"   "+word+when)), "…")
+		name = ansi.Truncate(name, max(min(ansi.StringWidth(name), 8), width-ansi.StringWidth(sym+"   "+word+when)), "…")
 		first := fmt.Sprintf("%s %s  %s%s", sym, name, word, when)
 		text := a.Text
 		if a.Kind == "lead_unregistered_silent" {
 			text = "lead silent with open lanes"
 		}
 		if a.Kind == "parked_active" {
-			text = "new activity since hold; re-park to hold again"
+			text = "new activity; re-park to hold again"
 		}
 		groups[1] = append(groups[1], []string{line(first, "33"), line("  "+watchText(text), "")})
 	}
@@ -187,7 +187,6 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 				noteText = value
 			}
 			detail = "  " + ageOf(c.OwnerNote.AgeMS) + " · " + watchText(noteText)
-			text = ""
 		}
 		tint := ""
 		if c.Parked {
@@ -401,7 +400,13 @@ func watchGlance(c *ctx, every time.Duration) (any, int, error) {
 			return nil, 1, &exitErr{1, "watch", err.Error()}
 		}
 		defer closeDB(c, db)
-		fetch = func(context.Context) (*glanceView, error) { return readGlance(db, time.Now()) }
+		fetch = func(context.Context) (*glanceView, error) {
+			v, err := readGlance(db, time.Now())
+			if v != nil {
+				v.CallerHost = c.machine
+			}
+			return v, err
+		}
 	}
 	c.lines = true
 	file, ok := c.out.(*os.File)

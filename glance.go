@@ -17,6 +17,8 @@ const (
 )
 
 type glanceView struct {
+	ServerHost        string            `json:"server_host"`
+	CallerHost        string            `json:"caller_host"`
 	Now               string            `json:"now"`
 	Verdict           string            `json:"verdict"`
 	NeedsYou          []glanceNeed      `json:"needs_you"`
@@ -28,6 +30,7 @@ type glanceView struct {
 }
 
 type glanceNeed struct {
+	AskerTaskID  int64    `json:"asker_task_id"`
 	Kind         string   `json:"kind"`
 	Campaign     string   `json:"campaign"`
 	RootID       int64    `json:"root_id"`
@@ -59,6 +62,7 @@ type glanceAttention struct {
 }
 
 type glanceCampaign struct {
+	Spark         []int       `json:"spark"`
 	ID            int64       `json:"id"`
 	Name          string      `json:"name"`
 	Host          string      `json:"host,omitempty"`
@@ -88,8 +92,9 @@ type glanceLast struct {
 }
 
 type glanceQuiet struct {
-	Count int      `json:"count"`
-	Names []string `json:"names"`
+	RootIDs []int64  `json:"root_ids"`
+	Count   int      `json:"count"`
+	Names   []string `json:"names"`
 }
 
 func cmdGlance(c *ctx, args []string) (any, int, error) {
@@ -116,6 +121,9 @@ func cmdGlance(c *ctx, args []string) (any, int, error) {
 	}
 	defer closeDB(c, db)
 	v, err := readGlance(db, time.Now())
+	if v != nil {
+		v.CallerHost = c.machine
+	}
 	return v, exitOK, dbErr(err)
 }
 
@@ -149,8 +157,8 @@ func readGlance(db *sql.DB, at time.Time) (*glanceView, error) {
 		return nil, err
 	}
 	defer tx.Rollback()
-	v := &glanceView{Now: stamp(at), Verdict: "rolling", NeedsYou: []glanceNeed{},
-		Attention: []glanceAttention{}, Campaigns: []glanceCampaign{}, Quiet: glanceQuiet{Names: []string{}}, OwnerNoteRootIDs: []int64{}}
+	v := &glanceView{ServerHost: localMachine(), Now: stamp(at), Verdict: "rolling", NeedsYou: []glanceNeed{},
+		Attention: []glanceAttention{}, Campaigns: []glanceCampaign{}, Quiet: glanceQuiet{Names: []string{}, RootIDs: []int64{}}, OwnerNoteRootIDs: []int64{}}
 	roots := map[int64]*glanceRoot{}
 	tasks := map[int64]*glanceTask{}
 	hosts := map[string]bool{}
@@ -195,6 +203,13 @@ func readGlance(db *sql.DB, at time.Time) (*glanceView, error) {
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	sparks, err := campaignSparks(tx, at, 0)
+	if err != nil {
+		return nil, err
+	}
+	for id, r := range roots {
+		r.Spark = sparks[id]
 	}
 	finishGlance(at, v, roots)
 	return v, nil
@@ -343,7 +358,7 @@ func glanceOwnerAsks(tx *sql.Tx, at time.Time, v *glanceView, roots map[int64]*g
 		}
 		t := tasks[taskID]
 		r := roots[t.rootID]
-		n.Kind, n.Campaign, n.RootID, n.Host, n.PaneID = "owner_ask", r.Name, r.ID, r.Host, r.PaneID
+		n.Kind, n.Campaign, n.RootID, n.Host, n.PaneID, n.AskerTaskID = "owner_ask", r.Name, r.ID, t.host, t.PaneID, t.ID
 		n.AgeMS, n.Blocking, n.AskerWaiting = glanceAge(at, n.Since), &blocking, &t.Waiting
 		if t.ParentID != 0 {
 			n.Asker = t.Name
@@ -365,14 +380,19 @@ func glanceOwnerAsks(tx *sql.Tx, at time.Time, v *glanceView, roots map[int64]*g
 	return nil
 }
 
+// SQLite GLOB's character class mirrors unicode.IsSpace, which is the
+// segment boundary used by glanceOwnerValue. Prefixing a space also admits
+// OWNER: at the start, without admitting glued punctuation like (OWNER:.
+const ownerSegmentGlob = "*[ \t\n\v\f\r\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]OWNER:*"
+
 // Newest owner note is context indefinitely; legacy OWNER items only count
 // toward migration when this root has no open owner ask.
 func glanceOwnerNotes(tx *sql.Tx, at time.Time, v *glanceView, roots map[int64]*glanceRoot) error {
 	rows, err := tx.Query(`select t.id, e.id, coalesce(e.summary, ''), e.created_at,
  coalesce((select summary from events where task_id = t.id and kind = 'note'
- and json_extract(data, '$.owner') = 1 and instr(summary, 'OWNER:') > 0 order by id desc limit 1), '')
+ and json_extract(data, '$.owner') = 1 and (' ' || summary) glob ? order by id desc limit 1), '')
  from tasks t join events e on e.id = (select max(id) from events where task_id = t.id and kind = 'note' and json_extract(data, '$.owner') = 1)
- where t.parent_id is null and t.status != 'closed' order by t.id`)
+ where t.parent_id is null and t.status != 'closed' order by t.id`, ownerSegmentGlob)
 	if err != nil {
 		return err
 	}
@@ -523,6 +543,7 @@ func finishGlance(at time.Time, v *glanceView, roots map[int64]*glanceRoot) {
 			v.Campaigns = append(v.Campaigns, r.glanceCampaign)
 		} else {
 			v.Quiet.Count++
+			v.Quiet.RootIDs = append(v.Quiet.RootIDs, r.ID)
 			v.Quiet.Names = append(v.Quiet.Names, r.Name)
 		}
 	}
@@ -625,4 +646,37 @@ func ownerNoteHasItems(text string) bool {
 		}
 	}
 	return true
+}
+
+// Fixed ten-minute wall-clock buckets, oldest first; the current bucket is
+// partial. One task-indexed query covers every open campaign and closed
+// intermediates. A nonzero root also supports archived campaign detail.
+func campaignSparks(q queryer, at time.Time, root int64) (map[int64][]int, error) {
+	start := at.Truncate(10 * time.Minute).Add(-23 * 10 * time.Minute)
+	rows, err := q.Query(`with recursive tree(root,id) as (
+  select id,id from tasks where parent_id is null and ((? = 0 and status != 'closed') or id = ?)
+  union all select tree.root,t.id from tasks t join tree on t.parent_id = tree.id
+ ) select tree.root, cast(strftime('%s',e.created_at) as integer)/600 - ?, count(e.id)
+ from tree left join events e on e.task_id = tree.id and e.created_at >= ? and e.created_at <= ?
+ group by tree.root, 2`, root, root, start.Unix()/600, stamp(start), stamp(at))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	sparks := map[int64][]int{}
+	for rows.Next() {
+		var id int64
+		var bucket sql.NullInt64
+		var count int
+		if err := rows.Scan(&id, &bucket, &count); err != nil {
+			return nil, err
+		}
+		if sparks[id] == nil {
+			sparks[id] = make([]int, 24)
+		}
+		if bucket.Valid && bucket.Int64 >= 0 && bucket.Int64 < 24 {
+			sparks[id][bucket.Int64] += count
+		}
+	}
+	return sparks, rows.Err()
 }

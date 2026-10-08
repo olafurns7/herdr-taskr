@@ -230,7 +230,7 @@ func TestGlanceSnapshot(t *testing.T) {
 			}
 			for i, n := range v.NeedsYou {
 				mark := []string{"failed", "blocked", "missing"}[i]
-				if !reflect.DeepEqual(n.Also, []string{"lane " + mark}) || n.Asker != mark || !*n.Blocking || !*n.AskerWaiting || n.PaneID != "root:p1" || len(n.Text) < 4100 {
+				if !reflect.DeepEqual(n.Also, []string{"lane " + mark}) || n.Asker != mark || !*n.Blocking || !*n.AskerWaiting || n.PaneID != mark+":p1" || n.AskerTaskID == 0 || len(n.Text) < 4100 {
 					t.Fatalf("ask = %+v", n)
 				}
 			}

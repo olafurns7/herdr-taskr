@@ -36,8 +36,8 @@ func busyGlance() *glanceView {
 			{Kind: "lead_idle_results", Recipient: "lead-docs", Count: 3, Since: stamp(watchTestNow.Add(-31 * time.Hour)), AgeMS: 31 * time.Hour.Milliseconds(), Text: "reports ready to review"},
 		},
 		Campaigns: []glanceCampaign{
-			{Name: "docs-site", Lanes: glanceLanes{Working: 3, Open: 5}, Last: &glanceLast{AgeMS: 2 * time.Minute.Milliseconds(), Text: "S4 merged"}},
-			{Name: "checkout-redesign", Lanes: glanceLanes{Working: 2, Open: 2}, Last: &glanceLast{AgeMS: 14 * time.Minute.Milliseconds(), Text: "M1 review ok"}},
+			{Name: "docs-site", ActivityAgeMS: 2 * time.Minute.Milliseconds(), Lanes: glanceLanes{Working: 3, Open: 5}, Last: &glanceLast{AgeMS: 2 * time.Minute.Milliseconds(), Text: "S4 merged"}},
+			{Name: "checkout-redesign", ActivityAgeMS: 14 * time.Minute.Milliseconds(), Lanes: glanceLanes{Working: 2, Open: 2}, Last: &glanceLast{AgeMS: 14 * time.Minute.Milliseconds(), Text: "M1 review ok"}},
 			{Name: "billing-fix", Lanes: glanceLanes{Open: 1}, ActivityAgeMS: 28 * time.Minute.Milliseconds()},
 		},
 		Quiet: glanceQuiet{Count: 13},
@@ -185,10 +185,10 @@ func TestRenderGlanceUnregisteredAndMissingSince(t *testing.T) {
 			t.Fatalf("attention ages: %q", rows)
 		}
 		if ansi.Strip(rows[3]) != "  lead silent with open lanes" {
-			t.Fatalf("unclear text not sanitised and truncated: %q", rows[3])
+			t.Fatalf("unregistered detail mismatch: %q", rows[3])
 		}
 		if color && (!strings.HasPrefix(rows[2], "\x1b[33m? ") || strings.Contains(rows[0], "\x1b[32m")) {
-			t.Fatalf("unclear colour: %q", rows)
+			t.Fatalf("unregistered colour: %q", rows)
 		}
 	}
 	rows := renderGlance(busyGlance(), 80, 24, 0, "", false, watchTestNow)
@@ -705,5 +705,31 @@ func TestGlanceWatchClientFetchErrors(t *testing.T) {
 				t.Fatalf("fetch failure: code %d calls %d %s %s", code, calls.Load(), out.String(), errb.String())
 			}
 		})
+	}
+}
+
+func TestRenderGlanceReviewFixes(t *testing.T) {
+	v := &glanceView{Verdict: "attention", Attention: []glanceAttention{
+		{Kind: "lead_blocked", Campaign: "checkout-redesign", Since: "synthetic", AgeMS: time.Minute.Milliseconds()},
+		{Kind: "lead_idle_results", Recipient: "billing-fix", Count: 3, Since: "synthetic", AgeMS: time.Minute.Milliseconds()},
+		{Kind: "parked_active", Campaign: "held", Text: "parked but active"},
+	}, Campaigns: []glanceCampaign{
+		{Name: "demo", ActivityAgeMS: 10 * time.Second.Milliseconds(), Last: &glanceLast{Text: "demo ready"}, OwnerNote: &glanceLast{Text: "OWNER: approve demo", AgeMS: time.Hour.Milliseconds()}},
+	}}
+	narrow := strings.Join(renderGlance(v, 20, 30, 0, "", false, watchTestNow), "\n")
+	for _, want := range []string{"checkou…", "billing…"} {
+		if !strings.Contains(narrow, want) {
+			t.Fatalf("narrow name lost %q: %s", want, narrow)
+		}
+	}
+	normal := strings.Join(renderGlance(v, 46, 30, 0, "", false, watchTestNow), "\n")
+	for _, want := range []string{"  new activity; re-park to hold again", "10s  demo ready", "1h · approve demo"} {
+		if !strings.Contains(normal, want) {
+			t.Fatalf("detail lost %q: %s", want, normal)
+		}
+	}
+	fixture := busyGlance()
+	if fixture.Campaigns[0].ActivityAgeMS != fixture.Campaigns[0].Last.AgeMS || fixture.Campaigns[1].ActivityAgeMS != fixture.Campaigns[1].Last.AgeMS {
+		t.Fatal("busy fixture activity ages diverge")
 	}
 }
