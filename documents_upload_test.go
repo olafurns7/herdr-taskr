@@ -708,7 +708,7 @@ func TestDocUploadBestEffortFailures(t *testing.T) {
 			go srv.Serve(ln)
 			home := r.clientHome(url)
 			path := docFile(t, r.dir, "brief.md", "brief")
-			code, out, stderr := uploadClient(t, r, home, nil, "new", "root-a", "--role", "orchestrator", "--cwd", r.dir, "--brief", path)
+			code, out, stderr := uploadClient(t, r, home, nil, "new", "root-a", "--role", "orchestrator", "--cwd", r.dir, "--brief", path, "--pane", "wDemo:p1")
 			if code != exitOK || stderr != "" || len(strings.Split(strings.TrimSpace(out), "\n")) != 1 || strings.Contains(out, "upload") {
 				t.Fatalf("primary result changed: %d %q %q", code, out, stderr)
 			}
@@ -961,7 +961,7 @@ func TestDocUploadLegacyServerCapabilityFallback(t *testing.T) {
 	go srv.Serve(ln)
 	home := r.clientHome(url)
 	path := docFile(t, r.dir, "brief.md", "brief")
-	code, out, stderr := uploadClient(t, r, home, nil, "new", "root-a", "--role", "orchestrator", "--cwd", r.dir, "--brief", path)
+	code, out, stderr := uploadClient(t, r, home, nil, "new", "root-a", "--role", "orchestrator", "--cwd", r.dir, "--brief", path, "--pane", "wDemo:p1")
 	if code != exitOK || stderr != "" || strings.Contains(out, "upload") {
 		t.Fatalf("legacy fallback = %d %q %q", code, out, stderr)
 	}
