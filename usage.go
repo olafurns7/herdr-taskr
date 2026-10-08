@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 )
 
+// The hourly request counters of the hub server. Only refused and other are
+// counted now; the page, state and push classes belonged to the removed web
+// page and peer push, and stay in `daemon --status` as zeros (old hours keep
+// their counts) because the status shape is shared with the Rust binary.
 const (
 	usagePage          = "page"
 	usageStateLoopback = "state_loopback"
@@ -86,22 +89,7 @@ func classifyDashboardUsage(r *http.Request, status int) string {
 	if status < http.StatusOK || status >= http.StatusMultipleChoices {
 		return usageOther
 	}
-	switch {
-	case r.Method == http.MethodGet && r.URL.Path == "/":
-		return usagePage
-	case r.Method == http.MethodGet && r.URL.Path == "/api/state":
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err == nil {
-			if ip := net.ParseIP(host); ip != nil && loopbackPeer(ip) {
-				return usageStateLoopback
-			}
-		}
-		return usageStateTailnet
-	case r.Method == http.MethodPost && r.URL.Path == peerPushPath:
-		return usagePushAccepted
-	default:
-		return usageOther
-	}
+	return usageOther
 }
 
 func (u *dashboardUsage) flush(db *sql.DB, at time.Time) error {

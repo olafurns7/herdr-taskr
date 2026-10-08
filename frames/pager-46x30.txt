@@ -1,30 +1,30 @@
  taskr ❯ report        2s ago   ● 2 need you
- report · arch-plan-counter2 · v1 ─── 1-27/94
- Counter-review 2: the phase 3 plan (rev 3)
+ report · arch-plan-counter2 · v1 ─── 1-27/90
+ Counter-review 2: the frames plan (rev 3)
 
  Task 4176 (arch-plan-counter2). Read-only.
 
  Verdict first
 
- Not ready to send until three text fixes
- land (P1-1, P1-2, P1-3). Rev 3 honours every
- fix from the first review except one that
- the owner's later input overrides. The
- research behind it is sound. What is wrong
- is at the edges the owner will touch first.
+ Hold the send until three wording fixes land
+ (P1-1, P1-2, P1-3). Rev 3 takes every point
+ from the first review but one, which a later
+ owner note replaced. The layout work is
+ solid. The gaps are in the places a reader
+ checks first: short rows, the counts, and
+ the install path.
 
  Findings, ranked
 
- P1-1. The 46-column spec covers the glance
- only
+ P1-1. Short rows are only specified for the
+ first screen
 
- The campaign view, answer dialog, help,
- all-campaigns list and pager have no narrow
- layout, and the glance itself wastes a
- quarter of the pane.
+ The detail screens, the reply box, the key
+ list, the full list and the reader have no
+ short layout, and the first screen leaves
+ room unused.
 
-   | Frame | Size | Blank rows |
-   | glance-narrow | 46x30 | 7 of 30 |
-   | row-detail | 46x30 | 7 |
-   | stale | 46x30 | 6 |
+   | Frame | Size | Empty rows |
+   | list-short | 46x30 | 7 of 30 |
+   | item-detail | 46x30 | 7 |
  space page   y copy   q close

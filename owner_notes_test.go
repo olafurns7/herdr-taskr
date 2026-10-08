@@ -1,14 +1,11 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 )
 
 func TestOwnerNoteStoredAndWhole(t *testing.T) {
@@ -21,13 +18,8 @@ func TestOwnerNoteStoredAndWhole(t *testing.T) {
 	if code != exitOK || len(notes) != 1 || num(notes[0], "id") != event || notes[0]["summary"] != text || notes[0]["data"].(map[string]any)["owner"] != true {
 		t.Fatalf("owner notes = %d %v", code, notes)
 	}
-	m := campaignGET(t, h.dash(), "/api/state")
-	rows := m["owner_notes"].([]any)
-	if len(rows) != 1 || rows[0].(map[string]any)["text"] != text || num(rows[0].(map[string]any), "id") != event {
-		t.Fatalf("state owner notes = %v", rows)
-	}
-	m = campaignGET(t, h.dash(), "/api/campaign/"+id(root))
-	rows = m["notes"].([]any)
+	m := campaignGET(t, h.dash(), root, 1)
+	rows := m["notes"].([]any)
 	if len(rows) != 1 || rows[0].(map[string]any)["text"] != text || rows[0].(map[string]any)["owner"] != true {
 		t.Fatalf("campaign notes = %v", rows)
 	}
@@ -237,61 +229,6 @@ func TestNotesWindowsOrderAndBounds(t *testing.T) {
 	}
 }
 
-func TestStateOwnerNotesContract(t *testing.T) {
-	contractGuard(t)
-	h := newHarness(t)
-	db := h.openDB()
-	at := time.Now().UTC()
-	root := h.newTask("open", "orchestrator", 0)
-	recent := h.newTask("recent", "orchestrator", 0)
-	closed := h.newTask("old-closed", "orchestrator", 0)
-	empty := h.newTask("empty", "orchestrator", 0)
-	lane := h.newTask("lane", "implementer", root)
-	for _, r := range []int64{recent, closed} {
-		h.ok(nil, "note", "closed owner note", "--owner", "--as", id(r))
-		h.ok(nil, "close", id(r))
-	}
-	if _, err := db.Exec(`update tasks set closed_at = ? where id = ?`, stamp(at.Add(-25*time.Hour)), closed); err != nil {
-		t.Fatal(err)
-	}
-	var ids []int64
-	for i := 0; i < 12; i++ {
-		ids = append(ids, num(h.ok(nil, "note", "owner", "--owner", "--as", id(root)), "event_id"))
-	}
-	long := strings.Repeat("界", 4100)
-	newest := num(h.ok(nil, "note", long, "--owner", "--as", id(root)), "event_id")
-	old := num(h.ok(nil, "note", "expired", "--owner", "--as", id(root)), "event_id")
-	backdate(t, db, old, 49*time.Hour)
-	h.ok(nil, "note", "ordinary root note", "--as", id(root))
-	// Even legacy/malformed lane owner notes cannot enter the root-only list.
-	if _, err := db.Exec(`insert into events (task_id,kind,summary,data,created_at) values (?,'note','lane','{"owner":true}',?)`, lane, stamp(at)); err != nil {
-		t.Fatal(err)
-	}
-	s, err := readState(context.Background(), db, time.Now().UTC().Add(time.Second))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(s.OwnerNotes) != 11 || s.OwnerNotes[0].ID != newest || s.OwnerNotes[0].RootID != root || s.OwnerNotes[0].RootName != "open" || s.OwnerNotes[0].Text != clip(long, 4000) || utf8.RuneCountInString(s.OwnerNotes[0].Text) != 4000 || s.OwnerNotes[0].AgeMS < 900 {
-		t.Fatalf("owner-note contract = %v", s.OwnerNotes)
-	}
-	for i, n := range s.OwnerNotes {
-		if i > 0 && n.ID >= s.OwnerNotes[i-1].ID || n.RootID == closed || n.ID == old || n.ID == ids[0] || n.ID == ids[1] || n.ID == ids[2] {
-			t.Fatal("order, window, closed-root rule or per-root cap failed")
-		}
-	}
-	if s.Orchestrators[0].Note.Text != "ordinary root note" || stateNoteMax != 1000 {
-		t.Fatal("legacy root note changed")
-	}
-	m := campaignGET(t, h.dash(), "/api/campaign/"+id(empty))
-	if notes, ok := m["notes"].([]any); !ok || len(notes) != 0 {
-		t.Fatalf("empty campaign notes = %v", m["notes"])
-	}
-	m = campaignGET(t, newHarness(t).dash(), "/api/state")
-	if notes, ok := m["owner_notes"].([]any); !ok || len(notes) != 0 {
-		t.Fatalf("empty state notes = %v", m["owner_notes"])
-	}
-}
-
 func TestCampaignNotesOrderCapAndOwner(t *testing.T) {
 	contractGuard(t)
 	h := newHarness(t)
@@ -308,7 +245,7 @@ func TestCampaignNotesOrderCapAndOwner(t *testing.T) {
 	long := strings.Repeat("界", 4100)
 	idLong := num(h.ok(nil, "note", long, "--owner", "--as", id(root)), "event_id")
 	h.ok(as(lane, h.launch(lane)), "note", "lane")
-	m := campaignGET(t, h.dash(), "/api/campaign/"+id(root))
+	m := campaignGET(t, h.dash(), root, 1)
 	notes := m["notes"].([]any)
 	if len(notes) != 50 || num(notes[0].(map[string]any), "id") != idLong || notes[0].(map[string]any)["text"] != clip(long, 4000) {
 		t.Fatalf("campaign cap or clip = %v", notes)
@@ -319,27 +256,6 @@ func TestCampaignNotesOrderCapAndOwner(t *testing.T) {
 		if num(n, "id") != ids[index] || n["owner"] != (index%2 == 0) || n["at"] == "" || num(n, "age_ms") < 0 || len(n) != 5 {
 			t.Fatalf("campaign note %d = %v", i, n)
 		}
-	}
-}
-
-func TestOwnerNotesPeerSnapshot(t *testing.T) {
-	contractGuard(t)
-	at := time.Now().UTC()
-	s, err := decodePeerState(json.RawMessage(`{"owner_asks":[],"orchestrators":[],"activity":[],"closed":[]}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	capState(s)
-	if s.OwnerNotes == nil || len(s.OwnerNotes) != 0 {
-		t.Fatal("legacy peer owner_notes must be an empty array")
-	}
-	for i := 0; i < 12; i++ {
-		s.OwnerNotes = append(s.OwnerNotes, ownerNote{ID: int64(12 - i), RootID: 1, RootName: "root", Text: strings.Repeat("界", 4100), At: stamp(at)})
-	}
-	capState(s)
-	rebase(s, at, at.Add(time.Minute), at.Add(2*time.Minute))
-	if len(s.OwnerNotes) != 10 || s.OwnerNotes[0].Text != clip(strings.Repeat("界", 4100), 4000) || s.OwnerNotes[0].AgeMS != 60000 || s.OwnerNotes[0].At != stamp(at.Add(time.Minute)) {
-		t.Fatal("peer cap, clipping, or clock rebasing failed")
 	}
 }
 

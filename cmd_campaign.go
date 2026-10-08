@@ -46,8 +46,8 @@ const campaignTree = `with recursive tree(id) as (
  select ? union all select t.id from tasks t join tree on t.parent_id = tree.id
 ) `
 
-// Reuse the dashboard's goal/plan/decision/document selection, with uncapped
-// lanes. Only the TUI projection changes their shapes; the web API keeps its
+// Reuse readCampaignDetail's goal/plan/decision/document selection, with
+// uncapped lanes. Only the TUI projection changes their shapes; the detail keeps its
 // existing pagination and captured-document metadata.
 func readTUICampaign(q queryer, root int64, page int, all bool, at time.Time) (map[string]any, error) {
 	detail, err := readCampaignDetail(q, root, 1, true, all)

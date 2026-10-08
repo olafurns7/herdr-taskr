@@ -1,6 +1,8 @@
 # Install taskr for Herdr
 
-Follow these steps in order for installation; for uninstall-only requests, go directly to step 8. Stop on failure; report the step, command, exit code, and expected result. Do not continue with a partial install.
+This runbook is written so an agent can follow it; every step is plain shell, so a person can too. Other pages: [the terminal view](tui.md), [the commands](cli.md), [the daemon and the hub](daemon.md), [troubleshooting](troubleshooting.md).
+
+Follow these steps in order for installation; for uninstall-only requests, go directly to step 9. Stop on failure; report the step, command, exit code, and expected result. Do not continue with a partial install.
 Never start or restart the Herdr server from an agent session. Ask before changing any hook or agent settings; preserve existing settings and conflicting skill links.
 
 ## 1. Check preflight
@@ -14,7 +16,7 @@ command -v curl || command -v gh
 command -v tar
 command -v shasum || command -v sha256sum
 ```
-Expect Darwin or Linux, arm64/aarch64 or x86_64/amd64, and all tools found. Compare Herdr's version numerically against the fetched manifest's floor. If Herdr is missing, too old, or the floor cannot be fetched, stop and tell the user. Go and Node are unnecessary.
+Expect Darwin or Linux, arm64/aarch64 or x86_64/amd64, and all tools found. Compare Herdr's version numerically against the fetched manifest's floor. If Herdr is missing, too old, or the floor cannot be fetched, stop and tell the user. Go is unnecessary.
 
 ## 2. Install
 
@@ -63,7 +65,7 @@ herdr plugin list --json | grep -q '"olafurns7.taskr"' || herdr plugin link "$HO
 taskr version
 taskr daemon --status
 ```
-Expect plugin registration and daemon fields `running: true`, the installed `running_version`, and a dashboard URL, normally http://127.0.0.1:7788/. A successful status exit alone does not prove the daemon is running.
+Expect plugin registration and daemon fields `running: true`, the installed `running_version`, and `dashboard: up` with `dashboard_url`, normally http://127.0.0.1:7788/. This is the address of the hub server, which other hosts' commands call; the field names are historical and no web page is served there. A successful status exit alone does not prove the daemon is running.
 If status does not show `running: true`, run `taskr daemon --restart`, then re-check with `taskr daemon --status`. It starts the daemon detached with only HOME, PATH, and HERDR_SOCKET_PATH; a fresh plugin link otherwise waits until the next agent detection or Herdr start. For upgrades, re-run step 2, then `taskr daemon --restart` and re-check status. This restarts taskr, never Herdr.
 
 ### Start the ledger host at boot (Linux)
@@ -89,9 +91,9 @@ Use the installed binary's path if it differs. Enable the unit with
 The PATH must hold `herdr` and `tailscale` because a user service manager does
 not read the shell profile; `Environment=HERDR_SOCKET_PATH=...` is needed only
 when Herdr does not use the default socket, `$HOME/.config/herdr/herdr.sock`.
-`--stay` is for the local ledger host; it keeps RPC and the dashboard available
+`--stay` is for the local ledger host; it keeps the hub server available
 while Herdr is down and reconnects when Herdr returns. It waits for an existing
-daemon's lock and retries an unavailable dashboard listener.
+daemon's lock and retries an unavailable listener.
 If a daemon started by the plugin holds the lock when the unit is first
 enabled, get its pid from `taskr daemon --status` and end it with `kill <pid>`;
 the unit's waiting daemon then takes over.
@@ -124,23 +126,34 @@ Verify `taskr hook --help` succeeds and inspect the merged entries against the e
 ## 7. Multiple machines
 
 Only configure this if the user asks. Require running Tailscale with untagged nodes owned by the same user; identity checks reject tagged nodes and other users. HTTP traffic stays inside the encrypted tailnet.
-On the hub, write `tailnet` to `$HOME/.local/state/taskr/dashboard.addr`. On a fresh client, write the hub URL (for example http://hub.example.ts.net:7788) to `server.url` in that directory; leave TASKR_DB unset. There is no local fallback when the hub is unreachable.
-For independent ledgers and a combined read-only dashboard, use `hub.url` instead; do not combine it with server.url. Before migrating an existing ledger, back it up and read https://raw.githubusercontent.com/olafurns7/herdr-taskr/master/references/recovery.md.
+On the taskr hub (the host that keeps the ledger), write `tailnet` to `$HOME/.local/state/taskr/dashboard.addr`; the file name is historical and sets where the hub server listens. On a fresh client, write the hub URL (for example http://hub.example.ts.net:7788) to `server.url` in that directory; leave TASKR_DB unset. There is no local fallback when the hub is unreachable.
+`hub.url` belonged to an older setup with one ledger per machine; nothing reads it now except `daemon --status`, so do not write it. Before migrating an existing ledger, back it up and read https://raw.githubusercontent.com/olafurns7/herdr-taskr/master/references/recovery.md.
 Client records queue in `$HOME/.local/state/taskr/spool/` when the server is unreachable or earlier records wait there; a running client daemon sends them after a pass that reaches the server, or use `taskr spool send` on that host. Without a daemon they stay queued until manual send; a full or unwritable spool exits 5 with `retry with:` (rerun that line). `qd1 <request key>` means queued, exit 0: do not retry. Check `taskr spool ls` after an outage.
 
-Apply changes with `taskr daemon --restart`; verify `taskr daemon --status` shows the selected mode/listeners and fresh connection or push health. On write exit 5, rerun the exact printed `retry with:` command, preserving its request key.
+Apply changes with `taskr daemon --restart`; verify `taskr daemon --status` shows the selected mode and listeners (`role: hub` with a `tailnet_url` on the hub; `mode: client` with the `server` on a client) and a fresh connection. On write exit 5, rerun the exact printed `retry with:` command, preserving its request key.
 
-## 8. Uninstall
+## 8. The terminal view (optional)
+
+`taskr-tui` is the owner's view of the ledger. It has no release asset yet (one is planned), so it is built from source and needs a Rust toolchain. Offer it; skip it if the user declines or has no `cargo`.
+```sh
+git clone https://github.com/olafurns7/herdr-taskr && cd herdr-taskr
+cargo install --path crates/taskr-tui
+taskr-tui --demo
+```
+Expect a full-screen view of invented data; `?` lists the keys and `q` quits. `taskr-tui` without `--demo` shows the user's ledger. See [tui.md](tui.md).
+
+## 9. Uninstall
 
 Only uninstall if requested. Run `herdr plugin unlink olafurns7.taskr`, then `taskr daemon --status`; use the reported PID to check `ps -p <pid> -o command=` shows `taskr daemon`, then stop that daemon with `kill <pid>`. Stop and report if the command does not match.
 Remove only skill symlinks that resolve to the installed skill, then the installed taskr binary, `$HOME/.local/share/taskr/plugin`, and the installed skill directory. Use custom paths if configured. Preserve `$HOME/.local/state/taskr` and all reports.
-Verify `herdr plugin list --json` lacks olafurns7.taskr and `test ! -e "${TASKR_INSTALL_DIR:-$HOME/.local/bin}/taskr"` succeeds. Expect the plugin and binary removed, with ledger history intact. Report removal and stop here; step 9 applies to installation.
+Verify `herdr plugin list --json` lacks olafurns7.taskr and `test ! -e "${TASKR_INSTALL_DIR:-$HOME/.local/bin}/taskr"` succeeds. Expect the plugin and binary removed, with ledger history intact. If `taskr-tui` was installed, remove it with `cargo uninstall taskr-tui`. Report removal and stop here; step 10 applies to installation.
 
-## 9. Report to the user
+## 10. Report to the user
 
-Run `taskr version` and `taskr daemon --status` again; expect matching installed/running versions and the verified dashboard URL. Report:
+Run `taskr version` and `taskr daemon --status` again; expect matching installed/running versions. Report:
 ```text
-Installed: <version>; daemon: <running/stale/offline>; dashboard: <URL>.
+Installed: <version>; daemon: <running/stale/offline>; role: <local/hub/client>.
+Terminal view: <taskr-tui installed / not installed: cargo install --path crates/taskr-tui>.
 Skills linked: <paths or conflicts>; hooks: <yes/no, harness>.
 Start: tell your orchestrator agent to load the taskr skill, then delegate work through Herdr and taskr.
 ```

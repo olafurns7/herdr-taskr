@@ -1,116 +1,33 @@
 # taskr
 
-taskr is a task ledger and a blocking `wait` for orchestrator agents that delegate
-work to workers in [Herdr](https://herdr.dev) panes. It ships as a Go binary,
-stores coordination state in SQLite, and includes a read-only dashboard.
-Herdr runs your agents; taskr tracks their questions, reports, and progress.
+taskr is a task ledger and hub for agent fleets running in
+[Herdr](https://herdr.dev). Orchestrator agents register their workers in it,
+workers report progress and ask questions through it, and you, the owner, see
+at a glance what needs you.
+
+- **For agents:** a `taskr` command line that records briefs, reports,
+  questions, answers and decisions, and a blocking `wait` that wakes the
+  orchestrator when something arrives.
+- **For you:** `taskr-tui`, a terminal view of every campaign, with the open
+  questions first.
+- **Across machines:** one host keeps the ledger (the taskr hub); the others
+  send their commands to it over Tailscale.
+
+Skip taskr if you run one agent at a time or do not use Herdr.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/dashboard-dark.png">
-  <img src="docs/img/dashboard-light.png" alt="Mock taskr dashboard with an owner question, notes left for the owner, a stalled lane, waiting work, and a five-lane release campaign across two hosts.">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/glance-dark.png">
+  <img src="docs/images/glance-light.png" alt="taskr-tui glance: two owner asks at the top, three things to check, then ten campaigns with their lanes and activity. The selected ask is shown in full on the right with its two options.">
 </picture>
 
-Mock data.
+Open a campaign to see its goal, plan, lanes, questions, documents and log:
 
-## Why use it?
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/campaign-dark.png">
+  <img src="docs/images/campaign-light.png" alt="taskr-tui campaign view: the goal and plan on top, the lane tree with role, model, host and age on the left, and asks, documents, pull requests and the log on the right.">
+</picture>
 
-Keep parallel work moving without polling terminal screens or relaying messages:
-
-- Register lanes with brief and report paths.
-- Keep the text of briefs, prompts, reports, and handovers in the ledger, with a goal and a plan for each campaign.
-- Capture files from any host without copying them to the ledger host.
-- Queue client records during an outage for the daemon to send later.
-- Search captured documents, decisions, questions, answers, and notes.
-- Label closed lanes accepted, reworked, rejected, or abandoned.
-- Block on `wait` until a report, question, or event arrives.
-- Confirm prompt acknowledgment with receipts.
-- Answer worker questions and route owner decisions.
-- Catch turns that stop while work is owed, using optional hooks.
-- Scan questions, campaign progress, and activity in the dashboard.
-- Coordinate across machines with an optional Tailscale hub.
-- Skip taskr if you run one agent at a time or do not use Herdr.
-
-Agents still do the work and write reports to files. Receipts confirm
-acknowledgment; stall signals prompt investigation rather than proving failure.
-
-## How it works
-
-Herdr runs the agents; taskr records coordination state and wakes the orchestrator.
-Hook receipts and stall signals require the optional agent hooks.
-
-The daemon publishes `taskr_state` and `taskr_round` on server-host panes.
-Every host's daemon publishes `taskr_owner_ask=<n>` on its own panes while
-that pane's own task has n unanswered owner asks (cleared at 0 or when the
-task closes); a client host gets the counts in the server's observation reply.
-On each host, each task workspace gets `taskr_campaign`, the campaign's
-name; it also gets `taskr_parent`, the ID of the workspace of the campaign's
-orchestrator, when that orchestrator's pane is open on the same host.
-The orchestrator's own workspace gets neither token. A sidebar plugin can
-use these tokens to group task workspaces by campaign.
-Client daemons publish these workspace tokens from the server's observation
-reply. An older or unreachable server leaves the client's tokens unchanged.
-
-```mermaid
-sequenceDiagram
-    participant Orchestrator
-    participant Ledger as taskr (ledger)
-    participant Herdr
-    participant Worker
-    Orchestrator->>Ledger: new worker --parent ORCH
-    Orchestrator->>Ledger: launch WORKER (record identity)
-    Orchestrator->>Herdr: herdr agent start (with launch IDs)
-    Orchestrator->>Ledger: prompt WORKER --file brief.md
-    Ledger->>Herdr: Deliver prompt with receipt attempt
-    Herdr->>Worker: First taskr got ATTEMPT, read brief
-    Worker->>Ledger: got ATTEMPT (prompt hook receipt)
-    Orchestrator->>Ledger: wait --as ORCH --for ready,ask,done,herdr
-    alt Worker reports
-        Worker->>Ledger: ready / ask / done
-        Ledger-->>Orchestrator: wait wakes with event
-        Orchestrator->>Ledger: answer ASK_ID TEXT / ack EVENT --as ORCH
-    else Turn ends while still owing work
-        Worker->>Ledger: Stop hook records herdr event (reason=stall)
-        Ledger-->>Orchestrator: wait wakes with stall signal
-    end
-```
-
-### Owner glance
-
-`taskr glance` prints the owner's snapshot as one `j1` JSON line.
-`taskr glance --watch [--every 5s]` is a live view for a narrow split pane
-that works on the hub and on client hosts; q quits.
-The verdicts are **no owner action**, **N need you**, and **N to check**.
-Red means an open owner ask, blocking or non-blocking. Sound notifications
-fire only for blocking owner asks; pane badges count all owner asks.
-Notes are context, with the newest owner note and its age on the campaign.
-A dim **N notes still carry OWNER items** count tracks notes awaiting
-conversion to asks. Write `OWNER: nothing` once legacy items are cleared. `note --owner` warns when an OWNER item has no open ask.
-
-Park a campaign with `taskr set ROOT glance.state=parked`; clear it with
-`taskr set ROOT glance.state=`. Only a root orchestrator with TASKR_TASK and TASKR_LAUNCH unset,
-on the root's host, can set this root ref. Parked campaigns stay dim and keep owner asks red;
-new tree events after parking turn the row amber as **parked but active**.
-Run `taskr set ROOT glance.state=parked` again to renew the hold.
-
-Amber marks visibility gaps, active registered leads gone/blocked/unknown,
-idle or done leads without a live wait lease holding results older than
-30 minutes, and unregistered leads silent for 2 hours with lanes open.
-Live wait leases read **waiting**. Lane trouble and ordinary inbox backlog
-remain in task detail rather than the owner's alarm list.
-
-`taskr campaign ROOT [--page N] [--all]` reads a campaign: goal, plan version
-and age, lane tree, asks and answers, decisions, document metadata, stored PR
-refs, and a 100-event log page (newest first). `--all` includes closed lanes
-and their unanswered asks. Document bodies load with `taskr doc get DOC_ID`.
-Compact output is one `j1` frame; `--json` returns the same snapshot without
-the tag. Client hosts read it fresh through the hub.
-
-Glance JSON carries `server_host`, `caller_host`, asking-lane targets,
-`quiet.root_ids`, and 24 ten-minute `spark` buckets per campaign (oldest
-first, with the current bucket partial). An empty row host is the hub;
-Enter is local only when the row host equals `caller_host`, also empty on
-the hub. Server identity uses the hub's hostname; caller identity comes
-from authenticated RPC admission. No GitHub state is fetched for PR refs.
+The screenshots show invented data (`taskr-tui --demo`).
 
 ## Install
 
@@ -120,7 +37,53 @@ Paste this into Claude Code or Codex running inside Herdr:
 Install taskr for Herdr: fetch https://raw.githubusercontent.com/olafurns7/herdr-taskr/master/docs/install.md and follow it step by step. Ask me before changing any hook or agent settings.
 ```
 
-Prefer to do it by hand? The [runbook](docs/install.md) is plain shell.
+Or install by hand on macOS or Linux:
+
+```sh
+curl -fsSL -o taskr-install.sh \
+  https://github.com/olafurns7/herdr-taskr/releases/latest/download/install.sh &&
+  test -s taskr-install.sh &&
+  TASKR_LINK_SKILLS=1 sh taskr-install.sh &&
+  PATH="$HOME/.local/bin:$PATH" taskr version
+rm taskr-install.sh
+```
+
+This installs the `taskr` binary, the agent skill and the Herdr plugin. The
+[install guide](docs/install.md) has every step, including more than one
+machine.
+
+## Start the terminal view
+
+`taskr-tui` has no prebuilt download yet (one is planned). Build it from a
+clone of this repository with [Rust](https://rustup.rs):
+
+```sh
+cargo install --path crates/taskr-tui
+```
+
+Then:
+
+```sh
+taskr-tui --demo   # invented data; reads no ledger and writes nothing
+taskr-tui          # your ledger
+```
+
+Press `?` for the keys and `q` to quit. [docs/tui.md](docs/tui.md) explains
+the screens.
+
+## Documentation
+
+| Page | What it covers |
+| --- | --- |
+| [docs/install.md](docs/install.md) | Installing, upgrading, hooks, several machines, uninstalling |
+| [docs/tui.md](docs/tui.md) | `taskr-tui`: screens, keys, colours and marks |
+| [docs/cli.md](docs/cli.md) | The `taskr` commands agents run, and how a campaign flows |
+| [docs/daemon.md](docs/daemon.md) | The daemon, the taskr hub, client hosts and how they find each other |
+| [docs/release.md](docs/release.md) | Building and publishing a release |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | Common problems and what to check |
+
+Agents read [SKILL.md](SKILL.md) and [references/](references/) instead; the
+installer puts them where agents load skills from.
 
 ## Status and license
 

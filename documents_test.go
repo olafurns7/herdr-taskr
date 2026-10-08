@@ -867,35 +867,6 @@ func TestDocumentsFixPurgeClosedAndIDs(t *testing.T) {
 	}
 }
 
-func TestDocumentsFixDashboardSkip(t *testing.T) {
-	contractGuard(t)
-	h := newHarness(t)
-	_, lane, launch := docLane(t, h)
-	h.ok(as(lane, launch), "ready", "slice ready")
-	d := h.dash()
-	_, before := getState(t, d)
-	laneState := func(state dashState) string {
-		tasks := state.Orchestrators[0].Tasks
-		for i := range tasks {
-			if tasks[i].LastEvent != nil {
-				tasks[i].LastEvent.AgeMS = 0
-			}
-		}
-		return jsonText(tasks)
-	}
-	path := docFile(t, h.dir, "plan.md", "plan")
-	doc := h.ok(nil, "doc", "set", id(lane), "plan", "--file", path)
-	_, after := getState(t, d)
-	if laneState(before) != laneState(after) {
-		t.Fatal("doc set changed lane state")
-	}
-	h.ok(nil, "doc", "rm", id(num(doc, "doc_id")), "--purge")
-	_, after = getState(t, d)
-	if laneState(before) != laneState(after) {
-		t.Fatal("purge changed lane state")
-	}
-}
-
 func TestDocumentsFixReadsOutsideTransactions(t *testing.T) {
 	contractGuard(t)
 	for _, command := range []string{"new", "ready", "done", "fail", "close", "backfill"} {

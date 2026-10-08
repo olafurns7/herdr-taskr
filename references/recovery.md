@@ -57,7 +57,7 @@ Read the full log and recorded native home/session; verify the owned pane and to
 
 ## Daemon
 
-The owner restarts daemons; a worker never does. `taskr daemon --status` reports freshness, version, pid, socket, dashboard URL/role, peer push state and `dashboard_usage`; `stale: true` means an older daemon still runs.
+The owner restarts daemons; a worker never does. `taskr daemon --status` reports freshness, version, pid, socket, the hub server's state and URL (`dashboard`, `dashboard_url`), role and `dashboard_usage`; `stale: true` means an older daemon still runs.
 
 - If `taskr search` reports a damaged index, stop the server, drop the table `search_fts` in the ledger file, and start the server; it builds the index again.
 - `taskr daemon --restart` (local and client mode) stops only the daemon whose recorded pid, executable, argv, start time and uid match, waits ≤10 s, and starts this binary detached with only HOME/PATH/HERDR_SOCKET_PATH, preserving the recorded daemon arguments (including `--stay`). An unknown identity exits 6 and signals nothing.

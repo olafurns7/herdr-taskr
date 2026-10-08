@@ -74,8 +74,9 @@ create table if not exists meta (
   value text
 );
 
--- The dashboard hub (v0.5): the latest snapshot each peer pushed, and owner
--- answers queued for a peer's ledger. Peers' ledgers are never merged here.
+-- Legacy (v0.5 to v0.16): the latest snapshot each peer pushed to the hub,
+-- and owner answers queued for a peer's ledger. Nothing reads or writes these
+-- tables now; they stay so old ledgers open unchanged.
 create table if not exists peers (
   node_id     text primary key,
   machine     text not null,

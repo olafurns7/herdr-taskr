@@ -150,7 +150,7 @@ read:         status [--tree ID] [--all] | asks [--open] [--tree ID] [--owner] [
               glance [--watch [--every 5s]]   (owner snapshot; --watch is the live split-pane view)
               notes [--owner] [--root ID] [--since EVENT|DURATION] [--limit N]   (root notes, newest first; default 48h, 50)
 search:       search QUERY [--root ID] [--kind K] [--limit N] [--raw]   (documents and decision/ask/answer/note; default 20, max 100)
-daemon:       daemon [--stay] [--once] [--status] [--restart]   (the Herdr plugin's event bridge and owner dashboard; one per HOME)
+daemon:       daemon [--stay] [--once] [--status] [--restart]   (the Herdr plugin's event bridge and the hub server; one per HOME)
 info:         version | help [CMD]
 client:       --request-key KEY <command> [args]   (with a server.url: retry a command whose answer was lost)
 spool:        spool ls | spool send | spool rm SEQ|FILE   (client-local queued records)

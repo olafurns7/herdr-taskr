@@ -29,17 +29,6 @@ fi
 TASKR_DB="$(mktemp -d)/guard.db" go vet ./...
 TASKR_DB="$(mktemp -d)/guard.db" go test ./... -count=1 -timeout 20m
 
-# The page: rebuild web/dist and refuse a release whose committed build is
-# stale, so a binary never embeds a page older than web/src.
-pnpm --dir web install --frozen-lockfile
-pnpm --dir web typecheck
-pnpm --dir web test
-pnpm --dir web build
-if ! git diff --quiet -- web/dist || [ -n "$(git ls-files --others --exclude-standard -- web/dist)" ]; then
-	printf '%s\n' 'release.sh: web/dist differs from its committed build; commit the rebuilt web/dist first' >&2
-	exit 1
-fi
-
 rm -rf dist && mkdir dist
 for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
 	os=${target%/*}

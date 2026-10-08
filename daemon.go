@@ -258,13 +258,13 @@ func cmdDaemon(c *ctx, args []string) (any, int, error) {
 	}); err != nil {
 		lg.logf("meta write failed: %v", err)
 	}
-	// The dashboard is a passenger: a crashed daemon's URL is cleared first,
-	// and a dashboard that cannot start leaves the event bridge running.
+	// The hub server is a passenger: a crashed daemon's URL is cleared first,
+	// and a server that cannot start leaves the event bridge running.
 	if _, err := db.Exec(`delete from meta where key in (?, ?)`, dashboardURLKey, hubURLKey); err != nil {
 		lg.logf("meta write failed: %v", err)
 	}
 	first := map[string]any{"ok": true, "pid": os.Getpid(), "socket": sock, "log": logPath}
-	// The dashboard records each listener's URL in meta itself.
+	// The server records each listener's URL in meta itself.
 	dash := startDashboard(db, lg, dir, *stay)
 	if dash != nil {
 		d.usage = dash.usage
@@ -275,31 +275,9 @@ func cmdDaemon(c *ctx, args []string) (any, int, error) {
 			first["tailnet_url"] = tu
 		}
 	}
-	// A peer pushes to the hub named in hub.url; the hub itself never pushes.
-	var push *pusher
-	if cfg, _ := dashboardConfig(dir); cfg.Tailnet {
-		if raw, _ := readHubURL(dir); raw != "" {
-			lg.logf("peer: this machine is the hub (dashboard.addr tailnet); ignoring hub.url")
-		}
-	} else {
-		push = newPusher(db, lg, dir)
-	}
 	c.emit(first)
 	c.lines = true
-	pushDone := make(chan struct{})
-	pushCx, pushStop := context.WithCancel(sig)
-	if push != nil {
-		d.afterPass = push.poke
-		go func() {
-			defer close(pushDone)
-			push.run(pushCx)
-		}()
-	} else {
-		close(pushDone)
-	}
 	reason := d.run(sig, sock)
-	pushStop()
-	<-pushDone
 	if dash != nil {
 		dash.stop()
 		if err := dash.usage.flush(db, clockNow()); err != nil {
@@ -308,8 +286,8 @@ func cmdDaemon(c *ctx, args []string) (any, int, error) {
 	}
 	lg.logf("exit: %s", reason)
 	// A stopped daemon clears its heartbeat so wait resumes its own poll now,
-	// not 30 s later, and its dashboard URL. A crashed one leaves the
-	// heartbeat to go stale; --status shows its dashboard down by the pid.
+	// not 30 s later, and its server URL. A crashed one leaves the
+	// heartbeat to go stale; --status shows its server down by the pid.
 	if _, err := db.Exec(`delete from meta where key in (?, ?, ?)`, heartbeatKey, dashboardURLKey, hubURLKey); err != nil {
 		lg.logf("heartbeat clear failed: %v", err)
 	}
@@ -396,8 +374,9 @@ func daemonStatus(c *ctx, dir, lockPath string) (any, int, error) {
 			out["started_at"] = rec.started
 		}
 	}
-	// dashboard: up (the running daemon serves it), down, off, or refused
-	// (dashboard.addr names a non-loopback or malformed address).
+	// dashboard (the hub server; the key is the Rust parity shape): up (the
+	// running daemon serves it), down, off, or refused (dashboard.addr names
+	// a non-loopback or malformed address).
 	url, up, err := getMeta(db, dashboardURLKey)
 	if err != nil {
 		return nil, 0, dbErr(err)
@@ -414,7 +393,8 @@ func daemonStatus(c *ctx, dir, lockPath string) (any, int, error) {
 	default:
 		out["dashboard"], out["dashboard_url"] = "down", "http://"+addr+"/"
 	}
-	// role: hub (dashboard.addr tailnet), peer (hub.url), or local.
+	// role: hub (dashboard.addr tailnet), peer (a legacy hub.url; nothing is
+	// pushed now), or local.
 	raw, _ := readHubURL(dir)
 	switch {
 	case cfg.Tailnet:
@@ -530,7 +510,6 @@ type daemon struct {
 	resub      chan struct{} // the pane set may differ from the open stream's
 
 	lastStreamErr time.Time                // only the subscribe goroutine touches it
-	afterPass     func()                   // the peer's push poke; never blocks
 	sock          string                   // the Herdr socket every herdr call is gated on
 	watch         func() ([]string, error) // the pane set; nil is this ledger's server-host panes
 }
@@ -1168,9 +1147,6 @@ func (d *daemon) run(parent context.Context, sock string) string {
 		}
 		d.pass()
 		d.refreshPanes()
-		if d.afterPass != nil {
-			d.afterPass()
-		}
 	}
 }
 

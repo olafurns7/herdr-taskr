@@ -13,7 +13,7 @@ var kindCodes = map[string]string{
 }
 
 // Aliases apply only to the CLI envelope. Arbitrary data/kv/refs, hashes and
-// native identity remain verbatim; no shared ledger or dashboard shape changes.
+// native identity remain verbatim; no shared ledger shape changes.
 var readAliases = map[string]string{
 	"id": "i", "task_id": "t", "task_name": "n", "name": "n", "kind": "k",
 	"created_at": "at", "updated_at": "at", "recipient_task_id": "to", "launch_id": "l",

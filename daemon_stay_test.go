@@ -54,7 +54,6 @@ func TestDaemonStayOfflineRPCAndDashboard(t *testing.T) {
 	if code != http.StatusOK || rep.Exit != exitOK {
 		t.Fatalf("offline RPC = %d %+v %s", code, rep, raw)
 	}
-	getJSON(t, r.url+"/api/state", &dashState{})
 	select {
 	case why := <-done:
 		t.Fatalf("offline daemon exited: %s", why)
@@ -145,13 +144,13 @@ func TestDaemonStayListenerRetries(t *testing.T) {
 		_, ok, _ := getMeta(h.openDB(), dashboardURLKey)
 		return ok
 	})
-	resp, err := http.Get("http://" + busy.Addr().String() + "/")
+	resp, err := http.Get("http://" + busy.Addr().String() + probePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("dashboard = %d", resp.StatusCode)
+	if resp.StatusCode != admitted {
+		t.Fatalf("GET %s = %d", probePath, resp.StatusCode)
 	}
 }
 

@@ -186,7 +186,7 @@ func parseTime(s string) time.Time {
 
 // withTx runs fn in one immediate transaction and commits only if fn succeeds.
 // The deferred rollback also releases the writer lock when fn panics (the
-// dashboard's HTTP server recovers handler panics and keeps running); after a
+// hub's HTTP server recovers handler panics and keeps running); after a
 // commit it is a no-op.
 func withTx(db *sql.DB, fn func(tx *sql.Tx) error) error {
 	tx, err := db.BeginTx(context.Background(), nil)

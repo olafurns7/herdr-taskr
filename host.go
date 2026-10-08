@@ -398,8 +398,8 @@ type clientState struct {
 	LastError  string `json:"last_error,omitempty"`
 }
 
-// clientDaemon is `taskr daemon` on a client host: no ledger, dashboard,
-// or peer push. Every clientObserveEvery, and after each Herdr pane
+// clientDaemon is `taskr daemon` on a client host: no ledger and no hub
+// server. Every clientObserveEvery, and after each Herdr pane
 // change, it sends this host's agent listing to the server, which returns
 // the panes to watch and workspace and owner ask tokens to publish locally.
 func clientDaemon(c *ctx, raw string, args []string) int {

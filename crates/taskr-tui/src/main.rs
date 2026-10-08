@@ -59,6 +59,10 @@ fn options(args: impl Iterator<Item = String>) -> Result<Options, String> {
                 let name = args.next().filter(|n| theme::NAMES.contains(&n.as_str()));
                 out.theme = Some(name.ok_or("--theme takes dark, light or terminal")?);
             }
+            "--help" | "-h" => {
+                println!("{USAGE}");
+                std::process::exit(0);
+            }
             other => return Err(format!("unknown argument {other}")),
         }
     }

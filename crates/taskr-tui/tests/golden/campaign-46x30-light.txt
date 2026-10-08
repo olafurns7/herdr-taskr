@@ -25,6 +25,6 @@
  ────────────────────────────────────────────
  ● arch-plan-counter2  #4176  ready
  atlas w82:p2 · brief ✓ report ✓ · o reads
- Counter-review 2 written: not ready to send
- until three text fixes land (P1-1 narrow …
+ Second review done: hold the send until
+ three wording fixes land (P1-1 short rows, …
  ⏎ go   o report   tab next   h back   ? help
