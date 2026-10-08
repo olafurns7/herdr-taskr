@@ -35,6 +35,11 @@ pub fn answer(f: &FlagSet) -> Result<Value> {
     if f.get_int("confirm-timeout") < 0 {
         return Err(store::usage("--confirm-timeout must not be negative"));
     }
+    if f.get_bool("withdraw") && !f.was_set("as") {
+        return Err(store::usage(
+            "--withdraw needs --as: the asker's root or a hub root",
+        ));
+    }
     let mut db = open()?;
     let mut ans = orch::answer(
         &mut db,
@@ -45,6 +50,7 @@ pub fn answer(f: &FlagSet) -> Result<Value> {
         } else {
             None
         },
+        f.get_bool("withdraw"),
     )?;
     if !f.get_bool("prompt") {
         return Ok(ans);

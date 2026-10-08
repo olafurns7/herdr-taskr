@@ -204,32 +204,7 @@ pub fn asks(f: &FlagSet) -> Result<()> {
         return Err(usage(format!("--limit must be >= 0, got {limit}")));
     }
     let db = open()?;
-    let mut prefix = "";
-    let mut predicates = vec!["e.kind='ask'".to_string()];
-    if !f.get_bool("all") {
-        prefix = TREES;
-        predicates.push("(e.answered_by is not null or (t.status != 'closed' and e.task_id in (select id from tree)))".into());
-    }
-    if f.get_bool("open") {
-        predicates.push("e.answered_by is null".into());
-    }
-    if f.get_bool("owner") {
-        predicates.push("json_extract(e.data,'$.owner')=1".into());
-    }
-    if f.get_int("tree") != 0 {
-        predicates.push(format!(
-            "e.task_id in ({})",
-            in_ids(&subtree(&db, f.get_int("tree"))?)
-        ));
-    }
-    let mut lines = event_rows(
-        &db,
-        &format!(
-            "{prefix}select {EVENT_COLS},ans.summary as answer from events e join tasks t on t.id=e.task_id left join events ans on ans.id=e.answered_by where {} order by e.id",
-            predicates.join(" and ")
-        ),
-        vec![],
-    )?;
+    let mut lines = ask_rows(&db, f)?;
     let mut dropped = 0;
     if !f.json() || f.was_set("limit") {
         let keep = if f.was_set("limit") { limit } else { 20 };
@@ -271,6 +246,43 @@ pub fn asks(f: &FlagSet) -> Result<()> {
         );
     }
     Ok(())
+}
+/// The asks a read shows, before budgets; a withdrawn answer carries withdrawn:true.
+pub(super) fn ask_rows(db: &Connection, f: &FlagSet) -> Result<Vec<Value>> {
+    let mut prefix = "";
+    let mut predicates = vec!["e.kind='ask'".to_string()];
+    if !f.get_bool("all") {
+        prefix = TREES;
+        predicates.push("(e.answered_by is not null or (t.status != 'closed' and e.task_id in (select id from tree)))".into());
+    }
+    if f.get_bool("open") {
+        predicates.push("e.answered_by is null".into());
+    }
+    if f.get_bool("owner") {
+        predicates.push("json_extract(e.data,'$.owner')=1".into());
+    }
+    if f.get_int("tree") != 0 {
+        predicates.push(format!(
+            "e.task_id in ({})",
+            in_ids(&subtree(db, f.get_int("tree"))?)
+        ));
+    }
+    let mut lines = event_rows(
+        db,
+        &format!(
+            "{prefix}select {EVENT_COLS},ans.summary as answer,coalesce(json_extract(ans.data,'$.withdrawn'),0) as withdrawn from events e join tasks t on t.id=e.task_id left join events ans on ans.id=e.answered_by where {} order by e.id",
+            predicates.join(" and ")
+        ),
+        vec![],
+    )?;
+    for m in &mut lines {
+        if m["withdrawn"] != 1 {
+            m.as_object_mut().unwrap().remove("withdrawn");
+        } else {
+            m["withdrawn"] = json!(true);
+        }
+    }
+    Ok(lines)
 }
 pub fn log(f: &FlagSet) -> Result<()> {
     let limit = f.get_int("limit");

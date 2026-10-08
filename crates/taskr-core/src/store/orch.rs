@@ -321,7 +321,13 @@ pub fn close(db: &mut Connection, id: i64, outcome: &str) -> Result<Value> {
     }
     Ok(out)
 }
-pub fn answer(db: &mut Connection, ask: i64, text: &str, as_id: Option<i64>) -> Result<Value> {
+pub fn answer(
+    db: &mut Connection,
+    ask: i64,
+    text: &str,
+    as_id: Option<i64>,
+    withdraw: bool,
+) -> Result<Value> {
     transaction(db, |tx| {
         if let Some(id) = as_id {
             check_host(tx, id)?;
@@ -330,7 +336,16 @@ pub fn answer(db: &mut Connection, ask: i64, text: &str, as_id: Option<i64>) -> 
         if kind != "ask" {
             return Err(reject(format!("event {ask} is not an ask")));
         }
-        if let Some(id) = as_id
+        if withdraw {
+            // Only the asker's root, or a root on the hub host, may withdraw.
+            let id = as_id.expect("withdraw needs --as");
+            let by = worker::resolve(tx, id)?;
+            if by.parent.is_some() || root(tx, tid)? != id && by.machine.is_some() {
+                return Err(reject(format!(
+                    "only the asker's root or the hub may withdraw ask {ask}, got {id}"
+                )));
+            }
+        } else if let Some(id) = as_id
             && to != id
         {
             return Err(reject(format!(
@@ -351,7 +366,11 @@ pub fn answer(db: &mut Connection, ask: i64, text: &str, as_id: Option<i64>) -> 
                 to: Some(tid),
                 kind: "answer",
                 summary: text,
-                data: Some(json!({"owner":data["owner"]==true})),
+                data: Some(if withdraw {
+                    json!({"owner":false,"withdrawn":true})
+                } else {
+                    json!({"owner":data["owner"]==true})
+                }),
                 related: Some(ask),
                 ..Event::default()
             },

@@ -297,6 +297,16 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
         {
             r.v["parked"] = json!(true);
             r.park_id = n(&park, "id");
+            // Bookkeeping on the root itself (notes, handovers, refs, by the lead or the hub)
+            // is not activity after a park; lane events and prompts to the lead are.
+            r.activity_id = one(
+                db,
+                &format!(
+                    "{TREES}select max(e.id) as id from tree join events e on e.task_id=tree.id where tree.root=? and (e.task_id!=tree.root or e.kind='prompt')"
+                ),
+                vec![rid.into()],
+            )?
+            .map_or(0, |a| n(&a, "id"));
             let ms = elapsed(s(&park, "created_at"));
             if ms != 0 {
                 r.v["park_age_ms"] = json!(ms);
@@ -673,5 +683,98 @@ mod tests {
         assert!(!owner_has_items("OWNER: nothing now (waiting)"));
         assert!(owner_has_items("OWNER: nothing until approval"));
         assert!(owner_has_items("OWNER:"));
+    }
+
+    /// Root 1 (hub host) with lane 2; root 3 is another hub-host root.
+    fn fixture() -> Connection {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(taskr_core::schema::SCHEMA).unwrap();
+        let at = q::now();
+        for (id, parent, role) in [
+            (1, None, "orchestrator"),
+            (2, Some(1), "implementer"),
+            (3, None, "orchestrator"),
+        ] {
+            db.execute("insert into tasks(id,parent_id,name,role,status,pane_id,created_at,updated_at) values(?,?,?,?,'open','w:p1',?,?)",params![id,parent,format!("t{id}"),role,at,at]).unwrap();
+        }
+        db
+    }
+    fn event(db: &Connection, task: i64, kind: &str, data: &str) {
+        db.execute("insert into events(task_id,recipient_task_id,kind,summary,data,created_at) values(?,?,?,'x',?,?)",params![task,task,kind,data,q::now()]).unwrap();
+    }
+    fn parked_active(db: &Connection) -> bool {
+        let v = snapshot(db).unwrap();
+        let root = v["campaigns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == 1)
+            .unwrap();
+        assert_eq!(root["parked"], true);
+        root["parked_active"] == true
+    }
+    #[test]
+    fn park_ignores_root_bookkeeping() {
+        let park = r#"{"key":"glance.state","value":"parked"}"#;
+        for (task, kind, data, active) in [
+            (1, "note", "{}", false),
+            (1, "handover", "{}", false),
+            (1, "note", r#"{"owner":true}"#, false),
+            (1, "decision", "{}", false),
+            (1, "next", "{}", false),
+            (1, "ref", r#"{"key":"pr","value":"1"}"#, false),
+            (2, "ready", "{}", true),
+            (1, "prompt", "{}", true),
+        ] {
+            let db = fixture();
+            event(&db, 2, "note", "{}");
+            event(&db, 1, "ref", park);
+            assert!(!parked_active(&db), "park alone");
+            event(&db, task, kind, data);
+            assert_eq!(parked_active(&db), active, "{task} {kind} {data}");
+        }
+    }
+    #[test]
+    fn withdrawn_ask_leaves_needs_you() {
+        let db = fixture();
+        for _ in 0..2 {
+            db.execute("insert into events(task_id,recipient_task_id,kind,summary,data,created_at) values(2,1,'ask','merge?','{\"owner\":true}',?)",params![q::now()]).unwrap();
+        }
+        assert_eq!(
+            snapshot(&db).unwrap()["needs_you"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        // Authority is covered by tests/withdraw.rs; this records the withdraw directly.
+        for (ask, text) in [(1, "stale"), (2, "stale too")] {
+            db.execute("insert into events(task_id,recipient_task_id,kind,summary,data,related_event_id,created_at) values(2,2,'answer',?,'{\"owner\":false,\"withdrawn\":true}',?,?)",params![text,ask,q::now()]).unwrap();
+            db.execute(
+                "update events set answered_by=last_insert_rowid() where id=?",
+                [ask],
+            )
+            .unwrap();
+        }
+        assert!(
+            snapshot(&db).unwrap()["needs_you"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        let mut f = super::super::flags("asks", false);
+        f.parse(&["--all".into()], 0, 0).unwrap();
+        let rows = super::super::queries::ask_rows(&db, &f).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r["withdrawn"] == true));
+        let detail = super::super::campaign::snapshot(&db, 1, 1, false).unwrap();
+        assert!(
+            detail["asks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a["text"] == "withdrawn: stale")
+        );
+        assert!(detail["decisions"].as_array().unwrap().is_empty());
     }
 }
