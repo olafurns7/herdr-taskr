@@ -75,14 +75,42 @@ fn say(app: &mut App, text: impl Into<String>) -> Effect {
     Effect::None
 }
 
+/// The last frame drew the glance's detail pane (wide, with a row selected).
+fn detail_drawn(app: &App) -> bool {
+    app.seen
+        .borrow()
+        .hits
+        .iter()
+        .any(|(_, h)| *h == Hit::Detail)
+}
+
+/// The glance's detail pane has the keys: it is focused and on screen.
+fn on_detail(app: &App) -> bool {
+    app.screen == Screen::Glance && app.detail && detail_drawn(app)
+}
+
+/// Puts the glance cursor on `row`; the detail pane then shows another row from its top.
+fn select(app: &mut App, row: usize) {
+    if app.row != row {
+        (app.row, app.scroll) = (row, 0);
+    }
+}
+
 /// Moves the cursor of whatever is on screen, or scrolls it, and stops at its ends.
 fn travel(app: &mut App, by: isize) {
     let (rows, (height, total)) = {
         let seen = app.seen.borrow();
         (seen.rows, seen.page)
     };
+    if app.screen == Screen::Glance && !on_detail(app) {
+        let row = app
+            .row
+            .saturating_add_signed(by)
+            .min(rows.saturating_sub(1));
+        return select(app, row);
+    }
     let (at, last) = match app.screen {
-        Screen::Glance | Screen::AllCampaigns => (&mut app.row, rows.saturating_sub(1)),
+        Screen::AllCampaigns => (&mut app.row, rows.saturating_sub(1)),
         Screen::Campaign if app.pane == 0 => (&mut app.lane, rows.saturating_sub(1)),
         _ => (&mut app.scroll, total.saturating_sub(height)),
     };
@@ -119,13 +147,17 @@ fn filter(app: &mut App, code: KeyCode) -> Effect {
 /// The keys every screen but the answer dialog shares, then the screen's own.
 fn view(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
     let page = app.seen.borrow().page.0;
-    let lists = matches!(app.screen, Screen::Glance | Screen::AllCampaigns)
+    let detail = on_detail(app);
+    let lists = (app.screen == Screen::Glance && !detail)
+        || app.screen == Screen::AllCampaigns
         || (app.screen == Screen::Campaign && app.pane == 0);
     let half = if lists { 5 } else { (page / 2).max(1) } as isize;
     match code {
         // `q` closes before it quits.
         KeyCode::Char('q') if !app.close() => return Effect::Quit,
         KeyCode::Char('q') => {}
+        // Back from the detail pane to the row it shows.
+        KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left if detail => app.detail = false,
         // Esc clears a filter before it closes anything.
         KeyCode::Esc if !app.filter.is_empty() => {
             app.filter.clear();
@@ -172,10 +204,9 @@ fn view(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
         KeyCode::Char('G') | KeyCode::End => travel(app, isize::MAX),
         KeyCode::Char('d') if ctrl => travel(app, half),
         KeyCode::Char('u') if ctrl => travel(app, -half),
-        KeyCode::Char(' ') | KeyCode::PageDown if app.screen == Screen::Pager => {
-            travel(app, page as isize)
-        }
-        KeyCode::PageUp if app.screen == Screen::Pager => travel(app, -(page as isize)),
+        KeyCode::Char(' ') if app.screen == Screen::Pager => travel(app, page as isize),
+        KeyCode::PageDown if app.screen == Screen::Pager || detail => travel(app, page as isize),
+        KeyCode::PageUp if app.screen == Screen::Pager || detail => travel(app, -(page as isize)),
         _ => {
             return match app.screen {
                 Screen::Glance => glance_key(app, code),
@@ -344,16 +375,22 @@ fn glance_key(app: &mut App, code: KeyCode) -> Effect {
     };
     match code {
         KeyCode::Tab | KeyCode::BackTab => {
+            // Sections, then the detail pane when it is drawn, then round again.
             let starts = glance::sections(g);
-            let next = match code {
-                KeyCode::Tab => starts.iter().find(|&&s| s > app.row).or(starts.first()),
-                _ => starts
-                    .iter()
-                    .rev()
-                    .find(|&&s| s < app.row)
-                    .or(starts.last()),
+            let (tab, detail) = (code == KeyCode::Tab, on_detail(app));
+            let next = match (detail, tab) {
+                (true, true) => starts.first(),
+                (true, false) => starts.last(),
+                (false, true) => starts.iter().find(|&&s| s > app.row),
+                (false, false) => starts.iter().rev().find(|&&s| s < app.row),
             };
-            app.row = next.copied().unwrap_or(0);
+            if next.is_none() && !detail && detail_drawn(app) {
+                app.detail = true;
+                return Effect::None;
+            }
+            let wrap = if tab { starts.first() } else { starts.last() };
+            app.detail = false;
+            select(app, next.or(wrap).copied().unwrap_or(0));
             // A section folded out of reach is not a place to land.
             travel(app, 0);
         }
@@ -595,6 +632,12 @@ pub fn mouse(app: &mut App, event: MouseEvent, now: Instant) -> Effect {
                 Some(Hit::Lane(_)) => 0,
                 _ => app.pane,
             };
+            // On the glance the wheel works the pane under it: the list or the detail.
+            match hit {
+                Some(Hit::Detail) => app.detail = true,
+                Some(Hit::Row(_)) => app.detail = false,
+                _ => {}
+            }
             if app.screen == Screen::Campaign && over != app.pane {
                 pane(app, over);
                 return Effect::None;
@@ -617,14 +660,22 @@ pub fn mouse(app: &mut App, event: MouseEvent, now: Instant) -> Effect {
                     return hint_key(&keys).map_or(Effect::None, |code| press(app, code));
                 }
                 Hit::Pane(i) => pane(app, i),
-                Hit::Row(i) => app.row = i,
+                Hit::Detail => app.detail = true,
+                Hit::Row(i) => {
+                    app.detail = false;
+                    if app.screen == Screen::Glance {
+                        select(app, i);
+                    } else {
+                        app.row = i;
+                    }
+                }
                 Hit::Lane(i) => {
                     pane(app, 0);
                     app.lane = i;
                 }
             }
             // A double-click on a row is Enter.
-            if double && !matches!(hit, Hit::Pane(_)) {
+            if double && !matches!(hit, Hit::Pane(_) | Hit::Detail) {
                 press(app, KeyCode::Enter)
             } else {
                 Effect::None
@@ -1228,6 +1279,130 @@ mod tests {
         assert_eq!(p.app.text, text);
         p.code(KeyCode::PageUp);
         assert!(!p.text().contains("LASTWORD"));
+    }
+
+    #[test]
+    fn the_detail_pane_takes_focus_and_scrolls() {
+        let mut p = Pane::new(120, 40);
+        p.app.data.glance.needs_you.push(frames::long_ask());
+        let at = |p: &Pane| (p.app.row, p.app.detail);
+        // Tab: asks, checks, campaigns, then the detail, then round; shift-tab the other way.
+        p.keys("\t\t");
+        assert_eq!(at(&p), (6, false));
+        p.keys("\t");
+        assert_eq!(at(&p), (6, true));
+        p.keys("\t");
+        assert_eq!(at(&p), (0, false));
+        p.code(KeyCode::BackTab);
+        assert_eq!(at(&p), (0, true));
+        p.code(KeyCode::BackTab);
+        assert_eq!(at(&p), (6, false));
+        // h, esc and the left arrow return to the row the detail came from.
+        for back in [KeyCode::Char('h'), KeyCode::Esc, KeyCode::Left] {
+            p.keys("\t");
+            assert_eq!(at(&p), (6, true));
+            p.code(back);
+            assert_eq!(at(&p), (6, false), "{back:?}");
+        }
+        assert_eq!(p.app.screen, Screen::Glance);
+
+        // The long ask, then a click in the detail focuses it.
+        p.keys("gjj");
+        assert!(p.text().contains("Release runbook"));
+        p.click(80, 10);
+        assert_eq!(at(&p), (2, true));
+        p.keys("j");
+        assert_eq!(p.app.scroll, 1);
+        p.keys("G");
+        let (h, total) = p.app.seen.borrow().page;
+        assert!(total > h, "{h} {total}");
+        assert_eq!(p.app.scroll, total - h);
+        let screen = p.text();
+        assert!(
+            screen.contains("12. Close the release")
+                && screen.contains(&format!("{}-{total}/{total}", total - h + 1)),
+            "{screen}"
+        );
+        // It stops at its ends: the last line at the bottom, never past it.
+        p.keys("j");
+        p.code(KeyCode::PageDown);
+        assert_eq!(p.app.scroll, total - h);
+        p.keys("g");
+        p.code(KeyCode::Up);
+        assert_eq!(p.app.scroll, 0);
+        p.code(KeyCode::PageDown);
+        assert_eq!(p.app.scroll, h.min(total - h));
+        p.code(KeyCode::PageUp);
+        assert_eq!((p.app.scroll, p.app.row), (0, 2));
+
+        // Moving the cursor starts the next row's detail at its top: by key, by click.
+        p.keys("G");
+        p.keys("\x1bj");
+        assert_eq!((p.app.row, p.app.scroll), (3, 0));
+        p.keys("k");
+        p.app.scroll = 4;
+        p.click_on("ios-widgets");
+        assert_eq!((p.app.row, p.app.scroll, p.app.detail), (1, 0, false));
+        // and by a refresh that takes the row away; one that keeps it keeps the place.
+        p.keys("j");
+        p.app.scroll = 4;
+        p.app.snapshot(p.app.data.glance.clone());
+        assert_eq!((p.app.row, p.app.scroll), (2, 4));
+        let mut next = p.app.data.glance.clone();
+        next.needs_you.pop();
+        p.app.snapshot(next);
+        assert_eq!(p.app.scroll, 0);
+    }
+
+    #[test]
+    fn the_wheel_scrolls_the_pane_under_it() {
+        let mut p = Pane::new(120, 40);
+        p.app.data.glance.needs_you.push(frames::long_ask());
+        p.keys("jj");
+        // Over the detail: it takes focus and scrolls; the cursor stays.
+        p.mouse(MouseEventKind::ScrollDown, 80, 10);
+        p.mouse(MouseEventKind::ScrollDown, 80, 10);
+        assert_eq!((p.app.row, p.app.scroll, p.app.detail), (2, 2, true));
+        p.mouse(MouseEventKind::ScrollUp, 80, 10);
+        assert_eq!(p.app.scroll, 1);
+        // Over the list: the cursor moves, and the detail starts at the top.
+        p.mouse(MouseEventKind::ScrollDown, 5, 5);
+        assert_eq!((p.app.row, p.app.scroll, p.app.detail), (3, 0, false));
+    }
+
+    #[test]
+    fn narrow_there_is_no_detail_to_focus() {
+        let mut p = Pane::new(46, 30);
+        p.app.detail = true;
+        // A focus left from a wide terminal does not take the keys of a narrow one.
+        p.keys("j");
+        assert_eq!((p.app.row, p.app.scroll), (1, 0));
+        p.keys("\t\t\t");
+        assert_eq!(p.app.row, 0);
+    }
+
+    /// Under 100 columns there is no detail pane; an ask's full text is read in the answer
+    /// dialog, which scrolls it.
+    #[test]
+    fn narrow_the_answer_dialog_scrolls_a_long_ask_to_its_end() {
+        let mut p = Pane::new(46, 30);
+        p.app.data.glance.needs_you.push(frames::long_ask());
+        p.keys("jja");
+        let top = p.text();
+        assert!(
+            top.contains("Release runbook") && !top.contains("12. Close") && top.contains("/"),
+            "{top}"
+        );
+        for _ in 0..10 {
+            p.code(KeyCode::PageDown);
+        }
+        let (shown, total) = p.app.seen.borrow().page;
+        let bottom = p.text();
+        assert!(
+            bottom.contains("12. Close the release")
+                && bottom.contains(&format!("{}-{total}/{total}", total - shown + 1)),
+            "{bottom}"
+        );
     }
 
     #[test]
