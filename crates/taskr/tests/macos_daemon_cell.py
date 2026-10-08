@@ -95,6 +95,26 @@ def run(go, rust, root):
             os.kill(int(lock.read_text()), signal.SIGTERM)
             eventually(lambda: not locked(lock))
             assert lock.read_bytes() == b'' and not identity.exists()
+            if mode == 'client':
+                sleeper = subprocess.Popen(['/bin/sleep', '30'])
+                try:
+                    with lock.open('w') as held:
+                        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        held.write(str(sleeper.pid) + '\n')
+                        held.flush()
+                        forged = json.loads(original)
+                        forged['pid'] = sleeper.pid
+                        identity.write_text(json.dumps(forged))
+                        code, output, error = invoke(active, environment, 'daemon', '--restart')
+                        assert code == 6 and b'does not run the recorded daemon executable' in output + error, (code, output, error)
+                        assert sleeper.poll() is None and locked(lock)
+                        assert int(lock.read_text()) == sleeper.pid
+                        results.append({'mode': mode, 'check': 'live non-taskr PID refused at executable check'})
+                finally:
+                    sleeper.terminate()
+                    sleeper.wait(timeout=5)
+                    identity.unlink(missing_ok=True)
+                    lock.write_text('')
             for ignored in (False, True):
                 shell = "trap '' HUP; exec \"$@\"" if ignored else 'trap - HUP; exec "$@"'
                 child = subprocess.Popen(['/bin/sh', '-c', shell, 'fixture', str(active), 'daemon'],
@@ -104,15 +124,18 @@ def run(go, rust, root):
                 assert selector.select(15), 'HUP daemon startup timeout'
                 assert json.loads(child.stdout.readline().removeprefix(b'j1 '))['pid'] == child.pid
                 selector.close()
+                log = state / 'daemon.log'
+                log_start = log.stat().st_size
                 os.kill(child.pid, signal.SIGHUP)
                 if ignored:
                     try:
-                        child.wait(timeout=.3)
+                        child.wait(timeout=2)
                     except subprocess.TimeoutExpired:
                         pass
                     else:
                         raise AssertionError('inherited ignored HUP stopped daemon')
                     assert locked(lock)
+                    assert b'exit: signal' not in log.read_bytes()[log_start:]
                     stop(child)
                 else:
                     child.communicate(timeout=10)
@@ -142,4 +165,4 @@ if __name__ == '__main__':
     args.work_dir.mkdir()
     checks = run(args.go.resolve(), args.rust.resolve(), args.work_dir.resolve())
     args.out.write_text(json.dumps({'passed': len(checks), 'checks': checks}, indent=2) + '\n')
-    print(json.dumps({'passed': len(checks), 'mismatch': 0}))
+    print(json.dumps({'passed': len(checks)}))

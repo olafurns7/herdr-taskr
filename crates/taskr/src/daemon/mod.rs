@@ -319,6 +319,11 @@ fn run(
     let mut nofile = rustix::process::getrlimit(rustix::process::Resource::Nofile);
     if nofile.current != nofile.maximum {
         nofile.current = nofile.maximum;
+        #[cfg(target_os = "macos")]
+        match macos::clamp_nofile(nofile.maximum) {
+            Ok(limit) => nofile.current = Some(limit),
+            Err(error) => log.line(&format!("read kern.maxfilesperproc: {error}")),
+        }
         if let Err(error) = rustix::process::setrlimit(rustix::process::Resource::Nofile, nofile) {
             log.line(&format!("raise RLIMIT_NOFILE: {error}"));
         }

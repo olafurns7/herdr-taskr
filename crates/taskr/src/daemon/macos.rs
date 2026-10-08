@@ -47,6 +47,22 @@ fn kinfo(raw: &[u8], pid: i32) -> io::Result<(String, u32)> {
     Ok((format!("{sec}.{usec:06}"), uid))
 }
 
+fn nofile_limit(maximum: Option<u64>, raw: &[u8]) -> io::Result<u64> {
+    let bytes = raw
+        .try_into()
+        .map_err(|_| io::Error::other("unexpected kern.maxfilesperproc size"))?;
+    let cap = u64::from(u32::from_ne_bytes(bytes));
+    Ok(maximum.unwrap_or(u64::MAX).min(cap))
+}
+
+#[cfg(target_os = "macos")]
+pub(super) fn clamp_nofile(maximum: Option<u64>) -> io::Result<u64> {
+    nofile_limit(
+        maximum,
+        &sysctl(&mut [libc::CTL_KERN, libc::KERN_MAXFILESPERPROC])?,
+    )
+}
+
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 fn sysctl(mib: &mut [libc::c_int]) -> io::Result<Vec<u8>> {
@@ -129,6 +145,30 @@ mod tests {
         .unwrap();
         assert_eq!(exe, "/tmp/taskr");
         assert_eq!(argv, ["taskr", "daemon", "", "a b"]);
+    }
+    #[test]
+    fn procargs_empty_argv0_matches_go_padding_strip() {
+        // Go also strips the empty argv[0] along with the exec-path padding.
+        let (exe, argv) = procargs2(&args(2, b"/taskr\0\0\0daemon\0ENV=value\0")).unwrap();
+        assert_eq!(exe, "/taskr");
+        assert_eq!(argv, ["daemon", "ENV=value"]);
+        assert!(procargs2(&args(2, b"/taskr\0\0\0daemon\0")).is_err());
+    }
+    #[test]
+    fn procargs_accepts_buffer_ending_at_last_argv_nul() {
+        let (exe, argv) = procargs2(&args(2, b"/taskr\0taskr\0daemon\0")).unwrap();
+        assert_eq!(exe, "/taskr");
+        assert_eq!(argv, ["taskr", "daemon"]);
+    }
+    #[test]
+    fn nofile_is_capped_by_both_hard_limit_and_kernel_budget() {
+        let raw = 10_240u32.to_ne_bytes();
+        assert_eq!(nofile_limit(None, &raw).unwrap(), 10_240);
+        assert_eq!(nofile_limit(Some(20_000), &raw).unwrap(), 10_240);
+        assert_eq!(nofile_limit(Some(5_000), &raw).unwrap(), 5_000);
+        assert_eq!(nofile_limit(Some(10_240), &raw).unwrap(), 10_240);
+        assert!(nofile_limit(None, &raw[..3]).is_err());
+        assert!(nofile_limit(None, &[0; 5]).is_err());
     }
     #[test]
     fn procargs_rejects_missing_and_truncated_fields() {
