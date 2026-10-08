@@ -42,7 +42,7 @@ pub(crate) const KEYS: &[Key] = &[
         "Move",
         "tab",
         "next",
-        "next section; shift-tab back",
+        "next section, then the detail",
         GLANCE,
     ),
     key("Move", "tab", "next", "next pane; shift-tab back", CAMPAIGN),
@@ -55,7 +55,7 @@ pub(crate) const KEYS: &[Key] = &[
         "go to the row's agent pane",
         GLANCE | CAMPAIGN,
     ),
-    key("Go", "l", "open", "open the campaign or detail", GLANCE),
+    key("Go", "l", "open", "open the campaign", GLANCE),
     key("Go", "h", "back", "back, close (esc too)", ALL),
     key(
         "Go",
@@ -101,6 +101,10 @@ pub(crate) const KEYS: &[Key] = &[
     key("View", "t", "theme", "theme: dark, light, terminal", ALL),
     key("View", "q", "quit", "close; quits on the glance", ALL),
 ];
+
+/// How the glance's detail pane is read; the help says so under "Move".
+pub(crate) const DETAIL_NOTE: &str = "shift-tab goes back. In the wide view, with the detail \
+    focused, j k g G ctrl-d ctrl-u PgDn PgUp scroll it; h or esc returns to the list.";
 
 /// Enter moves more than this pane (counter-review P2-1); the help says so under "Go".
 pub(crate) const GO_NOTE: &str = "⏎ moves every client attached to that Herdr server.";

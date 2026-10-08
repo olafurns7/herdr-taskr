@@ -68,6 +68,28 @@ campaigns = [
 ]
 campaigns[-1]["spark"] = [0] * 24
 
+# A runbook ask longer than the glance's detail pane, for the frame that scrolls it. Not in
+# the glance: frames.rs adds it where it is drawn, so the other frames stay as they are.
+STEPS_ASK = ("Release runbook for v2.5, ready to run once you pick the window. Each step waits for the one before:\n"
+             + "\n".join(f"{i}. {s}" for i, s in enumerate([
+                 "Freeze the release branch and post the freeze note in the team channel.",
+                 "Tag the release candidate from the head of the release branch.",
+                 "Build the server, the client and the daemon for both architectures.",
+                 "Run the full suite on the build host with the slow tests switched on.",
+                 "Install the candidate on the staging host and replay one day of traffic.",
+                 "Compare the replay's error rate and latency with the last release.",
+                 "Write the changelog from the merged pull requests since v2.4.",
+                 "Publish the candidate to the beta channel and wait one hour for crash reports.",
+                 "Promote the candidate to stable if the beta channel stays quiet.",
+                 "Update the install docs and the upgrade notes for the new flags.",
+                 "Unfreeze the release branch and merge it back into main.",
+                 "Close the release milestone and archive the runbook with the timings.",
+             ], 1))
+             + "\nWhen: (A) tonight after 22:00 [recommended]; (B) tomorrow morning.")
+long_ask = {"kind": "owner_ask", "campaign": "infra-layout", "root_id": 4031, "host": "", "pane_id": "w62:p1",
+            "age_ms": 3 * M + 12 * S, "since": at("14:12:58"), "ask_id": 61812, "blocking": True,
+            "asker": "infra-layout", "asker_task_id": 4031, "asker_waiting": True, "text": STEPS_ASK}
+
 glance = {
     "now": at("14:16:10"), "verdict": "needs_you", "owner_notes_pending": 3, "server_host": "atlas", "caller_host": "",
     "needs_you": [
@@ -269,6 +291,6 @@ P1-1, P1-2 and P1-3. The P2s are wording edits. The P3s can ride along.
 doc = {"id": 9560, "kind": "report", "name": "", "lane": "arch-plan-counter2", "version": 1, "body": DOC}
 
 out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fixture.json")
-text = json.dumps({"glance": glance, "campaign": campaign, "roots": roots, "doc": doc}, indent=1)
+text = json.dumps({"glance": glance, "campaign": campaign, "roots": roots, "doc": doc, "long_ask": long_ask}, indent=1)
 assert text.isascii(), "the fixture stays ASCII"
 open(out, "w").write(text + "\n")

@@ -477,6 +477,9 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
     if app.fetch.error.is_some() {
         out.insert(0, hint("r", Some("retry")));
     }
+    if app.detail && wide && !matches!(selected(app), Selected::Nothing) {
+        out.splice(0..0, [hint("j k", Some("scroll")), hint("h", Some("list"))]);
+    }
     if wide {
         out.extend([
             hint("/", None),
@@ -524,7 +527,8 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     let mut list = body;
     if wide {
         // No inset here: the list has its own gutter column.
-        let block = ui::panel(t, "Glance", true);
+        let detail = app.detail && !matches!(selected(app), Selected::Nothing);
+        let block = ui::panel(t, "Glance", !detail);
         list = block.inner(Rect { width: 60, ..body });
         f.render_widget(block, Rect { width: 60, ..body });
     }
@@ -703,10 +707,15 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
         }
         Selected::Nothing => return,
     };
-    let inner = ui::pane(f, t, area, &title, false);
+    // The pane's inside, as `ui::pane` will draw it, so the text wraps before the title
+    // says how much of it there is.
+    let (width, h) = (
+        area.width.saturating_sub(4) as usize,
+        area.height.saturating_sub(2) as usize,
+    );
     lines.push(Line::raw(""));
     lines.extend(
-        wrap(&text, inner.width as usize)
+        wrap(&text, width)
             .into_iter()
             .map(|l| Line::from(sp(l, t.text))),
     );
@@ -719,9 +728,24 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
         if o.recommended {
             line.push(sp("  recommended", t.ok));
         }
-        lines.push(Line::from(ui::fit(line, inner.width as usize)));
+        lines.push(Line::from(ui::fit(line, width)));
     }
-    f.render_widget(Paragraph::new(lines), inner);
+    // Longer than its box, it scrolls when focused and says where it is, as the campaign
+    // view's panes do.
+    let total = lines.len();
+    app.seen.borrow_mut().page = (h, total);
+    app.hit(area, Hit::Detail);
+    let first = app.scroll.min(total.saturating_sub(h));
+    let title = if total > h && h > 0 {
+        format!("{title} · {}-{}/{total}", first + 1, first + h)
+    } else {
+        title
+    };
+    let inner = ui::pane(f, t, area, &title, app.detail);
+    f.render_widget(
+        Paragraph::new(lines.into_iter().skip(first).take(h).collect::<Vec<_>>()),
+        inner,
+    );
 }
 
 /// The lower right pane: the selected row's campaign over the last four hours.

@@ -24,6 +24,21 @@ pub fn fixture() -> Data {
     serde_json::from_str(include_str!("../fixture.json")).expect("the fixture decodes")
 }
 
+/// The fixture's 12-step ask, longer than the glance's detail pane. It is kept out of the
+/// glance so the other frames do not change.
+pub fn long_ask() -> crate::model::Need {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../fixture.json")).expect("the fixture decodes");
+    serde_json::from_value(fixture["long_ask"].clone()).expect("the long ask decodes")
+}
+
+fn detail(app: &mut App) {
+    // The long ask selected, the detail focused and scrolled to its end (`tab` past the
+    // last section, then `G`; the draw stops at the last line).
+    app.data.glance.needs_you.push(long_ask());
+    (app.row, app.detail, app.scroll) = (2, true, usize::MAX);
+}
+
 fn glance(app: &mut App) {
     // docs-refresh changed since the owner last looked.
     app.changed = vec![4296];
@@ -107,6 +122,7 @@ pub fn all() -> Vec<Spec> {
         spec("glance", 46, 30, "", glance),
         spec("glance", 70, 30, "", glance),
         spec("glance", 120, 40, "", glance),
+        spec("glance", 120, 40, "-detail", detail),
         spec("glance", 46, 20, "", glance),
         spec("glance", 46, 30, "-stale", stale),
         spec("glance", 24, 1, "", glance),

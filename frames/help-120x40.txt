@@ -12,22 +12,22 @@
 │ ! infra-│    j k           down, up (arrows too)            a             answer the selected ask          │d        │
 │   lead i│    g G           first, last row                  p             park or unpark (confirms)        │         │
 │ ! host b│    ctrl-d ctrl-u half page                        o             read the report or doc           │         │
-│   host s│    tab           next section; shift-tab back     y             copy the jump command            │         │
+│   host s│    tab           next section, then the detail    y             copy the jump command            │         │
 │ CAMPAIGN│    wheel         scroll                           r             refresh now                      │         │
-│ ◐ search│                                                                                                  │         │
-│   Resear│   Go                                             View                                            │         │
-│ ◐ auth-r│    ⏎             go to the row's agent pane       ?             this help                        │         │
-│   Implem│    l             open the campaign or detail      m             mouse on or off                  │         │
-│ ○ billin│    h             back, close (esc too)            t             theme: dark, light, terminal     │         │
-│   FYI 61│    /             filter rows by name              q             close; quits on the glance       │         │
-│ ○ docs-r│    c             all campaigns, closed too                                                       │         │
-│   Hub FY│    click         select; double-click is ⏎       Marks                                           │         │
-│ ○ checko│    ⏎ moves every client attached to that Herdr    ? ask   ! to check   ◐ working   ○ waiting     │         │
-│   FIX: t│    server.                                        ● lane   ● ready   · idle   × gone   ‖ parked  │         │
-│ ◐ ios-wi│                                                   ✓ done   ⊘ abandoned   ✗ rejected              │         │
-│   Widget│                                                   ⏎ pane on this machine   ↗ another             │         │
-│ ◐ tui-fr│                                                   • changed since you looked                     │         │
-│   NOW: p│                                                                                                  │─────────╯
+│ ◐ search│    shift-tab goes back. In the wide view, with                                                   │         │
+│   Resear│    the detail focused, j k g G ctrl-d ctrl-u     View                                            │         │
+│ ◐ auth-r│    PgDn PgUp scroll it; h or esc returns to the   ?             this help                        │         │
+│   Implem│    list.                                          m             mouse on or off                  │         │
+│ ○ billin│                                                   t             theme: dark, light, terminal     │         │
+│   FYI 61│   Go                                              q             close; quits on the glance       │         │
+│ ○ docs-r│    ⏎             go to the row's agent pane                                                      │         │
+│   Hub FY│    l             open the campaign               Marks                                           │         │
+│ ○ checko│    h             back, close (esc too)            ? ask   ! to check   ◐ working   ○ waiting     │         │
+│   FIX: t│    /             filter rows by name              ● lane   ● ready   · idle   × gone   ‖ parked  │         │
+│ ◐ ios-wi│    c             all campaigns, closed too        ✓ done   ⊘ abandoned   ✗ rejected              │         │
+│   Widget│    click         select; double-click is ⏎        ⏎ pane on this machine   ↗ another             │         │
+│ ◐ tui-fr│    ⏎ moves every client attached to that Herdr    • changed since you looked                     │         │
+│   NOW: p│    server.                                                                                       │─────────╯
 │ · infra-│                                                                                                  │─────────╮
 │   cache-╰──────────────────────────────────────────────────────────────────────────────────────────────────╯         │
 │ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁        14m││       ██      ██  ██▂▂  ██▂▂    ██          ████         │

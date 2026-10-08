@@ -1,0 +1,40 @@
+ taskr ❯ glance                                                           hub atlas · 2s ago   ● 3 need you  3 to check
+ 3 notes still carry OWNER items
+╭ Glance ──────────────────────────────────────────────────╮╭ ask 61812 · infra-layout · 9-34/34 ──────────────────────╮
+│ NEEDS YOU ──────────────────────────────────────────── 3 ││ 3. Build the server, the client and the daemon for both  │
+│ ? tui-frames           BLOCKING                    ⏎  41s││ architectures.                                           │
+│   Frames follow-up is ready: PR #212 (orphaned asks hid… ││ 4. Run the full suite on the build host with the slow    │
+│ ? ios-widgets                               laptop ↗   6m││ tests switched on.                                       │
+│   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash).… ││ 5. Install the candidate on the staging host and replay  │
+│▌? infra-layout         BLOCKING                    ⏎   3m││ one day of traffic.                                      │
+│▌  Release runbook for v2.5, ready to run once you pick … ││ 6. Compare the replay's error rate and latency with the  │
+│ TO CHECK ───────────────────────────────────────────── 3 ││ last release.                                            │
+│ ! map-tiles-polish                            laptop   2h││ 7. Write the changelog from the merged pull requests     │
+│   lead unregistered and silent                           ││ since v2.4.                                              │
+│ ! infra-layout                                         2h││ 8. Publish the candidate to the beta channel and wait    │
+│   lead idle with 3 results                               ││ one hour for crash reports.                              │
+│ ! host build-mini                               mini  12m││ 9. Promote the candidate to stable if the beta channel   │
+│   host stale: no heartbeat for 12 m                      ││ stays quiet.                                             │
+│ CAMPAIGNS ─────────────────────────────────────────── 10 ││ 10. Update the install docs and the upgrade notes for    │
+│ ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃        19s││ the new flags.                                           │
+│   Research complete: reports/ranking-options.md compare… ││ 11. Unfreeze the release branch and merge it back into   │
+│ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█        29s││ main.                                                    │
+│   Implementation slice: key rollover job, fake-clock te… ││ 12. Close the release milestone and archive the runbook  │
+│ ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁        33s││ with the timings.                                        │
+│   FYI 61448 from search-index (root 4310): the tokenize… ││ When: (A) tonight after 22:00 [recommended]; (B)         │
+│ ○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂         2m││ tomorrow morning.                                        │
+│   Hub FYI: keep the page map machine-readable for the f… ││                                                          │
+│ ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█         3m││ Options                                                  │
+│   FIX: three P2 findings in the review of the address s… ││  A tonight after 22:00  recommended                      │
+│ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁  laptop  7m││  B tomorrow morning                                      │
+│   Widget batch approved (asks 61199, 61367): 19 PRs mer… │╰──────────────────────────────────────────────────────────╯
+│ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆         8m│╭ infra-layout · last 4 h ─────────────────────────────────╮
+│   NOW: plan rev 3.1 sent; the trust rules and the first… ││ ██    ██                                ██               │
+│ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃        12m││ ██    ████    ██  ██▂▂██                ██               │
+│   cache-audit lead root=4040 pane=w41:p1: campaign comp… ││ ██  ▂▂████▇▇▂▂██▇▇██████▄▄▂▂  ▂▂▂▂▄▄▄▄  ██▂▂▇▇▇▇         │
+│ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁        14m││                                                          │
+│ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁        54m││ lead · idle   lanes —                                    │
+│ ‖ legacy-importer                              parked  3h││ last cache-audit lead root=4040 pane=w41:p1: campaign    │
+│ · 2 quiet                                                ││ complete, docs PR merged                                 │
+╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
+ j k scroll   h list   ⏎ go to lead   a answer   l open   / filter   y copy   ? help   q quit

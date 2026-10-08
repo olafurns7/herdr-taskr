@@ -1,15 +1,19 @@
  taskr ❯ help          2s ago   ● 2 need you
- KEYS · glance ────────────────────── 1-27/36
+ KEYS · glance ────────────────────── 1-27/40
  Move
   j k           down, up (arrows too)
   g G           first, last row
   ctrl-d ctrl-u half page
-  tab           next section; shift-tab back
+  tab           next section, then the detail
   wheel         scroll
+  shift-tab goes back. In the wide view, with
+  the detail focused, j k g G ctrl-d ctrl-u
+  PgDn PgUp scroll it; h or esc returns to the
+  list.
 
  Go
   ⏎             go to the row's agent pane
-  l             open the campaign or detail
+  l             open the campaign
   h             back, close (esc too)
   /             filter rows by name
   c             all campaigns, closed too
@@ -23,8 +27,4 @@
   o             read the report or doc
   y             copy the jump command
   r             refresh now
-
- View
-  ?             this help
-  m             mouse on or off
  j k scroll   h close

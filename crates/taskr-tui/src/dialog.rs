@@ -285,6 +285,8 @@ pub(crate) fn answer(f: &mut Frame, app: &App) {
     if f.area().width >= 60 {
         let mut background = app.clone();
         background.screen = Screen::Glance;
+        // The glance behind keeps its detail pane's place; `scroll` is this overlay's.
+        background.scroll = app.back.last().map_or(0, |b| b.scroll);
         glance::draw(f, &background);
         // Nothing under a dialog can be clicked.
         app.seen.borrow_mut().hits.clear();
@@ -410,9 +412,14 @@ fn group(t: &Theme, name: &str, view: u8, width: usize) -> Vec<Line<'static>> {
             sp(key.help, t.text),
         ]));
     }
-    if name == "Go" {
+    let note = match name {
+        "Go" => Some(keys::GO_NOTE),
+        "Move" if view == keys::GLANCE => Some(keys::DETAIL_NOTE),
+        _ => None,
+    };
+    if let Some(note) = note {
         out.extend(
-            wrap(keys::GO_NOTE, width.saturating_sub(2))
+            wrap(note, width.saturating_sub(2))
                 .into_iter()
                 .map(|l| Line::from(sp(format!("  {l}"), t.dim))),
         );
@@ -436,9 +443,11 @@ pub(crate) fn help(f: &mut Frame, app: &App) {
     if f.area().width >= 100 {
         let mut background = app.clone();
         background.screen = Screen::Glance;
+        // The glance behind keeps its detail pane's place; `scroll` is this overlay's.
+        background.scroll = app.back.last().map_or(0, |b| b.scroll);
         glance::draw(f, &background);
-        // Nothing under a dialog can be clicked.
-        app.seen.borrow_mut().hits.clear();
+        // Nothing under a dialog can be clicked or scrolled.
+        *app.seen.borrow_mut() = crate::Seen::default();
         let inner = modal(f, t, 100, 24, &format!("Keys · {name}"));
         let [a, b] = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
             .areas(inner);

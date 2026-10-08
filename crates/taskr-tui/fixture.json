@@ -1831,5 +1831,20 @@
   "lane": "arch-plan-counter2",
   "version": 1,
   "body": "# Counter-review 2: the frames plan (rev 3)\n\nTask 4176 (arch-plan-counter2). Read-only.\n\n## Verdict first\n\n**Hold the send until three wording fixes land (P1-1, P1-2, P1-3).** Rev 3 takes every point from the first review but one, which a later owner note replaced. The layout work is solid. The gaps are in the places a reader checks first: short rows, the counts, and the install path.\n\n## Findings, ranked\n\n### P1-1. Short rows are only specified for the first screen\n\nThe detail screens, the reply box, the key list, the full list and the reader have no short layout, and the first screen leaves room unused.\n\n| Frame | Size | Empty rows |\n|---|---|---|\n| list-short | 46x30 | 7 of 30 |\n| item-detail | 46x30 | 7 |\n| old-data | 46x30 | 6 |\n\n- The short list hides every second line once ten items do not fit, then leaves 7 rows empty.\n- The item table has six columns; at 46 they cannot all fit, and the plan does not say which go first.\n- A reader in a narrow pane opens a detail screen almost at once.\n\nWording fix:\n\n1. Hide second lines one at a time: never more than one empty row while any second line is hidden.\n2. Add short layouts for the detail screens, the reply box, the key list, the full list and the reader.\n3. Drop a trailing `OWNER: nothing.` from shown note text.\n\n### P1-2. The estimate and its parts disagree\n\nThe rows add up to 18-27 days. The summary says \"about 20-30\". The extra days have no row.\n\n### P1-3. The install step names a build host that is not set up\n\nEach machine builds its own files and uploads them itself:\n\n```\nrelease upload v2.5.0 dist/app-darwin-arm64\nsha256sum dist/* > SHA256SUMS\n```\n\n### P2-5. Mark what changed since the last look\n\nA short mark that fades in two seconds suits someone watching. Most readers look away and back. Keep a dim mark on rows that changed since the pane last had focus.\n\n### P3-2. The busy indicator uses glyphs outside the chosen set\n\nThe dotted frames did not draw in the test capture. Pick frames from the set.\n\n## Claims checked that hold\n\n- Moving focus moves every attached client.\n- Copy requests reach the client's own terminal.\n- The pane handles batched redraws.\n- The prototype passes 28 of 28 comparison cases.\n\n## Ready to send after\n\nP1-1, P1-2 and P1-3. The P2s are wording edits. The P3s can ride along.\n"
+ },
+ "long_ask": {
+  "kind": "owner_ask",
+  "campaign": "infra-layout",
+  "root_id": 4031,
+  "host": "",
+  "pane_id": "w62:p1",
+  "age_ms": 192000,
+  "since": "2026-03-14T14:12:58.000Z",
+  "ask_id": 61812,
+  "blocking": true,
+  "asker": "infra-layout",
+  "asker_task_id": 4031,
+  "asker_waiting": true,
+  "text": "Release runbook for v2.5, ready to run once you pick the window. Each step waits for the one before:\n1. Freeze the release branch and post the freeze note in the team channel.\n2. Tag the release candidate from the head of the release branch.\n3. Build the server, the client and the daemon for both architectures.\n4. Run the full suite on the build host with the slow tests switched on.\n5. Install the candidate on the staging host and replay one day of traffic.\n6. Compare the replay's error rate and latency with the last release.\n7. Write the changelog from the merged pull requests since v2.4.\n8. Publish the candidate to the beta channel and wait one hour for crash reports.\n9. Promote the candidate to stable if the beta channel stays quiet.\n10. Update the install docs and the upgrade notes for the new flags.\n11. Unfreeze the release branch and merge it back into main.\n12. Close the release milestone and archive the runbook with the timings.\nWhen: (A) tonight after 22:00 [recommended]; (B) tomorrow morning."
  }
 }

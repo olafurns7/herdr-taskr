@@ -70,6 +70,8 @@ pub(crate) enum Hit {
     Row(usize),
     Lane(usize),
     Pane(usize),
+    /// The glance's detail pane, drawn only in the wide layout.
+    Detail,
     /// A footer hint: the same as its key.
     Key(String),
 }
@@ -152,8 +154,11 @@ pub struct App {
     pub(crate) click: Option<(Instant, Hit)>,
     /// The need and check counts before the filter: the pill never follows a filter.
     pub(crate) counts: Option<(usize, usize)>,
-    /// First visible line of the pager, the help and the all-campaigns list.
+    /// First visible line of the pager, the help, the all-campaigns list and the glance's
+    /// detail pane.
     pub scroll: usize,
+    /// The glance's detail pane has the keys; `row` stays on the row it shows.
+    pub detail: bool,
     /// `--ascii`: draw every glyph as its ASCII stand-in.
     pub ascii: bool,
 }
@@ -185,6 +190,7 @@ impl App {
             click: None,
             counts: None,
             scroll: 0,
+            detail: false,
             ascii: false,
         }
     }
@@ -229,7 +235,8 @@ impl App {
         // glance row saved for the way back is not followed.
         let glance_row = !matches!(self.screen, Screen::AllCampaigns)
             && self.back.iter().all(|b| b.screen != Screen::AllCampaigns);
-        let before = at(self).get(self.row).cloned().filter(|_| glance_row);
+        let was = at(self).get(self.row).cloned();
+        let before = was.clone().filter(|_| glance_row);
         self.sent
             .retain(|id| glance.needs_you.iter().any(|a| a.ask_id == *id));
         // "Changed since you looked": a campaign whose last event, owner note, lead, lanes
@@ -277,6 +284,13 @@ impl App {
         self.data.glance = glance;
         if let Some(i) = before.and_then(|id| at(self).iter().position(|r| *r == id)) {
             self.row = i;
+        }
+        // The detail pane shows another row now: it starts at its top.
+        if glance_row && at(self).get(self.row) != was.as_ref() {
+            match self.back.first_mut() {
+                Some(b) if b.screen == Screen::Glance => b.scroll = 0,
+                _ => self.scroll = 0,
+            }
         }
     }
 

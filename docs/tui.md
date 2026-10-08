@@ -52,7 +52,12 @@ The first screen has three sections, top to bottom:
 
 The header shows which hub the data comes from, how old it is, and the
 verdict: **no owner action**, **N need you** or **N to check**. The pane on
-the right shows the selected row in full.
+the right shows the selected row in full. When its text is longer than the
+pane, the title says which lines show (`9-34/34`): `tab` past the last
+section, or a click, focuses the pane, and the keys below scroll it. In a
+terminal under 100 columns there is no right pane; `a` shows an ask's full
+text in the answer dialog, which scrolls with `ctrl-d` `ctrl-u` and `PgDn`
+`PgUp`.
 
 The view refreshes every five seconds. If the ledger stops answering, the
 frame is marked stale and keeps the last data.
@@ -82,11 +87,12 @@ frame is marked stale and keeps the last data.
 | `j` `k`, arrows | Down, up |
 | `g` `G` | First, last row |
 | `ctrl-d` `ctrl-u` | Half a page |
-| `tab`, `shift-tab` | Next or previous section (glance) or pane (campaign) |
+| `PgDn` `PgUp` | A page (the focused detail, a document, the answer dialog) |
+| `tab`, `shift-tab` | Next or previous section, then the detail pane (glance), or pane (campaign) |
 | `1`-`5` | Jump to a pane (campaign) |
 | `Enter` | Go to the row's agent pane in Herdr |
-| `l` | Open the campaign or the detail |
-| `h`, `esc` | Back, close |
+| `l` | Open the campaign |
+| `h`, `esc` | Back, close; from the detail pane, back to the list |
 | `/` | Filter rows by name; search in a document |
 | `c` | All campaigns, closed too (glance) |
 | `a` | Answer the selected ask |
@@ -101,7 +107,11 @@ frame is marked stale and keeps the last data.
 | `space` | Page down (in a document) |
 
 The mouse works too: click selects, double-click is `Enter`, the wheel
-scrolls.
+scrolls the pane under it.
+
+With the glance's detail pane focused, `j` `k`, `g` `G`, `ctrl-d` `ctrl-u`
+and `PgDn` `PgUp` scroll it instead of moving the cursor. Moving the cursor
+starts the next row's detail at its top.
 
 ### What the keys change
 
