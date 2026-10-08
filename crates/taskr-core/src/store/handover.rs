@@ -179,7 +179,7 @@ pub fn render(db: &Connection, id: i64, note: &str, adopted: bool) -> Result<Ren
     .expect("string");
     let decisions = rows(
         db,
-        "with recursive sub(id) as(select ?1 union all select t.id from tasks t join sub on t.parent_id=sub.id) select e.id,e.kind,coalesce(e.summary,'') as summary,coalesce(a.created_at,e.created_at) as created_at,t.name as name,coalesce(a.summary,'') as answer,coalesce(a.id,0) as answer_id from events e join tasks t on t.id=e.task_id left join events a on a.id=e.answered_by where ((e.kind='decision' and e.task_id=?1) or(e.kind='ask' and e.answered_by is not null and json_extract(e.data,'$.owner')=1 and e.task_id in(select id from sub))) and not exists(select 1 from events r where r.kind='revoke' and r.related_event_id=e.id and r.task_id=?1) order by e.id",
+        "with recursive sub(id) as(select ?1 union all select t.id from tasks t join sub on t.parent_id=sub.id) select e.id,e.kind,coalesce(e.summary,'') as summary,coalesce(a.created_at,e.created_at) as created_at,t.name as name,coalesce(a.summary,'') as answer,coalesce(a.id,0) as answer_id from events e join tasks t on t.id=e.task_id left join events a on a.id=e.answered_by where ((e.kind='decision' and e.task_id=?1) or(e.kind='ask' and e.answered_by is not null and json_extract(e.data,'$.owner')=1 and coalesce(json_extract(a.data,'$.withdrawn'),0)=0 and e.task_id in(select id from sub))) and not exists(select 1 from events r where r.kind='revoke' and r.related_event_id=e.id and r.task_id=?1) order by e.id",
         &[&id],
     )?;
     out.push_str("## Decisions in force\n\n");

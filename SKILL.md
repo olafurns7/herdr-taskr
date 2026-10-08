@@ -26,7 +26,11 @@ notes summarize context and link ask IDs. Glance red means open owner asks
 only; sound is blocking-only, badges count all. `set ROOT glance.state=parked`
 (and `glance.state=` to resume) requires TASKR_TASK and TASKR_LAUNCH unset, on the root's host, and a root target.
 Parking suppresses coordination alarms, keeps asks red, and turns amber if
-new tree events appear. The clear verdict is "no owner action".
+lane events or prompts to the lead follow it; root notes and handovers do not.
+Park after your final note. The clear verdict is "no owner action".
+An owner answer given in conversation: record it at once with `answer ASK_ID TEXT`.
+"Not today" is an answer; ask again later. Withdraw a stale ask with
+`answer ASK_ID --withdraw TEXT --as ROOT` (the asker's root or a hub root; else exit 6).
 
 Client records: `got`, `ready`, `done`, `fail`, `decide`, `next`, `note` and `close` print `qd1 <request key>` and exit 0 when the server is unreachable or earlier records wait in this host's spool. A full or unwritable spool: exit 5 with `retry with:`; rerun that line. Delivery: a running client daemon after a pass that reaches the server, or `taskr spool send` on that host; without a daemon they stay queued until manual send. Do not retry a queued record or treat it as failure. Other commands still exit 5 with `retry with: taskr --request-key KEY ...`: rerun that exact line before any wait; never wait on an unstored ask. If killed, use the announce line's retry command.
 

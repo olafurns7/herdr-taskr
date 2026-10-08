@@ -111,7 +111,7 @@ pub(super) fn snapshot(db: &Connection, root: i64, page: i64, all: bool) -> Resu
     let mut decisions = rows(
         db,
         &format!(
-            "{TREE}select e.id,e.kind,coalesce(e.summary,'') as text,coalesce(a.created_at,e.created_at) as at,t.name as lane,coalesce(a.summary,'') as answer from events e join tasks t on t.id=e.task_id left join events a on a.id=e.answered_by where ((e.kind='decision' and e.task_id=?) or (e.kind='ask' and e.answered_by is not null and json_extract(e.data,'$.owner')=1 and e.task_id in (select id from tree))) and not exists(select 1 from events r where r.kind='revoke' and r.related_event_id=e.id and r.task_id=?) order by e.id"
+            "{TREE}select e.id,e.kind,coalesce(e.summary,'') as text,coalesce(a.created_at,e.created_at) as at,t.name as lane,coalesce(a.summary,'') as answer from events e join tasks t on t.id=e.task_id left join events a on a.id=e.answered_by where ((e.kind='decision' and e.task_id=?) or (e.kind='ask' and e.answered_by is not null and json_extract(e.data,'$.owner')=1 and coalesce(json_extract(a.data,'$.withdrawn'),0)=0 and e.task_id in (select id from tree))) and not exists(select 1 from events r where r.kind='revoke' and r.related_event_id=e.id and r.task_id=?) order by e.id"
         ),
         vec![root.into(), root.into(), root.into()],
     )?;
@@ -137,13 +137,19 @@ pub(super) fn snapshot(db: &Connection, root: i64, page: i64, all: bool) -> Resu
     for a in rows(
         db,
         &format!(
-            "{TREE},asks as (select e.*,row_number() over (partition by (e.answered_by is null) order by e.id desc) as n from events e join tasks t on t.id=e.task_id where e.task_id in (select id from tree) and e.kind='ask' and (e.answered_by is not null or ? or (t.status!='closed' and (select status from tasks where id=?)!='closed'))) select e.id,e.created_at as at,t.name as lane,coalesce(e.summary,'') as text,e.answered_by is null as open,coalesce(json_extract(e.data,'$.owner'),0) as owner,coalesce(json_extract(e.data,'$.blocking'),0) as blocking,a.id as answer_id,a.created_at as answer_at,a.summary as answer_text,a.kind as answer_kind from asks e join tasks t on t.id=e.task_id left join events a on a.id=e.answered_by where e.answered_by is null or e.n<=20 order by (e.answered_by is null) desc,e.id desc"
+            "{TREE},asks as (select e.*,row_number() over (partition by (e.answered_by is null) order by e.id desc) as n from events e join tasks t on t.id=e.task_id where e.task_id in (select id from tree) and e.kind='ask' and (e.answered_by is not null or ? or (t.status!='closed' and (select status from tasks where id=?)!='closed'))) select e.id,e.created_at as at,t.name as lane,coalesce(e.summary,'') as text,e.answered_by is null as open,coalesce(json_extract(e.data,'$.owner'),0) as owner,coalesce(json_extract(e.data,'$.blocking'),0) as blocking,a.id as answer_id,a.created_at as answer_at,a.summary as answer_text,a.kind as answer_kind,coalesce(json_extract(a.data,'$.withdrawn'),0) as withdrawn from asks e join tasks t on t.id=e.task_id left join events a on a.id=e.answered_by where e.answered_by is null or e.n<=20 order by (e.answered_by is null) desc,e.id desc"
         ),
         vec![root.into(), i64::from(all).into(), root.into()],
     )? {
         asks.push(json!({"id":a["id"],"kind":"ask","at":a["at"],"lane":a["lane"],"text":a["text"],"open":n(&a,"open")!=0,"owner":n(&a,"owner")!=0,"blocking":a["blocking"]}));
         if !a["answer_id"].is_null() {
-            asks.push(json!({"id":a["answer_id"],"kind":a["answer_kind"],"at":a["answer_at"],"lane":a["lane"],"text":a["answer_text"].as_str().unwrap_or_default(),"owner":n(&a,"owner")!=0}));
+            let text = a["answer_text"].as_str().unwrap_or_default();
+            let text = if n(&a, "withdrawn") != 0 {
+                format!("withdrawn: {text}")
+            } else {
+                text.into()
+            };
+            asks.push(json!({"id":a["answer_id"],"kind":a["answer_kind"],"at":a["answer_at"],"lane":a["lane"],"text":text,"owner":n(&a,"owner")!=0}));
         }
     }
     let total: i64 = db.query_row(

@@ -282,7 +282,7 @@ TestGlanceTrustIdleResults		glance_trust_test.go	read:glance	c	todo		cmd:glance
 TestGlanceTrustIdleResults	fmt.Sprintf("%s/lease=%v", state, lease)	glance_trust_test.go	read:glance	c	todo		cmd:glance		
 TestGlanceTrustNotes		glance_trust_test.go	read:glance	c	todo		cmd:glance		
 TestGlanceTrustNotes	tc.text	glance_trust_test.go	read:glance	c	todo		cmd:glance		
-TestGlanceTrustParking		glance_trust_test.go	read:glance	c	todo		cmd:glance		
+TestGlanceTrustParking		glance_trust_test.go	read:glance	c	todo		cmd:glance	intentional divergence T1: Rust counts only lane events and prompts to the lead after a park; root bookkeeping (notes, handovers, refs) no longer makes parked_active	
 TestGlanceTrustUnregistered		glance_trust_test.go	read:glance	c	todo		cmd:glance		
 TestGlanceTrustUnregistered	fmt.Sprintf("%s/lanes=%v", age, lanes)	glance_trust_test.go	read:glance	c	todo		cmd:glance		
 TestGlanceTrustUnregisteredQuietLanes		glance_trust_test.go	read:glance	c	todo		cmd:glance		

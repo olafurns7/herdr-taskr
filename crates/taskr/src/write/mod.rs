@@ -124,6 +124,11 @@ pub fn flags(cmd: &str, json: bool) -> FlagSet {
             f.int("as", 0, "the task that received the ask")
                 .bool("prompt", false, "also prompt the asker with the answer")
                 .bool(
+                    "withdraw",
+                    false,
+                    "withdraw a stale ask (not an owner answer); --as the asker's root or a hub root",
+                )
+                .bool(
                     "confirm",
                     false,
                     "with --prompt: wait for the asker's taskr got receipt",
