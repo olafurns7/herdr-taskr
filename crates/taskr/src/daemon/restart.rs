@@ -1,12 +1,5 @@
 use super::*;
 use std::process::{Command, Stdio};
-#[cfg(target_os = "macos")]
-pub(super) fn restart(_db: Option<&db::Connection>, _dir: &Path, _lock: &Path) -> Result<Value> {
-    Err(store::reject(
-        "daemon --restart is unsupported on macOS in this build",
-    ))
-}
-#[cfg(not(target_os = "macos"))]
 pub(super) fn restart(db: Option<&db::Connection>, dir: &Path, lock: &Path) -> Result<Value> {
     let mut out = json!({"ok":true,"restarted":false});
     let mut args = vec!["daemon".to_string()];

@@ -1,9 +1,8 @@
 use super::*;
 use serde::{Deserialize, Serialize};
-use std::{
-    io::Write,
-    os::unix::fs::{MetadataExt, OpenOptionsExt},
-};
+#[cfg(target_os = "linux")]
+use std::os::unix::fs::MetadataExt;
+use std::{io::Write, os::unix::fs::OpenOptionsExt};
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(super) struct Record {
     pub pid: i32,
@@ -91,10 +90,14 @@ pub(super) fn proc_identity(pid: i32) -> std::io::Result<Proc> {
         uid: fs::metadata(dir)?.uid(),
     })
 }
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+pub(super) fn proc_identity(pid: i32) -> std::io::Result<Proc> {
+    super::macos::proc_identity(pid)
+}
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub(super) fn proc_identity(_pid: i32) -> std::io::Result<Proc> {
     Err(std::io::Error::other(
-        "daemon restart is unsupported on macOS in this build; kernel identity is deferred to R4",
+        "daemon process identity is unsupported on this platform",
     ))
 }
 pub(super) fn alive(pid: i32) -> bool {
@@ -109,8 +112,10 @@ pub(super) fn signal(pid: i32) -> std::io::Result<()> {
 pub(super) fn self_record(stay: bool, missing: bool) -> Record {
     let pid = std::process::id() as i32;
     let proc = proc_identity(pid).ok();
-    let executable = std::env::current_exe()
-        .ok()
+    let executable = proc
+        .as_ref()
+        .map(|p| PathBuf::from(&p.exe))
+        .or_else(|| std::env::current_exe().ok())
         .and_then(|p| fs::canonicalize(p).ok())
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
@@ -121,7 +126,10 @@ pub(super) fn self_record(stay: bool, missing: bool) -> Record {
             .as_ref()
             .map_or_else(|| std::env::args().collect(), |p| p.argv.clone()),
         start_time: proc.as_ref().map(|p| p.start.clone()).unwrap_or_default(),
-        uid: Some(rustix::process::getuid().as_raw()),
+        uid: Some(
+            proc.as_ref()
+                .map_or_else(|| rustix::process::getuid().as_raw(), |p| p.uid),
+        ),
         version: VERSION.into(),
         started_at: store::now(),
         stay,

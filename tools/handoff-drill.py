@@ -4,7 +4,7 @@
 tools/handoff-drill.py --rust dist-rust/taskr-rust-x86_64-unknown-linux-musl \
     --rust-contract /path/to/contract/taskr --out /tmp/handoff.json
 Go v0.16.1 oracles are built from this tree unless --go/--go-contract are supplied.
-No host services, installed binaries, or live state are used. Linux is required
+No host services, installed binaries, or live state are used. Linux or macOS is required
 for daemon --restart. Default-feature RPC is first exercised at the real swap,
 over the real tailnet.
 """
@@ -294,7 +294,7 @@ def main():
     p.add_argument('--out', type=Path, required=True)
     p.add_argument('--work-dir', type=Path, help='new scratch directory to retain evidence; must not exist')
     a = p.parse_args()
-    if sys.platform != 'linux': p.error('Linux required for daemon --restart')
+    if sys.platform not in ('linux', 'darwin'): p.error('Linux or macOS required for daemon --restart')
     a.rust = a.rust.resolve(); a.rust_contract = a.rust_contract.resolve()
     for binary in (a.rust, a.rust_contract):
         if not binary.is_file(): p.error(f'missing binary: {binary}')

@@ -1,6 +1,8 @@
 //! Resident event bridge. All state and sockets come from the selected HOME/ledger.
 mod hub;
 mod identity;
+#[cfg(any(target_os = "macos", test))]
+mod macos;
 mod restart;
 mod status;
 mod subscription;
@@ -511,7 +513,11 @@ fn hup_ignored() -> bool {
         })
         .is_some_and(|mask| mask & 1 != 0)
 }
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+fn hup_ignored() -> bool {
+    macos::hup_ignored()
+}
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn hup_ignored() -> bool {
     true
 }

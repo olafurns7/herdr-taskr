@@ -78,17 +78,18 @@ fn host_observation_is_scoped_and_notifications_are_blocking_only() {
 
 #[cfg(target_os = "macos")]
 #[test]
-fn macos_restart_fails_closed() {
-    let error = restart::restart(
-        None,
-        Path::new("/nonexistent"),
-        Path::new("/nonexistent/daemon.lock"),
-    )
-    .unwrap_err();
-    assert_eq!(error.code, ExitCode::Rejected);
+fn macos_kernel_identity_matches_self() {
+    let pid = std::process::id() as i32;
+    let proc = identity::proc_identity(pid).unwrap();
     assert_eq!(
-        error.message,
-        "daemon --restart is unsupported on macOS in this build"
+        fs::canonicalize(proc.exe).unwrap(),
+        fs::canonicalize(std::env::current_exe().unwrap()).unwrap()
     );
-    assert!(hup_ignored());
+    assert_eq!(proc.argv, std::env::args().collect::<Vec<_>>());
+    assert_eq!(proc.uid, rustix::process::geteuid().as_raw());
+    let (sec, usec) = proc.start.split_once('.').unwrap();
+    assert!(sec.parse::<i64>().unwrap() > 0);
+    assert_eq!(usec.len(), 6);
+    assert!(usec.parse::<u32>().unwrap() < 1_000_000);
+    assert!(identity::proc_identity(i32::MAX).is_err());
 }
