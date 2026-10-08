@@ -9,7 +9,10 @@ use std::{
 };
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, broadcast};
 
-const CAP: usize = 32;
+const LOCAL_CAP: usize = 8;
+const REMOTE_CAP: usize = 24;
+const IP_CAP: usize = 4;
+const MAX_AGE: Duration = Duration::from_secs(10 * 60);
 const QUEUE: usize = 16;
 #[derive(Clone, Debug)]
 struct Change {
@@ -18,6 +21,7 @@ struct Change {
     version: i64,
     hosts: Vec<(String, String)>,
     reset: bool,
+    kind: &'static str,
 }
 struct Inner {
     send: broadcast::Sender<Change>,
@@ -28,7 +32,9 @@ struct Inner {
 pub(super) struct Events {
     epoch: String,
     inner: StdMutex<Inner>,
-    slots: Arc<Semaphore>,
+    local_slots: Arc<Semaphore>,
+    remote_slots: Arc<Semaphore>,
+    ip_slots: StdMutex<BTreeMap<std::net::IpAddr, std::sync::Weak<Semaphore>>>,
     check: Notify,
 }
 impl Events {
@@ -55,11 +61,14 @@ impl Events {
                     version: 0,
                     hosts: Vec::new(),
                     reset: false,
+                    kind: "events",
                 },
                 running: false,
                 failed: false,
             }),
-            slots: Arc::new(Semaphore::new(CAP)),
+            local_slots: Arc::new(Semaphore::new(LOCAL_CAP)),
+            remote_slots: Arc::new(Semaphore::new(REMOTE_CAP)),
+            ip_slots: StdMutex::default(),
             check: Notify::new(),
         }
     }
@@ -83,9 +92,32 @@ impl Events {
         &self.epoch
     }
     pub(super) fn check(&self) {
-        if self.slots.available_permits() < CAP {
+        if self.local_slots.available_permits() < LOCAL_CAP
+            || self.remote_slots.available_permits() < REMOTE_CAP
+        {
             self.check.notify_one();
         }
+    }
+    fn acquire(
+        &self,
+        ip: std::net::IpAddr,
+        local: bool,
+    ) -> Option<(OwnedSemaphorePermit, OwnedSemaphorePermit)> {
+        let pool = if local {
+            &self.local_slots
+        } else {
+            &self.remote_slots
+        };
+        let permit = pool.clone().try_acquire_owned().ok()?;
+        let mut peers = self.ip_slots.lock().expect("event peers");
+        peers.retain(|_, slots| slots.strong_count() > 0);
+        let slots = peers
+            .get(&ip)
+            .and_then(std::sync::Weak::upgrade)
+            .unwrap_or_else(|| Arc::new(Semaphore::new(IP_CAP)));
+        let peer = slots.clone().try_acquire_owned().ok()?;
+        peers.insert(ip, Arc::downgrade(&slots));
+        Some((permit, peer))
     }
 }
 fn read(db: &db::Connection) -> Result<Change, String> {
@@ -108,6 +140,7 @@ fn read(db: &db::Connection) -> Result<Change, String> {
         version,
         hosts,
         reset: false,
+        kind: "events",
     })
 }
 fn next_seq() -> u64 {
@@ -147,6 +180,11 @@ async fn poll(events: Arc<Events>, db: db::Connection) {
                     || change.version != inner.current.version
                     || inner.failed
                 {
+                    change.kind = if change.rev != inner.current.rev {
+                        "events"
+                    } else {
+                        "hosts"
+                    };
                     change.reset = change.rev < inner.current.rev
                         || change.rev > inner.current.rev.saturating_add(1);
                     change.seq = next_seq();
@@ -169,7 +207,12 @@ async fn poll(events: Arc<Events>, db: db::Connection) {
     events.inner.lock().expect("events").running = false;
 }
 
-pub(super) async fn handle(hub: &Arc<Hub>, req: Request<Body>) -> Response {
+pub(super) async fn handle(
+    hub: &Arc<Hub>,
+    req: Request<Body>,
+    ip: std::net::IpAddr,
+    local: bool,
+) -> Response {
     // Local admission exposes only epoch/revision/kinds and sequence, never ledger contents.
     // Remote identity admission is the same as RPC and happens in the parent route.
     let (parts, _) = req.into_parts();
@@ -194,7 +237,7 @@ pub(super) async fn handle(hub: &Arc<Hub>, req: Request<Body>) -> Response {
     if header("x-taskr-rpc") != "1" {
         return http_error(StatusCode::BAD_REQUEST, "X-Taskr-RPC: 1 is required");
     }
-    let Ok(permit) = hub.events.slots.clone().try_acquire_owned() else {
+    let Some(permit) = hub.events.acquire(ip, local) else {
         return http_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "event subscriber limit reached",
@@ -244,6 +287,7 @@ pub(super) async fn handle(hub: &Arc<Hub>, req: Request<Body>) -> Response {
         initial: Some(current),
         receive: receiving(receiver),
         keepalive: Box::pin(tokio::time::sleep(Duration::from_secs(15))),
+        expires: Box::pin(tokio::time::sleep(MAX_AGE)),
         stop,
     };
     (
@@ -270,10 +314,11 @@ fn receiving(
 }
 struct EventBody {
     hub: Arc<Hub>,
-    _permit: OwnedSemaphorePermit,
+    _permit: (OwnedSemaphorePermit, OwnedSemaphorePermit),
     initial: Option<Change>,
     receive: Pin<Box<dyn Future<Output = Received> + Send>>,
     keepalive: Pin<Box<tokio::time::Sleep>>,
+    expires: Pin<Box<tokio::time::Sleep>>,
     stop: Pin<Box<dyn Future<Output = ()> + Send>>,
 }
 impl EventBody {
@@ -284,7 +329,7 @@ impl EventBody {
         let kind = if change.reset { "reset" } else { "change" };
         Frame::data(Bytes::from(format!(
             "event: {kind}\nid: {epoch}:{seq}:{rev}\ndata: {}\n\n",
-            json!({"epoch":epoch,"rev":rev,"seq":seq,"kinds":["events","hosts","tasks"]})
+            json!({"epoch":epoch,"rev":rev,"seq":seq,"kinds":[change.kind]})
         )))
     }
 }
@@ -295,7 +340,7 @@ impl HttpBody for EventBody {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Bytes>, Infallible>>> {
-        if self.stop.as_mut().poll(cx).is_ready() {
+        if self.stop.as_mut().poll(cx).is_ready() || self.expires.as_mut().poll(cx).is_ready() {
             return Poll::Ready(None);
         }
         if let Some(change) = self.initial.take() {

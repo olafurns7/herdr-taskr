@@ -220,7 +220,7 @@ async fn handle_inner(hub: &Arc<Hub>, peer: SocketAddr, req: Request<Body>) -> R
                 return http_error(StatusCode::FORBIDDEN, "this node is the server");
             }
         }
-        return events::handle(hub, req).await;
+        return events::handle(hub, req, ip, loopback).await;
     }
     if req.uri().path() != "/api/rpc" {
         return (StatusCode::NOT_FOUND, "404 page not found\n").into_response();

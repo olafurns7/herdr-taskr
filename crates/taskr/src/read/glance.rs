@@ -538,38 +538,99 @@ pub fn run(f: &FlagSet) -> Result<()> {
         && let Some(result) = crate::net::glance_watch_client()
     {
         let client = result.map_err(|(code, text)| Error { code, text })?;
-        let mut v = client
-            .snapshot(std::time::Duration::from_nanos(every as u64))
-            .map_err(|(code, text)| Error { code, text })?;
-        v["now"] = json!(q::now());
-        println!("{}", render::frame(&v, 80, usize::MAX, 0).join("\n"));
-        return Ok(());
+        return watch(std::time::Duration::from_nanos(every as u64), || {
+            let mut v = client
+                .snapshot(std::time::Duration::from_nanos(every as u64))
+                .map_err(|(code, text)| Error { code, text })?;
+            v["now"] = json!(q::now());
+            Ok(v)
+        });
     }
-    // ponytail: TTY uses the non-TTY snapshot stream until the R4 interactive view.
     let db = open().map_err(|mut e| {
         if f.get_bool("watch") {
             e.code = ExitCode::Watch;
         }
         e
     })?;
-    let v = (|| {
+    let fetch = || {
         db.execute_batch("begin")?;
         let v = snapshot(&db)?;
         db.execute_batch("rollback")?;
         Ok(v)
-    })()
-    .map_err(|mut e: Error| {
+    };
+    if f.get_bool("watch") {
+        return watch(std::time::Duration::from_nanos(every as u64), fetch);
+    }
+    let v = fetch().map_err(|mut e: Error| {
         if f.get_bool("watch") {
             e.code = ExitCode::Watch;
         }
         e
     })?;
-    if f.get_bool("watch") {
-        println!("{}", render::frame(&v, 80, usize::MAX, 0).join("\n"));
-    } else {
-        println!("{}{}", if f.json() { "" } else { "j1 " }, go_json(&v));
-    }
+    println!("{}{}", if f.json() { "" } else { "j1 " }, go_json(&v));
     Ok(())
+}
+
+fn watch(every: std::time::Duration, mut fetch: impl FnMut() -> Result<Value>) -> Result<()> {
+    use std::io::{IsTerminal, Write};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    use std::time::{Duration, Instant};
+    let tty = std::io::stdout().is_terminal() && std::io::stdin().is_terminal();
+    let stopped = Arc::new(AtomicBool::new(false));
+    let mut signals = Vec::new();
+    let mut run = || -> std::io::Result<()> {
+        if tty {
+            for signal in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
+                signals.push(signal_hook::flag::register(signal, stopped.clone())?);
+            }
+        }
+        let mut out = std::io::stdout().lock();
+        while !stopped.load(Ordering::Relaxed) {
+            let start = Instant::now();
+            let v = fetch();
+            if stopped.load(Ordering::Relaxed) {
+                break;
+            }
+            let v = v.map_err(|e| std::io::Error::other(e.text))?;
+            let width = if tty {
+                rustix::termios::tcgetwinsize(std::io::stdout())
+                    .ok()
+                    .filter(|size| size.ws_col > 0)
+                    .map_or(80, |size| usize::from(size.ws_col))
+            } else {
+                80
+            };
+            if tty {
+                write!(out, "\x1b[H\x1b[2J")?;
+            }
+            writeln!(
+                out,
+                "{}",
+                render::frame(&v, width, usize::MAX, 0).join("\n")
+            )?;
+            out.flush()?;
+            if !tty {
+                break;
+            }
+            while start.elapsed() < every && !stopped.load(Ordering::Relaxed) {
+                std::thread::sleep(
+                    (every - start.elapsed().min(every)).min(Duration::from_millis(50)),
+                );
+            }
+        }
+        Ok(())
+    };
+    let result = run();
+    for signal in signals {
+        signal_hook::low_level::unregister(signal);
+    }
+    result.map_err(|e| Error {
+        code: ExitCode::Watch,
+        text: e.to_string(),
+    })
 }
 
 #[cfg(test)]

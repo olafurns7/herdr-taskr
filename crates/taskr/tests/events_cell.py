@@ -2,6 +2,7 @@
 """P5a Rust hub SSE acceptance cell: synthetic ledger, HOME and tailnet only."""
 import argparse
 import http.client
+import http.server
 import json
 from pathlib import Path
 import select
@@ -9,6 +10,7 @@ import sqlite3
 import subprocess
 import tempfile
 import time
+import threading
 from hub_cell import RustHub
 
 class Subscriber:
@@ -51,6 +53,65 @@ def cpu(pid):
     fields = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
     return int(fields[11]) + int(fields[12])
 
+def reconnect(binary, cell):
+    """Two short streams, then refusal: EOF reconnects and repeats admission."""
+    requests = []
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            requests.append(self.headers.get('X-Taskr-RPC'))
+            if len(requests) == 3:
+                self.send_error(403); return
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.end_headers()
+            if len(requests) == 2:
+                self.wfile.write(b': keepalive\n\n')
+            data = {'epoch': 'synthetic-reconnect', 'seq': len(requests), 'rev': 1, 'kinds': ['events']}
+            self.wfile.write(('event: change\ndata: ' + json.dumps(data) + '\n\n').encode())
+        def log_message(self, *args): pass
+    server = http.server.HTTPServer(('127.0.0.1', 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+    with sqlite3.connect(cell.db) as db:
+        previous = db.execute("select value from meta where key='dashboard_url'").fetchone()[0]
+        db.execute("update meta set value=? where key='dashboard_url'", (f'http://127.0.0.1:{server.server_port}',))
+    try:
+        p = subprocess.run([str(binary), '_events', '--json'], env=cell.hub_env, capture_output=True, timeout=10)
+        lines = [json.loads(line) for line in p.stdout.splitlines()]
+        assert p.returncode == 6 and requests == ['1'] * 3, (p, requests)
+        events = [line for line in lines if 'event' in line]
+        assert [line['seq'] for line in events] == [1, 2], lines
+        assert [line['event'] for line in events] == ['change', 'reset'], lines
+        assert lines[1] == {'keepalive': True}, lines
+        assert 'admission refused' in lines[-1]['error'], lines
+    finally:
+        server.shutdown(); server.server_close(); thread.join(timeout=2)
+        with sqlite3.connect(cell.db) as db:
+            db.execute("update meta set value=? where key='dashboard_url'", (previous,))
+
+def orphan(binary):
+    with tempfile.TemporaryDirectory(prefix='taskr-events-orphan-') as tmp:
+        cell = RustHub(binary, binary, tmp)
+        p = None
+        try:
+            p = subprocess.Popen([str(binary), '_events', '--json'], env=cell.client_env,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            assert select.select([p.stdout], [], [], 5)[0]
+            first = json.loads(p.stdout.readline())
+            assert first['event'] == 'change' and first['rev'] == 0, first
+            p.stdout.close()
+            started = time.monotonic()
+            p.wait(timeout=18)
+            elapsed = time.monotonic() - started
+            assert p.returncode == 0 and not p.stderr.read(), p.returncode
+            assert 14 <= elapsed < 18, elapsed
+            assert cell.count('select coalesce(max(id),0) from events') == 0
+            return elapsed
+        finally:
+            if p is not None:
+                if p.poll() is None: p.kill(); p.wait(timeout=3)
+                p.stderr.close()
+            cell.close()
+
 def run(binary, idle):
     results = {}
     with tempfile.TemporaryDirectory(prefix='taskr-events-') as tmp:
@@ -77,6 +138,7 @@ def run(binary, idle):
                     if event['rev'] == expected: break
                 elapsed = time.monotonic() - start
                 assert event['rev'] > initial['rev'] and event['epoch'] == initial['epoch'], (label, event)
+                assert event['kinds'] == ['events'], event
                 assert elapsed < 1, (label, elapsed)
                 results[label + '_seconds'] = elapsed
                 initial = event
@@ -91,7 +153,14 @@ def run(binary, idle):
             assert r.status == 200 and reply['exit'] == 0, reply
             _, host_event = sub.event()
             assert host_event['rev'] == before, host_event
+            assert host_event['kinds'] == ['hosts'], host_event
             results['host_without_event'] = True
+            # Metadata-only local commits report hosts, with no event revision.
+            with sqlite3.connect(cell.db) as db:
+                db.execute("insert into meta values('lead_listed_at','synthetic-new-listing') on conflict(key) do update set value=excluded.value")
+            _, meta_event = sub.event()
+            assert meta_event['rev'] == before and meta_event['kinds'] == ['hosts'], meta_event
+            results['honest_kinds'] = True
             # A committed batch advances the revision by more than one: reset.
             with sqlite3.connect(cell.db) as db:
                 for n in range(3):
@@ -172,6 +241,8 @@ def run(binary, idle):
             with sqlite3.connect(cell.db) as db:
                 db.execute("update meta set value=? where key='dashboard_url'", (local_url,))
             results['local_discovery_readonly_loopback_only'] = True
+            reconnect(binary, cell)
+            results['client_reconnect_and_readmission'] = True
             # Wait for closed bodies to release their permits, by bounded retries.
             deadline = time.monotonic() + 3
             while True:
@@ -182,10 +253,14 @@ def run(binary, idle):
                     response.close(); c.close(); break
                 response.close(); c.close()
                 assert time.monotonic() < deadline
-            for _ in range(32):
+            for _ in range(4):
                 s = Subscriber(cell); s.event(); subs.append(s)
             s = Subscriber(cell, code=503); s.close()
-            results['subscriber_cap_32'] = True
+            # Filling one remote IP must leave the separate loopback pool usable.
+            for _ in range(4):
+                s = Subscriber(cell, url=local_url); s.event(); subs.append(s)
+            s = Subscriber(cell, url=local_url, code=503); s.close()
+            results['per_ip_cap_4_and_separate_pools'] = True
             for s in subs:
                 s.close()
             subs.clear()
@@ -223,6 +298,7 @@ def run(binary, idle):
             for s in subs:
                 s.close()
             cell.close()
+    results['closed_stdout_idle_seconds'] = orphan(binary)
     return results
 
 if __name__ == '__main__':

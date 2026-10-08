@@ -29,6 +29,7 @@ struct Socket {
     phase: Arc<Mutex<Phase>>,
     timer: Pin<Box<Sleep>>,
     write_timer: Pin<Box<Sleep>>,
+    keepalive_set: bool,
 }
 impl Socket {
     fn check_write_timeout(&mut self, cx: &mut Context<'_>) -> io::Result<()> {
@@ -79,6 +80,13 @@ impl AsyncWrite for Socket {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
+        if !self.keepalive_set && self.phase.lock().expect("phase").streaming {
+            let result = streaming_keepalive(&self.stream);
+            if let Err(error) = result {
+                return Poll::Ready(Err(error));
+            }
+            self.keepalive_set = true;
+        }
         {
             let mut phase = self.phase.lock().expect("phase");
             let seconds = if phase.streaming { 30 } else { 15 };
@@ -140,7 +148,7 @@ pub(super) async fn listen(
                     }
                 };
                 let phase=Arc::new(Mutex::new(Phase{deadline:Some(Instant::now()+Duration::from_secs(5)),idle:false,reply_ready:false,read_started:Instant::now(),write_deadline:None,streaming:false}));
-                let socket=Socket{stream,phase:phase.clone(),timer:Box::pin(tokio::time::sleep(Duration::from_secs(5))),write_timer:Box::pin(tokio::time::sleep(Duration::from_secs(15)))};
+                let socket=Socket{stream,phase:phase.clone(),timer:Box::pin(tokio::time::sleep(Duration::from_secs(5))),write_timer:Box::pin(tokio::time::sleep(Duration::from_secs(15))),keepalive_set:false};
                 let service=TowerToHyperService::new(router.clone());
                 let service=hyper::service::service_fn(move |mut req| {
                     req.extensions_mut().insert(ConnectInfo(peer));
@@ -175,3 +183,33 @@ pub(super) async fn listen(
 
 #[derive(Clone, Copy)]
 pub(super) struct ReadDeadline(pub Instant);
+
+fn streaming_keepalive(stream: &TcpStream) -> io::Result<()> {
+    use rustix::net::sockopt::*;
+    set_socket_keepalive(stream, true)?;
+    set_tcp_keepidle(stream, Duration::from_secs(40))?;
+    set_tcp_keepintvl(stream, Duration::from_secs(10))?;
+    set_tcp_keepcnt(stream, 2)?;
+    #[cfg(target_os = "linux")]
+    set_tcp_user_timeout(stream, 60_000)?;
+    Ok(())
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn streaming_socket_times_out_dead_peers_in_about_a_minute() {
+    use rustix::net::sockopt::*;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let client = TcpStream::connect(listener.local_addr().unwrap())
+        .await
+        .unwrap();
+    let (stream, _) = listener.accept().await.unwrap();
+    streaming_keepalive(&stream).unwrap();
+    assert!(socket_keepalive(&stream).unwrap());
+    assert_eq!(tcp_keepidle(&stream).unwrap(), Duration::from_secs(40));
+    assert_eq!(tcp_keepintvl(&stream).unwrap(), Duration::from_secs(10));
+    assert_eq!(tcp_keepcnt(&stream).unwrap(), 2);
+    #[cfg(target_os = "linux")]
+    assert_eq!(tcp_user_timeout(&stream).unwrap(), 60_000);
+    drop(client);
+}

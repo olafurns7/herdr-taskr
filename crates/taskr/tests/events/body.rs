@@ -25,10 +25,14 @@ async fn overflow_resets_to_current_and_discards_old_notifications() {
     let receiver = hub.events.inner.lock().unwrap().send.subscribe();
     let mut body = EventBody {
         hub: hub.clone(),
-        _permit: hub.events.slots.clone().acquire_owned().await.unwrap(),
+        _permit: hub
+            .events
+            .acquire("127.0.0.1".parse().unwrap(), true)
+            .unwrap(),
         initial: None,
         receive: receiving(receiver),
         keepalive: Box::pin(tokio::time::sleep(Duration::from_secs(15))),
+        expires: Box::pin(tokio::time::sleep(MAX_AGE)),
         stop: Box::pin(std::future::pending()),
     };
     for rev in 1..=100 {
@@ -65,6 +69,15 @@ async fn overflow_resets_to_current_and_discards_old_notifications() {
         .into_data()
         .unwrap();
     assert!(std::str::from_utf8(&frame).unwrap().contains("\"rev\":101"));
+    assert_eq!(MAX_AGE, Duration::from_secs(600));
+    body.expires.as_mut().reset(tokio::time::Instant::now());
+    assert!(
+        std::future::poll_fn(|cx| Pin::new(&mut body).poll_frame(cx))
+            .await
+            .is_none()
+    );
+    drop(body);
+    assert_eq!(hub.events.local_slots.available_permits(), LOCAL_CAP);
 }
 
 #[test]
@@ -74,8 +87,41 @@ fn one_watcher_and_cap_across_loopback_and_tailnet_hubs() {
     let remote = Events::shared(path);
     assert!(Arc::ptr_eq(&local, &remote));
     assert!(!local.inner.lock().unwrap().running);
-    let permit = local.slots.clone().try_acquire_owned().unwrap();
-    assert_eq!(remote.slots.available_permits(), CAP - 1);
-    drop(permit);
-    assert_eq!(remote.slots.available_permits(), CAP);
+    let ip = "127.0.0.1".parse().unwrap();
+    let mut permits: Vec<_> = (0..IP_CAP)
+        .map(|_| local.acquire(ip, true).unwrap())
+        .collect();
+    assert!(remote.acquire(ip, true).is_none());
+    assert!(remote.acquire(ip, false).is_none());
+    assert_eq!(remote.remote_slots.available_permits(), REMOTE_CAP);
+    for _ in 0..IP_CAP {
+        permits.push(local.acquire("127.0.0.2".parse().unwrap(), true).unwrap());
+    }
+    assert!(local.acquire("127.0.0.3".parse().unwrap(), true).is_none());
+    let mut remote_permits = Vec::new();
+    for n in 1..=6 {
+        for _ in 0..IP_CAP {
+            remote_permits.push(
+                remote
+                    .acquire(format!("192.0.2.{n}").parse().unwrap(), false)
+                    .unwrap(),
+            );
+        }
+    }
+    assert_eq!(remote.remote_slots.available_permits(), 0);
+    assert!(
+        remote
+            .acquire("192.0.2.7".parse().unwrap(), false)
+            .is_none()
+    );
+    drop(permits);
+    assert_eq!(local.local_slots.available_permits(), LOCAL_CAP);
+    assert!(local.acquire(ip, true).is_some());
+    drop(remote_permits);
+    assert_eq!(remote.remote_slots.available_permits(), REMOTE_CAP);
+    assert!(
+        remote
+            .acquire("192.0.2.1".parse().unwrap(), false)
+            .is_some()
+    );
 }

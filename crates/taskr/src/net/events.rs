@@ -213,8 +213,8 @@ impl Read for Chunks {
     }
 }
 impl EventStream {
-    pub(crate) fn next_event(&mut self) -> std::result::Result<Event, (ExitCode, String)> {
-        let mut result = || -> Result<Event> {
+    pub(crate) fn next_event(&mut self) -> std::result::Result<Option<Event>, (ExitCode, String)> {
+        let mut result = || -> Result<Option<Event>> {
             let mut data = String::new();
             let mut kind = String::new();
             let mut bytes = 0;
@@ -227,9 +227,7 @@ impl EventStream {
                 let text = text.trim_end_matches(['\r', '\n']);
                 if text.is_empty() {
                     if data.is_empty() {
-                        bytes = 0;
-                        kind.clear();
-                        continue;
+                        return Ok(None);
                     }
                     let mut event: Event = serde_json::from_str(&data).map_err(|e| {
                         Error::transport(format!("invalid event: {e}"), false, true)
@@ -250,7 +248,7 @@ impl EventStream {
                                 || event.seq > seq.saturating_add(1)
                         });
                     self.last = Some((event.epoch.clone(), event.rev, event.seq));
-                    return Ok(event);
+                    return Ok(Some(event));
                 }
                 if let Some(value) = text.strip_prefix("data:") {
                     if !data.is_empty() {
@@ -279,16 +277,35 @@ pub(crate) fn dispatch(json: bool, args: &[String]) -> Option<ExitCode> {
         return Some(ExitCode::Ok);
     }
     let run = || -> std::result::Result<(), (ExitCode, String)> {
-        let mut stream = open()?;
+        let mut events = open()?;
         let mut out = io::stdout().lock();
+        let mut reset = false;
         loop {
-            let event = stream.next_event()?;
-            let kind = if event.reset { "reset" } else { "change" };
-            let value = serde_json::json!({"epoch":event.epoch,"rev":event.rev,"seq":event.seq,"kinds":event.kinds,"event":kind});
-            let text = if flags.json() {
-                value.to_string()
+            let event = match events.next_event() {
+                Ok(event) => event,
+                Err((_, text)) if text == "event stream closed" => {
+                    events = open()?;
+                    reset = true;
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+            let text = if let Some(event) = event {
+                let kind = if event.reset || reset {
+                    "reset"
+                } else {
+                    "change"
+                };
+                reset = false;
+                if flags.json() {
+                    serde_json::json!({"epoch":event.epoch,"rev":event.rev,"seq":event.seq,"kinds":event.kinds,"event":kind}).to_string()
+                } else {
+                    format!("{kind} {} {} {}", event.epoch, event.rev, event.seq)
+                }
+            } else if flags.json() {
+                "{\"keepalive\":true}".into()
             } else {
-                format!("{kind} {} {} {}", event.epoch, event.rev, event.seq)
+                ": keepalive".into()
             };
             if let Err(e) = writeln!(out, "{text}").and_then(|()| out.flush()) {
                 if e.kind() == io::ErrorKind::BrokenPipe {

@@ -21,7 +21,7 @@ unicode-segmentation = "1.13"
 signal-hook = "0.3"
 serde = { version = "1", features = ["derive"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
-rustix = { version = "1", features = ["fs", "process"] }
+rustix = { version = "1", features = ["fs", "process", "net", "termios"] }
 sha2 = "0.10"
 base64 = "0.22"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "process", "signal", "io-util"] }

@@ -6,7 +6,7 @@ tools/handoff-drill.py --rust dist-rust/taskr-rust-x86_64-unknown-linux-musl \
 Go v0.16.1 oracles are built from this tree unless --go/--go-contract are supplied.
 No host services, installed binaries, or live state are used. Linux is required
 for daemon --restart. Default-feature RPC is first exercised at the real swap,
-over the real tailnet (orchestrator decision on ask 57224).
+over the real tailnet.
 """
 import argparse
 import hashlib
@@ -142,9 +142,15 @@ def local(go, rust, place, busy, passed):
         assert schema(ledger) == original_schema
         passed(STEPS[3], reply)
     finally:
-        if p is not None: stop(p)
-        if detached is not None: stop_detached(detached, lock)
-        fake.close()
+        try:
+            if p is not None: stop(p)
+        finally:
+            try:
+                # A restart/start may have succeeded before its reply was parsed.
+                if lock.exists() and lock_held(lock):
+                    stop_detached(int(lock.read_text()), lock)
+            finally:
+                fake.close()
 
 
 def rpc(go, rust, place, busy, passed):
@@ -203,15 +209,16 @@ def rpc(go, rust, place, busy, passed):
         eventually(lambda: not list(queue.glob('*.json')))
         for index in range(2):
             assert scalar(cell.db, 'select count(*) from events where summary=?', (f'Go spool {index}',)) == 1
-        replay = cell.obj(rust, ['wait', '--as', str(top), '--for', 'ready', '--timeout', '0'])
-        assert replay['event']['id'] == ready and replay['replay'], replay
-        reply = cell.want(rust, argv)
-        assert (reply.stdout, reply.stderr) == (stored.stdout, stored.stderr)
-        assert scalar(cell.db, 'select argv_sha from requests where key=?', (key,)) == stored_hash
-        assert scalar(cell.db, "select count(*) from events where summary='one stored reply across swap'") == 1
+        for client in (go, rust):
+            replay = cell.obj(client, ['wait', '--as', str(top), '--for', 'ready', '--timeout', '0'])
+            assert replay['event']['id'] == ready and replay['replay'], replay
+            reply = cell.want(client, argv)
+            assert (reply.stdout, reply.stderr) == (stored.stdout, stored.stderr), (client, reply, stored)
+            assert scalar(cell.db, 'select argv_sha from requests where key=?', (key,)) == stored_hash
+            assert scalar(cell.db, "select count(*) from events where summary='one stored reply across swap'") == 1
         reverse_argv = ['--json', '--request-key', 'handoff-dedupe-reverse', 'note', 'Rust reply survives rollback', '--as', str(top)]
         reverse_stored = cell.want(rust, reverse_argv)
-        passed(STEPS[6], {'event_id': ready, 'replay': replay['replay']})
+        passed(STEPS[6], {'event_id': ready, 'replay': replay['replay'], 'clients': ['Go', 'Rust']})
         stop(relay); relay = None
         stop(cell.hub)
         assert not lock_held(lock) and lock.read_bytes() == b''
@@ -246,6 +253,39 @@ def rpc(go, rust, place, busy, passed):
         fake.close(); cell.close()
 
 
+def cleanup_probes(go, rust, place, busy):
+    from unittest.mock import patch
+    checks = []
+    for boundary in ('start', 'restart'):
+        spawned = []
+        real_start, real_record = start, record
+        def broken_start(*args):
+            process = real_start(*args); spawned.append(process)
+            raise RuntimeError('synthetic startup reply failure')
+        def broken_record(*args):
+            reply = real_record(*args)
+            if args[2:4] == ('daemon', '--restart'):
+                raise RuntimeError('synthetic restart reply failure')
+            return reply
+        lane = place / boundary
+        try:
+            with patch(__name__ + ('.start' if boundary == 'start' else '.record'),
+                       broken_start if boundary == 'start' else broken_record):
+                try:
+                    local(go, rust, lane, busy, lambda *args: None)
+                except RuntimeError as error:
+                    assert str(error) == f'synthetic {"startup" if boundary == "start" else "restart"} reply failure', error
+                else:
+                    raise AssertionError('failure probe did not reach its boundary')
+        finally:
+            for process in spawned:
+                process.communicate(timeout=5)
+        lock = lane / 'home/.local/state/taskr/daemon.lock'
+        assert not lock_held(lock) and lock.read_bytes() == b''
+        checks.append(boundary + ' reply failure releases the scratch daemon lock')
+    return checks
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--rust', type=Path, required=True, help='default-feature candidate')
@@ -258,7 +298,7 @@ def main():
     a.rust = a.rust.resolve(); a.rust_contract = a.rust_contract.resolve()
     for binary in (a.rust, a.rust_contract):
         if not binary.is_file(): p.error(f'missing binary: {binary}')
-    default_strings = subprocess.run(['strings', str(a.rust)], capture_output=True, check=True).stdout
+    default_strings = subprocess.run(['strings', '-a', str(a.rust)], capture_output=True, check=True).stdout
     assert not any(hook in default_strings for hook in (b'TASKR_FROZEN_NOW', b'TASKR_CONTRACT_', b'--contract-')), 'default candidate contains contract hooks'
     rows = []
     def passed(name, evidence=None):
@@ -268,7 +308,7 @@ def main():
         place = a.work_dir.resolve(); place.mkdir(parents=True, exist_ok=False)
     else:
         temp = tempfile.TemporaryDirectory(prefix='taskr-handoff-'); place = Path(temp.name)
-    error = None
+    error = None; cleanup_checks = []
     try:
         oracles = []
         for supplied, name, tags in ((a.go, 'go-default', []), (a.go_contract, 'go-contract', ['-tags', 'taskr_contract'])):
@@ -278,6 +318,7 @@ def main():
             oracles.append(binary)
         corpus = place / 'corpus'; corpus.mkdir()
         busy = fixtures.fixtures(corpus, None)['busy']
+        cleanup_checks = cleanup_probes(oracles[0], a.rust, place / 'cleanup', busy)
         local(oracles[0], a.rust, place / 'local', busy, passed)
         rpc(oracles[1], a.rust_contract, place / 'rpc', busy, passed)
     except Exception:
@@ -286,6 +327,7 @@ def main():
         for index, name in enumerate(STEPS[len(rows):]):
             rows.append({'step': name, 'status': 'FAIL' if index == 0 else 'NOT RUN', 'error': error})
         payload = {'passed': sum(r['status'] == 'PASS' for r in rows), 'failed': error is not None,
+                   'cleanup_checks': cleanup_checks,
                    'default_rpc': 'NOT EXERCISED: first exercised at real swap over real tailnet',
                    'candidates': {str(b): hashlib.sha256(b.read_bytes()).hexdigest() for b in (a.rust, a.rust_contract)},
                    'rows': rows, 'error': error}

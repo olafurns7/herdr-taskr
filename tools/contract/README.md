@@ -5,10 +5,10 @@ No installed binary or live service is used. All adapter commands receive scratc
 ## Build and generate
 
 ```sh
-export PATH=/home/olinn/.cargo/bin:$PATH
+export PATH="$HOME/.cargo/bin:$PATH"
 # On this host the installed stable toolchain is exactly 1.99.0.
 export RUSTUP_TOOLCHAIN=stable
-export CARGO_HOME=/home/olinn/.cache/taskr-cargo
+export CARGO_HOME="$HOME/.cache/taskr-cargo"
 mkdir -p .scratch
 TASKR_GENERATE_CONTRACT=1 go test -timeout 5m -run '^TestContractGolden' -count=1 .
 go list -deps -test -export -json ./... > .scratch/go-packages.json
@@ -58,24 +58,24 @@ python3 tools/contract/run.py --go .scratch/taskr-oracle --rust target/release/t
 
 All committed fixture definitions/vectors are synthetic. Private runs and any live-corpus copies remain under the ignored worktree `.scratch/` directory.
 
-Fixtures are empty, legacy v0.9.1, and a nested busy tree with closed tasks, launches, events and documents. For live-corpus evidence, take the specifically authorized read-only SQLite backup first, then pass **the backup** to `--live-snapshot PATH --require-live`. The runner never discovers or backs up the live ledger; it rejects live snapshots or live-run output paths outside this worktree `.scratch/`. It retains counts/hashes, not corpus content, in its results. Delete the exact backup path after validation. If system SQLite cannot read a recent FTS index, install a user-space Python engine (`python3 -m pip install --target /home/olinn/.cache/taskr-tools/python pysqlite3-binary==0.5.4.post2`) and pass `--sqlite-module pysqlite3` with that directory on PYTHONPATH. Integrity failures must be diagnosed, not bypassed; repairing a private corpus requires authorization and separate before/after evidence.
+Fixtures are empty, legacy v0.9.1, and a nested busy tree with closed tasks, launches, events and documents. For live-corpus evidence, take the specifically authorized read-only SQLite backup first, then pass **the backup** to `--live-snapshot PATH --require-live`. The runner never discovers or backs up the live ledger; it rejects live snapshots or live-run output paths outside this worktree `.scratch/`. It retains counts/hashes, not corpus content, in its results. Delete the exact backup path after validation. If system SQLite cannot read a recent FTS index, install a user-space Python engine (`python3 -m pip install --target $HOME/.cache/taskr-tools/python pysqlite3-binary==0.5.4.post2`) and pass `--sqlite-module pysqlite3` with that directory on PYTHONPATH. Integrity failures must be diagnosed, not bypassed; repairing a private corpus requires authorization and separate before/after evidence.
 
 The Go oracle uses `-tags taskr_contract`: `TASKR_FROZEN_NOW` (RFC3339Nano) is read only in `clock_contract.go`; the regular Go build ignores it. Product `time.Now` and `time.Since` calls share `clockNow()`. The frozen clock applies to deadlines too, so frozen differential cases use immediate waits and finite commands. Omit the variable for real-time/process/network tests. Rust exposes `taskr_core::frozen_now` for command lanes. The `contract` Cargo feature is off by default and propagates from taskr to taskr-core; **every harness/parity build must use `cargo build --release -p taskr --features contract`**. Default production builds ignore `TASKR_FROZEN_NOW` and all `TASKR_CONTRACT_*` fixture switches. Verify both configurations with `cargo test --workspace` and `cargo test --workspace --features contract`; the default-build test runs a subprocess with a past and malformed frozen timestamp and asserts that the clock remains real. `run.py` consumes explicit binaries and never builds one. Rust schema and extracted search SQL are checked against the Go source of truth; schema changes must update/generate their source contracts.
 
 ## Static musl builds on this host
 
-User-space tools are isolated in `/home/olinn/.cache/taskr-tools`. Installation:
+User-space tools are isolated in `$HOME/.cache/taskr-tools`. Installation:
 
 ```sh
-python3 -m pip install --target /home/olinn/.cache/taskr-tools/python ziglang
-mkdir -p /home/olinn/.cache/taskr-tools/bin /home/olinn/.cache/taskr-rustup
-ln -s /home/olinn/.cache/taskr-tools/python/ziglang/zig /home/olinn/.cache/taskr-tools/bin/zig
+python3 -m pip install --target $HOME/.cache/taskr-tools/python ziglang
+mkdir -p $HOME/.cache/taskr-tools/bin $HOME/.cache/taskr-rustup
+ln -s $HOME/.cache/taskr-tools/python/ziglang/zig $HOME/.cache/taskr-tools/bin/zig
 # Writable mirror, because the installed rustup home is outside this lane's write scope.
-cp -a --reflink=auto /home/olinn/.rustup/. /home/olinn/.cache/taskr-rustup/
-export RUSTUP_HOME=/home/olinn/.cache/taskr-rustup
+cp -a --reflink=auto $HOME/.rustup/. $HOME/.cache/taskr-rustup/
+export RUSTUP_HOME="$HOME/.cache/taskr-rustup"
 rustup target add --toolchain stable aarch64-unknown-linux-musl
-cargo install --locked --root /home/olinn/.cache/taskr-tools/cargo cargo-zigbuild
-export PATH=/home/olinn/.cache/taskr-tools/bin:/home/olinn/.cache/taskr-tools/cargo/bin:$PATH
+cargo install --locked --root $HOME/.cache/taskr-tools/cargo cargo-zigbuild
+export PATH="$HOME/.cache/taskr-tools/bin:$HOME/.cache/taskr-tools/cargo/bin:$PATH"
 # Bundled SQLite needs musl headers/compiler; Zig supplies them.
 CC_x86_64_unknown_linux_musl="$PWD/tools/contract/zig-cc.sh" \
   cargo build --release -p taskr --features contract --target x86_64-unknown-linux-musl
