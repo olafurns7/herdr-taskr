@@ -1,6 +1,8 @@
 //! Resident event bridge. All state and sockets come from the selected HOME/ledger.
 mod hub;
 mod identity;
+#[cfg(any(target_os = "macos", test))]
+mod macos;
 mod restart;
 mod status;
 mod subscription;
@@ -317,6 +319,11 @@ fn run(
     let mut nofile = rustix::process::getrlimit(rustix::process::Resource::Nofile);
     if nofile.current != nofile.maximum {
         nofile.current = nofile.maximum;
+        #[cfg(target_os = "macos")]
+        match macos::clamp_nofile(nofile.maximum) {
+            Ok(limit) => nofile.current = Some(limit),
+            Err(error) => log.line(&format!("read kern.maxfilesperproc: {error}")),
+        }
         if let Err(error) = rustix::process::setrlimit(rustix::process::Resource::Nofile, nofile) {
             log.line(&format!("raise RLIMIT_NOFILE: {error}"));
         }
@@ -511,7 +518,11 @@ fn hup_ignored() -> bool {
         })
         .is_some_and(|mask| mask & 1 != 0)
 }
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+fn hup_ignored() -> bool {
+    macos::hup_ignored()
+}
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn hup_ignored() -> bool {
     true
 }

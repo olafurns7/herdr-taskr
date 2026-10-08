@@ -28,3 +28,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "
 axum = "0.8"
 hyper = { version = "1", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["tokio", "service", "server-auto"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
