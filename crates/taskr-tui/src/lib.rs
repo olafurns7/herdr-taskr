@@ -21,7 +21,10 @@ mod ui;
 
 use std::{cell::RefCell, rc::Rc, time::Instant};
 
-use ratatui::{Frame, layout::Rect, text::Line, widgets::Paragraph};
+use ratatui::{
+    Frame, Terminal, backend::Backend, buffer::CellDiffOption, layout::Rect, text::Line,
+    widgets::Paragraph,
+};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Screen {
@@ -356,9 +359,36 @@ pub fn draw(f: &mut Frame, app: &App) {
         screen(f, app);
         notice(f, app);
     }
+    ui::plain_emoji(f.buffer_mut());
     if app.ascii {
         ui::ascii(f.buffer_mut());
     }
+}
+
+/// Draws a frame. A screen other than the last frame's is written whole: the diff only
+/// writes what changed, so anything the terminal shows differently from the buffer would
+/// otherwise outlive the screen it came from. Every cell is sent again with no erase first,
+/// so nothing flashes blank. `shown` is the last frame's screen; `None` (Ctrl-L) clears the
+/// terminal and paints the next frame whole whatever it shows.
+pub fn frame<B: Backend>(
+    terminal: &mut Terminal<B>,
+    app: &App,
+    shown: &mut Option<Screen>,
+) -> Result<(), B::Error> {
+    if shown.is_none() {
+        terminal.clear()?;
+    }
+    let whole = *shown != Some(app.screen);
+    terminal.draw(|f| {
+        draw(f, app);
+        if whole {
+            for cell in &mut f.buffer_mut().content {
+                cell.diff_option = CellDiffOption::AlwaysUpdate;
+            }
+        }
+    })?;
+    *shown = Some(app.screen);
+    Ok(())
 }
 
 fn screen(f: &mut Frame, app: &App) {

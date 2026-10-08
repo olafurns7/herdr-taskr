@@ -34,6 +34,8 @@ pub enum Effect {
     Mouse(bool),
     /// Fetch now.
     Refresh,
+    /// Clear the screen and paint it whole (Ctrl-L).
+    Redraw,
 }
 
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
@@ -45,6 +47,9 @@ pub fn key(app: &mut App, key: KeyEvent) -> Effect {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     if ctrl && key.code == KeyCode::Char('c') {
         return Effect::Quit;
+    }
+    if ctrl && key.code == KeyCode::Char('l') {
+        return Effect::Redraw;
     }
     // Any key shows the owner has looked.
     app.status = None;

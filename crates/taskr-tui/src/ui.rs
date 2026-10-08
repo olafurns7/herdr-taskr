@@ -8,7 +8,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Paragraph},
 };
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthStr;
 
 use crate::{App, Hit, theme::Theme};
 
@@ -20,14 +20,15 @@ pub(crate) fn clip(text: &str, max: usize) -> String {
     if text.width() <= max {
         return text.to_string();
     }
+    // Measured as a string, as everything else is: `⚠️` is one column char by char, two as
+    // a string.
     let mut out = String::new();
-    let mut used = 0;
     for ch in text.chars() {
-        used += ch.width().unwrap_or(0);
-        if used + 1 > max {
+        out.push(ch);
+        if out.width() + 1 > max {
+            out.pop();
             break;
         }
-        out.push(ch);
     }
     if max > 0 {
         out.push('…');
@@ -37,7 +38,7 @@ pub(crate) fn clip(text: &str, max: usize) -> String {
 
 pub(crate) fn pad(text: &str, width: usize) -> String {
     let text = clip(text, width);
-    let gap = width - text.width();
+    let gap = width.saturating_sub(text.width());
     text + &" ".repeat(gap)
 }
 
@@ -155,10 +156,10 @@ pub(crate) fn spread(
     width: usize,
 ) -> Vec<Span<'static>> {
     let right = fit(right, width);
-    let mut out = fit(left, width - self::width(&right));
-    out.push(Span::raw(
-        " ".repeat(width - self::width(&out) - self::width(&right)),
-    ));
+    let mut out = fit(left, width.saturating_sub(self::width(&right)));
+    out.push(Span::raw(" ".repeat(
+        width.saturating_sub(self::width(&out) + self::width(&right)),
+    )));
     out.extend(right);
     out
 }
@@ -502,6 +503,29 @@ pub(crate) fn ascii(buf: &mut ratatui::buffer::Buffer) {
     }
 }
 
+/// Emoji sequences as their first character: `⚠️` as `⚠`, `👩‍💻` as `👩`. For a VS16
+/// sequence ratatui's diff also writes the cell after it, and the backend prints that cell
+/// without a cursor move; a terminal that advances two columns for the sequence (tmux 3.4,
+/// Herdr's libghostty) puts it one column right, so the rest of the row shifts and old
+/// glyphs and colours stay on screen. A lone character takes that path out; where it is
+/// narrower than the sequence, the column it leaves is the blank the buffer already holds.
+/// VS15 stays: it keeps a wide base such as `⌚︎` one column wide.
+pub(crate) fn plain_emoji(buf: &mut ratatui::buffer::Buffer) {
+    // VS16, ZWJ, the keycap mark, skin tones and tag characters.
+    let joins = |c: char| {
+        matches!(c, '\u{fe0f}' | '\u{200d}' | '\u{20e3}')
+            || ('\u{1f3fb}'..='\u{1f3ff}').contains(&c)
+            || ('\u{e0020}'..='\u{e007f}').contains(&c)
+    };
+    for cell in &mut buf.content {
+        let symbol = cell.symbol();
+        if symbol.chars().skip(1).any(joins) {
+            let first: String = symbol.chars().take(1).collect();
+            cell.set_symbol(&first);
+        }
+    }
+}
+
 /// Dims everything drawn so far, for a dialog or a stale frame.
 pub(crate) fn dim(f: &mut Frame, area: Rect, fg: Color) {
     let buf = f.buffer_mut();
@@ -520,6 +544,40 @@ pub(crate) fn dim(f: &mut Frame, area: Rect, fg: Color) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn emoji_sequences_draw_as_one_character() {
+        let mut buf = ratatui::buffer::Buffer::empty(Rect::new(0, 0, 8, 1));
+        for (text, drawn) in [
+            ("⚠️", "⚠"),
+            ("👩‍💻", "👩"),
+            ("1️⃣", "1"),
+            ("⌚︎", "⌚︎"),
+            ("信", "信"),
+        ] {
+            buf.set_string(0, 0, text, Style::new());
+            plain_emoji(&mut buf);
+            assert_eq!(buf[(0, 0)].symbol(), drawn, "{text:?}");
+            // Never wider than the cell the layout gave it.
+            assert!(drawn.width() <= text.width(), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn wide_text_fits_its_width() {
+        for text in [
+            "⌚︎ watch",
+            "⚠️impl-frames",
+            "impl-信頼-rules",
+            "👩‍💻 pairing",
+            "✅docs-refresh",
+        ] {
+            for max in 0..=text.width() + 1 {
+                assert!(clip(text, max).width() <= max, "{text:?} at {max}");
+                assert_eq!(pad(text, max).width(), max.max(clip(text, max).width()));
+            }
+        }
+    }
 
     #[test]
     fn text_fits_its_width() {

@@ -24,6 +24,12 @@ pub fn fixture() -> Data {
     serde_json::from_str(include_str!("../fixture.json")).expect("the fixture decodes")
 }
 
+/// The same data with the text live ledgers hold too: emoji with VS16, a ZWJ sequence and
+/// CJK (`tools/mkfixture.py --live`). Still invented.
+pub fn live_fixture() -> Data {
+    serde_json::from_str(include_str!("../fixture-live.json")).expect("the live fixture decodes")
+}
+
 /// The fixture's 12-step ask, longer than the glance's detail pane. It is kept out of the
 /// glance so the other frames do not change.
 pub fn long_ask() -> crate::model::Need {

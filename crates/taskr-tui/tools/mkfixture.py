@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Write the synthetic fixture the frames are drawn from. Usage: mkfixture.py [OUT]
+"""Write the synthetic fixture the frames are drawn from. Usage: mkfixture.py [--live] [OUT]
 
 Nothing here comes from a ledger: campaign names, ask texts, task ids, hosts and PR
 numbers are invented. The shapes follow `taskr --json glance` plus the fields P1a and
 P1b add, and the lengths and edge cases follow real use: a 400-character ask from another
 machine, a campaign with 29 lanes and a sub-orchestrator, a stale host, a parked
 campaign, a lead that is idle with results, a note that says only "OWNER: nothing.".
-Text stays ASCII so every glyph in a frame is one the view drew.
+Text stays ASCII so every glyph in a frame is one the view drew. `--live` writes
+fixture-live.json instead: the same data with the text live ledgers hold too, emoji with
+VS16, a ZWJ sequence and CJK, for the tests that wide glyphs must not crash or garble.
 """
 import json, os, random, sys
 
@@ -290,7 +292,24 @@ P1-1, P1-2 and P1-3. The P2s are wording edits. The P3s can ride along.
 """
 doc = {"id": 9560, "kind": "report", "name": "", "lane": "arch-plan-counter2", "version": 1, "body": DOC}
 
-out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fixture.json")
+args = sys.argv[1:]
+live = "--live" in args
+if live:
+    args.remove("--live")
+    by = {c["name"]: c for c in campaigns}
+    by["search-index"]["last"]["text"] = "\u26a0\ufe0f CI red on main, \u2705 fixed in #88, \u274c 2 flaky tests left"
+    by["auth-rotation"]["name"] = "auth-\u8a8d\u8a3c-rotation"
+    by["billing-export"]["last"]["text"] = "\U0001f469\u200d\U0001f4bb pairing on the exporter: \u4e2d\u6587 headers fixed"
+    by["docs-refresh"]["name"] = "\u2705docs-refresh"
+    glance["needs_you"][0]["text"] = "\u26a0\ufe0f " + SHORT_ASK
+    for l in lanes:
+        if l["name"] == "impl-frames":
+            l["name"] = "\u26a0\ufe0fimpl-frames-with-a-name-longer-than-its-column"
+        if l["name"] == "impl-trust-rules":
+            l["name"] = "impl-\u4fe1\u983c-rules"
+            l["summary"] = "\u274c two rules left \U0001f468\u200d\U0001f469\u200d\U0001f467 \u5b8c\u4e86"
+name = "fixture-live.json" if live else "fixture.json"
+out = args[0] if args else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", name)
 text = json.dumps({"glance": glance, "campaign": campaign, "roots": roots, "doc": doc, "long_ask": long_ask}, indent=1)
-assert text.isascii(), "the fixture stays ASCII"
+assert live or text.isascii(), "the fixture stays ASCII"
 open(out, "w").write(text + "\n")
