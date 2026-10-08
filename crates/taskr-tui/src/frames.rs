@@ -39,6 +39,7 @@ fn stale(app: &mut App) {
         tick: 1,
         retry_in_s: 4,
         tries: 1,
+        live: None,
     };
 }
 

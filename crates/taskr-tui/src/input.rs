@@ -1425,4 +1425,36 @@ mod tests {
         fetch.in_flight = true;
         assert_ne!(fetch.face(), face);
     }
+
+    #[test]
+    fn the_footer_says_whether_the_view_is_pushed_to_or_polling() {
+        let mut p = Pane::new(100, 30);
+        let last = |p: &mut Pane| {
+            p.text()
+                .lines()
+                .last()
+                .unwrap_or_default()
+                .trim_end()
+                .to_string()
+        };
+        assert!(!last(&mut p).ends_with("live") && !last(&mut p).ends_with("polling"));
+        let face = p.app.fetch.face();
+        p.app.fetch.live = Some(false);
+        assert!(last(&mut p).ends_with(" polling"), "{}", last(&mut p));
+        assert_ne!(p.app.fetch.face(), face, "a change of mode is drawn");
+        p.app.fetch.live = Some(true);
+        assert!(last(&mut p).ends_with(" live"), "{}", last(&mut p));
+        // Pushed data does not go amber between safety polls; polled data does.
+        p.app.fetch.loaded = true;
+        p.app.fetch.age_ms = 40_000;
+        assert!(last(&mut p).contains("? help"));
+        // Narrow: hints give way, the mode and `? help` stay.
+        let mut p = Pane::new(46, 30);
+        p.app.fetch.live = Some(false);
+        let line = last(&mut p);
+        assert!(
+            line.ends_with(" polling") && line.contains("? help"),
+            "{line}"
+        );
+    }
 }

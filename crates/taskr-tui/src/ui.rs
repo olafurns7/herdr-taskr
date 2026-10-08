@@ -388,7 +388,8 @@ pub(crate) fn header(f: &mut Frame, app: &App, area: Rect, crumb: Vec<Span<'stat
     } else {
         sp(
             format!("{} ago", age(fetch.age_ms)),
-            if fetch.age_ms > 15_000 {
+            // Pushed data is current until the hub says otherwise; polled data ages.
+            if fetch.age_ms > 15_000 && fetch.live != Some(true) {
                 t.check
             } else {
                 t.dim
@@ -436,9 +437,16 @@ pub(crate) fn footer(f: &mut Frame, app: &App, area: Rect, hints: &[(&str, &str)
             .map(|(k, l)| width(&[Span::raw(format!("{k} {l}   "))]))
             .sum::<usize>()
     };
+    // At the right, how the view learns of changes: pushed by the hub, or polling.
+    let mode = match app.fetch.live {
+        Some(true) => "live ",
+        Some(false) => "polling ",
+        None => "",
+    };
+    let room = (area.width as usize).saturating_sub(mode.len());
     let n = (0..=hints.len())
         .rev()
-        .find(|&n| size(n) <= area.width as usize + 3)
+        .find(|&n| size(n) <= room + 3)
         .unwrap_or(0);
     let mut spans = vec![Span::raw(" ")];
     for (key, label) in shown(n) {
@@ -456,7 +464,18 @@ pub(crate) fn footer(f: &mut Frame, app: &App, area: Rect, hints: &[(&str, &str)
         );
         spans.extend(hint);
     }
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
+    // The last hint's padding is not worth an ellipsis.
+    if let Some(last) = spans.last_mut() {
+        last.content = last.content.trim_end().to_string().into();
+    }
+    f.render_widget(
+        Paragraph::new(Line::from(spread(
+            fit(spans, room),
+            vec![sp(mode, t.dim)],
+            area.width as usize,
+        ))),
+        area,
+    );
 }
 
 /// `--ascii`: every glyph as its ASCII stand-in, for a font or a link that lacks them.

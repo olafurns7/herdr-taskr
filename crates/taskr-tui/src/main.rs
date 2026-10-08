@@ -35,7 +35,6 @@ The owner's view of the taskr ledger. ? lists the keys; q or ctrl-c quits.
   --demo    show invented data and write nothing: no ledger is read, no key sends anything
 NO_COLOR turns colour off. TASKR_BIN names the taskr binary to read from.";
 
-const EVERY: Duration = Duration::from_secs(5);
 /// How long the loop sleeps between looks at the fetch thread; also the spinner's clock.
 const TICK: Duration = Duration::from_millis(100);
 
@@ -116,15 +115,18 @@ fn main() -> ExitCode {
     app.themes = [pick("dark"), pick("light"), pick("terminal")];
     app.ascii = options.ascii;
     let taskr = client::taskr();
-    let (updates, wake) = if options.demo {
+    let pace = client::Pace::default();
+    let (updates, wake, events) = if options.demo {
         app.data = frames::fixture();
         app.fetch.loaded = true;
         // No fetch thread: the receiver stays empty and wakes go nowhere.
-        (mpsc::channel().1, mpsc::channel().0)
+        (mpsc::channel().1, mpsc::channel().0, None)
     } else {
-        client::spawn(client::command(), EVERY)
+        let (updates, wake, events) =
+            client::spawn(client::command(), Some(client::events_command()), pace);
+        (updates, wake, Some(events))
     };
-    let mut live = client::Live::new(updates, EVERY);
+    let mut live = client::Live::new(updates, pace, events.clone());
     let (finished, results) = mpsc::channel();
     let start = |job: actions::Job| {
         let (taskr, finished) = (taskr.clone(), finished.clone());
@@ -137,7 +139,12 @@ fn main() -> ExitCode {
     let mut terminal = ratatui::init();
     // `init` restores the screen if the view panics; the modes set here are added to that.
     let hook = panic::take_hook();
+    let subscription = events.clone();
     panic::set_hook(Box::new(move |info| {
+        // The subscription's child must not outlive the view.
+        if let Some(events) = &subscription {
+            events.stop();
+        }
         let _ = execute!(io::stdout(), DisableMouseCapture, DisableBracketedPaste);
         hook(info);
     }));
@@ -196,6 +203,9 @@ fn main() -> ExitCode {
             }
         }
     })();
+    if let Some(events) = &events {
+        events.stop();
+    }
     let _ = execute!(io::stdout(), DisableMouseCapture, DisableBracketedPaste);
     ratatui::restore();
     match result {
