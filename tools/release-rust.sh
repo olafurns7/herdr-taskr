@@ -5,7 +5,7 @@ if [ "$#" -ne 0 ]; then
     echo 'usage: tools/release-rust.sh (TASKR_VERSION defaults to git describe --always --dirty)' >&2
     exit 2
 fi
-cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+cd "$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 export PATH="$HOME/.cargo/bin:$HOME/.cache/taskr-tools/cargo/bin:$HOME/.cache/taskr-tools/bin:$PATH"
 : "${CARGO_TARGET_DIR:=$PWD/target}"
 case "$CARGO_TARGET_DIR" in /*) ;; *) CARGO_TARGET_DIR="$PWD/$CARGO_TARGET_DIR" ;; esac

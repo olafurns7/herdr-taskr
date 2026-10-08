@@ -43,7 +43,7 @@ Expect checksum verification for the binary, skill archive, and plugin archive, 
 | Option | Effect |
 | --- | --- |
 | `TASKR_INSTALL_DIR` | Binary directory; default `$HOME/.local/bin`. Export it before installing; use that directory in PATH and Herdr's plugin environment. |
-| `TASKR_VERSION` | Release tag; unset selects latest. Export a user-selected tag before running either snippet. |
+| `TASKR_VERSION` | Release tag; unset selects latest. Export a user-selected tag before running either snippet. A new release starts as a GitHub prerelease, and `releases/latest` skips prereleases, so a prerelease installs only when `TASKR_VERSION` names its tag. |
 | `TASKR_LINK_SKILLS=1` | Link the installed skill into existing agent config directories; preserve conflicts. |
 | `TASKR_SKILL_DIR` | Skill directory; default `$HOME/.agents/skills/taskr`. |
 | `TASKR_NO_SKILL=1` / `TASKR_NO_PLUGIN=1` | Skip the corresponding archive and setup. |
