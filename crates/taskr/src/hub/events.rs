@@ -79,6 +79,9 @@ impl Events {
         watchers.insert(path.into(), Arc::downgrade(&events));
         events
     }
+    pub(super) fn epoch(&self) -> &str {
+        &self.epoch
+    }
     pub(super) fn check(&self) {
         if self.slots.available_permits() < CAP {
             self.check.notify_one();

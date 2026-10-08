@@ -979,20 +979,32 @@ pub(crate) fn hub_discovery(port: u16) -> std::result::Result<HubDiscovery, Stri
 }
 
 /// Verified client-relay observation followed by ordered spool delivery.
-pub(crate) fn daemon_observe(
+pub(crate) fn daemon_host(
     raw: &str,
+    kind: &str,
     agents: &Value,
+    removed: &Value,
+    epoch: Option<&str>,
+    generation: i64,
     cwd: &Path,
 ) -> std::result::Result<Value, String> {
     let run = || -> Result<Value> {
         let cl = rpc::Client::new(raw)?;
-        let argv = vec![
-            "--json".into(),
-            "_host".into(),
-            "observe".into(),
-            "--agents".into(),
-            compact_json(agents).unwrap(),
-        ];
+        let mut argv = vec!["--json".into(), "_host".into(), kind.into()];
+        if kind != "heartbeat" {
+            argv.extend(["--agents".into(), compact_json(agents).unwrap()]);
+        }
+        if kind != "observe" {
+            argv.extend([
+                "--epoch".into(),
+                epoch.unwrap_or_default().into(),
+                "--base".into(),
+                generation.to_string(),
+            ]);
+        }
+        if kind == "delta" {
+            argv.extend(["--removed".into(), compact_json(removed).unwrap()]);
+        }
         let rep = cl.call(
             &rpc::request(
                 &argv,

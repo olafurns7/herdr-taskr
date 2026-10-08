@@ -3,6 +3,7 @@ mod child;
 mod documents;
 mod events;
 mod hidden;
+mod host;
 mod http;
 mod protocol;
 pub(crate) mod usage;
@@ -556,6 +557,7 @@ async fn run(hub: &Hub, machine: &str, req: &RpcRequest) -> Execution {
                 .env("HOME", &hub.cfg.home)
                 .env("TASKR_DB", &hub.cfg.db_path)
                 .env("TASKR_RPC_CALLER", machine)
+                .env("TASKR_HOSTD_EPOCH", hub.events.epoch())
                 .env("TASKR_RPC_CWD", &req.cwd)
                 .env("TASKR_RPC_UPLOAD_FILE", uploads.dir.join("uploads"))
                 .stdin(Stdio::piped())

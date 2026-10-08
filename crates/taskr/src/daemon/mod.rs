@@ -7,6 +7,7 @@ mod subscription;
 #[cfg(test)]
 mod tests;
 mod tokens;
+mod uplink;
 use crate::write::herdr;
 use serde_json::{Value, json};
 use std::{
@@ -197,8 +198,21 @@ fn execute(json_mode: bool, args: &[String], client: Option<&str>) -> ExitCode {
                 "keep the local ledger serving without Herdr; wait for the daemon lock"
             },
         );
+    // Keep legacy help bytes stable; the Rust extension has its own help form.
+    let uplink = args.iter().any(|arg| {
+        matches!(arg.as_str(), "--uplink" | "-uplink")
+            || arg.starts_with("--uplink=")
+            || arg.starts_with("-uplink=")
+    });
+    if uplink {
+        f.bool(
+            "uplink",
+            false,
+            "with --status, include uplink full/delta/heartbeat/skipped-unchanged counts as JSON",
+        );
+    }
     let parsed = f.parse(args, 0, 0);
-    let json_mode = f.json();
+    let json_mode = f.json() || f.get_bool("uplink");
     if f.help() {
         print!("{}", f.usage(&crate::cli::usage_line("daemon")));
         return ExitCode::Ok;
@@ -255,6 +269,12 @@ fn run(
 ) -> Result<Option<Value>> {
     let once = f.get_bool("once");
     let status = f.get_bool("status");
+    let uplink = f.get_bool("uplink");
+    if uplink && (!status || client.is_none()) {
+        return Err(store::usage(
+            "daemon --uplink requires --status in client mode (JSON counters); use daemon --uplink --help",
+        ));
+    }
     let restart = f.get_bool("restart");
     let stay = f.get_bool("stay");
     if client.is_some() && stay {
@@ -284,7 +304,7 @@ fn run(
     };
     if status {
         return if let Some(raw) = client {
-            client_status(&dir, &lock_path, raw).map(Some)
+            client_status(&dir, &lock_path, raw, uplink).map(Some)
         } else {
             status::local(db.as_ref().unwrap(), &dir, &lock_path).map(Some)
         };
@@ -310,9 +330,10 @@ fn run(
         dir: dir.clone(),
         log: log.clone(),
         missing: false,
+        uplink: uplink::Uplink::default(),
     };
     if once {
-        let (observed, notified, error) = state.pass(db.as_mut(), false);
+        let (observed, notified, error) = state.pass(db.as_mut(), false, true);
         if let Some(error) = error {
             if client.is_some() {
                 let mut out = json!({"ok":false,"once":true,"mode":"client","watch":if state.watch.is_empty(){Value::Null}else{json!(state.watch)},"error":error.message});
@@ -514,12 +535,14 @@ struct State {
     dir: PathBuf,
     log: Arc<Log>,
     missing: bool,
+    uplink: uplink::Uplink,
 }
 impl State {
     fn pass(
         &mut self,
         db: Option<&mut db::Connection>,
         connected: bool,
+        refresh: bool,
     ) -> (usize, usize, Option<Error>) {
         if let Some(db) = db {
             if let Err(e) = store::inbox::expire(db) {
@@ -570,8 +593,21 @@ impl State {
             }
             (observed, notified, error)
         } else {
-            let result = self.relay();
-            let mut value = json!({"last_call_at":store::now()});
+            let sent = self.uplink.sent();
+            let result = self.relay(refresh);
+            if result.is_err() {
+                self.uplink.resync = true;
+            }
+            let mut value = if sent == self.uplink.sent() {
+                fs::read(self.dir.join("client-state.json"))
+                    .ok()
+                    .and_then(|s| serde_json::from_slice::<Value>(&s).ok())
+                    .filter(Value::is_object)
+                    .unwrap_or_else(|| json!({}))
+            } else {
+                json!({"last_call_at":store::now()})
+            };
+            value["uplink"] = self.uplink.counters();
             if let Err(e) = &result {
                 value["last_error"] = json!(e.message);
                 self.log.limited(
@@ -580,50 +616,73 @@ impl State {
                     &format!("observe failed: {}", e.message),
                 );
             }
-            let _ = fs::write(
-                self.dir.join("client-state.json"),
-                serde_json::to_vec(&value).unwrap(),
-            );
+            let temp = self
+                .dir
+                .join(format!("client-state.{}.tmp", std::process::id()));
+            if fs::write(&temp, serde_json::to_vec(&value).unwrap()).is_ok() {
+                let _ = fs::rename(&temp, self.dir.join("client-state.json"));
+            }
+            let _ = fs::remove_file(temp);
             (0, 0, result.err())
         }
     }
-    fn relay(&mut self) -> Result<()> {
+    fn relay(&mut self, refresh: bool) -> Result<()> {
         if !herdr::up(&self.sock) {
             return Err(transport(format!(
                 "Herdr server not reachable at {}; nothing sent",
                 self.sock
             )));
         }
-        let output = herdr::command(&self.sock, &["agent", "list"], Duration::from_secs(10))
-            .map_err(transport)?;
-        if output.code != Some(0) {
-            return Err(transport(format!(
-                "herdr agent list failed: exit status {}",
-                output.code.unwrap_or(-1)
-            )));
-        }
-        let value: Value = serde_json::from_slice(&output.stdout)
-            .map_err(|e| transport(format!("herdr agent list returned malformed JSON: {e}")))?;
-        let agents = value["result"]["agents"]
-            .as_array()
-            .ok_or_else(|| transport("herdr agent list returned no result.agents"))?;
-        let mut by_pane = BTreeMap::new();
-        for a in agents {
-            if a["pane_id"].as_str().unwrap_or("").is_empty()
-                || a["agent_status"].as_str().unwrap_or("").is_empty()
-            {
-                return Err(transport(
-                    "herdr agent list entry without pane_id or agent_status",
-                ));
+        let result = if !refresh && self.uplink.epoch.is_some() && !self.uplink.resync {
+            match self.uplink.heartbeat(self.raw.as_ref().unwrap(), &self.dir) {
+                Ok(reply) => reply,
+                Err(error) => {
+                    self.log
+                        .line(&format!("heartbeat failed; full resync: {}", error.message));
+                    self.uplink.resync = true;
+                    return self.relay(true);
+                }
             }
-            by_pane.insert(a["pane_id"].as_str().unwrap().to_string(),json!({"name":a["name"].as_str().unwrap_or(""),"agent_status":a["agent_status"],"state_change_seq":a["state_change_seq"].as_i64().unwrap_or(0),"pane_id":a["pane_id"]}));
-        }
-        let result = crate::net::daemon_observe(
-            self.raw.as_ref().unwrap(),
-            &json!(by_pane.into_values().collect::<Vec<_>>()),
-            &self.dir,
-        )
-        .map_err(transport)?;
+        } else {
+            let output = herdr::command(&self.sock, &["agent", "list"], Duration::from_secs(10))
+                .map_err(transport)?;
+            if output.code != Some(0) {
+                return Err(transport(format!(
+                    "herdr agent list failed: exit status {}",
+                    output.code.unwrap_or(-1)
+                )));
+            }
+            let value: Value = serde_json::from_slice(&output.stdout)
+                .map_err(|e| transport(format!("herdr agent list returned malformed JSON: {e}")))?;
+            let agents = value["result"]["agents"]
+                .as_array()
+                .ok_or_else(|| transport("herdr agent list returned no result.agents"))?;
+            let mut by_pane = BTreeMap::new();
+            for a in agents {
+                if a["pane_id"].as_str().unwrap_or("").is_empty()
+                    || a["agent_status"].as_str().unwrap_or("").is_empty()
+                {
+                    return Err(transport(
+                        "herdr agent list entry without pane_id or agent_status",
+                    ));
+                }
+                by_pane.insert(a["pane_id"].as_str().unwrap().to_string(),json!({"name":a["name"].as_str().unwrap_or(""),"agent_status":a["agent_status"],"state_change_seq":a["state_change_seq"].as_i64().unwrap_or(0),"pane_id":a["pane_id"]}));
+            }
+            let result = self
+                .uplink
+                .observe(self.raw.as_ref().unwrap(), &self.dir, by_pane);
+            match result {
+                Ok(Some(reply)) => reply,
+                Ok(None) => return Ok(()),
+                Err(error) if self.uplink.epoch.is_some() && !self.uplink.resync => {
+                    self.uplink.resync = true;
+                    self.log
+                        .line(&format!("uplink failed; full resync: {}", error.message));
+                    return self.relay(true);
+                }
+                Err(error) => return Err(error),
+            }
+        };
         self.watch = serde_json::from_value(result["watch"].clone()).unwrap_or_default();
         let asks = result["owner_asks"].as_array().map_or_else(Vec::new, |a| {
             a.iter()
@@ -675,18 +734,24 @@ impl State {
         Ok(())
     }
 }
-fn client_status(dir: &Path, lock: &Path, raw: &str) -> Result<Value> {
+fn client_status(dir: &Path, lock: &Path, raw: &str, uplink: bool) -> Result<Value> {
     let mut out = json!({"ok":true,"mode":"client","server":raw,"spool":crate::net::spool_summary(),"running":false});
     let bytes = fs::read(dir.join("client-state.json"))
         .or_else(|_| fs::read(dir.join("client-daemon.json")));
     if let Ok(bytes) = bytes
         && let Ok(value) = serde_json::from_slice::<Value>(&bytes)
     {
+        if uplink && value["uplink"].is_object() {
+            out["uplink"] = value["uplink"].clone();
+        }
         for key in ["last_call_at", "last_error"] {
             if let Some(s) = value[key].as_str().filter(|s| !s.is_empty()) {
                 out[key] = json!(s)
             }
         }
+    }
+    if uplink && out["uplink"].is_null() {
+        out["uplink"] = uplink::Uplink::default().counters();
     }
     let pid = lock_pid(lock);
     if identity::alive(pid) {
@@ -739,10 +804,13 @@ fn resident(
     ));
     let mut heartbeat = Instant::now() + Duration::from_secs(15);
     let mut fallback = Instant::now() + Duration::from_secs(60);
-    let mut relay = Instant::now() + Duration::from_secs(10);
+    let mut relay = Instant::now() + uplink::LEGACY;
     let mut last = Instant::now() - Duration::from_secs(1);
     if state.raw.is_some() {
-        state.pass(None, false);
+        state.pass(None, false, true);
+        if state.uplink.epoch.is_some() {
+            relay = Instant::now() + state.uplink.interval();
+        }
         pane_send.send_replace(state.watch.clone());
     }
     let mut pending = None;
@@ -763,7 +831,7 @@ fn resident(
             }
         }
         let periodic = if state.raw.is_some() && now >= relay {
-            relay = now + Duration::from_secs(10);
+            relay = now + state.uplink.interval();
             state.tokens.retry_workspaces();
             true
         } else {
@@ -777,8 +845,13 @@ fn resident(
         let event = recv.recv_timeout(Duration::from_millis(50));
         match event {
             Ok(subscription::Wake::Gone) => return "socket removed",
+            Ok(subscription::Wake::Reset) => {
+                state.uplink.resync = true;
+                pending = Some(Instant::now() + Duration::from_millis(100));
+            }
             Ok(subscription::Wake::Attached) => {
                 state.tokens.reattach();
+                state.uplink.resync = true;
                 pending = Some(Instant::now() + Duration::from_millis(100));
             }
             Ok(subscription::Wake::Dirty) => {
@@ -794,6 +867,7 @@ fn resident(
         if !periodic && !fallback_due && !pending.is_some_and(|p| Instant::now() >= p) {
             continue;
         }
+        let refresh = pending.is_some() || state.uplink.resync || state.uplink.epoch.is_none();
         pending = None;
         while let Ok(event) = recv.try_recv() {
             if matches!(event, subscription::Wake::Gone) {
@@ -802,9 +876,25 @@ fn resident(
             if matches!(event, subscription::Wake::Attached) {
                 state.tokens.reattach();
             }
+            if matches!(
+                event,
+                subscription::Wake::Attached | subscription::Wake::Reset
+            ) {
+                state.uplink.resync = true;
+            }
         }
         last = Instant::now();
-        state.pass(db.as_deref_mut(), connected.load(Ordering::SeqCst));
+        let sent = state.uplink.sent();
+        let was_capable = state.uplink.epoch.is_some();
+        state.pass(db.as_deref_mut(), connected.load(Ordering::SeqCst), refresh);
+        // Go's 5s ticker is independent of event-triggered uploads. Only the
+        // capability-gated liveness timer moves after a successful uplink.
+        if state.raw.is_some()
+            && (was_capable || state.uplink.epoch.is_some())
+            && state.uplink.sent() != sent
+        {
+            relay = Instant::now() + state.uplink.interval();
+        }
         let panes = if let Some(db) = db.as_ref() {
             watched(db).unwrap_or_else(|_| pane_send.borrow().clone())
         } else {
@@ -832,6 +922,12 @@ pub(crate) fn observe_host(db: &mut db::Connection, host: &str, agents: &Value) 
     if host.is_empty() {
         return Err(store::usage("_host is only for a client host over RPC"));
     }
+    let agents = validate_host_agents(agents)?;
+    set_meta(db, &format!("daemon_heartbeat:{host}"), &store::now())?;
+    let count = crate::write::host_snapshot(db, host, &agents)?;
+    host_reply(db, host, count)
+}
+pub(crate) fn validate_host_agents(agents: &Value) -> Result<Vec<Value>> {
     let agents = agents
         .as_array()
         .ok_or_else(|| store::usage("_host observe: --agents must be a JSON array"))?;
@@ -854,9 +950,13 @@ pub(crate) fn observe_host(db: &mut db::Connection, host: &str, agents: &Value) 
         }
         by_pane.insert(a["pane_id"].as_str().unwrap(), a.clone());
     }
-    let agents = by_pane.into_values().collect::<Vec<_>>();
+    Ok(by_pane.into_values().collect::<Vec<_>>())
+}
+pub(crate) fn heartbeat_host(db: &db::Connection, host: &str) -> Result<Value> {
     set_meta(db, &format!("daemon_heartbeat:{host}"), &store::now())?;
-    let count = crate::write::host_snapshot(db, host, &agents)?;
+    host_reply(db, host, 0)
+}
+fn host_reply(db: &db::Connection, host: &str, count: usize) -> Result<Value> {
     let panes = watched_on(db, Some(host))?;
     let mut reply = json!({"ok":true,"observed":count,"watch":panes});
     if let Ok(workspaces) = tokens::wanted_workspaces(db, Some(host)) {

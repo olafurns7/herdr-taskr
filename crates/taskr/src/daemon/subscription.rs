@@ -7,6 +7,7 @@ use tokio::{
 pub(super) enum Wake {
     Dirty,
     Attached,
+    Reset,
     Gone,
 }
 pub(super) async fn subscribe(
@@ -33,6 +34,7 @@ pub(super) async fn subscribe(
             tokio::select! {_ = stop.changed()=>return,result=UnixStream::connect(&sock)=>result};
         let mut acked = false;
         let mut resub = false;
+        let mut stream_error = false;
         if let Ok(mut stream) = stream {
             let subscribed = panes.borrow_and_update().clone();
             let req = request(&subscribed);
@@ -68,10 +70,20 @@ pub(super) async fn subscribe(
                         } else {
                             None
                         };
+                        if reply.is_none() {
+                            stream_error = true;
+                            log.limited(
+                                "stream-malformed",
+                                Duration::from_secs(10),
+                                "malformed subscription message; resubscribing",
+                            );
+                            break 'stream;
+                        }
                         let error = reply.as_ref().is_some_and(|v| v["error"].is_object());
                         if !acked {
                             acked = true;
                             if error {
+                                stream_error = true;
                                 let err = &reply.as_ref().unwrap()["error"];
                                 log.line(&format!(
                                     "subscribe rejected: {} {}",
@@ -81,11 +93,12 @@ pub(super) async fn subscribe(
                             } else {
                                 connected.store(true, Ordering::SeqCst);
                                 log.line(&format!("subscribed with {} panes", subscribed.len()));
-                                if stay && attach {
+                                if attach {
                                     let _ = send.try_send(Wake::Attached);
                                 }
                             }
                         } else if error {
+                            stream_error = true;
                             resub =
                                 last_error.is_none_or(|t| t.elapsed() >= Duration::from_secs(1));
                             last_error = Some(Instant::now());
@@ -123,6 +136,9 @@ pub(super) async fn subscribe(
             );
         }
         connected.store(false, Ordering::SeqCst);
+        if !resub || stream_error {
+            let _ = send.try_send(Wake::Reset);
+        }
         if acked {
             attempts = 0;
         }

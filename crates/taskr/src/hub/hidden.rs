@@ -239,20 +239,5 @@ pub(super) fn prompt(args: &[String], json: bool) -> store::Result<Value> {
 }
 
 pub(super) fn host(args: &[String], json: bool) -> store::Result<Value> {
-    let mut f = FlagSet::new("_host", json);
-    f.string("agents", "", "the host's herdr agent list, as a JSON array");
-    f.parse(args, 1, 1).map_err(store::usage)?;
-    if f.positional[0] != "observe" {
-        return Err(store::usage(format!(
-            "_host: unknown call {}",
-            taskr_core::goflag::quote(&f.positional[0])
-        )));
-    }
-    let agents: Value = serde_json::from_str(f.get_string("agents"))
-        .map_err(|_| store::usage("_host observe: --agents must be a JSON array"))?;
-    crate::daemon::observe_host(
-        &mut super::child::open()?,
-        &store::caller_machine().unwrap_or_default(),
-        &agents,
-    )
+    super::host::call(args, json)
 }
