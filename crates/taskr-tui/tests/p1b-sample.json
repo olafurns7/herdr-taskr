@@ -188,6 +188,23 @@
       "key": "pr.review",
       "value": "approved"
      }
+    ],
+    "key": "pr"
+   },
+   {
+    "task_id": 2,
+    "lane": "demo-worker",
+    "key": "pr.backend",
+    "value": "demo-org/demo#124",
+    "refs": [
+     {
+      "key": "pr",
+      "value": "123"
+     },
+     {
+      "key": "pr.review",
+      "value": "approved"
+     }
     ]
    }
   ],

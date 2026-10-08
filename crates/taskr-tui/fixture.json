@@ -1356,28 +1356,29 @@
   ],
   "prs": [
    {
+    "task_id": 4183,
+    "lane": "impl-trust-rules",
+    "key": "pr",
+    "value": "215",
     "number": 215,
     "title": "feat(glance): trust rules, red means an open owner ask",
     "state": "open",
     "ci": "running",
-    "review": "pending",
-    "lane": "impl-trust-rules"
+    "review": "pending"
    },
    {
-    "number": 214,
-    "title": "fix(asks): hide orphaned owner asks; close warns when it orphans one",
-    "state": "merged",
-    "ci": "pass",
-    "review": "approved",
-    "lane": "impl-hidden-asks"
+    "task_id": 4131,
+    "lane": "impl-list-polish",
+    "key": "pr.backend",
+    "value": "214",
+    "number": 214
    },
    {
-    "number": 213,
-    "title": "feat(read): the glance and its watch mode",
-    "state": "merged",
-    "ci": "pass",
-    "review": "approved",
-    "lane": "impl-watch-mode"
+    "task_id": 4131,
+    "lane": "impl-list-polish",
+    "key": "pr.docs",
+    "value": "213",
+    "number": 213
    }
   ],
   "log": [

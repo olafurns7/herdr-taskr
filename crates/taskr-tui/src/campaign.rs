@@ -375,26 +375,49 @@ fn prs(app: &App, width: usize) -> Vec<Line<'static>> {
         };
         // No stored state is unknown, not closed.
         let open = p.state.is_empty() || p.state == "open";
-        let line = vec![
-            bold(
-                // The ref as written when it is not a number.
-                if p.number > 0 {
-                    format!("#{:<4}", p.number)
-                } else {
-                    format!("{:<5}", p.value)
-                },
-                if open { t.accent } else { t.dim },
-            ),
-            ci,
-            sp(
-                format!(" {} ", pad(&p.state, 6)),
-                if open { t.text } else { t.dim },
-            ),
-            sp(p.title.clone(), if open { t.text } else { t.sub }),
-        ];
+        // The ref as written when it is not a number.
+        let number = if p.number > 0 {
+            format!("#{}", p.number)
+        } else {
+            p.value.clone()
+        };
+        let mut line = vec![];
+        // A `pr.<slice>` row leads with its slice: `backend #123`.
+        if let Some(slice) = p.key.strip_prefix("pr.") {
+            line.push(sp(format!("{slice} "), t.sub));
+        }
+        line.push(bold(
+            format!("{number:<4} "),
+            if open { t.accent } else { t.dim },
+        ));
+        // Title, state and CI are stored for the bare `pr` only; other rows say whose it is.
+        if p.title.is_empty() && p.state.is_empty() && p.ci.is_empty() {
+            line.push(sp(p.lane.clone(), t.dim));
+        } else {
+            line.extend([
+                ci,
+                sp(
+                    format!(" {} ", pad(&p.state, 6)),
+                    if open { t.text } else { t.dim },
+                ),
+                sp(p.title.clone(), if open { t.text } else { t.sub }),
+            ]);
+        }
         Line::from(ui::fit(line, width))
     });
     rows.collect()
+}
+
+/// The goal in the header: its first two lines with text, the first without the `#` of a
+/// Markdown title.
+fn goal(c: &Campaign) -> (&str, &str) {
+    let mut lines = c.goal.iter().map(|l| l.trim()).filter(|l| !l.is_empty());
+    let title = lines
+        .next()
+        .unwrap_or("")
+        .trim_start_matches('#')
+        .trim_start();
+    (title, lines.next().unwrap_or(""))
 }
 
 fn log(app: &App, width: usize) -> Vec<Line<'static>> {
@@ -578,10 +601,10 @@ fn wide(f: &mut Frame, app: &App) {
         Layout::horizontal([Constraint::Min(0), Constraint::Length(26)]).areas(inner);
     let w = text.width as usize;
     let (since, drifted) = drift(c);
-    let goal = |i: usize| c.goal.get(i).map_or("", String::as_str);
+    let (title, about) = goal(c);
     let lines = vec![
-        Line::from(bold(clip(goal(0), w), t.text)),
-        Line::from(sp(clip(goal(1), w), t.sub)),
+        Line::from(bold(clip(title, w), t.text)),
+        Line::from(sp(clip(about, w), t.sub)),
         Line::from(vec![
             sp("plan ", t.dim),
             sp(format!("v{}", c.plan.version), t.text),
@@ -805,5 +828,40 @@ mod tests {
             ..Lane::default()
         };
         assert_eq!(model(&named), "opus 5.5 high");
+    }
+
+    #[test]
+    fn the_goal_header_and_the_pr_rows() {
+        let with = |goal: &[&str]| Campaign {
+            goal: goal.iter().map(|l| l.to_string()).collect(),
+            ..Campaign::default()
+        };
+        let c = with(&["", "#  Demo checkout", "  ", "Ship the sample.", "More."]);
+        assert_eq!(goal(&c), ("Demo checkout", "Ship the sample."));
+        assert_eq!(goal(&with(&["Only a title"])), ("Only a title", ""));
+        assert_eq!(goal(&Campaign::default()), ("", ""));
+
+        // One line per PR-valued ref; a slice row names its slice and its lane.
+        let mut app = App::new(crate::frames::fixture());
+        let text = |app: &App| -> Vec<String> {
+            let lines = prs(app, 44);
+            lines
+                .iter()
+                .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+                .collect()
+        };
+        let rows = text(&app);
+        assert_eq!(rows.len(), 3);
+        assert!(
+            rows[0].starts_with("#215 ◐ open   feat(glance)"),
+            "{}",
+            rows[0]
+        );
+        assert_eq!(rows[1], "backend #214 impl-list-polish");
+        assert_eq!(rows[2], "docs #213 impl-list-polish");
+        // A ref that is not a number shows as written.
+        app.data.campaign.prs[1].number = 0;
+        app.data.campaign.prs[1].value = "demo-org/demo#7".into();
+        assert_eq!(text(&app)[1], "backend demo-org/demo#7 impl-list-polish");
     }
 }

@@ -23,8 +23,8 @@
 │ │ ✓ arch-trust-rules       research gpt-6-astra high atlas  w64:p4  45m█╰────────────────────────────────────────────╯
 │ │ ✓ rev-hidden-asks        review   opus 5.5 medium  atlas  w62:p2   2h█╭ [4] PRs ───────────────────────────────────╮
 │ │ ✓ impl-hidden-asks       impl     gpt-6.1-sol high atlas  w60:p5   2h█│ #215 ◐ open   feat(glance): trust rules, … │
-│ │ ✓ rev-list-polish        review   opus 5.5 medium  atlas  w58:p3   2h█│ #214 ✓ merged fix(asks): hide orphaned ow… │
-│ │ ✓ impl-list-polish       impl     gpt-6.1-sol high atlas  w56:p1   3h█│ #213 ✓ merged feat(read): the glance and … │
+│ │ ✓ rev-list-polish        review   opus 5.5 medium  atlas  w58:p3   2h█│ backend #214 impl-list-polish              │
+│ │ ✓ impl-list-polish       impl     gpt-6.1-sol high atlas  w56:p1   3h█│ docs #213 impl-list-polish                 │
 │ │ ✓ arch-first-counter     research fable 5.1 xhigh  atlas  w54:p4   3h█╰────────────────────────────────────────────╯
 │ │ ✓ impl-watch-fix         impl     gpt-6.1-sol high atlas  w52:p2   3h█╭ [5] Log · 1-9/13 ──────────────────────────╮
 │ │ ✓ rev-watch-mode         review   opus 5.5 medium  atlas  w50:p5   3h││ 14:15 ◐ impl-frames: claude opus 5.5 medi… │

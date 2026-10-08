@@ -258,14 +258,16 @@ pub struct DocRow {
 #[serde(default)]
 pub struct Pr {
     pub task_id: i64,
-    /// The `pr` ref as written; `number` only when it is all digits.
+    /// One row per PR-valued ref: `pr`, or `pr.<slice>` for a lane with several.
+    pub key: String,
+    /// The ref as written; `number` only when it is all digits.
     pub value: String,
     pub number: u32,
     pub title: String,
     /// `open`, `merged` or `closed`.
     pub state: String,
     /// `pass`, `fail`, `running` or empty. Title, state, CI and review come from stored
-    /// `pr.*` refs only; empty means unknown, not "none".
+    /// `pr.*` refs and only on the bare `pr` row; empty means unknown, not "none".
     pub ci: String,
     pub review: String,
     pub lane: String,
@@ -360,6 +362,15 @@ mod tests {
                 c.log.len()
             ),
             (1, 1, "brief", 1)
+        );
+        // One row per PR-valued ref: the bare key, then a slice whose value is not a number.
+        assert_eq!(
+            (
+                c.prs[0].key.as_str(),
+                c.prs[1].key.as_str(),
+                c.prs[1].number
+            ),
+            ("pr", "pr.backend", 0)
         );
         let pr = &c.prs[0];
         assert_eq!(

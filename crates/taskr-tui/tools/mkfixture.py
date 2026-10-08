@@ -163,10 +163,13 @@ campaign = {
                                          "arch-trust-rules", "rev-hidden-asks", "impl-hidden-asks", "rev-list-polish", "impl-list-polish",
                                          "arch-first-counter"])]
             + [{"id": 9071, "kind": "goal", "name": "", "lane": "tui-frames", "version": 2, "captured": True}],
+    # One row per PR-valued ref: a bare `pr` with its stored title, state, CI and review,
+    # and two `pr.<slice>` rows from a lane that opened one per slice.
     "prs": [
-        {"number": 215, "title": "feat(glance): trust rules, red means an open owner ask", "state": "open", "ci": "running", "review": "pending", "lane": "impl-trust-rules"},
-        {"number": 214, "title": "fix(asks): hide orphaned owner asks; close warns when it orphans one", "state": "merged", "ci": "pass", "review": "approved", "lane": "impl-hidden-asks"},
-        {"number": 213, "title": "feat(read): the glance and its watch mode", "state": "merged", "ci": "pass", "review": "approved", "lane": "impl-watch-mode"},
+        {"task_id": 4183, "lane": "impl-trust-rules", "key": "pr", "value": "215", "number": 215,
+         "title": "feat(glance): trust rules, red means an open owner ask", "state": "open", "ci": "running", "review": "pending"},
+        {"task_id": 4131, "lane": "impl-list-polish", "key": "pr.backend", "value": "214", "number": 214},
+        {"task_id": 4131, "lane": "impl-list-polish", "key": "pr.docs", "value": "213", "number": 213},
     ],
     "log": [
         ev(61911, "launch", "14:15:31", "impl-frames", "claude opus 5.5 medium"),
