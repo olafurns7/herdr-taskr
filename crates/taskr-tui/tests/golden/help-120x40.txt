@@ -1,0 +1,40 @@
+ taskr ❯ glance                                                           hub atlas · 2s ago   ● 2 need you  3 to check
+ 3 notes still carry OWNER items
+╭ Glance ──────────────────────────────────────────────────╮╭ ask 61767 · tui-frames ──────────────────────────────────╮
+│ NEEDS YOU ──────────────────────────────────────────── 2 ││ BLOCKING · asker waiting · 41s ago · atlas w31:p1        │
+│▌? tui-frames           BLOCKING                    ⏎  41s││                                                          │
+│▌  Frames follow-up is ready: PR #212 (orphaned asks hid… ││ Frames follow-up is ready: PR #212 (orphaned asks        │
+│ ? ios-widgets                               laptop ↗   6m││ hidden, close warns). (A) merge #212 and release v2.4.1  │
+│   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash).… ││ now [recommended]; (B) merge, hold the release for the   │
+│ TO CHECK╭ Keys · glance ───────────────────────────────────────────────────────────────────────────────────╮         │
+│ ! map-ti│                                                                                                  │         │
+│   lead u│   Move                                           Act                                             │         │
+│ ! infra-│    j k           down, up (arrows too)            a             answer the selected ask          │d        │
+│   lead i│    g G           first, last row                  p             park or unpark (confirms)        │         │
+│ ! host b│    ctrl-d ctrl-u half page                        o             read the report or doc           │         │
+│   host s│    tab           next section; shift-tab back     y             copy the jump command            │         │
+│ CAMPAIGN│    wheel         scroll                           r             refresh now                      │         │
+│ ◐ search│                                                                                                  │         │
+│   Resear│   Go                                             View                                            │         │
+│ ◐ auth-r│    ⏎             go to the row's agent pane       ?             this help                        │         │
+│   Implem│    l             open the campaign or detail      m             mouse on or off                  │         │
+│ ○ billin│    h             back, close (esc too)            t             theme: dark, light, terminal     │         │
+│   FYI 61│    /             filter rows by name              q             close; quits on the glance       │         │
+│ ○ docs-r│    c             all campaigns, closed too                                                       │         │
+│   Hub FY│    click         select; double-click is ⏎       Marks                                           │         │
+│ ○ checko│    ⏎ moves every client attached to that Herdr    ? ask   ! to check   ◐ working   ○ waiting     │         │
+│   FIX: t│    server.                                        ● lane   ● ready   · idle   × gone   ‖ parked  │         │
+│ ◐ ios-wi│                                                   ✓ done   ⊘ abandoned   ✗ rejected              │         │
+│   Widget│                                                   ⏎ pane on this machine   ↗ another             │         │
+│ ◐ tui-fr│                                                   • changed since you looked                     │         │
+│   NOW: p│                                                                                                  │─────────╯
+│ · infra-│                                                                                                  │─────────╮
+│   cache-╰──────────────────────────────────────────────────────────────────────────────────────────────────╯         │
+│ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁        14m││       ██      ██  ██▂▂  ██▂▂    ██          ████         │
+│   matrix run A finished                                  ││     ▇▇██    ▇▇██▇▇████  ████▂▂  ██  ▄▄▇▇▂▂▄▄████         │
+│ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁        54m││                                                          │
+│   S4 cursor split merged; contract tests green on both … ││ lead ◐ working   lanes ●●●●○○                            │
+│ ‖ legacy-importer                              parked  3h││ last NOW: plan rev 3.1 sent; the trust rules and the     │
+│ · 2 quiet                                                ││ first frames are in flight.                              │
+╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
+ ⏎ go to lead   a answer   l open   / filter   y copy   ? help   q quit

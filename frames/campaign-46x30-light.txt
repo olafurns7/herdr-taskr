@@ -1,0 +1,30 @@
+ taskr ❯ tui-frames    2s ago   ● 2 need you
+ #4120 · open · started 08:11    ▁▁▁▁▁▁▇█▃▁▄▁
+ plan v11 · 1 decision, 2 lane closes since
+ next trust rules (lane 4183) and the first …
+ Lanes 6 · Asks 1 · Docs · PRs · Log
+───────────────────────────────────── 1-17/30
+   lane                  model             age
+ ◐ tui-frames            lead              14s
+ │ ◐ sub-list-core       opus 5.5 high      4m
+ │ │ ○ rev-list-harness  opus 5.5 medium   21m
+ │ ╰ ◐ impl-list-harness gpt-6.1-sol high   4m
+ │ ◐ impl-frames         opus 5.5 medium   40s
+ │ ◐ impl-trust-rules    gpt-6.1-sol high   2m
+▌│ ● arch-plan-counter2  fable 5.1 xhigh    9m
+ │ ✓ rs-visual-spec      opus 5.5 high     11m
+ │ ⊘ rs-visual-spec      opus 5.5 high     10m
+ │ ✓ arch-plan-counter   fable 5.1 xhigh   10m
+ │ ✓ arch-rust-path      gpt-6-astra high  33m
+ │ ✓ rs-interaction      opus 5.5 high     45m
+ │ ✓ arch-stack-choice   gpt-6-astra high  42m
+ │ ✓ arch-trust-rules    gpt-6-astra high  45m
+ │ ✓ rev-hidden-asks     opus 5.5 medium    2h
+ │ ✓ impl-hidden-asks    gpt-6.1-sol high   2h
+ │ ✓ rev-list-polish     opus 5.5 medium    2h
+ ────────────────────────────────────────────
+ ● arch-plan-counter2  #4176  ready
+ atlas w82:p2 · brief ✓ report ✓ · o reads
+ Counter-review 2 written: not ready to send
+ until three text fixes land (P1-1 narrow …
+ ⏎ go   o report   tab next   h back   ? help

@@ -1,0 +1,40 @@
+ taskr ❯ tui-frames #4120  open · started 08:11                           hub atlas · 2s ago   ● 2 need you  3 to check
+╭ Goal and plan ───────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ tui-frames: a lightweight terminal inbox and campaign status for the owner                            activity · 4 h │
+│ A split pane next to the hub that shows key status updates per campaign and anything urge…                    ▅█     │
+│ plan v11  ·  1 decision and 2 lane closes since this version                                ▆    ▄  ▅▂        ██  ▃  │
+│ next trust rules (lane 4183) and the first frames (lane 4185) -> owner yes on the look ->…  █▁█ ▆█▆▇██▆       ███▁█▂ │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ [1] Lanes · 6 open · 23 closed ────────────────────────────────────────╮╭ [2] Asks and decisions · 1-7/8 ────────────╮
+│   lane                     role     model            host   pane    age││ 1 open  ·  decisions in force: 2           │
+│ ◐ tui-frames               lead     —                atlas  w31:p1  14s█│ 14:15 ? tui-frames: Frames follow-up is r… │
+│ │ ◐ sub-list-core          sub-orch opus 5.5 high    laptop w07:p1   4m█│ 13:58 ◆ tui-frames: D4: one binary for th… │
+│ │ │ ○ rev-list-harness     review   opus 5.5 medium  laptop         21m█│ 11:55 ◆ tui-frames: Trust rule 1: red is … │
+│ │ ╰ ◐ impl-list-harness    impl     gpt-6.1-sol high laptop w08:p2   4m█│ 13:31 ↳ arch-rust-path: Don't wait for th… │
+│ │ ◐ impl-frames            impl     opus 5.5 medium  atlas  w02:p1  40s█│ 13:31 ? arch-rust-path: The stack report … │
+│ │ ◐ impl-trust-rules       impl     gpt-6.1-sol high atlas  w00:p4   2m█│ 13:24 ↳ arch-trust-rules: The hub did not… │
+│▌│ ● arch-plan-counter2     research fable 5.1 xhigh  atlas  w82:p2   9m█╰────────────────────────────────────────────╯
+│ │ ✓ rs-visual-spec         research opus 5.5 high    atlas  w76:p1  11m█╭ [3] Docs · 7-11/14 ────────────────────────╮
+│ │ ⊘ rs-visual-spec         research opus 5.5 high    atlas  w74:p4  10m█│ report rs-interaction         v1           │
+│ │ ✓ arch-plan-counter      research fable 5.1 xhigh  atlas  w72:p2  10m█│ report arch-trust-rules       v1           │
+│ │ ✓ arch-rust-path         research gpt-6-astra high atlas  w70:p5  33m█│ report rev-hidden-asks        v1           │
+│ │ ✓ rs-interaction         research opus 5.5 high    atlas  w68:p3  45m█│ report impl-hidden-asks       v2           │
+│ │ ✓ arch-stack-choice      research gpt-6-astra high atlas  w66:p1  42m█│ report rev-list-polish        v1           │
+│ │ ✓ arch-trust-rules       research gpt-6-astra high atlas  w64:p4  45m█╰────────────────────────────────────────────╯
+│ │ ✓ rev-hidden-asks        review   opus 5.5 medium  atlas  w62:p2   2h█╭ [4] PRs ───────────────────────────────────╮
+│ │ ✓ impl-hidden-asks       impl     gpt-6.1-sol high atlas  w60:p5   2h█│ #215 ◐ open   feat(glance): trust rules, … │
+│ │ ✓ rev-list-polish        review   opus 5.5 medium  atlas  w58:p3   2h█│ #214 ✓ merged fix(asks): hide orphaned ow… │
+│ │ ✓ impl-list-polish       impl     gpt-6.1-sol high atlas  w56:p1   3h█│ #213 ✓ merged feat(read): the glance and … │
+│ │ ✓ arch-first-counter     research fable 5.1 xhigh  atlas  w54:p4   3h█╰────────────────────────────────────────────╯
+│ │ ✓ impl-watch-fix         impl     gpt-6.1-sol high atlas  w52:p2   3h█╭ [5] Log · 1-9/13 ──────────────────────────╮
+│ │ ✓ rev-watch-mode         review   opus 5.5 medium  atlas  w50:p5   3h││ 14:15 ◐ impl-frames: claude opus 5.5 medi… │
+│ │ ✓ impl-lead-state        impl     gpt-6.1-sol high atlas  w48:p3   4h││ 14:13 ◐ impl-trust-rules: codex gpt-6.1-s… │
+│ │ ✓ impl-snapshot-fix      impl     gpt-6.1-sol high atlas  w46:p1   4h││ 14:07 • tui-frames: OWNER: nothing. NOW: … │
+│ │ ✓ impl-watch-mode        impl     gpt-6.1-sol high atlas  w44:p4   4h││ 14:07 ● arch-plan-counter2: counter-revie… │
+│ │ ✗ rev-snapshot           review   opus 5.5 medium  atlas  w42:p2   4h││ 14:05 · rs-visual-spec: closed             │
+│ ────────────────────────────────────────────────────────────────────── ││ 14:05 · arch-plan-counter: closed          │
+│ ● arch-plan-counter2  #4176  ready  ·  brief ✓ report ✓  ·  o reads    ││ 14:03 ✓ arch-plan-counter: Counter-review… │
+│ Counter-review 2 written: not ready to send until three text fixes     ││ 14:03 ● arch-plan-counter: counter-review  │
+│ land (P1-1 narrow layouts, P1-2 numbers, P1-3 release path).           ││ 13:58 ◆ tui-frames: D4: one binary for th… │
+╰────────────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────╯
+ ⏎ go to pane   o report   tab next pane   1-5 jump   / filter   h back   ? help

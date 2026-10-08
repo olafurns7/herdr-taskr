@@ -1,0 +1,30 @@
+ taskr      2s ago   * 2 need you  3 to check
+ 3 notes still carry OWNER items
+ NEEDS YOU -------------------------------- 2
+|? tui-frames           BLOCKING        >  41s
+|  Frames follow-up is ready: PR #212 (orpha.
+ ? ios-widgets                   laptop >   6m
+   WIDGET BATCH: 19 of 23 merged (14:02-14:0.
+ TO CHECK --------------------------------- 3
+ ! map-tiles-polish                laptop   2h
+   lead unregistered and silent
+ ! infra-layout                             2h
+   lead idle with 3 results
+ ! host build-mini                   mini  12m
+   host stale: no heartbeat for 12 m
+ CAMPAIGNS ------------------------------- 10
+ * search-index      *       _____#.       19s
+   Research complete: reports/ranking-option.
+ * auth-rotation     *       ___--_#       29s
+   Implementation slice: key rollover job, f.
+ o billing-export    *       _.__-#_       33s
+.o docs-refresh      *       _____#.        2m
+ o checkout-flow     **      _._.#-#        3m
+ * ios-widgets       -       __#-#- laptop  7m
+ * tui-frames        ****oo  _.-_.##        8m
+ . infra-layout      -       .._#_..       12m
+ * model-evals       ******+ ###_##_       14m
+ o api-pagination    *       ___#-__       54m
+ | legacy-importer                  parked  3h
+ . 2 quiet
+ > go   a answer   l open   ? help

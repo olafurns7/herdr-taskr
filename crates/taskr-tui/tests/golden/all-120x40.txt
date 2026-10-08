@@ -1,0 +1,40 @@
+ taskr ❯ all campaigns                                                    hub atlas · 2s ago   ● 2 need you  3 to check
+╭ All campaigns · 14 open · 18 closed ─────────────────────────────────────────────────────────────────────────────────╮
+│ OPEN ──────────────────────────────────────────────────────────────────────────────────────────────────────────── 14 │
+│▌◐ search-index                   #4310  open    1/13 lanes open          ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃            19s ago │
+│ ◐ auth-rotation                  #4288  open    1/8 lanes open           ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█            29s ago │
+│ ○ billing-export                 #4171  open    1/10 lanes open          ▁▆▁▂▁▁██▁▂▁█▁▁▂▁█▁▂▁▁▄█▁            33s ago │
+│ ○ docs-refresh                   #4296  open    1/16 lanes open          ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂             2m ago │
+│ ○ checkout-flow                  #4052  open    2/11 lanes open          ▃▁▁▂▄▁▁▁▂█▆▄██▄▃▂▁▂▁▃█▄█             3m ago │
+│ ◐ ios-widgets                    #4087  open    0/10 lanes open  laptop  ▃▆▁▁▅▄▂▇▃▂█▄▁▁▁▂▂▁▁▁▂▁▂▁             7m ago │
+│ ◐ tui-frames                     #4120  open    6/15 lanes open          ▁▁▃█▁▁▃█▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆             8m ago │
+│ · infra-layout                   #4031  open    0/5 lanes open           █▁▁█▆▃▁▆▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃            12m ago │
+│ ◐ model-evals                    #4215  open    9/28 lanes open          ▁▂▄▅▄▆▆▄▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁            14m ago │
+│ ○ api-pagination                 #4066  open    1/7 lanes open           ▃▁▃▇▂▁▅█▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁            54m ago │
+│ ‖ legacy-importer                #3254  parked  0/10 lanes open                                               3h ago │
+│ · map-tiles-polish               #4233  open    2/5 lanes open   laptop                                       2h ago │
+│ · cache-audit                    #4040  open    0/14 lanes open                                               5h ago │
+│ · font-swap                      #3990  open    0/8 lanes open                                                9h ago │
+│ CLOSED ────────────────────────────────────────────────────────────────────────────────────────────────────────── 18 │
+│ ✓ map-tiles                      #3960  closed  9 lanes          laptop                                       7h ago │
+│ ✓ landing-preview                #3929  closed  6 lanes          laptop                                      14h ago │
+│ ✓ owner-notes                    #3898  closed  12 lanes                                                      1d ago │
+│ ✓ guest-checkout                 #3867  closed  17 lanes                                                      1d ago │
+│ ✓ doc-capture                    #3836  closed  21 lanes                                                      2d ago │
+│ ✓ checkout-states                #3805  closed  11 lanes                                                      3d ago │
+│ ✓ beta-pipeline                  #3774  closed  14 lanes         laptop                                       4d ago │
+│ ✓ offline-spool                  #3743  closed  19 lanes                                                      5d ago │
+│ ✓ search-latency                 #3712  closed  7 lanes                                                       7d ago │
+│ ✓ fleet-accounts                 #3681  closed  5 lanes                                                       8d ago │
+│ ✓ ranking-evals                  #3650  closed  23 lanes                                                     10d ago │
+│ ✓ rpc-retry                      #3619  closed  8 lanes                                                      12d ago │
+│ ✓ pricing-audit                  #3588  closed  10 lanes         laptop                                      14d ago │
+│ ✓ triage-pilot                   #3557  closed  4 lanes                                                      17d ago │
+│ ✓ dashboard-campaigns            #3526  closed  16 lanes                                                     19d ago │
+│ ✓ lead-liveness                  #3495  closed  13 lanes                                                     22d ago │
+│ ✓ setup-hooks                    #3464  closed  6 lanes                                                      24d ago │
+│ ✓ compact-format                 #3433  closed  15 lanes                                                     27d ago │
+│                                                                                                                      │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ⏎ go   l open   / search   h back   ? help

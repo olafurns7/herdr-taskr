@@ -1,0 +1,30 @@
+ taskr ❯ help          2s ago   ● 2 need you
+ KEYS · glance ────────────────────── 1-27/36
+ Move
+  j k           down, up (arrows too)
+  g G           first, last row
+  ctrl-d ctrl-u half page
+  tab           next section; shift-tab back
+  wheel         scroll
+
+ Go
+  ⏎             go to the row's agent pane
+  l             open the campaign or detail
+  h             back, close (esc too)
+  /             filter rows by name
+  c             all campaigns, closed too
+  click         select; double-click is ⏎
+  ⏎ moves every client attached to that Herdr
+  server.
+
+ Act
+  a             answer the selected ask
+  p             park or unpark (confirms)
+  o             read the report or doc
+  y             copy the jump command
+  r             refresh now
+
+ View
+  ?             this help
+  m             mouse on or off
+ j k scroll   h close

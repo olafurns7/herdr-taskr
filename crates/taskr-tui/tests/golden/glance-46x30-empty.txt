@@ -1,0 +1,30 @@
+ taskr            2s ago   ✓ no owner action
+
+
+
+
+
+
+
+                       ✓
+
+               No open campaigns
+      Nothing recorded is waiting on you.
+
+                c all campaigns
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ c all campaigns   ? help

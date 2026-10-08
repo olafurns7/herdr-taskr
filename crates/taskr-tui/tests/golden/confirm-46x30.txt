@@ -1,0 +1,30 @@
+ taskr ❯ answer        2s ago   ● 2 need you
+ ask 61367 · ios-widgets
+ not blocking · waiting · 6m · laptop ↗
+
+ You are about to send this answer. It cannot
+ be changed or sent twice.
+
+ to    ios-widgets lead · laptop w95:p1 ↗ ·
+       waiting for this answer
+ text  A: merge these four now (#641, #638,
+       #655, #652), then one beta build from
+       main
+
+ runs  taskr answer 61367 "A: merge these
+       four now (#641, #638, #655, #652),
+       then one beta build from main"
+
+
+
+
+
+
+
+
+
+
+
+
+
+ y send   e edit   esc cancel, nothing is sent

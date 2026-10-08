@@ -1,0 +1,16 @@
+[package]
+name = "taskr-tui"
+version = "0.0.0"
+description = "The owner's terminal view of the taskr ledger"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+ratatui = "0.30"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-width = "0.2"

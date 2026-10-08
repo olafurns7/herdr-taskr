@@ -1,0 +1,30 @@
+ taskr ❯ all campaigns          ● 2 need you
+ OPEN ─────────────────────────────── 3-14/14
+ ○ billing-export                1/10      33s
+ ○ docs-refresh                  1/16       2m
+ ○ checkout-flow                 2/11       3m
+ ◐ ios-widgets                 0/10 laptop  7m
+ ◐ tui-frames                    6/15       8m
+ · infra-layout                   0/5      12m
+ ◐ model-evals                   9/28      14m
+ ○ api-pagination                 1/7      54m
+ ‖ legacy-importer               0/10       3h
+ · map-tiles-polish             2/5 laptop  2h
+ · cache-audit                   0/14       5h
+ · font-swap                      0/8       9h
+ CLOSED ───────────────────────────── 1-14/18
+ ✓ map-tiles                      9 laptop  7h
+ ✓ landing-preview                6 laptop 14h
+ ✓ owner-notes                     12       1d
+ ✓ guest-checkout                  17       1d
+ ✓ doc-capture                     21       2d
+ ✓ checkout-states                 11       3d
+ ✓ beta-pipeline                 14 laptop  4d
+ ✓ offline-spool                   19       5d
+ ✓ search-latency                   7       7d
+ ✓ fleet-accounts                   5       8d
+ ✓ ranking-evals                   23      10d
+ ✓ rpc-retry                        8      12d
+ ✓ pricing-audit                 10 laptop 14d
+▌✓ triage-pilot                     4      17d
+ ⏎ go   l open   / search   h back   ? help

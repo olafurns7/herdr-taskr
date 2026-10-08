@@ -1,0 +1,20 @@
+ taskr      2s ago   ● 2 need you  3 to check
+ 3 notes still carry OWNER items
+ NEEDS YOU ──────────────────────────────── 2
+▌? tui-frames           BLOCKING        ⏎  41s
+▌  Frames follow-up is ready: PR #212 (orpha…
+ ? ios-widgets                   laptop ↗   6m
+   WIDGET BATCH: 19 of 23 merged (14:02-14:0…
+ TO CHECK ───────────────────────────────── 3
+ ! map-tiles-polish                laptop   2h
+   lead unregistered and silent
+ ! infra-layout                             2h
+   lead idle with 3 results
+ ! host build-mini                   mini  12m
+   host stale: no heartbeat for 12 m
+ CAMPAIGNS ─────────────────────────────── 10
+ ◐ search-index      ●       ▁▁▁▁▁█▃       19s
+ ◐ auth-rotation     ●       ▁▁▁▄▄▁█       29s
+ ○ billing-export    ●       ▁▂▁▁▄█▁       33s
+ +10 more · c shows all
+ ⏎ go   a answer   l open   ? help
