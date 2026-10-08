@@ -22,7 +22,7 @@ use ratatui::crossterm::{
     execute, terminal,
 };
 use taskr_tui::{
-    App, actions, client, draw, frames,
+    App, actions, client, frames,
     input::{self, Effect},
     model::Data,
     theme,
@@ -162,6 +162,7 @@ fn main() -> ExitCode {
         // What the last frame showed of the fetch: the spinner, the age, the countdown.
         let mut face = String::new();
         let mut dirty = true;
+        let mut shown = None;
         loop {
             if live.poll(&mut app, Instant::now()) {
                 dirty = true;
@@ -180,7 +181,7 @@ fn main() -> ExitCode {
             }
             // Draw on a change only: an idle pane costs a poll, not a frame.
             if dirty || app.fetch.face() != face {
-                terminal.draw(|f| draw(f, &app))?;
+                taskr_tui::frame(&mut terminal, &app, &mut shown)?;
                 (face, dirty) = (app.fetch.face(), false);
             }
             if !event::poll(TICK)? {
@@ -200,6 +201,7 @@ fn main() -> ExitCode {
                 Effect::None => {}
                 Effect::Quit => return Ok(()),
                 Effect::Refresh => drop(wake.send(())),
+                Effect::Redraw => shown = None,
                 Effect::Copy(text) => {
                     let mut out = io::stdout();
                     out.write_all(actions::osc52(&text).as_bytes())?;

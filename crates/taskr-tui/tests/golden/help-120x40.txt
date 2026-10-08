@@ -19,15 +19,15 @@
 │ ◐ auth-r│    PgDn PgUp scroll it; h or esc returns to the   ?             this help                        │         │
 │   Implem│    list.                                          m             mouse on or off                  │         │
 │ ○ billin│                                                   t             theme: dark, light, terminal     │         │
-│   FYI 61│   Go                                              q             close; quits on the glance       │         │
-│ ○ docs-r│    ⏎             go to the row's agent pane                                                      │         │
-│   Hub FY│    l             open the campaign               Marks                                           │         │
-│ ○ checko│    h             back, close (esc too)            ? ask   ! to check   ◐ working   ○ waiting     │         │
-│   FIX: t│    /             filter rows by name              ● lane   ● ready   · idle   × gone   ‖ parked  │         │
-│ ◐ ios-wi│    c             all campaigns, closed too        ✓ done   ⊘ abandoned   ✗ rejected              │         │
-│   Widget│    click         select; double-click is ⏎        ⏎ pane on this machine   ↗ another             │         │
-│ ◐ tui-fr│    ⏎ moves every client attached to that Herdr    • changed since you looked                     │         │
-│   NOW: p│    server.                                                                                       │─────────╯
+│   FYI 61│   Go                                              ctrl-l        clear and redraw the screen      │         │
+│ ○ docs-r│    ⏎             go to the row's agent pane       q             close; quits on the glance       │         │
+│   Hub FY│    l             open the campaign                                                               │         │
+│ ○ checko│    h             back, close (esc too)           Marks                                           │         │
+│   FIX: t│    /             filter rows by name              ? ask   ! to check   ◐ working   ○ waiting     │         │
+│ ◐ ios-wi│    c             all campaigns, closed too        ● lane   ● ready   · idle   × gone   ‖ parked  │         │
+│   Widget│    click         select; double-click is ⏎        ✓ done   ⊘ abandoned   ✗ rejected              │         │
+│ ◐ tui-fr│    ⏎ moves every client attached to that Herdr    ⏎ pane on this machine   ↗ another             │         │
+│   NOW: p│    server.                                        • changed since you looked                     │─────────╯
 │ · infra-│                                                                                                  │─────────╮
 │   cache-╰──────────────────────────────────────────────────────────────────────────────────────────────────╯         │
 │ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁        14m││       ██      ██  ██▂▂  ██▂▂    ██          ████         │

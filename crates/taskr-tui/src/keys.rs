@@ -99,6 +99,13 @@ pub(crate) const KEYS: &[Key] = &[
     key("View", "?", "help", "this help", ALL),
     key("View", "m", "mouse", "mouse on or off", ALL),
     key("View", "t", "theme", "theme: dark, light, terminal", ALL),
+    key(
+        "View",
+        "ctrl-l",
+        "redraw",
+        "clear and redraw the screen",
+        ALL,
+    ),
     key("View", "q", "quit", "close; quits on the glance", ALL),
 ];
 
