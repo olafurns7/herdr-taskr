@@ -13,10 +13,12 @@ use ratatui::{
 
 use crate::{
     App, Hit, Screen,
-    actions::Job,
+    actions::{Done, Job},
     ask, campaign,
     glance::{self, Selected},
-    lists, ui,
+    lists,
+    model::Doc,
+    ui,
 };
 
 /// What the loop does after a key.
@@ -58,7 +60,7 @@ pub fn key(app: &mut App, key: KeyEvent) -> Effect {
         return filter(app, key.code);
     }
     match app.screen {
-        Screen::Answer => answer(app, key.code),
+        Screen::Answer => answer(app, key.code, ctrl),
         Screen::Confirm => confirm(app, key.code),
         _ => view(app, key.code, ctrl),
     }
@@ -85,6 +87,11 @@ fn travel(app: &mut App, by: isize) {
         _ => (&mut app.scroll, total.saturating_sub(height)),
     };
     *at = at.saturating_add_signed(by).min(last);
+}
+
+fn scroll(app: &mut App, by: isize) -> Effect {
+    travel(app, by);
+    Effect::None
 }
 
 fn reset(app: &mut App) {
@@ -186,14 +193,19 @@ fn view(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
 }
 
 /// Enter on a row with a pane: focus it when it is on this machine's Herdr, and say how
-/// to get there when it is not. Nothing here can reach another machine's screen.
+/// to get there when it is not, or when the snapshot does not say whose Herdr the pane is
+/// on (a taskr older than P1b). Pane ids repeat across machines, so a guess could focus
+/// someone else's pane. Nothing here can reach another machine's screen.
 fn go_to(app: &mut App, host: &str, pane: &str) -> Effect {
     let g = &app.data.glance;
     if pane.is_empty() {
         return say(app, "no live pane for this row");
     }
-    if host != g.caller_host {
-        let host = ui::host_name(g, host);
+    if !g.local(host) {
+        let host = match ui::host_name(g, host) {
+            name if name.is_empty() => "the hub".to_string(),
+            name => name,
+        };
         return say(
             app,
             format!("on {host} · pane {pane} · switch with prefix+w"),
@@ -211,37 +223,90 @@ fn copy(app: &mut App, host: &str, pane: &str) -> Effect {
     }
     let command = format!("herdr agent focus {pane}");
     let g = &app.data.glance;
-    let place = if host == g.caller_host {
-        String::new()
-    } else {
-        format!(" (run on {})", ui::host_name(g, host))
+    let place = match ui::host_name(g, host) {
+        _ if g.local(host) => String::new(),
+        name if name.is_empty() => " (run on the hub)".to_string(),
+        name => format!(" (run on {name})"),
     };
     app.status = Some(format!("copied · {command}{place}"));
     Effect::Copy(command)
 }
 
+/// `l`: read the campaign and show it. One that is already read shows at once and is
+/// refreshed behind the view.
 fn open(app: &mut App, root: i64, name: &str) -> Effect {
-    // ponytail: one campaign, the one already read. `taskr campaign ID` (P1b) fetches
-    // the selected one here.
-    if root == 0 || app.data.campaign.root.id != root {
-        return say(
-            app,
-            format!("! no campaign read for {name} yet: it needs taskr campaign (P1b)"),
-        );
+    if root == 0 {
+        return say(app, "this row has no campaign to open");
     }
-    app.go(Screen::Campaign);
-    (app.pane, app.lane) = (0, 0);
-    Effect::None
+    let loaded = app.data.campaign.root.id == root;
+    if loaded {
+        app.go(Screen::Campaign);
+        (app.pane, app.lane) = (0, 0);
+    } else {
+        app.status = Some(format!("reading {name}"));
+    }
+    Effect::Run(Job::Campaign {
+        root,
+        name: name.to_string(),
+        open: !loaded,
+    })
 }
 
+/// `o`: read the document under the cursor, or the selected lane's report.
 fn report(app: &mut App) -> Effect {
-    // ponytail: the one document in the data. `taskr doc get ID` fetches the row's own
-    // once the campaign read lists them.
-    if app.data.doc.body.is_empty() {
-        return say(app, "no report recorded for this row");
+    match campaign::doc(&app.view()) {
+        Some(row) if row.captured => Effect::Run(Job::Doc { row: row.clone() }),
+        Some(_) => say(
+            app,
+            "that document was registered but its text was never kept",
+        ),
+        None => say(app, "no report recorded for this lane"),
     }
-    app.go(Screen::Pager);
-    Effect::None
+}
+
+/// The campaign read to repeat after a new snapshot: the one on screen, if any.
+pub fn follow(app: &App) -> Option<Job> {
+    let showing =
+        app.screen == Screen::Campaign || app.back.iter().any(|b| b.screen == Screen::Campaign);
+    let root = &app.data.campaign.root;
+    showing.then(|| Job::Campaign {
+        root: root.id,
+        name: root.name.clone(),
+        open: false,
+    })
+}
+
+/// `--demo`: reads come from the fixture, and nothing else runs.
+pub fn demo(app: &mut App, job: Job) {
+    let result = match &job {
+        Job::Campaign { root, .. } if *root == app.data.campaign.root.id => {
+            Ok(Done::Campaign(Box::new(app.data.campaign.clone())))
+        }
+        Job::Campaign { .. } => Err(format!(
+            "the demo has one campaign, {}",
+            app.data.campaign.root.name
+        )),
+        Job::Doc { .. } => Ok(Done::Doc(app.data.doc.body.clone())),
+        _ => {
+            app.status = Some(format!("demo: {} (nothing was sent)", job.label()));
+            return;
+        }
+    };
+    done(app, &job, result);
+}
+
+/// Pasted text is text, never keys: it goes to the field being typed in, or nowhere.
+pub fn paste(app: &mut App, text: &str) {
+    let line: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    if app.typing {
+        app.filter.push_str(line.trim());
+        reset(app);
+    } else if app.screen == Screen::Answer && app.editing {
+        app.text.push_str(&line);
+    }
 }
 
 fn start_answer(app: &mut App, need: Option<crate::model::Need>) -> Effect {
@@ -295,7 +360,7 @@ fn glance_key(app: &mut App, code: KeyCode) -> Effect {
         KeyCode::Enter => return go_to(app, host, pane),
         KeyCode::Char('y') => return copy(app, host, pane),
         KeyCode::Char('l') | KeyCode::Right => return open(app, root, name),
-        KeyCode::Char('o') => return report(app),
+        KeyCode::Char('o') => return say(app, "l opens the campaign; its reports are read there"),
         KeyCode::Char('c') => {
             app.go(Screen::AllCampaigns);
             app.row = 0;
@@ -370,7 +435,16 @@ fn all_key(app: &mut App, code: KeyCode) -> Effect {
 }
 
 /// Step 1: choose an option or write; Enter goes on to the confirmation and sends nothing.
-fn answer(app: &mut App, code: KeyCode) -> Effect {
+fn answer(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
+    // The ask's own text scrolls when it is longer than its room.
+    let half = (app.seen.borrow().page.0 / 2).max(1) as isize;
+    match code {
+        KeyCode::Char('d') if ctrl => return scroll(app, half),
+        KeyCode::Char('u') if ctrl => return scroll(app, -half),
+        KeyCode::PageDown => return scroll(app, 2 * half),
+        KeyCode::PageUp => return scroll(app, -2 * half),
+        _ => {}
+    }
     let options = app
         .ask
         .as_ref()
@@ -427,14 +501,50 @@ fn confirm(app: &mut App, code: KeyCode) -> Effect {
 }
 
 /// The result of a job the loop ran.
-pub fn done(app: &mut App, job: &Job, result: Result<(), String>) {
+pub fn done(app: &mut App, job: &Job, result: Result<Done, String>) {
+    let showing =
+        app.screen == Screen::Campaign || app.back.iter().any(|b| b.screen == Screen::Campaign);
+    let note = |done: &Done| match done {
+        Done::Note(note) => format!(" · {note}"),
+        _ => String::new(),
+    };
     app.status = match (job, result) {
-        (Job::Focus { .. }, Ok(())) => None,
-        (Job::Answer { ask_id, .. }, Ok(())) => Some(format!("✓ answered {ask_id}")),
-        (Job::Park { name, park, .. }, Ok(())) => Some(format!(
+        (Job::Campaign { root, open, .. }, Ok(Done::Campaign(campaign))) => {
+            if *open && !showing {
+                app.data.campaign = *campaign;
+                app.go(Screen::Campaign);
+                (app.pane, app.lane) = (0, 0);
+            } else if showing && app.data.campaign.root.id == *root {
+                // A refresh under the view: the cursor stays where it can.
+                app.lane = app.lane.min(campaign.lanes.len());
+                app.data.campaign = *campaign;
+            }
+            None
+        }
+        (Job::Doc { row }, Ok(Done::Doc(body))) => {
+            app.data.doc = Doc {
+                id: row.id,
+                kind: row.kind.clone(),
+                name: row.name.clone(),
+                lane: row.lane.clone(),
+                version: row.version,
+                body,
+            };
+            if app.screen != Screen::Pager {
+                app.go(Screen::Pager);
+            }
+            None
+        }
+        // Recorded is recorded, even when the prompt did not reach the asker's pane: the
+        // ask stays out of reach here, and the line says what is left to do.
+        (Job::Answer { ask_id, .. }, Ok(done)) => {
+            Some(format!("✓ answered {ask_id}{}", note(&done)))
+        }
+        (Job::Park { name, park, .. }, Ok(_)) => Some(format!(
             "✓ {} {name}",
             if *park { "parked" } else { "unparked" }
         )),
+        (_, Ok(_)) => None,
         (job, Err(error)) => {
             if let Job::Answer { ask_id, .. } = job {
                 app.sent.retain(|id| id != ask_id);
@@ -574,9 +684,16 @@ mod tests {
             frames::text(self.terminal.backend().buffer())
         }
 
+        /// One key. A read it asks for is served from the fixture, as `--demo` does.
         fn code(&mut self, code: KeyCode) -> Effect {
             self.text();
-            press(&mut self.app, code)
+            match press(&mut self.app, code) {
+                Effect::Run(job) if job.reads() => {
+                    demo(&mut self.app, job);
+                    Effect::None
+                }
+                effect => effect,
+            }
         }
 
         /// Each character as a key; the last key's effect.
@@ -720,7 +837,7 @@ mod tests {
                 text: String::new(),
                 prompt: false,
             },
-            Ok(()),
+            Ok(Done::Ok),
         );
         assert!(p.text().contains(&format!("✓ answered {}", ask.ask_id)));
     }
@@ -797,7 +914,7 @@ mod tests {
         assert_eq!(p.keys("j"), Effect::None);
         assert!(p.app.pending.is_none() && p.app.row == 5);
         assert_eq!(p.keys("py"), Effect::Run(job.clone()));
-        done(&mut p.app, &job, Ok(()));
+        done(&mut p.app, &job, Ok(Done::Ok));
         assert!(p.status().starts_with("✓ parked"));
         // The parked row at the end unparks.
         p.keys("G");
@@ -837,7 +954,11 @@ mod tests {
         // Only the campaign that has been read opens.
         p.keys("\t\tl");
         assert_eq!(p.app.screen, Screen::Glance);
-        assert!(p.status().contains("no campaign read"));
+        assert!(
+            p.status().contains("the demo has one campaign"),
+            "{}",
+            p.status()
+        );
         let root = p.app.data.campaign.root.id;
         let ids = glance::ids(&p.app.data.glance);
         p.app.row = ids
@@ -848,14 +969,17 @@ mod tests {
         assert_eq!(p.app.screen, Screen::Campaign);
         p.keys("jj3");
         assert_eq!((p.app.lane, p.app.pane), (2, 2));
-        // Docs is longer than its box: it scrolls and stops at its end.
+        // Docs has a cursor that stops on the last document; Enter reads it.
         p.keys("jjjjjjjjjjjjjjjjjjjj");
-        let (height, total) = p.app.seen.borrow().page;
-        assert!(
-            total > height && p.app.scroll == total - height,
-            "{}",
-            p.app.scroll
+        let docs = p.app.data.campaign.docs.clone();
+        assert_eq!(p.app.scroll, docs.len() - 1);
+        p.keys("\n");
+        assert_eq!(
+            (p.app.screen, p.app.data.doc.id),
+            (Screen::Pager, docs[docs.len() - 1].id)
         );
+        p.keys("q");
+        assert_eq!((p.app.screen, p.app.pane), (Screen::Campaign, 2));
         p.keys("\t");
         assert_eq!((p.app.pane, p.app.scroll), (3, 0));
         p.code(KeyCode::BackTab);
@@ -969,5 +1093,336 @@ mod tests {
         wide.keys("a");
         assert_eq!(wide.click_on("docs-refresh"), Effect::None);
         assert_eq!((wide.app.screen, wide.app.row), (Screen::Answer, 0));
+    }
+
+    /// A glance as a taskr older than P1b sends it: no server name, no panes, no sparks,
+    /// and a check that belongs to no campaign.
+    fn old_taskr(p: &mut Pane) {
+        let g = &mut p.app.data.glance;
+        g.server_host.clear();
+        g.needs_you[0].pane_id.clear();
+        g.needs_you[0].host.clear();
+        g.attention[0].campaign.clear();
+        g.attention[0].kind = "daemon_unhealthy".into();
+        g.attention[0].root_id = 0;
+        g.campaigns.iter_mut().for_each(|c| c.spark.clear());
+    }
+
+    #[test]
+    fn enter_is_offered_only_where_it_can_go() {
+        let mut p = Pane::new(46, 30);
+        let before = p.text();
+        assert!(before.lines().nth(3).unwrap().contains('⏎') && before.contains("⏎ go"));
+        old_taskr(&mut p);
+        let screen = p.text();
+        // The ask has no pane: no mark on its row, no hint, and Enter says why.
+        assert!(!screen.lines().nth(3).unwrap().contains('⏎'), "{screen}");
+        assert!(!screen.lines().last().unwrap().contains('⏎') && screen.contains("a answer"));
+        assert_eq!(p.keys("\n"), Effect::None);
+        assert_eq!(p.status(), "no live pane for this row");
+        // A check for no campaign is named for what it is about, and opens nothing.
+        assert!(screen.contains(" ! daemon"), "{screen}");
+        p.keys("jj");
+        assert!(!p.text().lines().last().unwrap().contains("l open"));
+        // Without sparks the names take the room.
+        assert!(screen.contains("search-index "));
+        // A hub row with a pane, when the snapshot does not name its server: whose Herdr
+        // the pane is on is unknown, so nothing is focused.
+        let lead = glance::ids(&p.app.data.glance)
+            .iter()
+            .position(|r| matches!(r, glance::RowId::Campaign(_)))
+            .unwrap();
+        p.app.row = lead;
+        assert!(!campaign(&p.app).pane_id.is_empty());
+        assert_eq!(p.keys("\n"), Effect::None);
+        assert!(
+            p.status().starts_with("on the hub · pane ")
+                && p.status().ends_with("switch with prefix+w"),
+            "{}",
+            p.status()
+        );
+        assert!(
+            p.text().contains("how to get there")
+                || !p.text().lines().last().unwrap().contains("⏎ go")
+        );
+    }
+
+    #[test]
+    fn a_snapshot_marks_the_campaigns_that_changed() {
+        let mut p = Pane::new(46, 30);
+        p.app.changed.clear();
+        let mut next = p.app.data.glance.clone();
+        p.app.snapshot(next.clone());
+        assert!(
+            p.app.changed.is_empty(),
+            "the same snapshot changes nothing"
+        );
+        // A new event on one, a lane more on another, and a campaign that was not there.
+        let (a, b) = (next.campaigns[0].id, next.campaigns[1].id);
+        next.campaigns[0].last.get_or_insert_default().event_id += 1;
+        next.campaigns[1].lanes.working += 1;
+        let mut new = next.campaigns[2].clone();
+        (new.id, new.name) = (9999, "brand-new".into());
+        next.campaigns.push(new);
+        p.app.snapshot(next.clone());
+        assert_eq!(p.app.changed, [a, b, 9999]);
+        // The marks stay through the next snapshot and go with any key.
+        p.app.snapshot(next);
+        assert_eq!(p.app.changed.len(), 3);
+        assert!(p.text().lines().any(|l| l.starts_with('•')));
+        p.keys("j");
+        assert!(p.app.changed.is_empty());
+        // The first snapshot of a session marks nothing: there was nothing to compare.
+        let mut first = App::new(crate::model::Data::default());
+        first.snapshot(p.app.data.glance.clone());
+        assert!(first.changed.is_empty());
+        // The all-campaigns list is built from the glance: open campaigns, then quiet ones.
+        let g = &p.app.data.glance;
+        assert_eq!(
+            first.data.roots.len(),
+            g.campaigns.len() + g.quiet.names.len()
+        );
+        assert_eq!(
+            first.data.roots.last().unwrap().id,
+            *g.quiet.root_ids.last().unwrap()
+        );
+    }
+
+    #[test]
+    fn a_long_ask_can_be_read_before_it_is_answered() {
+        let mut p = Pane::new(46, 30);
+        let mut ask = p.app.data.glance.needs_you[0].clone();
+        let body: Vec<String> = (1..=60)
+            .map(|i| format!("Paragraph {i} of the case for and against."))
+            .collect();
+        ask.text = format!("{} LASTWORD (A) yes; (B) no", body.join(" "));
+        p.app.answer(ask);
+        let top = p.text();
+        assert!(
+            top.contains("Paragraph 1 of")
+                && !top.contains("LASTWORD")
+                && top.contains("ctrl-d ctrl-u scroll")
+        );
+        let ctrl = |p: &mut Pane, c| {
+            p.text();
+            key(
+                &mut p.app,
+                KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL),
+            )
+        };
+        ctrl(&mut p, 'd');
+        assert!(p.app.scroll > 0 && !p.text().contains("Paragraph 1 of"));
+        for _ in 0..40 {
+            ctrl(&mut p, 'd');
+        }
+        let bottom = p.text();
+        assert!(
+            bottom.contains("LASTWORD") && bottom.contains("A  yes"),
+            "{bottom}"
+        );
+        // While the answer is being edited, ctrl-d still scrolls and types nothing.
+        p.keys("\t");
+        let text = p.app.text.clone();
+        ctrl(&mut p, 'u');
+        ctrl(&mut p, 'd');
+        assert_eq!(p.app.text, text);
+        p.code(KeyCode::PageUp);
+        assert!(!p.text().contains("LASTWORD"));
+    }
+
+    #[test]
+    fn pasted_text_is_never_keys() {
+        let mut p = Pane::new(46, 30);
+        p.keys("\t\t");
+        let row = p.app.row;
+        // On a campaign row, a pasted `py` would park it if it were keys.
+        paste(&mut p.app, "py");
+        assert!(p.app.pending.is_none() && p.app.row == row && p.app.screen == Screen::Glance);
+        p.keys("/");
+        paste(&mut p.app, "docs\n");
+        assert_eq!((p.app.filter.as_str(), p.app.typing), ("docs", true));
+        p.keys("\x1bga\t");
+        let before = p.app.text.clone();
+        paste(&mut p.app, ", and\nthen ship");
+        assert_eq!(p.app.text, format!("{before}, and then ship"));
+        assert_eq!(p.app.screen, Screen::Answer);
+        // Not editing: nothing is taken, least of all the confirm step's `y`.
+        p.keys("\t\n");
+        paste(&mut p.app, "y");
+        assert_eq!(p.app.screen, Screen::Confirm);
+    }
+
+    #[test]
+    fn no_hint_names_a_key_that_does_nothing() {
+        let mut p = Pane::new(120, 40);
+        p.keys("\t\t");
+        let foot = |p: &mut Pane| p.text().lines().last().unwrap().to_string();
+        assert!(!foot(&mut p).contains("report"), "{}", foot(&mut p));
+        assert_eq!(p.keys("o"), Effect::None);
+        assert!(p.status().contains("l opens the campaign"));
+        let root = p.app.data.campaign.root.id;
+        p.app.row = glance::ids(&p.app.data.glance)
+            .iter()
+            .position(|r| *r == glance::RowId::Campaign(root))
+            .unwrap();
+        p.keys("lo");
+        assert_eq!(p.app.screen, Screen::Pager);
+        assert!(!foot(&mut p).contains("search") && foot(&mut p).contains("space"));
+    }
+
+    #[test]
+    fn the_cursor_is_always_on_a_drawn_row() {
+        for height in 8..=40 {
+            let mut p = Pane::new(46, height);
+            for keys in ["", "G", "\t\t", "Gk"] {
+                p.keys(keys);
+                let screen = p.text();
+                assert!(
+                    screen.lines().any(|l| l.starts_with('▌')),
+                    "{height} rows after {keys:?}:\n{screen}"
+                );
+            }
+        }
+        // Under 8 rows there is the pill and nothing to move on.
+        let mut p = Pane::new(46, 7);
+        assert_eq!(p.text().lines().filter(|l| !l.is_empty()).count(), 1);
+    }
+
+    #[test]
+    fn a_campaign_is_read_then_shown_and_follows_the_glance() {
+        let mut p = Pane::new(120, 40);
+        let sample: crate::model::Data =
+            serde_json::from_str(include_str!("../tests/p1b-sample.json")).unwrap();
+        p.app.data = sample.clone();
+        p.keys("j");
+        // `l` asks for the read and shows nothing yet.
+        let job = Job::Campaign {
+            root: 1,
+            name: "demo-checkout".into(),
+            open: true,
+        };
+        p.app.data.campaign = crate::model::Campaign::default();
+        p.text();
+        assert_eq!(
+            press(&mut p.app, KeyCode::Char('l')),
+            Effect::Run(job.clone())
+        );
+        assert_eq!(
+            (p.app.screen, p.status()),
+            (Screen::Glance, "reading demo-checkout")
+        );
+        assert!(follow(&p.app).is_none());
+        done(
+            &mut p.app,
+            &job,
+            Ok(Done::Campaign(Box::new(sample.campaign.clone()))),
+        );
+        assert_eq!(p.app.screen, Screen::Campaign);
+        let screen = p.text();
+        assert!(
+            screen.contains("demo-worker")
+                && screen.contains("#123")
+                && screen.contains("Ship the sample."),
+            "{screen}"
+        );
+        // Each new snapshot re-reads the campaign on screen; the cursor stays.
+        p.keys("j");
+        let again = follow(&p.app).expect("a refresh");
+        assert_eq!(
+            again,
+            Job::Campaign {
+                root: 1,
+                name: "demo-checkout".into(),
+                open: false
+            }
+        );
+        let mut newer = sample.campaign.clone();
+        newer.root.next = "Something newer".into();
+        done(&mut p.app, &again, Ok(Done::Campaign(Box::new(newer))));
+        assert_eq!(
+            (p.app.lane, p.app.data.campaign.root.next.as_str()),
+            (1, "Something newer")
+        );
+        // `o` on a lane with no report row says so; in Docs it asks for the document by
+        // id, and the raw text opens in the pager.
+        assert_eq!(p.keys("o"), Effect::None);
+        assert_eq!(p.status(), "no report recorded for this lane");
+        p.keys("3j");
+        p.text();
+        let Effect::Run(read) = press(&mut p.app, KeyCode::Char('o')) else {
+            panic!("a read")
+        };
+        assert!(
+            matches!(&read, Job::Doc { row } if row.kind == "brief" && row.id == 11),
+            "{read:?}"
+        );
+        done(
+            &mut p.app,
+            &read,
+            Ok(Done::Doc("# Report\n\nAll good.".into())),
+        );
+        assert_eq!(p.app.screen, Screen::Pager);
+        assert!(p.text().contains("All good."));
+        // A refresh that lands after the owner has left does not reopen anything.
+        p.keys("qq");
+        done(
+            &mut p.app,
+            &again,
+            Ok(Done::Campaign(Box::new(sample.campaign.clone()))),
+        );
+        assert_eq!(p.app.screen, Screen::Glance);
+        // A failed read says so in taskr's words.
+        done(&mut p.app, &job, Err("unknown command campaign".into()));
+        assert_eq!(
+            p.status(),
+            "! read demo-checkout failed: unknown command campaign"
+        );
+    }
+
+    #[test]
+    fn a_recorded_answer_is_not_called_failed() {
+        let mut p = Pane::new(46, 30);
+        let id = p.app.data.glance.needs_you[0].ask_id;
+        let Effect::Run(job) = p.keys("a\ny") else {
+            panic!("an answer")
+        };
+        done(
+            &mut p.app,
+            &job,
+            Ok(Done::Note("not delivered to its pane: no pane".into())),
+        );
+        assert_eq!(
+            p.status(),
+            format!("✓ answered {id} · not delivered to its pane: no pane")
+        );
+        // It is recorded, so it cannot be sent again from here.
+        p.keys("a");
+        assert_eq!(p.app.screen, Screen::Glance);
+        assert!(p.status().contains("already answered"));
+        // A refusal is a failure, and the ask can be tried again.
+        done(&mut p.app, &job, Err("server unreachable".into()));
+        assert_eq!(
+            p.status(),
+            format!("! answer {id} failed: server unreachable")
+        );
+        p.keys("a");
+        assert_eq!(p.app.screen, Screen::Answer);
+    }
+
+    #[test]
+    fn the_loop_redraws_only_when_the_fetch_looks_different() {
+        let mut fetch = crate::Fetch {
+            loaded: true,
+            age_ms: 2000,
+            ..Default::default()
+        };
+        let face = fetch.face();
+        fetch.age_ms = 2900;
+        assert_eq!(fetch.face(), face, "the same second on screen");
+        fetch.age_ms = 3000;
+        assert_ne!(fetch.face(), face);
+        let face = fetch.face();
+        fetch.in_flight = true;
+        assert_ne!(fetch.face(), face);
     }
 }

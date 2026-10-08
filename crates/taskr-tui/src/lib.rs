@@ -88,6 +88,17 @@ pub(crate) struct Back {
     filter: String,
 }
 
+impl Fetch {
+    /// Everything the screen shows of the fetch. The loop redraws when this changes.
+    pub fn face(&self) -> String {
+        let age = ui::age(self.age_ms);
+        format!(
+            "{} {} {} {age} {:?} {}",
+            self.loaded, self.in_flight, self.tick, self.error, self.retry_in_s
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct App {
     pub data: model::Data,
@@ -210,6 +221,48 @@ impl App {
         let before = at(self).get(self.row).cloned().filter(|_| glance_row);
         self.sent
             .retain(|id| glance.needs_you.iter().any(|a| a.ask_id == *id));
+        // "Changed since you looked": a campaign whose last event, owner note, lead, lanes
+        // or parking differ from the snapshot on screen. Any key clears the marks.
+        let event = |last: &Option<model::Last>| last.as_ref().map(|l| l.event_id);
+        let face = |c: &model::CampaignRow| {
+            let lanes = (c.lanes.working, c.lanes.ready, c.lanes.open);
+            (
+                event(&c.last),
+                event(&c.owner_note),
+                c.lead.clone(),
+                lanes,
+                c.parked,
+            )
+        };
+        for new in glance.campaigns.iter().filter(|_| self.fetch.loaded) {
+            let old = self.data.glance.campaigns.iter().find(|c| c.id == new.id);
+            if old.map(face) != Some(face(new)) && !self.changed.contains(&new.id) {
+                self.changed.push(new.id);
+            }
+        }
+        // ponytail: the all-campaigns list is the open roots the glance names. Closed
+        // ones need a list read that taskr does not have yet.
+        let quiet = glance.quiet.names.iter().zip(&glance.quiet.root_ids);
+        self.data.roots = glance
+            .campaigns
+            .iter()
+            .map(|c| model::RootRow {
+                id: c.id,
+                name: c.name.clone(),
+                status: "open".into(),
+                parked: c.parked,
+                host: c.host.clone(),
+                lanes_open: c.lanes.open,
+                lanes_total: c.lanes.open,
+                activity_age_ms: c.activity_age_ms,
+            })
+            .chain(quiet.map(|(name, id)| model::RootRow {
+                id: *id,
+                name: name.clone(),
+                status: "open".into(),
+                ..model::RootRow::default()
+            }))
+            .collect();
         self.data.glance = glance;
         if let Some(i) = before.and_then(|id| at(self).iter().position(|r| *r == id)) {
             self.row = i;
@@ -271,7 +324,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
     *app.seen.borrow_mut() = Seen::default();
     let app = &app.view();
-    if area.width < 30 || area.height < 6 {
+    // Under 8 rows the section rules leave no room for the rows they head.
+    if area.width < 30 || area.height < 8 {
         ui::pill_only(f, app);
     } else {
         screen(f, app);

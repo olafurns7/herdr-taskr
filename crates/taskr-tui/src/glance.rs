@@ -46,10 +46,6 @@ enum Tail {
     More(usize),
 }
 
-fn section(rows: usize) -> usize {
-    if rows == 0 { 0 } else { 1 + 2 * rows }
-}
-
 /// The rows of `n` two-line items that fit in `avail` lines under a rule, around `cursor`.
 fn window(n: usize, avail: usize, cursor: Option<usize>) -> Range<usize> {
     let fit = (avail.saturating_sub(1) / 2).min(n);
@@ -71,16 +67,33 @@ pub(crate) fn plan(g: &Glance, height: usize, cursor: usize) -> Plan {
         2
     };
 
+    // A section with rows keeps its rule even when its window is empty.
+    let used = |total: usize, shown: usize| if total == 0 { 0 } else { 1 + 2 * shown };
+    // The row under the cursor is drawn first: when a pane is too short for every
+    // section's share, the other sections shrink to their rules.
+    let rule = floor.min(1);
+    let (in_asks, in_checks) = (cursor < asks, cursor >= asks && cursor < asks + checks);
     let room = height.saturating_sub(floor + if checks > 0 { 3 } else { 0 });
-    let ask_rows = window(asks, room, (cursor < asks).then_some(cursor));
-    let room = height.saturating_sub(floor + section(ask_rows.len()));
+    let room = if in_asks && room < 3 {
+        height.saturating_sub(rule + checks.min(1))
+    } else {
+        room
+    };
+    let ask_rows = window(asks, room, in_asks.then_some(cursor));
+    let room = height.saturating_sub(floor + used(asks, ask_rows.len()));
+    let room = if in_checks && room < 3 {
+        room + floor - rule
+    } else {
+        room
+    };
     let check_rows = window(
         checks,
         room,
         cursor.checked_sub(asks).filter(|&i| i < checks),
     );
 
-    let rows = height.saturating_sub(section(ask_rows.len()) + section(check_rows.len()) + 1);
+    let rows =
+        height.saturating_sub(used(asks, ask_rows.len()) + used(checks, check_rows.len()) + 1);
     let full = active.len() + parked + quiet;
     let (shown, tail, spare) = if floor == 0 {
         (0, Tail::None, 0)
@@ -120,11 +133,28 @@ fn count(rows: &Range<usize>, total: usize, cursor: Option<usize>) -> String {
     format!("{}/{total}", cursor.map_or(rows.end, |i| i + 1))
 }
 
-fn place(t: &Theme, g: &Glance, host: &str) -> Span<'static> {
-    if host == g.caller_host {
+/// What Enter does on the row, at its right: `⏎` focuses the pane, `host ↗` is another
+/// machine. Nothing when the row has no pane, or the snapshot does not say where it is.
+fn place(t: &Theme, g: &Glance, host: &str, pane: &str) -> Span<'static> {
+    if pane.is_empty() || (g.server_host.is_empty() && host.is_empty()) {
+        Span::raw("")
+    } else if g.local(host) {
         sp("⏎ ", t.accent)
     } else {
         sp(format!("{} ↗ ", ui::host_name(g, host)), t.remote)
+    }
+}
+
+/// A "to check" row's name: its campaign, or what the check is about when it has none.
+pub(crate) fn check_name(g: &Glance, a: &Attention) -> String {
+    if !a.campaign.is_empty() {
+        a.campaign.clone()
+    } else if a.kind.starts_with("daemon") {
+        "daemon".to_string()
+    } else if a.kind.starts_with("host") {
+        format!("host {}", ui::host_name(g, &a.host))
+    } else {
+        a.kind.replace('_', " ")
     }
 }
 
@@ -172,7 +202,7 @@ fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Op
             }
             let right = vec![
                 Span::raw(" "),
-                place(t, g, &a.host),
+                place(t, g, &a.host, &a.pane_id),
                 sp(format!("{:>4}", age(a.age_ms)), t.sub),
             ];
             out.push(ui::row(
@@ -204,8 +234,8 @@ fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Op
         hits.resize(out.len(), None);
         if plan.checks.contains(&i) {
             let on = app.row == index;
-            let left = vec![bold("! ", t.check), sp(a.campaign.clone(), t.text)];
-            let host = if a.host == g.caller_host {
+            let left = vec![bold("! ", t.check), sp(check_name(g, a), t.text)];
+            let host = if g.local(&a.host) {
                 String::new()
             } else {
                 ui::host_name(g, &a.host)
@@ -254,7 +284,8 @@ fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Op
     } else {
         18.min(body.saturating_sub(21))
     };
-    let spark_w = if width < 40 {
+    // No bars at all (a taskr older than P1b): the names take the room.
+    let spark_w = if width < 40 || active.iter().all(|c| c.spark.is_empty()) {
         0
     } else {
         body.saturating_sub(name_w + 20).clamp(6, 16)
@@ -269,7 +300,7 @@ fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Op
                 sp(pad(&c.name, name_w), t.text),
             ];
             left.extend(ui::pips(t, &c.lanes, 7));
-            let host = if c.host == g.caller_host {
+            let host = if g.local(&c.host) {
                 String::new()
             } else {
                 ui::host_name(g, &c.host)
@@ -415,23 +446,34 @@ pub(crate) fn selected(app: &App) -> Selected<'_> {
 
 /// The footer lists only the keys that do something for the selected row.
 pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> {
-    let local = |host: &str| host == app.data.glance.caller_host;
-    let go = |host: &str, to: &'static str| match (local(host), wide) {
-        (false, _) => hint("⏎", Some("how to get there")),
-        (true, true) => hint("⏎", Some(to)),
-        (true, false) => hint("⏎", None),
+    let g = &app.data.glance;
+    // `⏎` is offered only where there is a pane to go to.
+    let go = |host: &str, pane: &str| match (pane.is_empty(), g.local(host), wide) {
+        (true, ..) => None,
+        (_, false, _) => Some(hint("⏎", Some("how to get there"))),
+        (_, true, true) => Some(hint("⏎", Some("go to lead"))),
+        (_, true, false) => Some(hint("⏎", None)),
     };
-    let mut out = match selected(app) {
-        Selected::Ask(a) => vec![go(&a.host, "go to lead"), hint("a", None), hint("l", None)],
-        Selected::Check(a) => vec![go(&a.host, "go to lead"), hint("l", None)],
-        Selected::Campaign(c) => vec![
-            go(&c.host, "go to lead"),
-            hint("l", None),
-            hint("o", None),
-            hint("p", None),
+    let mut out: Vec<_> = match selected(app) {
+        Selected::Ask(a) => vec![
+            go(&a.host, &a.pane_id),
+            Some(hint("a", None)),
+            Some(hint("l", None)),
         ],
-        Selected::Nothing => vec![hint("c", Some("all campaigns"))],
-    };
+        Selected::Check(a) => vec![
+            go(&a.host, &a.pane_id),
+            (a.root_id != 0).then(|| hint("l", None)),
+        ],
+        Selected::Campaign(c) => vec![
+            go(&c.host, &c.pane_id),
+            Some(hint("l", None)),
+            Some(hint("p", None)),
+        ],
+        Selected::Nothing => vec![Some(hint("c", Some("all campaigns")))],
+    }
+    .into_iter()
+    .flatten()
+    .collect();
     if app.fetch.error.is_some() {
         out.insert(0, hint("r", Some("retry")));
     }
@@ -602,7 +644,7 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
     let (t, g) = (&app.theme, &app.data.glance);
     let at = |host: &str, pane: &str| {
         let name = ui::host_name(g, host);
-        if host == g.caller_host {
+        if g.local(host) {
             sp(format!("{name} {pane}"), t.sub)
         } else {
             sp(format!("{name} {pane} ↗"), t.remote)
@@ -641,7 +683,7 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
                 at(&a.host, &a.pane_id),
             ];
             (
-                format!("check · {}", a.campaign),
+                format!("check · {}", check_name(g, a)),
                 vec![Line::from(head)],
                 String::new(),
             )

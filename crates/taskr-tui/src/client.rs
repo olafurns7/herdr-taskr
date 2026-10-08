@@ -5,7 +5,7 @@
 use std::{
     env,
     io::Read,
-    process::{Command, Stdio},
+    process::{Command, ExitStatus, Stdio},
     sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
     thread,
     time::{Duration, Instant},
@@ -37,11 +37,46 @@ pub fn command() -> Vec<String> {
     command
 }
 
-/// The first line of what a failed command said, short enough for the banner.
-fn reason(text: &[u8]) -> Option<String> {
-    let text = String::from_utf8_lossy(text);
-    let line = text.lines().map(str::trim).find(|l| !l.is_empty())?;
-    Some(line.chars().take(80).collect())
+/// What a finished command left behind.
+pub struct Output {
+    pub status: ExitStatus,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
+
+impl Output {
+    /// Why the command failed, in one line short enough for the footer. taskr says it as
+    /// JSON (`{"error":…}` with `--json`, `x1 N {"err":…}` without); anything else is
+    /// taken as its first line.
+    pub fn reason(&self) -> String {
+        let (stdout, stderr) = (
+            String::from_utf8_lossy(&self.stdout),
+            String::from_utf8_lossy(&self.stderr),
+        );
+        let lines = || {
+            stderr
+                .lines()
+                .chain(stdout.lines())
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+        };
+        let said = stdout.lines().chain(stderr.lines()).find_map(|line| {
+            let reply: serde_json::Value = serde_json::from_str(&line[line.find('{')?..]).ok()?;
+            let error = reply.get("error").or(reply.get("err"))?;
+            Some(error.as_str()?.to_string())
+        });
+        let line = said.or_else(|| lines().next().map(String::from));
+        line.map_or_else(|| self.status.to_string(), |l| l.chars().take(80).collect())
+    }
+
+    /// What it printed, or why it failed.
+    pub fn text(self) -> Result<Vec<u8>, String> {
+        if self.status.success() {
+            Ok(self.stdout)
+        } else {
+            Err(self.reason())
+        }
+    }
 }
 
 /// Runs the command once and decodes its snapshot.
@@ -52,9 +87,17 @@ pub fn fetch(command: &[String], timeout: Duration) -> Result<Glance, String> {
 
 /// Runs a command to its end and returns what it printed, or one line on why it failed.
 pub fn output(command: &[String], timeout: Duration) -> Result<Vec<u8>, String> {
-    let (bin, args) = command.split_first().ok_or("no snapshot command")?;
+    run(command, timeout)?.text()
+}
+
+/// Runs a command to its end. An error here means it never ran or never finished.
+pub fn run(command: &[String], timeout: Duration) -> Result<Output, String> {
+    let (bin, args) = command.split_first().ok_or("no command")?;
     let mut child = Command::new(bin)
         .args(args)
+        // The view never reads or writes as a lead, whatever pane it was started in.
+        .env_remove("TASKR_TASK")
+        .env_remove("TASKR_LAUNCH")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -82,13 +125,12 @@ pub fn output(command: &[String], timeout: Duration) -> Result<Vec<u8>, String> 
         }
     };
     let status = child.wait().map_err(|e| format!("{bin}: {e}"))?;
-    if !status.success() {
-        let stderr = err.recv_timeout(Duration::from_secs(1)).unwrap_or_default();
-        return Err(reason(&stderr)
-            .or_else(|| reason(&stdout))
-            .unwrap_or_else(|| format!("{bin}: {status}")));
-    }
-    Ok(stdout)
+    let stderr = err.recv_timeout(Duration::from_secs(1)).unwrap_or_default();
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 /// Fetches now and then every `every`, or sooner when `wake` is sent to (`r`, or after a
@@ -131,8 +173,9 @@ impl Live {
         }
     }
 
-    /// Applies what has arrived, without waiting. Call before each draw.
-    pub fn poll(&mut self, app: &mut App, now: Instant) {
+    /// Applies what has arrived, without waiting, and says whether a new snapshot did.
+    pub fn poll(&mut self, app: &mut App, now: Instant) -> bool {
+        let mut fresh = false;
         for update in self.updates.try_iter() {
             match update {
                 Update::Started => self.started = Some(now),
@@ -146,6 +189,7 @@ impl Live {
                             app.fetch.loaded = true;
                             app.fetch.error = None;
                             app.fetch.tries = 0;
+                            fresh = true;
                             self.fetched = Some(now);
                         }
                         Err(error) => {
@@ -169,6 +213,7 @@ impl Live {
         app.fetch.retry_in_s = self.next.map_or(0, |n| {
             n.saturating_duration_since(now).as_secs_f32().ceil() as u32
         });
+        fresh
     }
 }
 
@@ -193,7 +238,25 @@ mod tests {
             error("echo; echo ' server unreachable' >&2; exit 5"),
             "server unreachable"
         );
-        assert_eq!(error("exit 3"), "sh: exit status: 3");
+        assert_eq!(error("exit 3"), "exit status: 3");
+        // taskr's own words, with and without --json, not the raw line.
+        assert_eq!(
+            error(
+                r#"echo 'taskr: nope' >&2; echo '{"error":"server unreachable (connection refused)","kind":"transport"}'; exit 5"#
+            ),
+            "server unreachable (connection refused)"
+        );
+        assert_eq!(
+            error(r#"echo 'x1 6 {"err":"event 99 is not an ask","k":"rejected"}' >&2; exit 6"#),
+            "event 99 is not an ask"
+        );
+        // The view never acts as the task whose pane it was started in.
+        let seen = output(
+            &sh(r#"echo "${TASKR_TASK-unset} ${TASKR_LAUNCH-unset}""#),
+            TIMEOUT,
+        )
+        .unwrap();
+        assert_eq!(String::from_utf8_lossy(&seen).trim(), "unset unset");
         assert!(error("echo not json").starts_with("unreadable snapshot"));
         assert_eq!(error("sleep 5"), "sh did not answer in 0s");
         assert!(

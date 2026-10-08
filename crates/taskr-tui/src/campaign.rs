@@ -20,6 +20,7 @@ use crate::{
 type PaneLines = fn(&App, usize) -> Vec<Line<'static>>;
 
 const PANES: [&str; 5] = ["Lanes", "Asks", "Docs", "PRs", "Log"];
+const DOCS: usize = 2;
 
 /// One row of the lane tree; `lane` is `None` for the lead.
 struct LaneRow<'a> {
@@ -152,11 +153,7 @@ fn lane_line(app: &App, row: &LaneRow, narrow: bool, width: usize) -> Vec<Span<'
         let host = ui::host_name(g, &lane.host);
         let host = sp(
             format!("{} ", pad(&host, 6)),
-            if lane.host == g.caller_host {
-                sub
-            } else {
-                t.remote
-            },
+            if g.local(&lane.host) { sub } else { t.remote },
         );
         out.push(sp(
             format!(" {} {} ", pad(role(lane), 8), pad(&model, 16)),
@@ -218,11 +215,7 @@ fn strip(app: &App, row: &LaneRow, narrow: bool, width: usize) -> Vec<Line<'stat
         out.push(Line::from(ui::fit(head, width)));
         let host = sp(
             format!("{} {}", ui::host_name(g, &lane.host), lane.pane_id),
-            if lane.host == g.caller_host {
-                t.sub
-            } else {
-                t.remote
-            },
+            if g.local(&lane.host) { t.sub } else { t.remote },
         );
         let mut line = vec![host, sp(dot, t.dim)];
         line.extend(files);
@@ -304,21 +297,71 @@ fn asks(app: &App, width: usize) -> Vec<Line<'static>> {
 
 fn docs(app: &App, width: usize) -> Vec<Line<'static>> {
     let t = &app.theme;
-    let rows = app.data.campaign.docs.iter().map(|d| {
+    let rows = app.data.campaign.docs.iter().enumerate().map(|(i, d)| {
         let name = if d.name.is_empty() { &d.lane } else { &d.name };
         let (kind, fg) = if d.captured {
             (t.accent, t.text)
         } else {
             (t.dim, t.dim)
         };
-        Line::from(vec![
-            sp(pad(&d.kind, 7), kind),
-            sp(pad(name, width.saturating_sub(20)), fg),
-            sp(format!(" v{:<3}", d.version), t.dim),
-            sp(if d.captured { "" } else { "not kept" }, t.dim),
-        ])
+        let line = Line::from(ui::spread(
+            vec![
+                sp(pad(&d.kind, 7), kind),
+                sp(pad(name, width.saturating_sub(20)), fg),
+                sp(format!(" v{:<3}", d.version), t.dim),
+                sp(if d.captured { "" } else { "not kept" }, t.dim),
+            ],
+            vec![],
+            width,
+        ));
+        // Focused, the pane has a cursor: Enter or `o` reads that document.
+        if app.pane == DOCS && i == app.scroll {
+            line.style(t.selected())
+        } else {
+            line
+        }
     });
     rows.collect()
+}
+
+/// The document `o` reads: the one under the Docs cursor, or the selected lane's latest
+/// report (the plan, then the goal, for the lead).
+pub(crate) fn doc(app: &App) -> Option<&crate::model::DocRow> {
+    let c = &app.data.campaign;
+    if app.pane == DOCS {
+        return c.docs.get(app.scroll);
+    }
+    let rows = tree(c);
+    let latest = |kind: &str, lane: &str| {
+        let of = c
+            .docs
+            .iter()
+            .filter(|d| d.captured && d.kind == kind && (lane.is_empty() || d.lane == lane));
+        of.max_by_key(|d| d.version)
+    };
+    match rows.get(app.lane)?.lane {
+        Some(lane) => latest("report", &lane.name),
+        None => latest("plan", "").or_else(|| latest("goal", "")),
+    }
+}
+
+/// The first row of a window `height` tall over `total` rows: the cursor's window in
+/// Docs, the scroll position elsewhere.
+fn first_row(app: &App, pane: usize, height: usize, total: usize) -> usize {
+    if app.pane != pane {
+        return 0;
+    }
+    // In Docs `scroll` is the cursor, so it travels to the last row, one at a time.
+    app.seen.borrow_mut().page = if pane == DOCS {
+        (1, total)
+    } else {
+        (height, total)
+    };
+    if pane == DOCS {
+        top(app.scroll.min(total.saturating_sub(1)), height)
+    } else {
+        app.scroll.min(total.saturating_sub(height))
+    }
 }
 
 fn prs(app: &App, width: usize) -> Vec<Line<'static>> {
@@ -330,10 +373,16 @@ fn prs(app: &App, width: usize) -> Vec<Line<'static>> {
             "running" => sp("◐", t.work),
             _ => sp("·", t.dim),
         };
-        let open = p.state == "open";
+        // No stored state is unknown, not closed.
+        let open = p.state.is_empty() || p.state == "open";
         let line = vec![
             bold(
-                format!("#{:<4}", p.number),
+                // The ref as written when it is not a number.
+                if p.number > 0 {
+                    format!("#{:<4}", p.number)
+                } else {
+                    format!("{:<5}", p.value)
+                },
                 if open { t.accent } else { t.dim },
             ),
             ci,
@@ -583,12 +632,7 @@ fn wide(f: &mut Frame, app: &App) {
         // A pane longer than its box scrolls when focused and says where it is.
         let lines = lines(app, area.width.saturating_sub(4) as usize);
         let (total, h) = (lines.len(), area.height.saturating_sub(2) as usize);
-        let first = if app.pane == i + 1 {
-            app.seen.borrow_mut().page = (h, total);
-            app.scroll.min(total.saturating_sub(h))
-        } else {
-            0
-        };
+        let first = first_row(app, i + 1, h, total);
         app.hit(area, Hit::Pane(i + 1));
         let title = if total > h {
             format!("{title} · {}-{}/{total}", first + 1, first + h)
@@ -653,8 +697,7 @@ fn narrow(f: &mut Frame, app: &App) {
         n => {
             let lines = [asks, docs, prs, log][n.min(4) - 1](app, w - 2);
             let (total, h) = (lines.len(), body.height as usize);
-            app.seen.borrow_mut().page = (h, total);
-            let first = app.scroll.min(total.saturating_sub(h));
+            let first = first_row(app, n, h, total);
             let inset = Rect {
                 x: body.x + 1,
                 width: body.width - 2,

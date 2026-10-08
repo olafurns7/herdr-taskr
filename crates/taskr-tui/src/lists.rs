@@ -30,7 +30,7 @@ fn root_line(app: &App, r: &RootRow, wide: bool, width: usize) -> Vec<Span<'stat
     } else {
         (t.text, t.sub)
     };
-    let host = if r.host == g.caller_host {
+    let host = if g.local(&r.host) {
         String::new()
     } else {
         ui::host_name(g, &r.host)
@@ -273,7 +273,6 @@ pub(crate) fn pager(f: &mut Frame, app: &App) {
         foot,
         &[
             hint("space", None),
-            hint("/", Some("search")),
             hint("y", None),
             hint("q", Some("close")),
         ],

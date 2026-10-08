@@ -1,6 +1,6 @@
 //! The typed ledger reads the view draws from. Field names follow `taskr --json glance`
-//! (glance.go) and the fields P1a and P1b add; the `taskr campaign` read is P1b and its
-//! names here are this crate's proposal until that read ships.
+//! (glance.go) and `taskr --json campaign ID` (cmd_campaign.go, P1b). [`RootRow`] has no
+//! read behind it yet: the view builds those rows from the glance.
 //!
 //! Every struct is `#[serde(default)]`: a hub that is one release behind or ahead must
 //! still decode.
@@ -12,7 +12,8 @@ use serde::Deserialize;
 #[serde(default)]
 pub struct Glance {
     pub now: String,
-    /// `needs_you`, `attention` or `ok`. The view counts the rows itself for the pill.
+    /// `needs_you`, `attention`, `rolling` or `unknown`. The view counts the rows itself
+    /// for the pill.
     pub verdict: String,
     /// Open owner asks: the only red rows.
     pub needs_you: Vec<Need>,
@@ -23,10 +24,20 @@ pub struct Glance {
     pub quiet: Quiet,
     /// The dim migration count: notes that still carry `OWNER:` items (P1a).
     pub owner_notes_pending: u32,
-    /// The hub's own host label, for the header (P1b).
+    /// The hub's own host name. Empty from a taskr older than P1b, and then the view
+    /// cannot tell which rows are on its own Herdr.
     pub server_host: String,
-    /// The hub's label for the caller; a row whose `host` equals it is local (P1b).
+    /// The hub's label for the caller, empty on the hub itself. A row whose `host`
+    /// equals it is on this machine; hub rows carry an empty `host`.
     pub caller_host: String,
+}
+
+impl Glance {
+    /// Whether a row on `host` is on the machine this view runs on, so its pane can be
+    /// focused here. Unknown, and so false, until the snapshot names its server.
+    pub fn local(&self, host: &str) -> bool {
+        !self.server_host.is_empty() && host == self.caller_host
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -56,8 +67,6 @@ pub struct Attention {
     pub kind: String,
     pub campaign: String,
     pub root_id: i64,
-    pub lane: String,
-    pub lane_id: i64,
     pub text: String,
     pub age_ms: i64,
     pub since: String,
@@ -144,8 +153,9 @@ pub struct Last {
 #[serde(default)]
 pub struct Quiet {
     pub count: u32,
-    pub with_backlog: u32,
     pub names: Vec<String>,
+    /// The folded roots, in the order of `names`.
+    pub root_ids: Vec<i64>,
 }
 
 /// `taskr campaign ROOT` (P1b): one campaign in full.
@@ -232,7 +242,7 @@ pub struct Event {
     pub blocking: bool,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct DocRow {
     pub id: i64,
@@ -247,11 +257,15 @@ pub struct DocRow {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Pr {
+    pub task_id: i64,
+    /// The `pr` ref as written; `number` only when it is all digits.
+    pub value: String,
     pub number: u32,
     pub title: String,
     /// `open`, `merged` or `closed`.
     pub state: String,
-    /// `pass`, `fail`, `running` or empty.
+    /// `pass`, `fail`, `running` or empty. Title, state, CI and review come from stored
+    /// `pr.*` refs only; empty means unknown, not "none".
     pub ci: String,
     pub review: String,
     pub lane: String,
@@ -271,7 +285,8 @@ pub struct RootRow {
     pub activity_age_ms: i64,
 }
 
-/// `taskr doc get`: one captured document.
+/// One captured document: its row from the campaign read, and the raw text `taskr doc get
+/// ID` prints.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Doc {
@@ -296,6 +311,69 @@ pub struct Data {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_p1b_sample_decodes() {
+        // The synthetic sample from the P1b lane's report, in this crate's envelope.
+        let d: Data = serde_json::from_str(include_str!("../tests/p1b-sample.json")).unwrap();
+        let (g, c) = (&d.glance, &d.campaign);
+        assert_eq!(
+            (g.server_host.as_str(), g.caller_host.as_str()),
+            ("demo-hub", "")
+        );
+        let ask = &g.needs_you[0];
+        assert_eq!(
+            (ask.asker_task_id, ask.pane_id.as_str(), ask.asker_waiting),
+            (2, "wDemo:p2", true)
+        );
+        // The ask is on another machine; the campaign's lead is on the hub, where this is.
+        assert!(!g.local(&ask.host) && g.local(&g.campaigns[0].host));
+        let row = &g.campaigns[0];
+        assert_eq!(
+            (
+                row.spark.len(),
+                row.last.as_ref().unwrap().event_id,
+                row.lead_waiting
+            ),
+            (24, 19, true)
+        );
+        assert_eq!((g.quiet.count, &g.quiet.root_ids), (1, &vec![3]));
+        assert_eq!(
+            (
+                c.root.id,
+                c.goal.len(),
+                c.plan.version,
+                c.plan.decisions_since
+            ),
+            (1, 2, 1, 1)
+        );
+        let lane = &c.lanes[0];
+        assert_eq!(
+            (lane.parent_id, lane.state.as_str(), lane.brief, lane.report),
+            (1, "working", true, true)
+        );
+        assert_eq!(
+            (
+                c.asks.len(),
+                c.decisions.len(),
+                c.docs[1].kind.as_str(),
+                c.log.len()
+            ),
+            (1, 1, "brief", 1)
+        );
+        let pr = &c.prs[0];
+        assert_eq!(
+            (
+                pr.number,
+                pr.value.as_str(),
+                pr.review.as_str(),
+                pr.state.as_str()
+            ),
+            (123, "123", "approved", "")
+        );
+        // Before P1b there is no server name, and nothing is known to be local.
+        assert!(!Glance::default().local(""));
+    }
 
     #[test]
     fn owner_nothing_is_stripped_and_falls_back() {

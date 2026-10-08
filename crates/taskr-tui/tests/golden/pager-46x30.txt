@@ -27,4 +27,4 @@
    | glance-narrow | 46x30 | 7 of 30 |
    | row-detail | 46x30 | 7 |
    | stale | 46x30 | 6 |
- space page   / search   y copy   q close
+ space page   y copy   q close

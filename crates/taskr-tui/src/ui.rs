@@ -85,7 +85,8 @@ pub(crate) fn wrap_max(text: &str, width: usize, max: usize) -> Vec<String> {
 }
 
 pub(crate) fn age(ms: i64) -> String {
-    match ms / 1000 {
+    // A clock ahead on another host is "now", not a negative age.
+    match (ms / 1000).max(0) {
         s if s < 60 => format!("{s}s"),
         s if s < 3600 => format!("{}m", s / 60),
         s if s < 86400 => format!("{}h", s / 3600),

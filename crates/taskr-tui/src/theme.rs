@@ -1,6 +1,12 @@
 //! Thirteen semantic tokens mapped onto Herdr's palette (plan §3, Theme): Catppuccin Mocha
 //! for dark, Latte for light, with 256-colour, 16-colour and no-colour fallbacks. The page
 //! background is never painted.
+use std::{
+    io::{ErrorKind, Read, Write},
+    thread,
+    time::{Duration, Instant},
+};
+
 use ratatui::style::{Color, Modifier, Style};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -205,6 +211,40 @@ pub fn choose(
     }
 }
 
+/// Asks the terminal for its background colour (OSC 11), then for its device attributes,
+/// which every terminal answers: so the wait ends early even when the first question is
+/// ignored. `tty` must not block on read (`/dev/tty` opened non-blocking); the wait ends
+/// at `deadline` whatever happens, and nothing is left reading the terminal afterwards.
+// ponytail: a reply that arrives after the deadline reaches the key reader as stray
+// characters. None of them can confirm a write; `--theme` skips the question.
+pub fn query(tty: &mut (impl Read + Write), deadline: Duration) -> Vec<u8> {
+    let mut reply = vec![];
+    if tty
+        .write_all(b"\x1b]11;?\x07\x1b[c")
+        .and_then(|()| tty.flush())
+        .is_err()
+    {
+        return reply;
+    }
+    let (start, mut chunk) = (Instant::now(), [0u8; 64]);
+    while start.elapsed() < deadline {
+        match tty.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => reply.extend(&chunk[..n]),
+            Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted) => {
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(_) => break,
+        }
+        // The device attributes: `ESC [ ? … c`, the last thing asked for.
+        let attributes = reply.windows(3).rposition(|w| w == b"\x1b[?");
+        if attributes.is_some_and(|at| reply[at..].ends_with(b"c")) {
+            break;
+        }
+    }
+    reply
+}
+
 /// Whether a reply to the background query (OSC 11) names a light colour:
 /// `ESC ] 11 ; rgb:RRRR/GGGG/BBBB`.
 pub fn light_background(reply: &[u8]) -> Option<bool> {
@@ -274,6 +314,64 @@ mod tests {
             DARK
         );
         assert_eq!(choose(None, env(herdr), false, None), PLAIN);
+    }
+
+    /// A terminal that answers after a few empty reads, or never.
+    struct Tty {
+        asked: Vec<u8>,
+        replies: Vec<&'static [u8]>,
+        reads: usize,
+    }
+
+    impl Read for Tty {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.reads += 1;
+            if self.reads < 3 || self.replies.is_empty() {
+                return Err(ErrorKind::WouldBlock.into());
+            }
+            let reply = self.replies.remove(0);
+            buf[..reply.len()].copy_from_slice(reply);
+            Ok(reply.len())
+        }
+    }
+
+    impl Write for Tty {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.asked.extend(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn the_background_question_never_outlives_its_deadline() {
+        let tty = |replies| Tty {
+            asked: vec![],
+            replies,
+            reads: 0,
+        };
+        // Both answers, in two chunks: done as soon as the attributes arrive.
+        let mut answers = tty(vec![b"\x1b]11;rgb:efef/f1f1/f5f5\x07", b"\x1b[?62;4c"]);
+        let start = Instant::now();
+        let reply = query(&mut answers, Duration::from_secs(5));
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert_eq!(answers.asked, b"\x1b]11;?\x07\x1b[c");
+        assert_eq!(light_background(&reply), Some(true));
+        // Only the attributes: the colour question was ignored, and the wait still ends.
+        let reply = query(&mut tty(vec![b"\x1b[?1;2c"]), Duration::from_secs(5));
+        assert_eq!(light_background(&reply), None);
+        // Silence: back at the deadline with nothing, and no reader left behind.
+        let mut silent = tty(vec![]);
+        let start = Instant::now();
+        assert!(query(&mut silent, Duration::from_millis(300)).is_empty());
+        let waited = start.elapsed();
+        assert!(
+            waited >= Duration::from_millis(300) && waited < Duration::from_millis(600),
+            "{waited:?}"
+        );
+        assert!(silent.reads > 5);
     }
 
     #[test]

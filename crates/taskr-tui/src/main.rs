@@ -4,7 +4,10 @@
 
 use std::{
     env,
-    io::{self, IsTerminal, Read, Write},
+    fs::OpenOptions,
+    io::{self, IsTerminal, Write},
+    os::unix::fs::OpenOptionsExt,
+    panic,
     process::ExitCode,
     sync::mpsc,
     thread,
@@ -12,7 +15,10 @@ use std::{
 };
 
 use ratatui::crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
+    event::{
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event,
+    },
     execute, terminal,
 };
 use taskr_tui::{
@@ -60,32 +66,26 @@ fn options(args: impl Iterator<Item = String>) -> Result<Options, String> {
     Ok(out)
 }
 
-/// Asks the terminal for its background colour (OSC 11), then for its device attributes,
-/// which every terminal answers: so the read ends even when the first question is ignored.
-// ponytail: if a terminal answers neither within 300 ms, the reader thread is left behind
-// and swallows the next key. Whether Herdr's pane answers is a P2 check; `--theme` skips this.
+#[cfg(target_os = "linux")]
+const O_NONBLOCK: i32 = 0o4000;
+#[cfg(not(target_os = "linux"))]
+const O_NONBLOCK: i32 = 0x0004;
+
+/// Whether the terminal's background is light, when it says so within 300 ms. The
+/// question goes to `/dev/tty` on its own non-blocking handle, which is closed before the
+/// view starts: nothing is left behind to take the owner's keys. No `/dev/tty`, no
+/// answer: dark.
 fn light_background() -> Option<bool> {
+    let mut tty = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(O_NONBLOCK)
+        .open("/dev/tty")
+        .ok()?;
     terminal::enable_raw_mode().ok()?;
-    let (tx, rx) = mpsc::channel();
-    let asked = io::stdout()
-        .write_all(b"\x1b]11;?\x07\x1b[c")
-        .and_then(|()| io::stdout().flush());
-    if asked.is_ok() {
-        thread::spawn(move || {
-            let mut reply = vec![];
-            let mut byte = [0u8; 1];
-            while io::stdin().read(&mut byte).is_ok_and(|n| n == 1) {
-                reply.push(byte[0]);
-                if byte[0] == b'c' && reply.windows(3).any(|w| w == b"\x1b[?") {
-                    break;
-                }
-            }
-            let _ = tx.send(reply);
-        });
-    }
-    let reply = rx.recv_timeout(Duration::from_millis(300)).ok();
+    let reply = theme::query(&mut tty, Duration::from_millis(300));
     let _ = terminal::disable_raw_mode();
-    theme::light_background(&reply?)
+    theme::light_background(&reply)
 }
 
 fn main() -> ExitCode {
@@ -126,26 +126,58 @@ fn main() -> ExitCode {
     };
     let mut live = client::Live::new(updates, EVERY);
     let (finished, results) = mpsc::channel();
+    let start = |job: actions::Job| {
+        let (taskr, finished) = (taskr.clone(), finished.clone());
+        thread::spawn(move || {
+            let result = job.run(&taskr);
+            let _ = finished.send((job, result));
+        });
+    };
 
-    // `init` also restores the terminal if the view panics.
     let mut terminal = ratatui::init();
-    let _ = execute!(io::stdout(), EnableMouseCapture);
+    // `init` restores the screen if the view panics; the modes set here are added to that.
+    let hook = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        let _ = execute!(io::stdout(), DisableMouseCapture, DisableBracketedPaste);
+        hook(info);
+    }));
+    let _ = execute!(io::stdout(), EnableMouseCapture, EnableBracketedPaste);
     let result = (|| -> io::Result<()> {
+        // What the last frame showed of the fetch: the spinner, the age, the countdown.
+        let mut face = String::new();
+        let mut dirty = true;
         loop {
-            live.poll(&mut app, Instant::now());
-            for (job, result) in results.try_iter() {
-                input::done(&mut app, &job, result);
-                // What was written shows at once, not at the next tick.
-                let _ = wake.send(());
+            if live.poll(&mut app, Instant::now()) {
+                dirty = true;
+                // The campaign on screen follows the glance.
+                if let Some(job) = input::follow(&app) {
+                    start(job);
+                }
             }
-            // ratatui writes only the cells that changed, so an idle tick writes nothing.
-            terminal.draw(|f| draw(f, &app))?;
+            for (job, result) in results.try_iter() {
+                // What was written shows at once, not at the next tick.
+                if !job.reads() {
+                    let _ = wake.send(());
+                }
+                input::done(&mut app, &job, result);
+                dirty = true;
+            }
+            // Draw on a change only: an idle pane costs a poll, not a frame.
+            if dirty || app.fetch.face() != face {
+                terminal.draw(|f| draw(f, &app))?;
+                (face, dirty) = (app.fetch.face(), false);
+            }
             if !event::poll(TICK)? {
                 continue;
             }
+            dirty = true;
             let effect = match event::read()? {
                 Event::Key(key) => input::key(&mut app, key),
                 Event::Mouse(mouse) => input::mouse(&mut app, mouse, Instant::now()),
+                Event::Paste(text) => {
+                    input::paste(&mut app, &text);
+                    Effect::None
+                }
                 _ => Effect::None,
             };
             match effect {
@@ -159,20 +191,12 @@ fn main() -> ExitCode {
                 }
                 Effect::Mouse(true) => execute!(io::stdout(), EnableMouseCapture)?,
                 Effect::Mouse(false) => execute!(io::stdout(), DisableMouseCapture)?,
-                Effect::Run(job) if options.demo => {
-                    app.status = Some(format!("demo: {} (nothing was sent)", job.label()));
-                }
-                Effect::Run(job) => {
-                    let (taskr, finished) = (taskr.clone(), finished.clone());
-                    thread::spawn(move || {
-                        let result = job.run(&taskr);
-                        let _ = finished.send((job, result));
-                    });
-                }
+                Effect::Run(job) if options.demo => input::demo(&mut app, job),
+                Effect::Run(job) => start(job),
             }
         }
     })();
-    let _ = execute!(io::stdout(), DisableMouseCapture);
+    let _ = execute!(io::stdout(), DisableMouseCapture, DisableBracketedPaste);
     ratatui::restore();
     match result {
         Ok(()) => ExitCode::SUCCESS,

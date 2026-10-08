@@ -87,7 +87,7 @@ glance = {
          "since": at("14:04:10"), "text": "host stale: no heartbeat for 12 m"},
     ],
     "campaigns": campaigns,
-    "quiet": {"count": 2, "with_backlog": 0, "names": ["cache-audit", "font-swap"]},
+    "quiet": {"count": 2, "names": ["cache-audit", "font-swap"], "root_ids": [3871, 3990]},
 }
 
 ROOT = 4120

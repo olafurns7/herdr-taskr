@@ -76,7 +76,7 @@ fn where_from(app: &App, a: &Need, pane: bool) -> Span<'static> {
     if pane {
         place = format!("{place} {}", a.pane_id);
     }
-    if a.host == g.caller_host {
+    if g.local(&a.host) {
         sp(place, t.sub)
     } else {
         sp(format!("{place} ↗"), t.remote)
@@ -151,18 +151,32 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
 
     let context = wrap(&parsed.context, width);
     let room = budget.saturating_sub(rows.len() + 1).max(1);
-    let hidden = context.len().saturating_sub(room);
-    let mut out: Vec<Line> = context
-        .into_iter()
-        .take(if hidden > 0 { room - 1 } else { room })
-        .map(|l| Line::from(sp(l, t.text)))
-        .collect();
-    if hidden > 0 {
-        out.push(Line::from(sp(
-            format!("… {} more lines · ctrl-d scrolls", hidden + 1),
-            t.dim,
-        )));
-    }
+    let total = context.len();
+    let mut out: Vec<Line> = if total <= room {
+        app.seen.borrow_mut().page = (0, 0);
+        context
+            .into_iter()
+            .map(|l| Line::from(sp(l, t.text)))
+            .collect()
+    } else {
+        // A window on the text, and under it where the window is.
+        let shown = room.saturating_sub(1).max(1);
+        app.seen.borrow_mut().page = (shown, total);
+        let first = app.scroll.min(total - shown);
+        let mut out: Vec<Line> = context
+            .into_iter()
+            .skip(first)
+            .take(shown)
+            .map(|l| Line::from(sp(l, t.text)))
+            .collect();
+        let at = format!(
+            "… {}-{}/{total} · ctrl-d ctrl-u scroll",
+            first + 1,
+            first + shown
+        );
+        out.push(Line::from(sp(at, t.dim)));
+        out
+    };
     out.push(Line::raw(""));
     out.extend(rows);
     out

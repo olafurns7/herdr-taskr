@@ -14,12 +14,12 @@
 │ │ ◐ impl-frames            impl     opus 5.5 medium  atlas  w02:p1  40s█│ 13:31 ? arch-rust-path: The stack report … │
 │ │ ◐ impl-trust-rules       impl     gpt-6.1-sol high atlas  w00:p4   2m█│ 13:24 ↳ arch-trust-rules: The hub did not… │
 │▌│ ● arch-plan-counter2     research fable 5.1 xhigh  atlas  w82:p2   9m█╰────────────────────────────────────────────╯
-│ │ ✓ rs-visual-spec         research opus 5.5 high    atlas  w76:p1  11m█╭ [3] Docs · 7-11/14 ────────────────────────╮
-│ │ ⊘ rs-visual-spec         research opus 5.5 high    atlas  w74:p4  10m█│ report rs-interaction         v1           │
-│ │ ✓ arch-plan-counter      research fable 5.1 xhigh  atlas  w72:p2  10m█│ report arch-trust-rules       v1           │
-│ │ ✓ arch-rust-path         research gpt-6-astra high atlas  w70:p5  33m█│ report rev-hidden-asks        v1           │
-│ │ ✓ rs-interaction         research opus 5.5 high    atlas  w68:p3  45m█│ report impl-hidden-asks       v2           │
-│ │ ✓ arch-stack-choice      research gpt-6-astra high atlas  w66:p1  42m█│ report rev-list-polish        v1           │
+│ │ ✓ rs-visual-spec         research opus 5.5 high    atlas  w76:p1  11m█╭ [3] Docs · 3-7/14 ─────────────────────────╮
+│ │ ⊘ rs-visual-spec         research opus 5.5 high    atlas  w74:p4  10m█│ report rs-visual-spec         v1  not kept │
+│ │ ✓ arch-plan-counter      research fable 5.1 xhigh  atlas  w72:p2  10m█│ report arch-plan-counter      v1           │
+│ │ ✓ arch-rust-path         research gpt-6-astra high atlas  w70:p5  33m█│ report arch-rust-path         v1           │
+│ │ ✓ rs-interaction         research opus 5.5 high    atlas  w68:p3  45m█│ report arch-stack-choice      v2           │
+│ │ ✓ arch-stack-choice      research gpt-6-astra high atlas  w66:p1  42m█│ report rs-interaction         v1           │
 │ │ ✓ arch-trust-rules       research gpt-6-astra high atlas  w64:p4  45m█╰────────────────────────────────────────────╯
 │ │ ✓ rev-hidden-asks        review   opus 5.5 medium  atlas  w62:p2   2h█╭ [4] PRs ───────────────────────────────────╮
 │ │ ✓ impl-hidden-asks       impl     gpt-6.1-sol high atlas  w60:p5   2h█│ #215 ◐ open   feat(glance): trust rules, … │

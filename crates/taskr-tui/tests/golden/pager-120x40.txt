@@ -37,4 +37,4 @@
 │                                                                                                                      │
 │ P1-2. The numbers the owner is asked to approve do not agree                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- space page   / search   y copy   q close
+ space page   y copy   q close
