@@ -58,7 +58,7 @@ campaigns = [
     camp(4052, "checkout-flow", "idle", True, (1, 1, 2), 3 * M, "busy", "FIX: three P2 findings in the review of the address step; source review complete", "done"),
     camp(4087, "ios-widgets", "working", False, (0, 0, 0), 7 * M, "early", "nothing open", "note", host=LAPTOP,
          note="Widget batch approved (asks 61199, 61367): 19 PRs merged; the last 4 wait for your answer."),
-    camp(4120, "tui-frames", "working", False, (3, 1, 6), 8 * M, "busy", "Counter-review written: not ready to send; three text fixes make it sendable", "done",
+    camp(4120, "tui-frames", "working", False, (3, 1, 6), 8 * M, "busy", "Second review done: three wording fixes, then it can go", "done",
          note="OWNER: nothing. NOW: plan rev 3.1 sent; the trust rules and the first frames are in flight."),
     camp(4031, "infra-layout", "idle", False, (0, 0, 0), 12 * M, "busy", "cache-audit lead root=4040 pane=w41:p1: campaign complete, docs PR merged", "note"),
     camp(4215, "model-evals", "working", False, (5, 2, 9), 14 * M, "early", "matrix run A finished"),
@@ -178,7 +178,7 @@ campaign = {
         ev(61899, "ready", "14:07:02", "arch-plan-counter2", "counter-review 2"),
         ev(61467, "closed", "14:05:31", "rs-visual-spec", ""),
         ev(61466, "closed", "14:05:31", "arch-plan-counter", ""),
-        ev(61429, "done", "14:03:49", "arch-plan-counter", "Counter-review written: not ready to send; three text fixes make it sendable"),
+        ev(61429, "done", "14:03:49", "arch-plan-counter", "Second review done: three wording fixes, then it can go"),
         ev(61428, "ready", "14:03:43", "arch-plan-counter", "counter-review"),
         ev(61301, "decision", "13:58:40", "tui-frames", D4),
         ev(61245, "closed", "13:43:05", "arch-rust-path", ""),
@@ -204,67 +204,67 @@ for i, (name, host, total) in enumerate([
         ("setup-hooks", "", 6), ("compact-format", "", 15)]):
     roots.append(root(3960 - 31 * i, name, "closed", 7 * H + i * i * 2 * H + i * 5 * H, host, False, 0, total))
 
-DOC = """# Counter-review 2: the phase 3 plan (rev 3)
+DOC = """# Counter-review 2: the frames plan (rev 3)
 
 Task 4176 (arch-plan-counter2). Read-only.
 
 ## Verdict first
 
-**Not ready to send until three text fixes land (P1-1, P1-2, P1-3).** Rev 3 honours every fix from the first review except one that the owner's later input overrides. The research behind it is sound. What is wrong is at the edges the owner will touch first.
+**Hold the send until three wording fixes land (P1-1, P1-2, P1-3).** Rev 3 takes every point from the first review but one, which a later owner note replaced. The layout work is solid. The gaps are in the places a reader checks first: short rows, the counts, and the install path.
 
 ## Findings, ranked
 
-### P1-1. The 46-column spec covers the glance only
+### P1-1. Short rows are only specified for the first screen
 
-The campaign view, answer dialog, help, all-campaigns list and pager have no narrow layout, and the glance itself wastes a quarter of the pane.
+The detail screens, the reply box, the key list, the full list and the reader have no short layout, and the first screen leaves room unused.
 
-| Frame | Size | Blank rows |
+| Frame | Size | Empty rows |
 |---|---|---|
-| glance-narrow | 46x30 | 7 of 30 |
-| row-detail | 46x30 | 7 |
-| stale | 46x30 | 6 |
+| list-short | 46x30 | 7 of 30 |
+| item-detail | 46x30 | 7 |
+| old-data | 46x30 | 6 |
 
-- The narrow glance folds every campaign's second line because 10 campaigns x 2 lines do not fit, then leaves 7 rows empty.
-- The lanes table has six columns; at 46 columns they cannot fit, and nothing says which columns go.
-- The owner will open a campaign from the 46-column pane within the first minute.
+- The short list hides every second line once ten items do not fit, then leaves 7 rows empty.
+- The item table has six columns; at 46 they cannot all fit, and the plan does not say which go first.
+- A reader in a narrow pane opens a detail screen almost at once.
 
-Fix to the plan text:
+Wording fix:
 
-1. Fold progressively, not all-or-nothing: a frame never shows more than one blank row while any second line is folded.
-2. Add narrow layouts for the campaign view, the answer dialog, help, the all-campaigns list and the pager.
-3. Strip the `OWNER: nothing.` segment from displayed note text.
+1. Hide second lines one at a time: never more than one empty row while any second line is hidden.
+2. Add short layouts for the detail screens, the reply box, the key list, the full list and the reader.
+3. Drop a trailing `OWNER: nothing.` from shown note text.
 
-### P1-2. The numbers the owner is asked to approve do not agree
+### P1-2. The estimate and its parts disagree
 
-The phase rows sum to 26-39.5 weeks. The table says "about 28-45". Nothing names the extra 2-5.5.
+The rows add up to 18-27 days. The summary says "about 20-30". The extra days have no row.
 
-### P1-3. The second build runs over a remote target that does not exist
+### P1-3. The install step names a build host that is not set up
 
-Each host builds its own targets and uploads its own assets:
+Each machine builds its own files and uploads them itself:
 
 ```
 release upload v2.5.0 dist/app-darwin-arm64
 sha256sum dist/* > SHA256SUMS
 ```
 
-### P2-5. A glance view needs "new since you looked"
+### P2-5. Mark what changed since the last look
 
-A 2-second gutter mark and a 300 ms flash are for someone who stares. The owner glances between other things. Keep a dim mark on rows that changed since the pane was last focused.
+A short mark that fades in two seconds suits someone watching. Most readers look away and back. Keep a dim mark on rows that changed since the pane last had focus.
 
-### P3-2. The spinner uses glyphs outside the declared set
+### P3-2. The busy indicator uses glyphs outside the chosen set
 
-The braille frames did not render in the lane's own picture. Pick in-set frames.
+The dotted frames did not draw in the test capture. Pick frames from the set.
 
 ## Claims checked that hold
 
-- A focus call moves every attached client.
-- Clipboard writes are forwarded to the client's own terminal.
-- Synchronized output is handled by the pane emulator.
-- The spike passes 28 of 28 differential cases.
+- Moving focus moves every attached client.
+- Copy requests reach the client's own terminal.
+- The pane handles batched redraws.
+- The prototype passes 28 of 28 comparison cases.
 
 ## Ready to send after
 
-P1-1, P1-2 and P1-3. The P2s are text edits for the orchestrator. The P3s can ride along.
+P1-1, P1-2 and P1-3. The P2s are wording edits. The P3s can ride along.
 """
 doc = {"id": 9560, "kind": "report", "name": "", "lane": "arch-plan-counter2", "version": 1, "body": DOC}
 

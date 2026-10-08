@@ -33,7 +33,7 @@
 │ │ ✓ impl-watch-mode        impl     gpt-6.1-sol high atlas  w44:p4   4h││ 14:07 ● arch-plan-counter2: counter-revie… │
 │ │ ✗ rev-snapshot           review   opus 5.5 medium  atlas  w42:p2   4h││ 14:05 · rs-visual-spec: closed             │
 │ ────────────────────────────────────────────────────────────────────── ││ 14:05 · arch-plan-counter: closed          │
-│ ● arch-plan-counter2  #4176  ready  ·  brief ✓ report ✓  ·  o reads    ││ 14:03 ✓ arch-plan-counter: Counter-review… │
+│ ● arch-plan-counter2  #4176  ready  ·  brief ✓ report ✓  ·  o reads    ││ 14:03 ✓ arch-plan-counter: Second review … │
 │ Second review done: hold the send until three wording fixes land (P1-1 ││ 14:03 ● arch-plan-counter: counter-review  │
 │ short rows, P1-2 counts, P1-3 install path).                           ││ 13:58 ◆ tui-frames: D4: one binary for th… │
 ╰────────────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────╯
