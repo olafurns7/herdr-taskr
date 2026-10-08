@@ -125,7 +125,9 @@ pub fn run(command: &[String], timeout: Duration) -> Result<Output, String> {
         Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(format!("{bin} did not answer in {}s", timeout.as_secs()));
+            // The name, not the path: the line is read in the footer.
+            let name = bin.rsplit('/').next().unwrap_or(bin);
+            return Err(format!("{name} did not answer in {}s", timeout.as_secs()));
         }
     };
     let status = child.wait().map_err(|e| format!("{bin}: {e}"))?;
@@ -177,12 +179,19 @@ pub struct Events {
     live: Arc<AtomicBool>,
     stopped: Arc<AtomicBool>,
     child: Arc<Mutex<Option<Child>>>,
+    /// What the last child said went wrong; empty while notifications arrive.
+    why: Arc<Mutex<String>>,
 }
 
 impl Events {
     /// Notifications are arriving: the view is pushed to, not polling.
     pub fn live(&self) -> bool {
         self.live.load(Ordering::Relaxed)
+    }
+
+    /// Why the view is polling, when the child said: `event stream admission refused`.
+    pub fn why(&self) -> String {
+        self.why.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Ends the subscription for good and kills its child. Safe to call twice, and from
@@ -227,6 +236,10 @@ impl Events {
             if let Ok(mut child) = spawned {
                 let lines = child.stdout.take().map(BufReader::new);
                 *self.child.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
+                // `stop` may have run before it could see this child.
+                if self.stopped.load(Ordering::Relaxed) {
+                    return self.stop();
+                }
                 for line in lines
                     .into_iter()
                     .flat_map(BufRead::lines)
@@ -235,7 +248,13 @@ impl Events {
                     // A notification names its event (`change`, or `reset`: re-read
                     // everything, which every fetch does). An error line does not.
                     let notice: serde_json::Value = serde_json::from_str(&line).unwrap_or_default();
+                    let mut why = self.why.lock().unwrap_or_else(|e| e.into_inner());
+                    if let Some(error) = notice["error"].as_str() {
+                        *why = error.into();
+                    }
                     if notice["event"].is_string() {
+                        why.clear();
+                        drop(why);
                         self.live.store(true, Ordering::Relaxed);
                         retry = pace.retry;
                         if wake.send(()).is_err() {
@@ -323,6 +342,14 @@ impl Live {
     pub fn poll(&mut self, app: &mut App, now: Instant) -> bool {
         let mut fresh = false;
         app.fetch.live = self.events.as_ref().map(Events::live);
+        // Why it is polling is said once, in the footer, when the reason changes.
+        let why = self.events.as_ref().map(Events::why).unwrap_or_default();
+        if why != app.fetch.why {
+            if !why.is_empty() {
+                app.status = Some(format!("polling · {why}"));
+            }
+            app.fetch.why = why;
+        }
         let every = if app.fetch.live == Some(true) {
             self.pace.slow
         } else {
@@ -411,6 +438,8 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&seen).trim(), "unset unset");
         assert!(error("echo not json").starts_with("unreadable snapshot"));
         assert_eq!(error("sleep 5"), "sh did not answer in 0s");
+        let slow = fetch(&["/bin/sleep".into(), "5".into()], Duration::ZERO);
+        assert_eq!(slow.expect_err("slow"), "sleep did not answer in 0s");
         assert!(
             fetch(&["/nonexistent/taskr".into()], TIMEOUT)
                 .expect_err("no binary")
@@ -548,6 +577,14 @@ mod tests {
         let mut app = App::new(Data::default());
         live.poll(&mut app, Instant::now());
         assert_eq!(app.fetch.live, Some(false));
+        // The footer says why, once: the next look does not say it again.
+        assert_eq!(
+            app.status.take().as_deref(),
+            Some("polling · unknown command _events")
+        );
+        let face = app.fetch.face();
+        live.poll(&mut app, Instant::now());
+        assert_eq!((app.status.as_deref(), app.fetch.face()), (None, face));
         subscription.stop();
         let _ = std::fs::remove_dir_all(dir);
     }

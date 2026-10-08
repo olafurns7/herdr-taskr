@@ -40,6 +40,7 @@ fn stale(app: &mut App) {
         retry_in_s: 4,
         tries: 1,
         live: None,
+        why: String::new(),
     };
 }
 

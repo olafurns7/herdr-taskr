@@ -58,6 +58,8 @@ pub struct Fetch {
     /// How the view learns of changes: `Some(true)` pushed by the hub, `Some(false)`
     /// polling, `None` when nothing is fetched (the demo, a frame).
     pub live: Option<bool>,
+    /// Why it is polling, when the subscription said.
+    pub why: String,
 }
 
 /// Something the pointer can land on, recorded while drawing so a click needs no second
@@ -96,8 +98,14 @@ impl Fetch {
     pub fn face(&self) -> String {
         let age = ui::age(self.age_ms);
         format!(
-            "{} {} {} {age} {:?} {} {:?}",
-            self.loaded, self.in_flight, self.tick, self.error, self.retry_in_s, self.live
+            "{} {} {} {age} {:?} {} {:?} {}",
+            self.loaded,
+            self.in_flight,
+            self.tick,
+            self.error,
+            self.retry_in_s,
+            self.live,
+            self.why
         )
     }
 }

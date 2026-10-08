@@ -141,6 +141,11 @@ fn main() -> ExitCode {
     let hook = panic::take_hook();
     let subscription = events.clone();
     panic::set_hook(Box::new(move |info| {
+        // A worker's panic does not end the view, so it must not end the stream or restore
+        // the screen under it. ponytail: its message is dropped; log it if one ever fires.
+        if thread::current().name() != Some("main") {
+            return;
+        }
         // The subscription's child must not outlive the view.
         if let Some(events) = &subscription {
             events.stop();
