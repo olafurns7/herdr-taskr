@@ -601,7 +601,7 @@ func TestDashboardBindConflictDaemonCarriesOn(t *testing.T) {
 	c.Write([]byte(ack))
 	eventually(t, "heartbeat", func() bool { return h.ok(nil, "daemon", "--status")["daemon"] == "fresh" })
 	// A pass still runs on a wake: the owner ask is notified.
-	h.ok(as(w, l), "ask", "decide", "--owner")
+	h.ok(as(w, l), "ask", "decide", "--owner", "--blocking")
 	c.Write([]byte(eventLines(1)))
 	eventually(t, "owner notification", func() bool { return len(h.calls("notification|")) == 1 })
 	st := h.ok(nil, "daemon", "--status")

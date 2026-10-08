@@ -27,7 +27,7 @@ if [ "$dry_run" -eq 0 ]; then
 fi
 
 TASKR_DB="$(mktemp -d)/guard.db" go vet ./...
-TASKR_DB="$(mktemp -d)/guard.db" go test ./... -count=1
+TASKR_DB="$(mktemp -d)/guard.db" go test ./... -count=1 -timeout 20m
 
 # The page: rebuild web/dist and refuse a release whose committed build is
 # stale, so a binary never embeds a page older than web/src.

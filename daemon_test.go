@@ -531,8 +531,9 @@ func TestDaemonOwnerNotificationOnce(t *testing.T) {
 	l := h.launch(w)
 	h.setAgents("w9:p1/working/1")
 	long := "Ship  the cart\nprice change " + strings.Repeat("é", 150)
-	h.ok(as(w, l), "ask", long, "--owner")
+	h.ok(as(w, l), "ask", long, "--owner", "--blocking")
 	h.ok(as(w, l), "ask", "not for the owner")
+	h.ok(as(w, l), "ask", "quiet owner action", "--owner")
 	answered := num(h.ok(as(w, l), "ask", "already answered", "--owner"), "ask_id")
 	h.ok(nil, "answer", id(answered), "yes")
 
@@ -546,7 +547,7 @@ func TestDaemonOwnerNotificationOnce(t *testing.T) {
 
 	// A failed notification is logged and not retried.
 	h.write("notify.exit", "1", 0o644)
-	h.ok(as(w, l), "ask", "second question", "--owner")
+	h.ok(as(w, l), "ask", "second question", "--owner", "--blocking")
 	h.ok(nil, "daemon", "--once")
 	h.ok(nil, "daemon", "--once")
 	if n := len(h.calls("notification|")); n != 2 {

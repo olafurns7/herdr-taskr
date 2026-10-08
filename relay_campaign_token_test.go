@@ -173,7 +173,7 @@ func TestRelayCampaignTokenFailureDeliversOwnerAsk(t *testing.T) {
 	_, _, _, lane, launch := r.lanes()
 	r.agents(r.hostADir, sharedPane+"/working/1")
 	const summary = "Need owner decision"
-	ask := num(r.want(0, "host-a", as(lane, launch), "ask", summary, "--owner"), "ask_id")
+	ask := num(r.want(0, "host-a", as(lane, launch), "ask", summary, "--owner", "--blocking"), "ask_id")
 	logPath := filepath.Join(r.stateDir(), "daemon.log")
 	campaignWorkspaces(client, map[string]map[string]string{"w5N": {"taskr_campaign": "stale", "taskr_parent": "w9"}})
 
@@ -254,7 +254,7 @@ func TestRelayCampaignNotifiesBeforeTokenWrite(t *testing.T) {
 			r, client, h := clientCampaignHarness(t)
 			root := clientCampaignTask(r, "root-a", 0, "w1", "host-a")
 			lane := clientCampaignTask(r, "lane-a", root, "w2", "host-a")
-			r.want(0, "host-a", map[string]string{"TASKR_TASK": id(lane)}, "ask", "Need owner decision", "--owner")
+			r.want(0, "host-a", map[string]string{"TASKR_TASK": id(lane)}, "ask", "Need owner decision", "--owner", "--blocking")
 			campaignWorkspaces(client, map[string]map[string]string{"w1": nil, "w2": nil})
 			if failWrite {
 				script, err := os.ReadFile(filepath.Join(r.bin, "herdr"))

@@ -194,7 +194,8 @@ func TestReviewMacOwnerNotification(t *testing.T) {
 	_, _, _, mw, ml := r.lanes()
 	r.agents(r.hostADir, sharedPane+"/working/1")
 	summary := "Need owner decision"
-	ask := num(r.want(0, "host-a", as(mw, ml), "ask", summary, "--owner"), "ask_id")
+	ask := num(r.want(0, "host-a", as(mw, ml), "ask", summary, "--owner", "--blocking"), "ask_id")
+	r.want(0, "host-a", as(mw, ml), "ask", "quiet owner action", "--owner")
 	r.ok(nil, "daemon", "--once")
 	r.want(0, "host-a", r.hostA, "daemon", "--once")
 	r.want(0, "host-a", r.hostA, "daemon", "--once")
@@ -202,7 +203,7 @@ func TestReviewMacOwnerNotification(t *testing.T) {
 	want := "notification|show|taskr: decision needed|--body|" + summary + "|--sound|request|"
 	n := strings.Count(string(b), want)
 	claimed := r.count(`select count(*) from meta where key = ?`, fmt.Sprintf("notified:%d", ask))
-	if n != 1 || claimed != 1 {
+	if n != 1 || claimed != 1 || strings.Count(string(b), "notification|") != 1 {
 		t.Fatalf("host-a owner ask: notifications=%d claims=%d; want one each", n, claimed)
 	}
 	b, _ = os.ReadFile(filepath.Join(r.srvDir, "calls.log"))

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -162,6 +163,7 @@ func writeWorkerEvent(c *ctx, ww workerWrite) (any, int, error) {
 		explicit, _ := ww.data["report"].(string)
 		report = prepareReport(db, w.task.ID, explicit, ww.kind == "ready")
 	}
+	warnOwnerItems := false
 	out := map[string]any{"ok": true, "kind": ww.kind}
 	err = withTx(db, func(tx *sql.Tx) error {
 		if ww.kind == "note" && ww.owner && (c.env("TASKR_TASK") != "" || ww.as == 0) {
@@ -198,6 +200,14 @@ func writeWorkerEvent(c *ctx, ww workerWrite) (any, int, error) {
 			} else if !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
+		}
+		if ww.kind == "note" && ww.owner && ownerNoteHasItems(ww.summary) {
+			var hasAsk bool
+			if err := tx.QueryRow(glanceTrees+`select exists(select 1 from tree join tasks t on t.id = tree.id join events e on e.task_id = t.id
+    where tree.root = ? and t.status != 'closed' and e.kind = 'ask' and e.answered_by is null and json_extract(e.data, '$.owner') = 1)`, w.task.ID).Scan(&hasAsk); err != nil {
+				return err
+			}
+			warnOwnerItems = !hasAsk
 		}
 		recip := parentRecipient(w.task)
 		switch {
@@ -245,6 +255,9 @@ func writeWorkerEvent(c *ctx, ww workerWrite) (any, int, error) {
 	})
 	if err != nil {
 		return nil, 0, err
+	}
+	if warnOwnerItems {
+		fmt.Fprintln(c.errw, "owner actions must be asks: taskr ask --owner ...")
 	}
 	return out, exitOK, nil
 }

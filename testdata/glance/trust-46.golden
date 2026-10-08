@@ -1,0 +1,16 @@
+taskr · 17:30 · 2s                  3 to check
+──────────────────────────────────────────────
+1 note still carries OWNER items
+? checkout-redesign  unregistered 3h
+  lead silent with open lanes
+⌛ checkout-redesign  idle · 3 results 31m
+  worker ready: synthetic report
+? billing-fix  parked but active 1m
+  new activity since hold; re-park to hold ag…
+──────────────────────────────────────────────
+· held               0/0    1m   parked · 3h
+· billing-fix        0/0    1m   parked active
+○ waiting            0/0    12s  lead waiting
+  3h · approve demo
+○ unregistered       0/0    1m   unregistered
+  5h · review demo

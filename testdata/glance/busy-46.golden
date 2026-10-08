@@ -1,18 +1,18 @@
 taskr · 17:30 · 2s                  2 need you
 ──────────────────────────────────────────────
-» copilot-modular  12m  BLOCKING  → wN4:p1  l…
-  Merge #4840 now or wait for M3?
-! booked-vs-resolved  1h
-  1. approve prod deploy of #4833  (+1 more)
+» checkout-redesign  12m  BLOCKING  → wDemoA:…
+  Merge #104 now or wait for M3?
+» billing-fix  1h
+  approve prod deploy of #103
 ──────────────────────────────────────────────
-✗ mobile-screens/impl-tabs  failed 4m
+! settings-form  lead blocked 4m
   lint gate exit 1
-⌛ orch-hns2: 3 waiting 31h
+⌛ lead-docs  idle · 3 results 31h
   reports ready to review
-✗ planner-ui  lead gone 5m
-  lead pane wN5:p1 is not in its host's agent…
+✗ docs-site  lead gone 5m
+  lead pane wDemoB:p1 is not in its host's ag…
 ──────────────────────────────────────────────
-● planner-ui         3/5    2m   S4 merged
-● copilot-modular    2/2    14m  M1 review ok
-○ booked-vs-resolved 0/1    28m  
-· 13 quiet (4 with backlog)
+● docs-site          3/5    2s   S4 merged
+● checkout-redesign  2/2    2s   M1 review ok
+○ billing-fix        0/1    28m
+· 13 quiet
