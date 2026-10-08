@@ -79,7 +79,23 @@ sequenceDiagram
 `taskr glance` prints the owner's snapshot as one `j1` JSON line.
 `taskr glance --watch [--every 5s]` is a live view for a narrow split pane
 that works on the hub and on client hosts; q quits.
-The verdicts are **all rolling**, **N need you**, **N to check**, and **unknown**.
+The verdicts are **no owner action**, **N need you**, and **N to check**.
+Red means an open owner ask, blocking or non-blocking. Sound notifications
+fire only for blocking owner asks; pane badges count all owner asks.
+Notes are context, with the newest owner note and its age on the campaign.
+A dim **N notes still carry OWNER items** count tracks notes awaiting
+conversion to asks. `note --owner` warns when an OWNER item has no open ask.
+
+Park a campaign with `taskr set ROOT glance.state=parked`; clear it with
+`taskr set ROOT glance.state=`. Only a root orchestrator with TASKR_TASK unset
+can set this root ref. Parked campaigns stay dim and keep owner asks red;
+new tree events after parking turn the row amber as **parked but active**.
+
+Amber marks visibility gaps, active registered leads gone/blocked/unknown,
+idle or done leads without a live wait lease holding results older than
+30 minutes, and unregistered leads silent for 2 hours with lanes open.
+Live wait leases read **waiting**. Lane trouble and ordinary inbox backlog
+remain in task detail rather than the owner's alarm list.
 
 ## Install
 

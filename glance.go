@@ -4,11 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"flag"
-	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -17,12 +17,13 @@ const (
 )
 
 type glanceView struct {
-	Now       string            `json:"now"`
-	Verdict   string            `json:"verdict"`
-	NeedsYou  []glanceNeed      `json:"needs_you"`
-	Attention []glanceAttention `json:"attention"`
-	Campaigns []glanceCampaign  `json:"campaigns"`
-	Quiet     glanceQuiet       `json:"quiet"`
+	Now               string            `json:"now"`
+	Verdict           string            `json:"verdict"`
+	NeedsYou          []glanceNeed      `json:"needs_you"`
+	Attention         []glanceAttention `json:"attention"`
+	Campaigns         []glanceCampaign  `json:"campaigns"`
+	Quiet             glanceQuiet       `json:"quiet"`
+	OwnerNotesPending int               `json:"owner_notes_pending"`
 }
 
 type glanceNeed struct {
@@ -39,8 +40,6 @@ type glanceNeed struct {
 	Asker        string   `json:"asker,omitempty"`
 	AskerWaiting *bool    `json:"asker_waiting,omitempty"`
 	Also         []string `json:"also,omitempty"`
-	NoteID       int64    `json:"note_id,omitempty"`
-	Items        []string `json:"items,omitempty"`
 }
 
 type glanceAttention struct {
@@ -70,6 +69,10 @@ type glanceCampaign struct {
 	Lead          string      `json:"lead"`
 	LeadWaiting   bool        `json:"lead_waiting,omitempty"`
 	Last          *glanceLast `json:"last,omitempty"`
+	OwnerNote     *glanceLast `json:"owner_note,omitempty"`
+	Parked        bool        `json:"parked,omitempty"`
+	ParkedActive  bool        `json:"parked_active,omitempty"`
+	ParkAgeMS     int64       `json:"park_age_ms,omitempty"`
 	ActivityAgeMS int64       `json:"activity_age_ms"`
 }
 
@@ -80,9 +83,10 @@ type glanceLanes struct {
 }
 
 type glanceLast struct {
-	Kind  string `json:"kind"`
-	Text  string `json:"text"`
-	AgeMS int64  `json:"age_ms"`
+	EventID int64  `json:"event_id"`
+	Kind    string `json:"kind"`
+	Text    string `json:"text"`
+	AgeMS   int64  `json:"age_ms"`
 }
 
 type glanceQuiet struct {
@@ -134,10 +138,12 @@ type glanceTask struct {
 
 type glanceRoot struct {
 	glanceCampaign
-	active   bool
-	activity string
-	lastID   int64
-	leadAt   string
+	active     bool
+	activity   string
+	lastID     int64
+	activityID int64
+	parkID     int64
+	leadAt     string
 }
 
 func readGlance(db *sql.DB, at time.Time) (*glanceView, error) {
@@ -165,10 +171,31 @@ func readGlance(db *sql.DB, at time.Time) (*glanceView, error) {
 	if err := glanceOwnerAsks(tx, at, v, roots, tasks, asked); err != nil {
 		return nil, err
 	}
-	if err := glanceOwnerTodos(tx, at, v, roots); err != nil {
+	if err := glanceOwnerNotes(tx, at, v, roots); err != nil {
 		return nil, err
 	}
-	if err := glanceBacklog(tx, at, v, roots, tasks, hosts, asked); err != nil {
+	if err := glanceBacklog(tx, at, v, roots, tasks, hosts); err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(`select task_id, id, created_at from events where id in
+ (select max(id) from events where kind = 'ref' and json_extract(data, '$.key') = 'glance.state' group by task_id)
+ and json_extract(data, '$.value') = 'parked'`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var rootID, eventID int64
+		var since string
+		if err := rows.Scan(&rootID, &eventID, &since); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if r := roots[rootID]; r != nil {
+			r.Parked, r.parkID, r.ParkAgeMS = true, eventID, glanceAge(at, since)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	finishGlance(at, v, roots)
@@ -198,8 +225,8 @@ func glanceTasks(tx *sql.Tx, at time.Time, roots map[int64]*glanceRoot, tasks ma
 		select tree.root, t.id, coalesce(t.parent_id, 0), t.name, t.role, t.status,
 		coalesce(l.pane_id, t.pane_id, ''), coalesce(l.machine, t.machine, ''), coalesce(l.machine, ''),
 		t.current_launch_id is not null, coalesce(t.waiting_until > ?, 0), coalesce(l.observed_status, ''), coalesce(l.observed_at, ''), l.present,
-		le.kind, le.summary, le.created_at, coalesce(ae.created_at, ''),
-		ms.id, ms.kind, ms.summary, ms.created_at, coalesce(json_extract(ms.data, '$.key'), ''),
+		le.kind, le.summary, le.created_at, coalesce(ae.created_at, (select created_at from tasks where id = tree.root), ''),
+		h.activity_id, ms.id, ms.kind, ms.summary, ms.created_at, coalesce(json_extract(ms.data, '$.key'), ''),
 		coalesce(json_extract(ms.data, '$.value'), ''), coalesce(json_extract(ms.data, '$.owner'), 0)
 		from tree join tasks t on t.id = tree.id join heads h on h.root = tree.root
 		left join launches l on l.id = t.current_launch_id
@@ -216,11 +243,11 @@ func glanceTasks(tx *sql.Tx, at time.Time, roots map[int64]*glanceRoot, tasks ma
 		var activity, key, value string
 		var present sql.NullBool
 		var kind, summary, since, msKind, msText, msAt sql.NullString
-		var msID sql.NullInt64
+		var msID, activityID sql.NullInt64
 		var owner, launched bool
 		if err := rows.Scan(&t.rootID, &t.ID, &t.ParentID, &t.Name, &t.Role, &t.Status, &t.PaneID, &t.host, &t.launchHost,
 			&launched, &t.Waiting, &t.AgentStatus, &t.ObservedAt, &present, &kind, &summary, &since, &activity,
-			&msID, &msKind, &msText, &msAt, &key, &value, &owner); err != nil {
+			&activityID, &msID, &msKind, &msText, &msAt, &key, &value, &owner); err != nil {
 			rows.Close()
 			return err
 		}
@@ -228,6 +255,7 @@ func glanceTasks(tx *sql.Tx, at time.Time, roots map[int64]*glanceRoot, tasks ma
 			roots[t.ID] = &glanceRoot{glanceCampaign: glanceCampaign{ID: t.ID, Name: t.Name, Host: t.host, PaneID: t.PaneID, LeadWaiting: t.Waiting}}
 		}
 		r := roots[t.rootID]
+		r.activityID = max(r.activityID, activityID.Int64)
 		if activity > r.activity {
 			r.activity = activity
 		}
@@ -241,7 +269,7 @@ func glanceTasks(tx *sql.Tx, at time.Time, roots map[int64]*glanceRoot, tasks ma
 				}
 			}
 			r.lastID = msID.Int64
-			r.Last = &glanceLast{Kind: msKind.String, Text: clip(oneLine(text), 120), AgeMS: glanceAge(at, msAt.String)}
+			r.Last = &glanceLast{EventID: msID.Int64, Kind: msKind.String, Text: clip(oneLine(text), 120), AgeMS: glanceAge(at, msAt.String)}
 		}
 		if present.Valid {
 			t.Present = &present.Bool
@@ -339,87 +367,39 @@ func glanceOwnerAsks(tx *sql.Tx, at time.Time, v *glanceView, roots map[int64]*g
 	return nil
 }
 
-func glanceOwnerTodos(tx *sql.Tx, at time.Time, v *glanceView, roots map[int64]*glanceRoot) error {
+// Newest owner note is context indefinitely; legacy OWNER items only count
+// toward migration when this root has no open owner ask.
+func glanceOwnerNotes(tx *sql.Tx, at time.Time, v *glanceView, roots map[int64]*glanceRoot) error {
 	rows, err := tx.Query(`select t.id, e.id, coalesce(e.summary, ''), e.created_at from tasks t
-		join events e on e.task_id = t.id
-		where t.parent_id is null and t.status != 'closed' and e.kind = 'note'
-			and json_extract(e.data, '$.owner') = 1 order by t.id, e.id desc`)
+ join events e on e.id = (select max(id) from events where task_id = t.id and kind = 'note' and json_extract(data, '$.owner') = 1)
+ where t.parent_id is null and t.status != 'closed'`)
 	if err != nil {
 		return err
 	}
-	// ponytail: scan owner notes once; index qualifying notes if history dominates.
-	seen := map[int64]bool{}
-	first := len(v.NeedsYou)
+	defer rows.Close()
+	asked := map[int64]bool{}
+	for _, n := range v.NeedsYou {
+		asked[n.RootID] = true
+	}
 	for rows.Next() {
 		var rootID, noteID int64
 		var text, since string
 		if err := rows.Scan(&rootID, &noteID, &text, &since); err != nil {
-			rows.Close()
 			return err
 		}
-		if seen[rootID] || !strings.HasPrefix(strings.TrimSpace(text), "OWNER:") {
-			continue
-		}
-		seen[rootID] = true
-		if items := glanceOwnerItems(text); len(items) != 0 {
-			r := roots[rootID]
-			r.active = true
-			value, _ := glanceOwnerValue(text)
-			if len(items) == 1 && !glanceOwnerNumber.MatchString(value) && glanceUnclear.MatchString(strings.ToLower(items[0])) {
-				v.Attention = append(v.Attention, glanceAttention{Kind: "owner_unclear", Campaign: r.Name, RootID: rootID,
-					NoteID: noteID, Text: items[0], Since: since, AgeMS: glanceAge(at, since)})
-				continue
-			}
-			v.NeedsYou = append(v.NeedsYou, glanceNeed{Kind: "owner_todo", Campaign: r.Name, RootID: rootID,
-				Host: r.Host, PaneID: r.PaneID, NoteID: noteID, Items: items, Since: since, AgeMS: glanceAge(at, since)})
+		r := roots[rootID]
+		r.OwnerNote = &glanceLast{EventID: noteID, Kind: "note", Text: clip(oneLine(text), 120), AgeMS: glanceAge(at, since)}
+		if ownerNoteHasItems(text) && !asked[rootID] {
+			v.OwnerNotesPending++
 		}
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	todos := v.NeedsYou[first:]
-	sort.Slice(todos, func(i, j int) bool { return todos[i].NoteID < todos[j].NoteID })
-	return nil
+	return rows.Err()
 }
 
-func glanceBacklog(tx *sql.Tx, at time.Time, v *glanceView, roots map[int64]*glanceRoot, tasks map[int64]*glanceTask, hosts map[string]bool, asked map[int64]bool) error {
+func glanceBacklog(tx *sql.Tx, at time.Time, v *glanceView, roots map[int64]*glanceRoot, tasks map[int64]*glanceTask, hosts map[string]bool) error {
 	add := func(a glanceAttention) {
 		a.Text, a.AgeMS = clip(oneLine(a.Text), attentionTextMax), glanceAge(at, a.Since)
 		v.Attention = append(v.Attention, a)
-	}
-	for _, t := range tasks {
-		if t.ParentID == 0 {
-			continue
-		}
-		r := roots[t.rootID]
-		a := glanceAttention{Campaign: r.Name, RootID: r.ID, Lane: t.Name, LaneID: t.ID, Host: t.host, PaneID: t.PaneID}
-		last := ""
-		if t.LastEvent != nil {
-			last = t.LastEvent.Summary
-			if t.LastEvent.Kind == "ask" {
-				last = "it asked a question"
-			}
-		}
-		switch t.Mark {
-		case markFailed:
-			a.Kind, a.Text = "lane_failed", firstNonEmpty(last, "the lane reported fail")
-			if t.LastEvent != nil {
-				a.Since = t.LastEvent.At
-			}
-		case markBlocked:
-			a.Kind, a.Text, a.Since = "lane_blocked", "Herdr sees an approval or question dialog in its pane", t.ObservedAt
-			if last != "" {
-				a.Text += "; last: " + last
-			}
-		case markMissing:
-			a.Kind, a.Text, a.Since = "lane_missing", "pane "+firstNonEmpty(t.PaneID, "?")+" is gone; last: "+firstNonEmpty(last, "nothing reported"), t.ObservedAt
-		case "unknown":
-			a.Kind, a.Text, a.Since = "lane_unknown", "the lane's host has not reported", t.ObservedAt
-		}
-		if a.Kind != "" && (!asked[t.ID] || a.Kind == "lane_unknown") {
-			add(a)
-		}
 	}
 	// Filter observations before joining recipients and their scope.
 	// ponytail: one history scan; use recipient-index ranges if history dominates.
@@ -434,7 +414,7 @@ func glanceBacklog(tx *sql.Tx, at time.Time, v *glanceView, roots map[int64]*gla
 	), backlog as (
 		select r.id as recipient, count(*) as n, min(e.created_at) as since, max(e.id) as newest
 		from signals e join tasks r on r.id = e.recipient_task_id join tree on tree.id = r.id
-		where r.status != 'closed' and e.id > r.acked_event_id
+		where r.parent_id is null and r.status != 'closed' and e.id > r.acked_event_id
 		group by r.id)
 		select b.recipient, b.n, b.since, sender.name || ' ' || e.kind || ': ' || coalesce(e.summary, '')
 		from backlog b join events e on e.id = b.newest join tasks sender on sender.id = e.task_id
@@ -450,8 +430,12 @@ func glanceBacklog(tx *sql.Tx, at time.Time, v *glanceView, roots map[int64]*gla
 		}
 		t := tasks[a.RecipientID]
 		r := roots[t.rootID]
-		a.Kind, a.Campaign, a.RootID = "results_waiting", r.Name, r.ID
+		if t.Waiting || (r.Lead != "idle" && r.Lead != "done") {
+			continue
+		}
+		a.Kind, a.Campaign, a.RootID = "lead_idle_results", r.Name, r.ID
 		a.Recipient, a.Waiting, a.Host, a.PaneID = t.Name, &t.Waiting, t.host, t.PaneID
+		r.active = true
 		add(a)
 	}
 	rows.Close()
@@ -485,7 +469,7 @@ func finishGlance(at time.Time, v *glanceView, roots map[int64]*glanceRoot) {
 	ordered := make([]*glanceRoot, 0, len(roots))
 	for _, r := range roots {
 		r.ActivityAgeMS = glanceAge(at, r.activity)
-		r.active = r.active || (r.activity != "" && r.ActivityAgeMS < glanceQuietAfter.Milliseconds())
+		r.active = r.active || (r.activity != "" && r.ActivityAgeMS < glanceQuietAfter.Milliseconds()) || (r.PaneID == "" && r.Lanes.Open > 0)
 		ordered = append(ordered, r)
 	}
 	sort.Slice(ordered, func(i, j int) bool {
@@ -494,17 +478,26 @@ func finishGlance(at time.Time, v *glanceView, roots map[int64]*glanceRoot) {
 		}
 		return ordered[i].ID < ordered[j].ID
 	})
-	backlog := map[int64]bool{}
 	kept := v.Attention[:0]
 	for _, a := range v.Attention {
-		if a.RootID != 0 && !roots[a.RootID].active {
-			backlog[a.RootID] = true
+		if a.RootID != 0 && (roots[a.RootID].Parked || !roots[a.RootID].active) {
 			continue
 		}
 		kept = append(kept, a)
 	}
 	v.Attention = kept
 	for _, r := range ordered {
+		if r.Parked {
+			r.ParkedActive = r.activityID > r.parkID
+			if r.ParkedActive {
+				v.Attention = append(v.Attention, glanceAttention{Kind: "parked_active", Campaign: r.Name, RootID: r.ID, Host: r.Host, PaneID: r.PaneID, Text: "parked but active", AgeMS: r.ActivityAgeMS, Since: r.activity})
+			}
+			v.Campaigns = append(v.Campaigns, r.glanceCampaign)
+			continue
+		}
+		if r.PaneID == "" {
+			r.Lead = "unregistered"
+		}
 		if r.active {
 			a := glanceAttention{Campaign: r.Name, RootID: r.ID, PaneID: r.PaneID, Host: r.Host,
 				Since: r.leadAt, AgeMS: glanceAge(at, r.leadAt)}
@@ -513,19 +506,23 @@ func finishGlance(at time.Time, v *glanceView, roots map[int64]*glanceRoot) {
 				a.Kind, a.Text = "lead_gone", "lead pane "+r.PaneID+" is not in its host's agent list"
 			case "blocked":
 				a.Kind, a.Text = "lead_blocked", "Herdr sees an approval or question dialog in the lead's pane"
+			case "unregistered":
+				if r.Lanes.Open > 0 && r.ActivityAgeMS >= (2*time.Hour).Milliseconds() {
+					a.Kind, a.Text, a.Since, a.AgeMS = "lead_unregistered_silent", "lead unregistered and silent", r.activity, r.ActivityAgeMS
+				}
 			case "unknown":
 				a.Kind, a.Text = "lead_unknown", "lead liveness unknown: no pane, never observed, or its host is not reporting"
 			}
 			if a.Kind != "" {
 				v.Attention = append(v.Attention, a)
 			}
+			if r.LeadWaiting && r.PaneID != "" {
+				r.Lead = "waiting"
+			}
 			v.Campaigns = append(v.Campaigns, r.glanceCampaign)
 		} else {
 			v.Quiet.Count++
 			v.Quiet.Names = append(v.Quiet.Names, r.Name)
-			if backlog[r.ID] {
-				v.Quiet.WithBacklog++
-			}
 		}
 	}
 	sort.SliceStable(v.NeedsYou, func(i, j int) bool {
@@ -552,16 +549,13 @@ func finishGlance(at time.Time, v *glanceView, roots map[int64]*glanceRoot) {
 	})
 	for _, a := range v.Attention {
 		switch a.Kind {
-		case "lane_failed", "lane_blocked", "lane_missing", "lead_blocked", "lead_gone", "results_waiting", "owner_unclear":
+		case "lead_blocked", "lead_gone", "lead_idle_results", "parked_active", "lead_unregistered_silent":
 			v.Verdict = "attention"
 		default:
 			if v.Verdict == "rolling" {
 				v.Verdict = "unknown"
 			}
 		}
-	}
-	if v.Quiet.WithBacklog > 0 {
-		v.Verdict = "attention"
 	}
 	if len(v.NeedsYou) > 0 {
 		v.Verdict = "needs_you"
@@ -576,54 +570,58 @@ func glanceRank(kind string) int {
 		kind = attentionBlocked
 	case "lead_gone":
 		kind = attentionMissing
-	case "results_waiting", "owner_unclear":
+	case "lead_idle_results", "parked_active", "lead_unregistered_silent":
 		kind = attentionWorkWaits
 	}
 	return attentionRank[kind]
 }
 
-var (
-	glanceOwnerEnd    = regexp.MustCompile(`(?m)(?: |^)(?:DONE|HAPPENED|NOW):`)
-	glanceNothing     = regexp.MustCompile(`^nothing(\s+(yet|new|now))?\s*($|[.(])`)
-	glanceUnclear     = regexp.MustCompile(`^(nothing( urgent| to do| needed)?|no (decision|action)( needed)?( now| yet)?)\s*[.;]?\s*$`)
-	glanceOwnerNumber = regexp.MustCompile(`(^|\s)1(\)|\.(\s|$))`)
-)
-
+// Labels are explicit segments, not an inferred prose action queue.
 func glanceOwnerValue(text string) (string, bool) {
-	value, ok := strings.CutPrefix(strings.TrimSpace(text), "OWNER:")
-	if !ok {
-		return "", false
+	for offset := 0; offset < len(text); {
+		i := strings.Index(text[offset:], "OWNER:")
+		if i < 0 {
+			return "", false
+		}
+		i += offset
+		previous, _ := utf8.DecodeLastRuneInString(text[:i])
+		if i == 0 || unicode.IsSpace(previous) {
+			value := text[i+len("OWNER:"):]
+			for _, label := range []string{"DONE:", "HAPPENED:", "NOW:"} {
+				for j := 0; j < len(value); {
+					k := strings.Index(value[j:], label)
+					if k < 0 {
+						break
+					}
+					k += j
+					previous, _ := utf8.DecodeLastRuneInString(value[:k])
+					if k == 0 || unicode.IsSpace(previous) {
+						value = value[:k]
+						break
+					}
+					j = k + len(label)
+				}
+			}
+			return strings.TrimSpace(value), true
+		}
+		offset = i + len("OWNER:")
 	}
-	if loc := glanceOwnerEnd.FindStringIndex(value); loc != nil {
-		value = value[:loc[0]]
-	}
-	return strings.TrimSpace(value), true
+	return "", false
 }
 
-func glanceOwnerItems(text string) []string {
+func ownerNoteHasItems(text string) bool {
 	value, ok := glanceOwnerValue(text)
-	if !ok || glanceNothing.MatchString(strings.ToLower(value)) {
-		return nil
+	if !ok {
+		return false
 	}
-	items := []string{}
-	for n := 1; ; n++ {
-		marker := glanceOwnerNumber
-		if n > 1 {
-			marker = regexp.MustCompile(`\s` + strconv.Itoa(n) + `(\)|\.(\s|$))`)
-		}
-		loc := marker.FindStringIndex(value)
-		if loc == nil {
-			if n == 1 {
-				return []string{value}
+	value = strings.ToLower(value)
+	for _, empty := range []string{"nothing", "nothing yet", "nothing new", "nothing now"} {
+		if tail, ok := strings.CutPrefix(value, empty); ok {
+			tail = strings.TrimSpace(tail)
+			if tail == "" || strings.HasPrefix(tail, ".") || strings.HasPrefix(tail, "(") {
+				return false
 			}
-			if item := strings.TrimSpace(value); item != "" {
-				items = append(items, item)
-			}
-			return items
 		}
-		if item := strings.TrimSpace(value[:loc[0]]); item != "" {
-			items = append(items, item)
-		}
-		value = value[loc[1]:]
 	}
+	return true
 }

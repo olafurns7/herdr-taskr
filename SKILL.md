@@ -21,6 +21,12 @@ taskr done "report"                   # or fail
 Blocking ask: `taskr wait --for answer` (it uses TASKR_TASK/TASKR_LAUNCH; `--as` other than TASKR_TASK exits 6). Handle the answer to your ask, then `taskr ack EVENT --as $TASKR_TASK`. Timeout: wait again. Answers never reopen finished work. --key: idempotent; got: reserved.
 
 Root only: owner notes (`note --owner`) and `taskr notes`: see [orchestrator](references/orchestrator.md).
+Every current owner action is an owner ask, blocking only when it stops work;
+notes summarize context and link ask IDs. Glance red means open owner asks
+only; sound is blocking-only, badges count all. `set ROOT glance.state=parked`
+(and `glance.state=` to resume) requires TASKR_TASK unset and a root target.
+Parking suppresses coordination alarms, keeps asks red, and turns amber if
+new tree events appear. The clear verdict is "no owner action".
 
 Client records: `got`, `ready`, `done`, `fail`, `decide`, `next`, `note` and `close` print `qd1 <request key>` and exit 0 when the server is unreachable or earlier records wait in this host's spool. A full or unwritable spool: exit 5 with `retry with:`; rerun that line. Delivery: a running client daemon after a pass that reaches the server, or `taskr spool send` on that host; without a daemon they stay queued until manual send. Do not retry a queued record or treat it as failure. Other commands still exit 5 with `retry with: taskr --request-key KEY ...`: rerun that exact line before any wait; never wait on an unstored ask. If killed, use the announce line's retry command.
 

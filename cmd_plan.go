@@ -186,6 +186,14 @@ func cmdSet(c *ctx, args []string) (any, int, error) {
 		}
 		keys, vals[k] = append(keys, k), v
 	}
+	if value, parking := vals["glance.state"]; parking {
+		if c.env("TASKR_TASK") != "" {
+			return nil, 0, rejectErr("glance.state is root-only; TASKR_TASK must be unset")
+		}
+		if value != "" && value != "parked" {
+			return nil, 0, usageErr("glance.state must be parked or empty")
+		}
+	}
 	db, err := openDB(c)
 	if err != nil {
 		return nil, 0, err
@@ -193,8 +201,12 @@ func cmdSet(c *ctx, args []string) (any, int, error) {
 	defer closeDB(c, db)
 	out := map[string]any{"ok": true, "task_id": id}
 	err = withTx(db, func(tx *sql.Tx) error {
-		if _, err := openPlanTask(tx, id); err != nil {
+		t, err := openPlanTask(tx, id)
+		if err != nil {
 			return err
+		}
+		if _, parking := vals["glance.state"]; parking && (t.ParentID.Valid || t.CurrentLaunchID.Valid) {
+			return rejectErr("glance.state is for a root orchestrator only")
 		}
 		cur, err := taskRefs(tx, id)
 		if err != nil {

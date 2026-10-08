@@ -81,11 +81,11 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 	} else if v != nil {
 		switch v.Verdict {
 		case "rolling":
-			right, tint = "✓ all rolling", "32"
+			right, tint = "✓ no owner action", "32"
 		case "needs_you":
 			right, tint = fmt.Sprintf("%d need you", len(v.NeedsYou)), "31"
-		case "attention":
-			right = fmt.Sprintf("%d to check", len(v.Attention)+v.Quiet.WithBacklog)
+		case "attention", "unknown":
+			right = fmt.Sprintf("%d to check", len(v.Attention))
 		default:
 			right = "? unknown"
 		}
@@ -112,26 +112,16 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 	groups := [3][][]string{}
 	for _, n := range v.NeedsYou {
 		first, text := "» "+watchText(n.Campaign)+"  "+ageOf(n.AgeMS), n.Text
-		if n.Kind == "owner_todo" {
-			first = "! " + watchText(n.Campaign) + "  " + ageOf(n.AgeMS)
-			text = ""
-			if len(n.Items) > 0 {
-				text = watchText(n.Items[0])
-			}
-			if len(n.Items) > 1 {
-				text += fmt.Sprintf("  (+%d more)", len(n.Items)-1)
-			}
-		} else {
-			if n.Blocking != nil && *n.Blocking {
-				first += "  BLOCKING"
-			}
-			if n.PaneID != "" {
-				first += "  → " + watchText(n.PaneID)
-			}
-			if len(n.Also) > 0 {
-				first += "  " + watchText(n.Also[0])
-			}
+		if n.Blocking != nil && *n.Blocking {
+			first += "  BLOCKING"
 		}
+		if n.PaneID != "" {
+			first += "  → " + watchText(n.PaneID)
+		}
+		if len(n.Also) > 0 {
+			first += "  " + watchText(n.Also[0])
+		}
+
 		groups[0] = append(groups[0], []string{line(first, "31"), line("  "+watchText(text), "")})
 	}
 	for _, a := range v.Attention {
@@ -147,12 +137,14 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 			sym, word = "!", "lead blocked"
 		case "lead_unknown":
 			word = "lead unknown"
-		case "owner_unclear":
-			word = "owner unclear"
 		case "lane_missing":
 			word = "missing"
-		case "results_waiting":
+		case "lead_idle_results":
 			sym, word = "⌛", "waiting"
+		case "parked_active":
+			word = "parked but active"
+		case "lead_unregistered_silent":
+			word = "lead unregistered and silent"
 		case "host_stale":
 			sym, word = "⚠", "stale"
 		case "daemon_unhealthy":
@@ -169,8 +161,8 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 			when = " never"
 		}
 		first := fmt.Sprintf("%s %s  %s%s", sym, name, word, when)
-		if a.Kind == "results_waiting" {
-			first = fmt.Sprintf("%s %s: %d waiting%s", sym, watchText(a.Recipient), a.Count, when)
+		if a.Kind == "lead_idle_results" {
+			first = fmt.Sprintf("%s %s: lead idle with %d results%s", sym, watchText(a.Recipient), a.Count, when)
 		}
 		groups[1] = append(groups[1], []string{line(first, "33"), line("  "+watchText(a.Text), "")})
 	}
@@ -183,24 +175,39 @@ func renderGlance(v *glanceView, width, height int, age time.Duration, fetchErr 
 		if c.Lanes.Working > 0 {
 			sym = "●"
 		}
-		if c.Last != nil {
-			text, ms = c.Last.Text, c.Last.AgeMS
+		note := c.Last
+		if c.OwnerNote != nil {
+			note = c.OwnerNote
 		}
-		groups[2] = append(groups[2], []string{line(sym+" "+pad(c.Name, 18)+" "+pad(fmt.Sprintf("%d/%d", c.Lanes.Working, c.Lanes.Open), 6)+" "+pad(ageOf(ms), 4)+" "+watchText(text), "")})
+		if note != nil {
+			text, ms = note.Text, note.AgeMS
+		}
+		tint := ""
+		if c.Parked {
+			sym, text, ms, tint = "·", "parked · "+ageOf(c.ParkAgeMS), c.ParkAgeMS, "2"
+			if c.ParkedActive {
+				text, tint = "parked but active", "33"
+			}
+		} else if c.Lead == "waiting" || c.Lead == "unregistered" {
+			if c.Lead == "unregistered" {
+				tint = "2"
+			}
+			text = "lead " + c.Lead + " · " + text
+		}
+		groups[2] = append(groups[2], []string{line(sym+" "+pad(c.Name, 18)+" "+pad(fmt.Sprintf("%d/%d", c.Lanes.Working, c.Lanes.Open), 6)+" "+pad(ageOf(ms), 4)+" "+watchText(text), tint)})
 	}
 	quiet := ""
 	if v.Quiet.Count > 0 {
 		base := ansi.Truncate(fmt.Sprintf("· %d quiet", v.Quiet.Count), width, "…")
 		quiet = line(base, "2")
-		if v.Quiet.WithBacklog > 0 {
-			suffix := ansi.Truncate(fmt.Sprintf(" (%d with backlog)", v.Quiet.WithBacklog), max(0, width-ansi.StringWidth(base)), "…")
-			quiet += line(suffix, "33")
-		}
 	}
 	keep := [3]int{len(groups[0]), len(groups[1]), len(groups[2])}
 	labels := [3]string{"need you", "to check", "campaigns"}
 	compose := func() []string {
 		rows := []string{header, rule}
+		if v.OwnerNotesPending > 0 {
+			rows = append(rows, line(fmt.Sprintf("%d notes still carry OWNER items", v.OwnerNotesPending), "2"))
+		}
 		for g, items := range groups {
 			for _, item := range items[:keep[g]] {
 				rows = append(rows, item...)

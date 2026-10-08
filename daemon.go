@@ -634,7 +634,7 @@ func truncate(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
-// notifyOwners shows one Herdr notification per open owner ask of a task on
+// notifyOwners shows one Herdr notification per blocking owner ask of a task on
 // the server host (another host's asks are not this Herdr's). The meta
 // marker notified:<event_id> is claimed before the command runs, so an ask
 // is notified at most once even when the command fails.
@@ -660,6 +660,7 @@ func (d *daemon) notifyOwners() int {
 func claimOwnerAsks(db *sql.DB, machine sql.NullString, log *daemonLog) ([]ownerAskNotification, error) {
 	rows, err := db.Query(`select e.id, coalesce(e.summary, '') from events e join tasks t on t.id = e.task_id
 		where e.kind = 'ask' and e.answered_by is null and json_extract(e.data, '$.owner') = 1 and t.machine is ?
+		and json_extract(e.data, '$.blocking') = 1
 		and not exists (select 1 from meta m where m.key = 'notified:' || e.id) order by e.id`, machine)
 	if err != nil {
 		return nil, err
