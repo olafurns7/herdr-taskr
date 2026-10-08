@@ -163,6 +163,7 @@ func from(ip string, host string) func(*http.Request) {
 }
 
 func TestTailscaleSelf(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	if _, err := tailscaleSelf(); err == nil || !strings.Contains(err.Error(), "tailscale ip") {
 		t.Fatalf("no tailscaled: %v", err)
@@ -190,6 +191,7 @@ func TestTailscaleSelf(t *testing.T) {
 }
 
 func TestHubAdmission(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	setVar(t, &tailscaleTimeout, 500*time.Millisecond)
 	d := h.hubDash()
@@ -243,6 +245,7 @@ func TestHubAdmission(t *testing.T) {
 }
 
 func TestHubWhoisCache(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	setVar(t, &whoisTTL, 300*time.Millisecond)
 	d := h.hubDash()
@@ -284,6 +287,7 @@ func TestHubWhoisCache(t *testing.T) {
 }
 
 func TestHubHostVariants(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	d := h.hubDash()
 	for _, host := range []string{"127.0.0.1:7788", "localhost:7788", hubIP + ":7788", "hub:7788",
@@ -308,6 +312,7 @@ func TestHubHostVariants(t *testing.T) {
 }
 
 func TestDashboardConfigTailnet(t *testing.T) {
+	contractGuard(t)
 	dir := t.TempDir()
 	write := func(s string) {
 		os.WriteFile(filepath.Join(dir, dashboardAddrFile), []byte(s), 0o644)
@@ -332,6 +337,7 @@ func TestDashboardConfigTailnet(t *testing.T) {
 }
 
 func TestCheckHubURL(t *testing.T) {
+	contractGuard(t)
 	suffix := func() (string, error) { return "example.ts.net", nil }
 	ok := map[string]string{
 		"http://hub.example.ts.net:7788":   "http://hub.example.ts.net:7788" + peerPushPath,
@@ -412,6 +418,7 @@ func hubView(t *testing.T, d *dashboard) stateView {
 }
 
 func TestHubPeerIdentityFromWhois(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	d := h.hubDash()
 	at := time.Now()
@@ -480,6 +487,7 @@ func TestHubPeerIdentityFromWhois(t *testing.T) {
 }
 
 func TestHubCaps(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	d := h.hubDash()
 	at := time.Now()
@@ -536,6 +544,7 @@ func TestHubCaps(t *testing.T) {
 // an answers list back. The hub accepts the push, ignores the results,
 // writes nothing to the old relay tables, and returns no answers.
 func TestHubAcceptsV06PeerApplied(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	d := h.hubDash()
 	db := h.openDB()
@@ -562,6 +571,7 @@ func TestHubAcceptsV06PeerApplied(t *testing.T) {
 }
 
 func TestHubStaleAndClockSkew(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	f := seedDashboard(h)
 	d := h.hubDash()
@@ -624,6 +634,7 @@ func TestHubStaleAndClockSkew(t *testing.T) {
 // than its last peer push: the hub hides the old snapshot from machines,
 // needs_you and attention, but never deletes the row.
 func TestHubHidesClientHostSnapshot(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	d := h.hubDash()
 	db := h.openDB()
@@ -715,6 +726,7 @@ func getJSON(t *testing.T, url string, v any) {
 }
 
 func TestHubAndPeerEndToEnd(t *testing.T) {
+	contractGuard(t)
 	hub, peer, url := startHubAndPeer(t, 300*time.Millisecond)
 	// The peer's orchestrator asks the owner.
 	top := peer.newTask("peer-root", "orchestrator", 0)
@@ -769,6 +781,7 @@ func TestHubAndPeerEndToEnd(t *testing.T) {
 // A CLI write on the peer (no daemon pass) reaches the hub by the change
 // check, long before the next forced push; an unchanged ledger is not re-sent.
 func TestPeerPushesChangesBetweenForcedPushes(t *testing.T) {
+	contractGuard(t)
 	hub, peer, url := startHubAndPeer(t, time.Hour)
 	var v stateView
 	// The peer's daemon health is state: its first heartbeat after the
@@ -798,6 +811,7 @@ func TestPeerPushesChangesBetweenForcedPushes(t *testing.T) {
 // A hub that is away costs the peer only backoff: the event bridge and the
 // heartbeat carry on, and the failure is logged once and shown in --status.
 func TestPeerPushFailureKeepsHeartbeat(t *testing.T) {
+	contractGuard(t)
 	fakeTailnetHooks(t)
 	setVar(t, &peerPushEvery, 100*time.Millisecond)
 	setVar(t, &peerBackoffBase, 100*time.Millisecond)
@@ -845,6 +859,7 @@ func TestPeerPushFailureKeepsHeartbeat(t *testing.T) {
 }
 
 func TestHubWithoutTailscaleServesLoopback(t *testing.T) {
+	contractGuard(t)
 	setVar(t, &tailnetRetryBase, time.Hour) // pin the log to the first attempt
 	h := newHarness(t)
 	h.writeAddr("tailnet")
@@ -874,6 +889,7 @@ func TestHubWithoutTailscaleServesLoopback(t *testing.T) {
 }
 
 func TestPeerBadHubURLRefused(t *testing.T) {
+	contractGuard(t)
 	for _, bad := range []string{"https://hub.example.ts.net:7788", "http://example.com:7788", "http://10.0.0.1:7788",
 		"http://hub.other.ts.net:7788"} {
 		h := newHarness(t)
@@ -907,6 +923,7 @@ func TestPeerBadHubURLRefused(t *testing.T) {
 }
 
 func TestLocalRoleAndStateShape(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	if st := h.ok(nil, "daemon", "--status"); st["role"] != "local" || st["tailnet_url"] != nil || st["hub_url"] != nil {
 		t.Fatalf("status = %v", st)
@@ -938,6 +955,7 @@ func TestLocalRoleAndStateShape(t *testing.T) {
 }
 
 func TestPeerClientIgnoresProxyEnv(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	os.WriteFile(filepath.Join(h.stateDir(), hubURLFile), []byte("http://100.64.0.10:7788\n"), 0o644)
 	p := newPusher(h.openDB(), &daemonLog{}, h.stateDir())
@@ -949,6 +967,7 @@ func TestPeerClientIgnoresProxyEnv(t *testing.T) {
 // The push reply's digest ignores the clock, so an unchanged ledger is not
 // re-sent on every pass.
 func TestDigestIgnoresClock(t *testing.T) {
+	contractGuard(t)
 	a := peerState(time.Now(), 1)
 	b := peerState(time.Now().Add(time.Minute), 1)
 	b.OwnerAsks[0].At, b.OwnerAsks[0].AgeMS = a.OwnerAsks[0].At, 99999
@@ -967,6 +986,7 @@ var _ = sql.ErrNoRows
 // Forward compatibility: the envelope stays strict; nested state ignores
 // unknown fields but keeps the known fields' types and every cap.
 func TestHubStateForwardCompatible(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	d := h.hubDash()
 	at := time.Now()
@@ -1017,6 +1037,7 @@ func TestHubStateForwardCompatible(t *testing.T) {
 // map is cleared at its cap before one more entry. Port 80 accepts bare
 // names.
 func TestHubTaggedOwnerCacheCapAndPort80(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	d := h.hubDash()
 	if w, _ := serve(d, req("GET", "/api/state", "", from(taggedOwnerIP, "hub:7788"))); w.Code != 403 {
@@ -1047,6 +1068,7 @@ func TestHubTaggedOwnerCacheCapAndPort80(t *testing.T) {
 }
 
 func TestRebaseBothDirections(t *testing.T) {
+	contractGuard(t)
 	for _, delta := range []time.Duration{-8 * time.Minute, 8 * time.Minute} {
 		at := time.Now().UTC().Truncate(time.Millisecond)
 		peer := at.Add(delta)
@@ -1071,6 +1093,7 @@ func TestRebaseBothDirections(t *testing.T) {
 
 // Twenty peers at the full snapshot size still serve /api/state.
 func TestHubStateAtCap(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	d := h.hubDash()
 	at := time.Now()
@@ -1138,6 +1161,7 @@ func newTestPusher(t *testing.T, h *harness, target string) *pusher {
 // a tagged node, or a whois failure gets no bytes; a reply naming another
 // hub than whois found applies nothing.
 func TestPeerVerifiesHubBeforeSending(t *testing.T) {
+	contractGuard(t)
 	fakeTailnetHooks(t)
 	setVar(t, &whoisTTL, time.Nanosecond)
 	h := newHarness(t)
@@ -1199,6 +1223,7 @@ func TestPeerVerifiesHubBeforeSending(t *testing.T) {
 // Daemon level: an unverified hub gets no push, the bridge and heartbeat
 // carry on, and --status shows why, logged once.
 func TestPeerDaemonUnverifiedHub(t *testing.T) {
+	contractGuard(t)
 	fakeTailnetHooks(t)
 	setVar(t, &peerBackoffBase, 50*time.Millisecond)
 	setVar(t, &peerBackoffCap, 200*time.Millisecond)
@@ -1227,6 +1252,7 @@ func TestPeerDaemonUnverifiedHub(t *testing.T) {
 
 // A slow hub times the push out; the event bridge keeps passing.
 func TestPeerSlowHubKeepsBridge(t *testing.T) {
+	contractGuard(t)
 	fakeTailnetHooks(t)
 	setVar(t, &peerPushEvery, 100*time.Millisecond)
 	setVar(t, &peerBackoffBase, 100*time.Millisecond)
@@ -1317,6 +1343,7 @@ func tailnetGet(t *testing.T, port, host string) int {
 // Loopback taken by something else: the tailnet listener still serves, and
 // --status says loopback is down and the tailnet is up.
 func TestHubLoopbackBusyTailnetServes(t *testing.T) {
+	contractGuard(t)
 	fakeTailnetHooks(t)
 	h := newHarness(t)
 	tailnet("::1", h)
@@ -1350,6 +1377,7 @@ func TestHubLoopbackBusyTailnetServes(t *testing.T) {
 
 // Each listener's URL is set and cleared on its own.
 func TestHubListenerURLsIndependent(t *testing.T) {
+	contractGuard(t)
 	fakeTailnetHooks(t)
 	h := newHarness(t)
 	tailnet("::1", h)
@@ -1382,6 +1410,7 @@ func TestHubListenerURLsIndependent(t *testing.T) {
 // Tailscale down at start: loopback and the bridge serve, the hub comes up
 // in the background when Tailscale does, without a restart.
 func TestHubTailnetRetryUntilAvailable(t *testing.T) {
+	contractGuard(t)
 	fakeTailnetHooks(t)
 	setVar(t, &tailnetRetryBase, 50*time.Millisecond)
 	setVar(t, &tailnetRetryCap, 200*time.Millisecond)
@@ -1430,6 +1459,7 @@ func TestHubTailnetRetryUntilAvailable(t *testing.T) {
 // IPv6: Self's exact fd7a:115c:a1e0::/48 address is its own listener with
 // its bracketed Host; IPv4 and IPv6 never wait on each other.
 func TestHubIPv6Listener(t *testing.T) {
+	contractGuard(t)
 	fakeTailnetHooks(t)
 	setVar(t, &tailnetRetryBase, 50*time.Millisecond)
 	setVar(t, &tailnetRetryCap, 200*time.Millisecond)
@@ -1518,6 +1548,7 @@ func TestHubIPv6Listener(t *testing.T) {
 // remote address is refused before whois or routing, so no tailnet request
 // can arrive ahead of the hub's admission.
 func TestNonHubRefusesRemote(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	d := h.dash()
 	for _, ip := range []string{hostAIP, "192.0.2.1", "fd7a:115c:a1e0::1"} {
@@ -1537,6 +1568,7 @@ func TestNonHubRefusesRemote(t *testing.T) {
 // tag after the cache TTL) is refused on the very next push, not kept on an
 // open connection. (Review round 2, finding 1.)
 func TestPeerReusedConnectionExpiresIdentity(t *testing.T) {
+	contractGuard(t)
 	fakeTailnetHooks(t)
 	setVar(t, &whoisTTL, 20*time.Millisecond)
 	h := newHarness(t)
@@ -1587,6 +1619,7 @@ func TestPeerReusedConnectionExpiresIdentity(t *testing.T) {
 // (the round-2 end-to-end timeout and its "daemon did not exit"). Here
 // pokes arrive constantly while the state never changes.
 func TestPeerLoopKeepsForcedPushesUnderPokes(t *testing.T) {
+	contractGuard(t)
 	fakeTailnetHooks(t)
 	setVar(t, &peerPushEvery, 30*time.Millisecond)
 	setVar(t, &peerCheckEvery, 10*time.Millisecond)
@@ -1625,6 +1658,7 @@ func TestPeerLoopKeepsForcedPushesUnderPokes(t *testing.T) {
 // milestones; a pushed attention list is ignored; a stale peer shows as
 // machine_stale instead of its daemon's health.
 func TestHubAttentionOldAndNewPeers(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	d := h.hubDash()
 	h.openDB().Exec(`insert into meta (key, value) values (?, ?)`, heartbeatKey, now())
@@ -1721,6 +1755,7 @@ func fixtureShape(v any, path string, out map[string]bool) {
 // web/src/api.ts, so a renamed Go field breaks the web build. The file is
 // rewritten, and this test fails, only when the shape changes.
 func TestWebStateFixture(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	f := seedDashboard(h)
 	h.ok(nil, "note", "OWNER: review the open choice.\n"+strings.Repeat("Owner update. ", 100), "--owner", "--as", id(f.a))

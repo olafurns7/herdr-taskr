@@ -240,7 +240,7 @@ func receiptAttempt(prompt string) int64 {
 // cmdHook is a fire-and-forget harness entry point. Keep every failure silent:
 // hooks run inside the harness turn and must never block it.
 func cmdHook(c *ctx, args []string) (res any, code int, err error) {
-	started := time.Now()
+	started := clockNow()
 	if c != nil {
 		c.lines = true
 	}

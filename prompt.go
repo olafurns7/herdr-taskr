@@ -303,7 +303,7 @@ var receiptPolled = func(attempt int64) {}
 // awaitReceipt polls the ledger for the got event of attempt until timeout.
 // It never resends.
 func awaitReceipt(db *sql.DB, taskID int64, launchID *int64, attempt int64, timeout time.Duration, out map[string]any) (any, int, error) {
-	deadline := time.Now().Add(timeout)
+	deadline := clockNow().Add(timeout)
 	for {
 		var id int64
 		var data sql.NullString

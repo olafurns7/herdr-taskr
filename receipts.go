@@ -209,7 +209,7 @@ func expireReceiptsNow(db *sql.DB) error {
 		Scan(&pending); err != nil || !pending {
 		return err
 	}
-	return withTx(db, func(tx *sql.Tx) error { return expireReceipts(tx, time.Now()) })
+	return withTx(db, func(tx *sql.Tx) error { return expireReceipts(tx, clockNow()) })
 }
 
 // lateReceipt writes prompt_outcome late_receipt when attempt already has a

@@ -50,7 +50,7 @@ func uploadClient(t *testing.T, r *twoHost, home string, env map[string]string, 
 	t.Helper()
 	r.caller.Store("host-a")
 	var out, errb bytes.Buffer
-	code := cliMain(append([]string{"--json"}, args...), clientEnv(home, env), &out, &errb)
+	code := contractCLIMain(t, append([]string{"--json"}, args...), clientEnv(home, env), &out, &errb)
 	return code, out.String(), errb.String()
 }
 
@@ -79,6 +79,7 @@ func assertClientDocument(t *testing.T, r *twoHost, task int64, kind, name, path
 }
 
 func TestDocUploadCapturePoints(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	rootBrief := docFile(t, r.dir, "root.md", "root brief from client")
 	root := num(r.want(0, "host-a", nil, "new", "root-a", "--role", "orchestrator", "--cwd", r.dir, "--brief", rootBrief), "task_id")
@@ -139,6 +140,7 @@ func TestDocUploadCapturePoints(t *testing.T) {
 }
 
 func TestDocUploadCallerOwnsBriefAndPrompt(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	r.beat("host-b", 0)
 
@@ -223,6 +225,7 @@ func TestDocUploadCallerOwnsBriefAndPrompt(t *testing.T) {
 }
 
 func TestDocUploadCapabilityGate(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := uploadRoot(t, r)
 	path := docFile(t, r.dir, "report.md", "report")
@@ -248,6 +251,7 @@ func TestDocUploadCapabilityGate(t *testing.T) {
 }
 
 func TestDocUploadCapabilityOnlyOnDocumentCommands(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct {
 		name string
 		argv []string
@@ -279,6 +283,7 @@ func TestDocUploadCapabilityOnlyOnDocumentCommands(t *testing.T) {
 }
 
 func TestDocUploadClientSetAndRequestCap(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := uploadRoot(t, r)
 	goal := docFile(t, r.dir, "goal.md", "goal from caller")
@@ -340,6 +345,7 @@ func TestDocUploadClientSetAndRequestCap(t *testing.T) {
 }
 
 func TestDocUploadPutValidationAndIdempotency(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := uploadRoot(t, r)
 	path := docFile(t, r.dir, "report.md", "uploaded report")
@@ -409,6 +415,7 @@ func TestDocUploadPutValidationAndIdempotency(t *testing.T) {
 }
 
 func TestDocUploadReportStaysOnTaskHost(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := r.newTask("report-root", "orchestrator", 0)
 	path := docFile(t, r.dir, "task-report.md", "report from task host")
@@ -464,6 +471,7 @@ func TestDocUploadReportStaysOnTaskHost(t *testing.T) {
 }
 
 func TestDocUploadDifferentHostMisses(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := r.newTask("miss-root", "orchestrator", 0)
 	task := r.newTask("miss-lane", "implementer", root)
@@ -487,6 +495,7 @@ func TestDocUploadDifferentHostMisses(t *testing.T) {
 }
 
 func TestDocUploadRepeatedReadyPreservesCapture(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := uploadRoot(t, r)
 	path := docFile(t, r.dir, filepath.Join("reports", "repeat.md"), "report one")
@@ -551,6 +560,7 @@ func TestDocUploadRepeatedReadyPreservesCapture(t *testing.T) {
 }
 
 func TestDocUploadMissingFileKeepsCapture(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := uploadRoot(t, r)
 	path := docFile(t, r.dir, "report.md", "captured report")
@@ -577,6 +587,7 @@ func TestDocUploadMissingFileKeepsCapture(t *testing.T) {
 }
 
 func TestDocUploadChangedReportPathCapturesLatest(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := uploadRoot(t, r)
 	pathA := docFile(t, r.dir, filepath.Join("reports", "report1.md"), "report one")
@@ -600,6 +611,7 @@ func TestDocUploadChangedReportPathCapturesLatest(t *testing.T) {
 }
 
 func TestDocUploadPromptSameNameNewPathCapturesLatest(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := uploadRoot(t, r)
 	lane, launch := uploadLane(t, r, root, "same-name-prompt", "")
@@ -627,6 +639,7 @@ func TestDocUploadPromptSameNameNewPathCapturesLatest(t *testing.T) {
 }
 
 func TestDocUploadReportSamePathNewHostCapturesLatest(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := uploadRoot(t, r)
 	path := docFile(t, r.dir, filepath.Join("reports", "moved.md"), "report")
@@ -650,6 +663,7 @@ func TestDocUploadReportSamePathNewHostCapturesLatest(t *testing.T) {
 }
 
 func TestDocUploadMissReasons(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := uploadRoot(t, r)
 	cases := []struct{ name, reason, body string }{
@@ -674,6 +688,7 @@ func TestDocUploadMissReasons(t *testing.T) {
 }
 
 func TestDocUploadBestEffortFailures(t *testing.T) {
+	contractGuard(t)
 	for _, mode := range []string{"server-error", "timeout", "unknown-command"} {
 		t.Run(mode, func(t *testing.T) {
 			r := newTwoHost(t)
@@ -726,6 +741,7 @@ func TestDocUploadBestEffortFailures(t *testing.T) {
 }
 
 func TestDocUploadPromptOutputBeforeUpload(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := uploadRoot(t, r)
 	path := docFile(t, r.dir, "ordered-prompt.md", "prompt")
@@ -756,7 +772,7 @@ func TestDocUploadPromptOutputBeforeUpload(t *testing.T) {
 	out := &uploadOrderWriter{mu: &mu, events: &events, step: "stdout"}
 	var errOut bytes.Buffer
 	r.caller.Store("host-a")
-	code := cliMain([]string{"--json", "prompt", id(lane), "--file", path, "--receipt-timeout", "0"}, clientEnv(home, env), out, &errOut)
+	code := contractCLIMain(t, []string{"--json", "prompt", id(lane), "--file", path, "--receipt-timeout", "0"}, clientEnv(home, env), out, &errOut)
 	if code != exitOK || errOut.Len() != 0 {
 		t.Fatalf("prompt = %d stdout=%q stderr=%q", code, out.buf.String(), errOut.String())
 	}
@@ -769,6 +785,7 @@ func TestDocUploadPromptOutputBeforeUpload(t *testing.T) {
 }
 
 func TestClientBackfillTwoPagesAndHostScope(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := r.newTask("root-a", "orchestrator", 0)
 	lane := r.newTask("lane-a", "implementer", root)
@@ -875,6 +892,7 @@ func TestClientBackfillTwoPagesAndHostScope(t *testing.T) {
 }
 
 func TestClientBackfillUsesMissSourceHost(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	r.beat("host-b", 0)
 	root := r.newTask("backfill-root", "orchestrator", 0)
@@ -932,6 +950,7 @@ func TestClientBackfillUsesMissSourceHost(t *testing.T) {
 }
 
 func TestDocUploadLegacyServerCapabilityFallback(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	var mu sync.Mutex
 	var caps []bool

@@ -13,6 +13,7 @@ import (
 // a stale socket (listener gone, file kept) and an absent one give an error,
 // no command, and no herdr run.
 func TestHerdrCommandRefusesWithoutServer(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	dir, err := os.MkdirTemp("", "hs")
 	if err != nil {

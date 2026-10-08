@@ -1,4 +1,4 @@
-taskr
+/taskr
 *.db
 *.db-wal
 *.db-shm
@@ -16,3 +16,4 @@ taskr-install.sh
 .env.*
 !.env.example
 /target/
+/.scratch/

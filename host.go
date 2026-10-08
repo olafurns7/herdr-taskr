@@ -32,7 +32,7 @@ func hostHeartbeatKey(machine string) string { return heartbeatKey + ":" + machi
 // hostFresh reports whether machine's daemon called within heartbeatFresh.
 func hostFresh(q queryer, machine string) (bool, error) {
 	at, ok, err := getMeta(q, hostHeartbeatKey(machine))
-	return ok && time.Since(parseTime(at)) < heartbeatFresh, err
+	return ok && clockNow().Sub(parseTime(at)) < heartbeatFresh, err
 }
 
 // freshHosts lists the client hosts whose daemon heartbeat is fresh.
@@ -49,7 +49,7 @@ func freshHosts(q queryer) ([]string, error) {
 		if err := rows.Scan(&m, &at); err != nil {
 			return nil, err
 		}
-		if time.Since(parseTime(at)) < heartbeatFresh {
+		if clockNow().Sub(parseTime(at)) < heartbeatFresh {
 			hosts = append(hosts, m)
 		}
 	}
@@ -558,7 +558,7 @@ func (h *hostRelay) observe() error {
 	if !serverUp(h.sock) {
 		return herdrErr("Herdr server not reachable at %s; nothing sent", h.sock)
 	}
-	agents, err := herdrAgentList(h.sock, time.Now().Add(herdrListDeadline))
+	agents, err := herdrAgentList(h.sock, clockNow().Add(herdrListDeadline))
 	if err != nil {
 		return err
 	}

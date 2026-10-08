@@ -29,7 +29,7 @@ const (
 
 const spoolOutcomeUnknownReason = "outcome unknown: look for the record in the ledger and run the command again if it is missing"
 
-var spoolNow = time.Now
+var spoolNow = clockNow
 
 type spoolRecord struct {
 	Version     int            `json:"v"`
@@ -609,7 +609,7 @@ func readSpoolListing(dir string) (map[string]any, error) {
 				items = append(items, item)
 				continue
 			}
-			age := time.Since(spoolTime(r.QueuedAt))
+			age := clockNow().Sub(spoolTime(r.QueuedAt))
 			if age < 0 {
 				age = 0
 			}
@@ -693,7 +693,7 @@ func rmSpoolRecord(dir, target string) error {
 
 func moveSpoolRefused(dir string, file spoolFile, exit int, message string) error {
 	record := file.record
-	record.RefusedAt, record.Exit, record.Error = time.Now().UTC().Format(time.RFC3339), exit, message
+	record.RefusedAt, record.Exit, record.Error = clockNow().UTC().Format(time.RFC3339), exit, message
 	queueDir := filepath.Dir(file.path)
 	name := filepath.Base(file.path)
 	if err := writeSpoolAtomic(queueDir, name, record); err != nil {

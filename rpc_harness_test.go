@@ -101,7 +101,7 @@ func (r *twoHost) cli(machine string, env map[string]string, args ...string) (in
 	r.t.Helper()
 	r.caller.Store(machine)
 	var out, errb bytes.Buffer
-	code := cliMain(append([]string{"--json"}, args...), clientEnv(r.homes[machine], env), &out, &errb)
+	code := contractCLIMain(r.t, append([]string{"--json"}, args...), clientEnv(r.homes[machine], env), &out, &errb)
 	return code, lastJSON(out.String()), errb.String()
 }
 
@@ -174,6 +174,7 @@ func (r *twoHost) count(q string, args ...any) int {
 }
 
 func TestHarnessRPCAdmission(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	dir := t.TempDir()
 	ok := rpcBody(dir, nil, "admission-key-1", "status")
@@ -255,6 +256,7 @@ func (r *twoHost) taskEventSnapshot() string {
 }
 
 func TestHarnessRPCDuplicateFlags(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "present")
@@ -299,6 +301,7 @@ func TestHarnessRPCDuplicateFlags(t *testing.T) {
 }
 
 func TestHarnessWaitAfterAdopt(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	dir := t.TempDir()
 	top := num(r.want(0, "host-a", nil, "new", "top", "--role", "orchestrator", "--cwd", dir), "task_id")
@@ -350,6 +353,7 @@ func TestHarnessWaitAfterAdopt(t *testing.T) {
 }
 
 func TestHarnessHostIdentity(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	dir := t.TempDir()
 	top := num(r.want(0, "host-a", nil, "new", "top", "--role", "orchestrator", "--cwd", dir), "task_id")
@@ -429,6 +433,7 @@ func (r *twoHost) promptTarget() int64 {
 }
 
 func TestHarnessRetry(t *testing.T) {
+	contractGuard(t)
 	setVar(t, &rpcRetryWindow, func([]string) time.Duration { return 120 * time.Millisecond })
 	r := newTwoHost(t)
 	dir := t.TempDir()
@@ -513,6 +518,7 @@ func TestHarnessRetry(t *testing.T) {
 }
 
 func TestHarnessRPCWaits(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	dir := t.TempDir()
 	top := num(r.want(0, "host-a", nil, "new", "top", "--role", "orchestrator", "--cwd", dir), "task_id")
@@ -544,7 +550,7 @@ func TestHarnessRPCWaits(t *testing.T) {
 	began := time.Now()
 	go func() {
 		var out, errb bytes.Buffer
-		code := cliMain([]string{"--json", "wait", "--as", id(top), "--for", "done", "--timeout", "20000"},
+		code := contractCLIMain(t, []string{"--json", "wait", "--as", id(top), "--for", "done", "--timeout", "20000"},
 			clientEnv(r.homes["host-a"], nil), &out, &errb)
 		done <- result{code, lastJSON(out.String()), time.Since(began)}
 	}()
@@ -567,6 +573,7 @@ func TestHarnessRPCWaits(t *testing.T) {
 
 // A wait that connected times out; a record write queues when replies are lost.
 func TestHarnessRPCDroppedConnection(t *testing.T) {
+	contractGuard(t)
 	setVar(t, &rpcRetryWindow, func([]string) time.Duration { return 120 * time.Millisecond })
 	r := newTwoHost(t)
 	ln, err := net.Listen("tcp", "[::1]:0")
@@ -587,7 +594,7 @@ func TestHarnessRPCDroppedConnection(t *testing.T) {
 	home := r.clientHome("http://" + ln.Addr().String())
 	for _, args := range [][]string{{"wait", "--as", "1", "--timeout", "1000"}, {"note", "x", "--as", "1"}} {
 		var out, errb bytes.Buffer
-		code := cliMain(append([]string{"--json", "--request-key", "drop-key-01"}, args...), clientEnv(home, nil), &out, &errb)
+		code := contractCLIMain(t, append([]string{"--json", "--request-key", "drop-key-01"}, args...), clientEnv(home, nil), &out, &errb)
 		m := lastJSON(out.String())
 		if args[0] == "wait" {
 			if code != exitTimeout || m["timeout"] != true || m["interrupted"] == true ||
@@ -605,12 +612,13 @@ func TestHarnessRPCDroppedConnection(t *testing.T) {
 	// Nothing listening at all is the same.
 	dead := r.clientHome("http://[::1]:1")
 	var out, errb bytes.Buffer
-	if code := cliMain([]string{"status"}, clientEnv(dead, nil), &out, &errb); code != exitHerdr {
+	if code := contractCLIMain(t, []string{"status"}, clientEnv(dead, nil), &out, &errb); code != exitHerdr {
 		t.Fatalf("unreachable server = %d %s", code, out.String())
 	}
 }
 
 func TestHarnessRPCPaths(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	dir, _ := filepath.EvalSymlinks(t.TempDir()) // os.Getwd reports the resolved path
 	top := num(r.want(0, "host-a", nil, "new", "top", "--role", "orchestrator", "--cwd", dir), "task_id")

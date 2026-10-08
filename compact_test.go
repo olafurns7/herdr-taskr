@@ -13,7 +13,7 @@ import (
 func (h *harness) compact(env map[string]string, args ...string) (int, string, string) {
 	h.t.Helper()
 	var out, errb bytes.Buffer
-	code := run(args, h.getenv(env), &out, &errb)
+	code := contractRun(h.t, args, h.getenv(env), &out, &errb)
 	return code, out.String(), errb.String()
 }
 
@@ -28,6 +28,7 @@ func decodeFrame(t *testing.T, raw string) map[string]any {
 }
 
 func TestCompactDefaultAndJSONPin(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	code, raw, diag := h.compact(nil, "new", "top", "--role", "orchestrator")
 	if code != exitOK || raw != "n1 1\n" || diag != "taskr: no goal recorded for root 1; run `taskr doc set 1 goal --file PATH`\ntaskr: lead has no pane; run `taskr adopt 1 --pane <id>` as your first act\n" {
@@ -57,6 +58,7 @@ func TestCompactDefaultAndJSONPin(t *testing.T) {
 }
 
 func TestCompactWaitTimeoutAndJSONPin(t *testing.T) {
+	contractGuard(t)
 	for _, mode := range []struct {
 		name          string
 		env           map[string]string
@@ -95,6 +97,7 @@ func TestCompactWaitTimeoutAndJSONPin(t *testing.T) {
 }
 
 func TestWaitTimeoutOutputForms(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct {
 		name    string
 		in      map[string]any
@@ -129,6 +132,7 @@ func TestWaitTimeoutOutputForms(t *testing.T) {
 }
 
 func TestCompactWaitTimeoutCountsOwedAndDue(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("worker", "implementer", top)
@@ -146,6 +150,7 @@ func TestCompactWaitTimeoutCountsOwedAndDue(t *testing.T) {
 }
 
 func TestCompactEventEscapesAndOpaquePayload(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("lane", "implementer", top)
@@ -172,6 +177,7 @@ func TestCompactEventEscapesAndOpaquePayload(t *testing.T) {
 }
 
 func TestCompactReadsLossless(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("lane", "implementer", top)
@@ -198,6 +204,7 @@ func TestCompactReadsLossless(t *testing.T) {
 }
 
 func TestCompactReadFormat1Pinned(t *testing.T) {
+	contractGuard(t)
 	// Expected wire keys come from references/format.md, independently of
 	// readAliases. Absent, empty, null and false fields must stay distinct.
 	for _, tc := range []struct {
@@ -224,6 +231,7 @@ func TestCompactReadFormat1Pinned(t *testing.T) {
 }
 
 func TestCompactTransportDiagnostics(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct {
 		name, stderr, diagnostic, code, outcome string
 	}{
@@ -299,6 +307,7 @@ func TestCompactTransportDiagnostics(t *testing.T) {
 }
 
 func TestCompactExceptionalMutations(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("lane", "implementer", top, "--planned", "--pane", "w9:p1")
@@ -339,6 +348,7 @@ func TestCompactExceptionalMutations(t *testing.T) {
 }
 
 func TestCompactReceiptAndOwnerAnswerKeepRecoveryData(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("lane", "implementer", top, "--pane", "w9:p1")

@@ -277,7 +277,7 @@ func bindCapacityBeforePrompt(db *sql.DB, sock string, task, launch int64) {
 	if err != nil {
 		return
 	}
-	a, err := capacityGet(sock, w.Pane, time.Now().Add(500*time.Millisecond))
+	a, err := capacityGet(sock, w.Pane, clockNow().Add(500*time.Millisecond))
 	if err != nil {
 		return
 	}
@@ -396,7 +396,7 @@ func scanChildrenCapacity(db *sql.DB, sock string, parent int64, deadline time.T
 	if err != nil || len(ws) == 0 {
 		return dbErr(err)
 	}
-	if limit := time.Now().Add(2 * time.Second); limit.Before(deadline) {
+	if limit := clockNow().Add(2 * time.Second); limit.Before(deadline) {
 		deadline = limit
 	}
 	cursorKey := fmt.Sprintf("capacity_cursor:%d", parent)

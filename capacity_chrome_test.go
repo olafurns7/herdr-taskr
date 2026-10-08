@@ -13,6 +13,7 @@ const (
 )
 
 func TestCapacityIncidentChrome(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct{ name, text string }{
 		{"F1 real screen", incPrev + incWrapped + incChrome},
 		{"F2 real chrome, indented wrap", incPrev + "■ Selected model is at capacity. Please try a\n  different model." + incChrome},
@@ -31,6 +32,7 @@ func TestCapacityIncidentChrome(t *testing.T) {
 }
 
 func TestCapacityIncidentChromeRejectsAmbiguity(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct{ name, text string }{
 		{"draft composer", incPrev + nativeCapacity + "\n\n› change the plan\n\n  feature/example-issue · /workspace/example…\n  ? for shortcuts                       ⚠ 3 · f2\n"},
 		{"two status rows", incPrev + nativeCapacity + "\n\n› Ask Codex to do anything\n\n  feature/example-issue · /workspace/example…\n  another-branch · /another/path\n  ? for shortcuts                       ⚠ 3 · f2\n"},
@@ -61,6 +63,7 @@ func zeroReadRevision(p *capacityScreen) func(map[string]any) []byte {
 }
 
 func TestCapacityReadRevisionZero(t *testing.T) {
+	contractGuard(t)
 	for _, promptBound := range []bool{false, true} {
 		name := "recorded session"
 		if promptBound {
@@ -103,6 +106,7 @@ func TestCapacityReadRevisionZero(t *testing.T) {
 }
 
 func TestCapacityIncidentWaitFilter(t *testing.T) {
+	contractGuard(t)
 	h, db, top, w, l, p := capacityFixture(t)
 	p.text = incPrev + incWrapped + incChrome
 	var ready int64

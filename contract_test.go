@@ -18,6 +18,7 @@ import (
 )
 
 func TestPromptOutcomes(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p4")
@@ -61,6 +62,7 @@ func TestPromptOutcomes(t *testing.T) {
 }
 
 func TestWaitLivenessEmitsAndThrottles(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -90,6 +92,7 @@ func TestWaitLivenessEmitsAndThrottles(t *testing.T) {
 }
 
 func TestExpiredWaitDoesNotRunHerdr(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -108,6 +111,7 @@ func TestExpiredWaitDoesNotRunHerdr(t *testing.T) {
 }
 
 func TestLivenessFailureLeavesObservations(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -135,6 +139,7 @@ func TestLivenessFailureLeavesObservations(t *testing.T) {
 }
 
 func TestOwnerAsksRouteToRoot(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	sub := h.newTask("orch-sub", "sub-orchestrator", top)
@@ -167,6 +172,7 @@ func TestOwnerAsksRouteToRoot(t *testing.T) {
 }
 
 func TestExitCodesAndIdempotentKeys(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	h.one(exitUsage, nil)
 	h.one(exitUsage, nil, "bogus")
@@ -199,6 +205,7 @@ func TestExitCodesAndIdempotentKeys(t *testing.T) {
 }
 
 func TestPragmasOnEveryConnection(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	db := h.openDB()
 	cx := context.Background()
@@ -223,6 +230,7 @@ func TestPragmasOnEveryConnection(t *testing.T) {
 }
 
 func TestAccountLabel(t *testing.T) {
+	contractGuard(t)
 	for in, want := range map[string]string{
 		"/Users/user/.local/share/agent/claude/account-a/native":       "account-a",
 		"/Users/user/.local/share/agent/codex/account-e/native/.codex": "account-e",
@@ -237,6 +245,7 @@ func TestAccountLabel(t *testing.T) {
 }
 
 func TestPromptFileSendsPathAndTextSendsLiteral(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p4")
@@ -299,6 +308,7 @@ const (
 // A --file prompt to a worker lane carries the worker contract on one line;
 // other roles, unknown or empty roles and --text prompts send today's text.
 func TestPromptFileCarriesWorkerContractByRole(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	t.Chdir(h.dir)
@@ -335,6 +345,7 @@ func TestPromptFileCarriesWorkerContractByRole(t *testing.T) {
 // A client host composes nothing: the server's _prompt begin returns the text,
 // contract included, and the client sends it unchanged.
 func TestClientHostFilePromptCarriesWorkerContract(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := num(r.want(0, "host-a", nil, "new", "root-a", "--role", "orchestrator", "--cwd", r.dir), "task_id")
 	lane, launch := uploadLane(t, r, root, "lane-prompt", "")
@@ -350,6 +361,7 @@ func TestClientHostFilePromptCarriesWorkerContract(t *testing.T) {
 }
 
 func TestGateTaskHasNoLiveness(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	g := h.newTask("gate-sa1", "gate", top, "--pane", "w9:p1")
@@ -368,6 +380,7 @@ func TestGateTaskHasNoLiveness(t *testing.T) {
 }
 
 func TestQuotaScanEmitsOncePerDistinctKey(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	a := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -479,6 +492,7 @@ func TestQuotaScanEmitsOncePerDistinctKey(t *testing.T) {
 // A descendant of herdr that keeps stdout open cannot hold wait past its
 // deadline by more than herdrWaitDelay.
 func TestHerdrSubprocessPipeIsBounded(t *testing.T) {
+	contractGuard(t)
 	// 2 s leaves the fake room to start (and the list to finish) before the
 	// deadline even under load, so the held call really runs; wait still ends
 	// within timeout + herdrWaitDelay + 1 s = 5 s, well short of the 10 s descendant.
@@ -509,6 +523,7 @@ func TestHerdrSubprocessPipeIsBounded(t *testing.T) {
 }
 
 func TestQuotaOf(t *testing.T) {
+	contractGuard(t)
 	for in, want := range map[string][3]any{
 		"You've hit your weekly limit":                   {"limit", 0, true},
 		"hit your session limit · weekly limit: 3% left": {"limit", 0, true},
@@ -528,6 +543,7 @@ func TestQuotaOf(t *testing.T) {
 // A ledger from the last-key design keeps its launches.quota_key column;
 // opening and scanning it still works.
 func TestLegacyQuotaKeyColumnIsHarmless(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	os.MkdirAll(filepath.Dir(h.db), 0o755)
 	old, err := sql.Open("sqlite", h.db)
@@ -555,6 +571,7 @@ func TestLegacyQuotaKeyColumnIsHarmless(t *testing.T) {
 // record the new location, a launch event records old and new, prompt
 // targets the new pane, and omitted flags keep the old location.
 func TestLaunchRelocates(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl", "implementer", top, "--workspace", "w1", "--tab", "w1:t1", "--pane", "w1:p1")
@@ -620,6 +637,7 @@ func TestLaunchRelocates(t *testing.T) {
 }
 
 func TestLaunchRejectsRootTask(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0, "--workspace", "w1", "--tab", "w1:t1", "--pane", "w1:p1")
 	db := h.openDB()
@@ -702,6 +720,7 @@ func TestLaunchRejectsRootTask(t *testing.T) {
 // from the agent's shell. wait skips its poll quietly; prompt and
 // answer --prompt fail and record no attempt.
 func TestNoHerdrCallWithoutServer(t *testing.T) {
+	contractGuard(t)
 	dir, err := os.MkdirTemp("", "hs")
 	if err != nil {
 		t.Fatal(err)
@@ -759,6 +778,7 @@ func TestNoHerdrCallWithoutServer(t *testing.T) {
 }
 
 func TestParseAfterDoubleDash(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("worker", "implementer", top)
@@ -774,10 +794,11 @@ func TestParseAfterDoubleDash(t *testing.T) {
 }
 
 func TestCommandHelpAndUnknownSuggestions(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	for _, args := range [][]string{{"help", "wait"}, {"wait", "--help"}, {"wait", "-h"}, {"--json", "wait", "--help"}, {"help", "version"}, {"version", "--help"}, {"version", "-h"}} {
 		var stdout, stderr bytes.Buffer
-		if code := run(args, h.getenv(nil), &stdout, &stderr); code != exitOK {
+		if code := contractRun(t, args, h.getenv(nil), &stdout, &stderr); code != exitOK {
 			t.Fatalf("taskr %v: exit %d, want 0; stdout=%q stderr=%q", args, code, stdout.String(), stderr.String())
 		}
 		want := "wait [--as ID]"
@@ -790,7 +811,7 @@ func TestCommandHelpAndUnknownSuggestions(t *testing.T) {
 	}
 	for name := range commands {
 		var stdout, stderr bytes.Buffer
-		if code := run([]string{name, "--help"}, h.getenv(nil), &stdout, &stderr); code != exitOK {
+		if code := contractRun(t, []string{name, "--help"}, h.getenv(nil), &stdout, &stderr); code != exitOK {
 			t.Fatalf("taskr %s --help: exit %d, want 0; stdout=%q stderr=%q", name, code, stdout.String(), stderr.String())
 		}
 		line := strings.SplitN(stdout.String(), "\n", 2)[0]
@@ -814,7 +835,7 @@ func TestCommandHelpAndUnknownSuggestions(t *testing.T) {
 		}
 	}
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"help"}, h.getenv(nil), &stdout, &stderr); code != exitOK || !strings.Contains(stdout.String(), "help [CMD]") || stderr.Len() != 0 {
+	if code := contractRun(t, []string{"help"}, h.getenv(nil), &stdout, &stderr); code != exitOK || !strings.Contains(stdout.String(), "help [CMD]") || stderr.Len() != 0 {
 		t.Fatalf("taskr help: exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 	if got := h.one(exitUsage, nil, "stauts")["try"]; got != "status" {
@@ -832,6 +853,7 @@ func TestCommandHelpAndUnknownSuggestions(t *testing.T) {
 }
 
 func TestStrictInputContracts(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	if out := h.one(exitUsage, nil, "new", "a b", "--role", "implementer"); !strings.Contains(errOf(out), "[a-z][a-z0-9_-]{0,31}") {
 		t.Fatalf("invalid name = %v", out)
@@ -877,6 +899,7 @@ func TestStrictInputContracts(t *testing.T) {
 }
 
 func TestAnswerRecipientAndHandoverOutputContracts(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	worker := h.newTask("worker", "implementer", root)

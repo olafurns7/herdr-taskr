@@ -9,6 +9,7 @@ import (
 )
 
 func TestCloseOutcomeStoredAndLogged(t *testing.T) {
+	contractGuard(t)
 	for _, outcome := range []string{"accepted", "reworked", "rejected", "abandoned", ""} {
 		t.Run(outcome, func(t *testing.T) {
 			h := newHarness(t)
@@ -49,6 +50,7 @@ func TestCloseOutcomeStoredAndLogged(t *testing.T) {
 }
 
 func TestCloseOutcomeInvalid(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	task := h.newTask("lane", "orchestrator", 0)
 	for _, value := range []string{"unknown", ""} {
@@ -65,6 +67,7 @@ func TestCloseOutcomeInvalid(t *testing.T) {
 }
 
 func TestCloseOutcomeQueuedDelivery(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	_, task, _ := spoolMakeWorker(t, r, host, 1)
@@ -91,10 +94,11 @@ func TestCloseOutcomeQueuedDelivery(t *testing.T) {
 }
 
 func TestCloseOutcomeUsage(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	for _, args := range [][]string{{"help"}, {"close", "--help"}} {
 		var out, stderr bytes.Buffer
-		if code := run(args, h.getenv(nil), &out, &stderr); code != exitOK {
+		if code := contractRun(t, args, h.getenv(nil), &out, &stderr); code != exitOK {
 			t.Fatalf("help = %d %q %q", code, out.String(), stderr.String())
 		}
 		for _, want := range []string{"--outcome", "accepted", "reworked", "rejected", "abandoned"} {

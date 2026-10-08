@@ -9,6 +9,7 @@ import (
 // A panic inside withTx must not leave the immediate transaction holding the
 // writer lock: net/http recovers handler panics and the daemon keeps writing.
 func TestWithTxPanicReleasesWriterLock(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	db := h.openDB()
 	func() {

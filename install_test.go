@@ -67,6 +67,7 @@ func releaseJSON(names []string, uploaderFirst bool, login string) string {
 }
 
 func TestInstallTokenTransport(t *testing.T) {
+	contractGuard(t)
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("install.sh supports darwin and linux only")
 	}
@@ -175,6 +176,7 @@ func TestInstallTokenTransport(t *testing.T) {
 }
 
 func TestInstallAnonymousTransport(t *testing.T) {
+	contractGuard(t)
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("install.sh supports darwin and linux only")
 	}
@@ -297,6 +299,7 @@ func pluginTarball(t *testing.T) []byte {
 // TestInstallPluginLink covers the plugin step inside Herdr: link when the id
 // is absent, skip when present, and nothing at all with TASKR_NO_PLUGIN=1.
 func TestInstallPluginLink(t *testing.T) {
+	contractGuard(t)
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("install.sh supports darwin and linux only")
 	}
@@ -379,6 +382,7 @@ func TestInstallPluginLink(t *testing.T) {
 // TASKR_SKILL_DIR override keeps working, and no agent-specific path
 // (~/.claude, ~/.codex, ~/.config/opencode) is created or touched by default.
 func TestInstallSkillPermsNoAgentLinks(t *testing.T) {
+	contractGuard(t)
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("install.sh supports darwin and linux only")
 	}
@@ -492,6 +496,7 @@ func TestInstallSkillPermsNoAgentLinks(t *testing.T) {
 }
 
 func TestInstallSkillLinks(t *testing.T) {
+	contractGuard(t)
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("install.sh supports darwin and linux only")
 	}
@@ -704,6 +709,7 @@ func TestInstallSkillLinks(t *testing.T) {
 }
 
 func TestInstallRunbookBootstrap(t *testing.T) {
+	contractGuard(t)
 	readme, err := os.ReadFile("README.md")
 	if err != nil {
 		t.Fatal(err)
@@ -883,6 +889,7 @@ func skillTarball(t *testing.T) []byte {
 }
 
 func TestInstallSkillGH(t *testing.T) {
+	contractGuard(t)
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("unsupported install host")
 	}

@@ -1,0 +1,307 @@
+[
+  {
+    "family": "read:version",
+    "argv": [
+      "version"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "--json",
+      "version"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "--json"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "--json=false"
+    ],
+    "env": {
+      "TASKR_FORMAT": "json"
+    }
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version"
+    ],
+    "env": {
+      "TASKR_FORMAT": "json"
+    }
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "extra"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "--json",
+      "version",
+      "extra"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "--bad"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "--help"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "--json",
+      "version",
+      "--help"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "--json",
+      "version",
+      "--json=false",
+      "--help"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "--help",
+      "-h=false"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "---json"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "--json=invalid"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "extra",
+      "--help"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "--",
+      "--help"
+    ]
+  },
+  {
+    "family": "schema",
+    "argv": [
+      "--contract-migrate"
+    ]
+  },
+  {
+    "family": "read:status",
+    "argv": [
+      "status",
+      "--all"
+    ]
+  },
+  {
+    "family": "read:asks",
+    "argv": [
+      "asks",
+      "--open"
+    ]
+  },
+  {
+    "family": "read:glance",
+    "argv": [
+      "glance"
+    ]
+  },
+  {
+    "family": "read:search",
+    "argv": [
+      "search",
+      "fixture"
+    ]
+  },
+  {
+    "family": "read:doc",
+    "argv": [
+      "doc",
+      "ls",
+      "1"
+    ]
+  },
+  {
+    "family": "read:doc",
+    "argv": [
+      "doc",
+      "get",
+      "1"
+    ]
+  },
+  {
+    "family": "write:new",
+    "argv": [
+      "new",
+      "fixture-new",
+      "--role",
+      "orchestrator"
+    ]
+  },
+  {
+    "family": "write:note",
+    "argv": [
+      "note",
+      "fixture-note <&> Þ😀",
+      "--as",
+      "1"
+    ]
+  },
+  {
+    "family": "write:ask",
+    "argv": [
+      "ask",
+      "fixture-question",
+      "--as",
+      "2",
+      "--blocking"
+    ]
+  },
+  {
+    "family": "write:answer",
+    "argv": [
+      "answer",
+      "3",
+      "fixture-answer"
+    ]
+  },
+  {
+    "family": "write:ready",
+    "argv": [
+      "ready",
+      "fixture-ready",
+      "--as",
+      "2"
+    ]
+  },
+  {
+    "family": "write:done",
+    "argv": [
+      "done",
+      "fixture-done",
+      "--as",
+      "2"
+    ]
+  },
+  {
+    "family": "write:close",
+    "argv": [
+      "close",
+      "2"
+    ]
+  },
+  {
+    "family": "write:set",
+    "argv": [
+      "set",
+      "2",
+      "--ref",
+      "a=1",
+      "--ref",
+      "a=2"
+    ]
+  },
+  {
+    "family": "write:prompt",
+    "argv": [
+      "prompt",
+      "2",
+      "--text",
+      "fixture-prompt",
+      "--receipt-timeout",
+      "0"
+    ]
+  },
+  {
+    "family": "write:ack",
+    "argv": [
+      "ack",
+      "3",
+      "--as",
+      "1"
+    ]
+  },
+  {
+    "family": "write:wait",
+    "argv": [
+      "wait",
+      "--as",
+      "1",
+      "--timeout",
+      "0"
+    ]
+  },
+  {
+    "family": "net:daemon",
+    "argv": [
+      "daemon",
+      "--status"
+    ]
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "ls"
+    ],
+    "client_url": "http://100.64.0.1:7788"
+  },
+  {
+    "family": "net:discovery",
+    "argv": [
+      "status",
+      "--help"
+    ],
+    "client_url": "http://100.64.0.1:7788"
+  },
+  {
+    "family": "net:rpc-client",
+    "argv": [
+      "asks",
+      "--help"
+    ],
+    "client_url": "http://100.64.0.1:7788"
+  }
+]

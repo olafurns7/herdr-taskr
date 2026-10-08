@@ -75,7 +75,7 @@ func dashboardUsageHandler(next http.Handler, usage *dashboardUsage) http.Handle
 		if status == 0 {
 			status = http.StatusOK
 		}
-		usage.record(classifyDashboardUsage(r, status), time.Now())
+		usage.record(classifyDashboardUsage(r, status), clockNow())
 	})
 }
 

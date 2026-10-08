@@ -14,6 +14,7 @@ import (
 // Section 7 scenario 1: a wait process that dies after the offer (no ack)
 // leaves the event pending; the next wait offers the same event again.
 func TestReplayAfterWaitProcessDies(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top)
@@ -48,6 +49,7 @@ func TestReplayAfterWaitProcessDies(t *testing.T) {
 
 // Scenario 2: two orchestrators on one host have separate inboxes and cursors.
 func TestTwoIndependentParentInboxes(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	r1 := h.newTask("orch-one", "orchestrator", 0)
 	r2 := h.newTask("orch-two", "orchestrator", 0)
@@ -75,6 +77,7 @@ func TestTwoIndependentParentInboxes(t *testing.T) {
 // Scenario 3: a sub-orchestrator's ask goes to its parent; the answer wakes
 // the sub-orchestrator's own blocking wait.
 func TestAnswerWakesSubOrchestratorWait(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	sub := h.newTask("orch-sub", "sub-orchestrator", top)
@@ -129,6 +132,7 @@ func TestAnswerWakesSubOrchestratorWait(t *testing.T) {
 // Scenario 4: two open asks, one answered: the other stays open, the work
 // status is unchanged, and a second answer to the same ask fails.
 func TestTwoOpenAsksOneAnswered(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top)
@@ -172,6 +176,7 @@ func TestTwoOpenAsksOneAnswered(t *testing.T) {
 // Scenario 5: two consumers observing the same agent list concurrently write
 // one herdr event per change, never two.
 func TestConcurrentLivenessNoDuplicateHerdrEvents(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	c1 := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -298,6 +303,7 @@ func TestConcurrentLivenessNoDuplicateHerdrEvents(t *testing.T) {
 // Scenario 6: a Herdr name reused by a new task does not let the old
 // worker's launch write to either task.
 func TestReusedNameRejectsOldLaunch(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	a := h.newTask("impl-x", "implementer", top)
@@ -323,6 +329,7 @@ func TestReusedNameRejectsOldLaunch(t *testing.T) {
 // Scenario 7: a restored pane is re-registered with a new launch; the old
 // launch's events are rejected and the new launch's are accepted.
 func TestRestoredPaneReRegisteredByLaunch(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p4")
@@ -369,6 +376,7 @@ func TestRestoredPaneReRegisteredByLaunch(t *testing.T) {
 // Scenario 8: a prompt whose herdr call times out is recorded as
 // delivery_unknown, and taskr does not send it again.
 func TestAmbiguousPromptRecordedWithoutResend(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p4")

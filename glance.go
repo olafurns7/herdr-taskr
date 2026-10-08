@@ -120,7 +120,7 @@ func cmdGlance(c *ctx, args []string) (any, int, error) {
 		return nil, 0, err
 	}
 	defer closeDB(c, db)
-	v, err := readGlance(db, time.Now())
+	v, err := readGlance(db, clockNow())
 	if v != nil {
 		v.CallerHost = c.machine
 	}

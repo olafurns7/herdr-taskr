@@ -7,6 +7,7 @@ import (
 
 // A root orchestrator names itself with --as on note and ask; nothing else may.
 func TestNoteAndAskAsRoot(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("camp", "orchestrator", 0)
 	note := h.ok(nil, "note", "--as", id(root), "phase 1: briefing")
@@ -35,6 +36,7 @@ func TestNoteAndAskAsRoot(t *testing.T) {
 }
 
 func TestAsRejections(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("camp", "orchestrator", 0)
 	other := h.newTask("camp-2", "orchestrator", 0)

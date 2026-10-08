@@ -18,7 +18,7 @@ func herdrCapacityRequest(sock, method string, params map[string]any, deadline t
 	if method != "agent.get" && method != "agent.read" {
 		return herdrErr("unsupported capacity method")
 	}
-	if limit := time.Now().Add(500 * time.Millisecond); limit.Before(deadline) {
+	if limit := clockNow().Add(500 * time.Millisecond); limit.Before(deadline) {
 		deadline = limit
 	}
 	cx, cancel := context.WithDeadline(context.Background(), deadline)

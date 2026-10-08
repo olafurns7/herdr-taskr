@@ -45,6 +45,7 @@ func busyGlance() *glanceView {
 }
 
 func TestRenderGlanceGoldens(t *testing.T) {
+	contractGuard(t)
 	rolling := *busyGlance()
 	rolling.Verdict = "rolling"
 	rolling.NeedsYou = nil
@@ -125,6 +126,7 @@ func checkWatchWidths(t *testing.T, lines []string, width, height int) {
 }
 
 func TestRenderGlanceSanitizingAndColor(t *testing.T) {
+	contractGuard(t)
 	hostile := "\x1b[31mRED\x1b[0m\x1b]8;;https://evil.test\x1b\\link\x1b]8;;\x1b\\\t\n\r\x07 世界 👩‍💻 👋🏽"
 	if got := watchText(hostile); got != "REDlink     世界 👩‍💻 👋🏽" {
 		t.Fatalf("sanitize = %q", got)
@@ -172,6 +174,7 @@ func TestRenderGlanceSanitizingAndColor(t *testing.T) {
 }
 
 func TestRenderGlanceUnregisteredAndMissingSince(t *testing.T) {
+	contractGuard(t)
 	v := &glanceView{Verdict: "attention", Attention: []glanceAttention{
 		{Kind: "lead_unregistered_silent", Campaign: "campaign", Text: "context.\x1b[31m\n" + strings.Repeat("x", 100)},
 		{Kind: "lead_unknown", Campaign: "campaign"},
@@ -198,6 +201,7 @@ func TestRenderGlanceUnregisteredAndMissingSince(t *testing.T) {
 }
 
 func TestWatchAgesAndAttentionKinds(t *testing.T) {
+	contractGuard(t)
 	backlog := &glanceView{Verdict: "attention", Attention: []glanceAttention{{Kind: "lead_gone"}, {Kind: "lead_blocked"}}, Quiet: glanceQuiet{Count: 3}}
 	if header := renderGlance(backlog, 46, 24, 0, "", false, watchTestNow)[0]; !strings.HasSuffix(header, "2 to check") {
 		t.Fatalf("quiet backlog header: %q", header)
@@ -311,6 +315,7 @@ func watchSize() (int, int)    { return 46, 24 }
 func fixedWatchNow() time.Time { return watchTestNow }
 
 func TestRunWatchQuitAndEOF(t *testing.T) {
+	contractGuard(t)
 	for _, key := range []string{"q", "Q", "\x03", "EOF", "cancel"} {
 		t.Run(key, func(t *testing.T) {
 			started, canceled := make(chan struct{}), make(chan struct{})
@@ -360,6 +365,7 @@ func TestRunWatchQuitAndEOF(t *testing.T) {
 }
 
 func TestRunWatchStaleRecoveryAndSerialization(t *testing.T) {
+	contractGuard(t)
 	var calls, active atomic.Int32
 	release := make(chan struct{}, 3)
 	h := newWatchHarness(t, func(cx context.Context) (*glanceView, error) {
@@ -399,6 +405,7 @@ func TestRunWatchStaleRecoveryAndSerialization(t *testing.T) {
 }
 
 func TestRunWatchResizeAndAge(t *testing.T) {
+	contractGuard(t)
 	var calls atomic.Int32
 	var width, seconds atomic.Int64
 	width.Store(46)
@@ -435,6 +442,7 @@ func (w *failWatchWriter) Write(p []byte) (int, error) {
 	return 0, errors.New("write failed")
 }
 func TestRunWatchWriteErrorRestores(t *testing.T) {
+	contractGuard(t)
 	out := &failWatchWriter{}
 	err := runWatch(context.Background(), func(context.Context) (*glanceView, error) { return nil, nil }, strings.NewReader(""), out, watchSize, time.Second, fixedWatchNow)
 	if err == nil || !out.restore {
@@ -443,6 +451,7 @@ func TestRunWatchWriteErrorRestores(t *testing.T) {
 }
 
 func TestGlanceWatchFlagsAndRPCRefusal(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	for _, args := range [][]string{{"--watch=false"}, {"-watch=0"}, {"--watch=invalid"}, {"--", "--watch"}, {"watch"}} {
 		if glanceWatchRequested(args) {
@@ -454,7 +463,7 @@ func TestGlanceWatchFlagsAndRPCRefusal(t *testing.T) {
 	}
 	for _, every := range []string{"1s", "5m"} {
 		var out, errb bytes.Buffer
-		if code := run([]string{"glance", "--watch", "--every", every}, h.getenv(nil), &out, &errb); code != 0 || strings.Contains(out.String(), "\x1b") || !strings.HasPrefix(out.String(), "taskr · ") {
+		if code := contractRun(t, []string{"glance", "--watch", "--every", every}, h.getenv(nil), &out, &errb); code != 0 || strings.Contains(out.String(), "\x1b") || !strings.HasPrefix(out.String(), "taskr · ") {
 			t.Fatalf("fallback %s: code %d %q %s", every, code, out.String(), errb.String())
 		}
 	}
@@ -466,13 +475,14 @@ func TestGlanceWatchFlagsAndRPCRefusal(t *testing.T) {
 	r.caller.Store("host-a")
 	for _, watch := range []string{"--watch", "-watch", "--watch=t", "-watch=T", "--watch=TRUE", "-watch=True", "--watch=1"} {
 		var out, errb bytes.Buffer
-		if code := cliMain([]string{"glance", watch}, clientEnv(r.homes["host-a"], nil), &out, &errb); code != 0 || !strings.HasPrefix(out.String(), "taskr · ") || strings.Contains(out.String(), "\x1b") {
+		if code := contractCLIMain(t, []string{"glance", watch}, clientEnv(r.homes["host-a"], nil), &out, &errb); code != 0 || !strings.HasPrefix(out.String(), "taskr · ") || strings.Contains(out.String(), "\x1b") {
 			t.Fatalf("client fallback %s: %d %q %s", watch, code, out.String(), errb.String())
 		}
 	}
 }
 
 func TestRunWatchWaitsAfterFetchCompletion(t *testing.T) {
+	contractGuard(t)
 	started := make(chan time.Time, 8)
 	release := make(chan struct{})
 	every := 50 * time.Millisecond
@@ -509,6 +519,7 @@ func TestRunWatchWaitsAfterFetchCompletion(t *testing.T) {
 }
 
 func TestRunWatchFrameProtocol(t *testing.T) {
+	contractGuard(t)
 	h := newWatchHarness(t, func(context.Context) (*glanceView, error) { return nil, errors.New("offline") }, time.Hour, watchSize, fixedWatchNow)
 	h.out.wait(t, func(s string) bool { return strings.Contains(lastWatchFrame(s), "no data: offline") })
 	frame := lastWatchFrame(h.out.text())
@@ -527,6 +538,7 @@ func TestRunWatchFrameProtocol(t *testing.T) {
 }
 
 func TestRunWatchFullWidthRow(t *testing.T) {
+	contractGuard(t)
 	h := newWatchHarness(t, func(context.Context) (*glanceView, error) { return busyGlance(), nil }, time.Hour, watchSize, fixedWatchNow)
 	h.out.wait(t, func(s string) bool { return strings.Contains(lastWatchFrame(s), "docs-site") })
 	frame := lastWatchFrame(h.out.text())
@@ -542,6 +554,7 @@ func TestRunWatchFullWidthRow(t *testing.T) {
 }
 
 func TestRenderGlanceNarrowHeaders(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct {
 		width     int
 		err, want string
@@ -559,6 +572,7 @@ func TestRenderGlanceNarrowHeaders(t *testing.T) {
 }
 
 func TestRenderGlanceUncertainHeadersNeverGreen(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct {
 		v         *glanceView
 		err, want string
@@ -576,6 +590,7 @@ func TestRenderGlanceUncertainHeadersNeverGreen(t *testing.T) {
 }
 
 func TestRenderGlanceOverflowSkipsUnhelpfulDrop(t *testing.T) {
+	contractGuard(t)
 	v := busyGlance()
 	v.Campaigns = v.Campaigns[:1]
 	v.Quiet = glanceQuiet{}
@@ -590,6 +605,7 @@ func TestRenderGlanceOverflowSkipsUnhelpfulDrop(t *testing.T) {
 }
 
 func TestRenderGlanceMoreCampaignsThanHeightKeepsCounts(t *testing.T) {
+	contractGuard(t)
 	v := busyGlance()
 	v.Campaigns = nil
 	for i := 0; i < 20; i++ {
@@ -606,6 +622,7 @@ func TestRenderGlanceMoreCampaignsThanHeightKeepsCounts(t *testing.T) {
 }
 
 func TestRenderGlanceTinyHeightKeepsHeaderVerdict(t *testing.T) {
+	contractGuard(t)
 	for height := 1; height <= 4; height++ {
 		rows := renderGlance(busyGlance(), 46, height, 0, "", false, watchTestNow)
 		checkWatchWidths(t, rows, 46, height)
@@ -625,12 +642,14 @@ func TestRenderGlanceTinyHeightKeepsHeaderVerdict(t *testing.T) {
 }
 
 func TestRunWatchFetchPanic(t *testing.T) {
+	contractGuard(t)
 	h := newWatchHarness(t, func(context.Context) (*glanceView, error) { panic("boom") }, time.Hour, watchSize, fixedWatchNow)
 	h.out.wait(t, func(s string) bool { return strings.Contains(lastWatchFrame(s), "no data: fetch panic: boom") })
 	h.stop(t)
 }
 
 func TestGlanceWatchRPCLogging(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := num(r.want(exitOK, "host-a", nil, "new", "demo-log", "--role", "orchestrator", "--pane", "wDemo:p1"), "task_id")
 	for _, tc := range []struct {
@@ -660,6 +679,7 @@ func TestGlanceWatchRPCLogging(t *testing.T) {
 }
 
 func TestGlanceWatchClientFetchDeadline(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	canceled := make(chan struct{}, 1)
 	var calls atomic.Int32
@@ -684,6 +704,7 @@ func TestGlanceWatchClientFetchDeadline(t *testing.T) {
 }
 
 func TestGlanceWatchClientFetchErrors(t *testing.T) {
+	contractGuard(t)
 	for _, kind := range []string{"transport", "decode"} {
 		t.Run(kind, func(t *testing.T) {
 			r := newTwoHost(t)
@@ -705,7 +726,7 @@ func TestGlanceWatchClientFetchErrors(t *testing.T) {
 			})
 			go srv.Serve(ln)
 			var out, errb bytes.Buffer
-			if code := cliMain([]string{"glance", "--watch"}, clientEnv(r.clientHome(endpoint), nil), &out, &errb); code != 1 || calls.Load() != 1 || strings.Contains(errb.String(), "retrying") {
+			if code := contractCLIMain(t, []string{"glance", "--watch"}, clientEnv(r.clientHome(endpoint), nil), &out, &errb); code != 1 || calls.Load() != 1 || strings.Contains(errb.String(), "retrying") {
 				t.Fatalf("fetch failure: code %d calls %d %s %s", code, calls.Load(), out.String(), errb.String())
 			}
 		})

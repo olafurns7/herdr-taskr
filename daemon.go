@@ -108,7 +108,7 @@ func daemonState(q queryer) (state, at string, age time.Duration, err error) {
 	if err != nil || !ok {
 		return "none", "", 0, err
 	}
-	age = time.Since(parseTime(at))
+	age = clockNow().Sub(parseTime(at))
 	if age < heartbeatFresh {
 		return "fresh", at, age, nil
 	}
@@ -302,7 +302,7 @@ func cmdDaemon(c *ctx, args []string) (any, int, error) {
 	<-pushDone
 	if dash != nil {
 		dash.stop()
-		if err := dash.usage.flush(db, time.Now()); err != nil {
+		if err := dash.usage.flush(db, clockNow()); err != nil {
 			lg.logf("dashboard usage flush failed: %v", err)
 		}
 	}
@@ -361,7 +361,7 @@ func daemonStatus(c *ctx, dir, lockPath string) (any, int, error) {
 	}
 	delete(out, "record")
 	out["ok"] = true
-	usage, err := dashboardUsageStatus(db, time.Now())
+	usage, err := dashboardUsageStatus(db, clockNow())
 	if err != nil {
 		out["dashboard_usage"] = map[string]any{"error": err.Error()}
 	} else {
@@ -476,12 +476,12 @@ func (l *daemonLog) limited(key string, every time.Duration, format string, a ..
 	if l.last == nil {
 		l.last, l.skipped = map[string]time.Time{}, map[string]int{}
 	}
-	if t, ok := l.last[key]; ok && time.Since(t) < every {
+	if t, ok := l.last[key]; ok && clockNow().Sub(t) < every {
 		l.skipped[key]++
 		l.mu.Unlock()
 		return
 	}
-	l.last[key] = time.Now()
+	l.last[key] = clockNow()
 	n := l.skipped[key]
 	delete(l.skipped, key)
 	l.mu.Unlock()
@@ -584,7 +584,7 @@ func (d *daemon) pass() passResult {
 		r.err = herdrErr("Herdr server not reachable at %s; no herdr command run", d.sock)
 		return r
 	}
-	deadline := time.Now().Add(herdrListDeadline)
+	deadline := clockNow().Add(herdrListDeadline)
 	r.observed, r.err = observe(d.db, d.sock, nil, deadline)
 	if r.err != nil {
 		d.log.logf("observe failed: %v", r.err)
@@ -1138,7 +1138,7 @@ func (d *daemon) run(parent context.Context, sock string) string {
 			}
 			continue
 		case <-usageFlush:
-			if err := d.usage.flush(d.db, time.Now()); err != nil {
+			if err := d.usage.flush(d.db, clockNow()); err != nil {
 				d.log.logf("dashboard usage flush failed: %v", err)
 			}
 			continue
@@ -1158,7 +1158,7 @@ func (d *daemon) run(parent context.Context, sock string) string {
 		case <-dirty: // this pass covers every wake so far
 		default:
 		}
-		last = time.Now()
+		last = clockNow()
 		if n := d.attachments.Load(); d.stay && n != attachment {
 			// A restarted Herdr may have lost all metadata, even if ledger state stayed the same.
 			attachment = n
@@ -1324,10 +1324,10 @@ func (d *daemon) stream(cx context.Context, conn net.Conn, mark func(), attach b
 					// makes the next pass recover whatever was lost. A second
 					// error within streamErrorGap takes the backoff path, so a
 					// server that errors on every stream cannot spin the loop.
-					if time.Since(d.lastStreamErr) >= streamErrorGap {
+					if clockNow().Sub(d.lastStreamErr) >= streamErrorGap {
 						resubbed.Store(true)
 					}
-					d.lastStreamErr = time.Now()
+					d.lastStreamErr = clockNow()
 					return acked, true
 				}
 				line, long = line[:0], false

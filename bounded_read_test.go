@@ -89,6 +89,7 @@ func eventLogIDs(h *harness, args ...string) []int64 {
 }
 
 func TestBoundedLogPaging(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("lane", "implementer", top)
@@ -230,6 +231,7 @@ func TestBoundedLogPaging(t *testing.T) {
 }
 
 func TestBoundedLogForwardCapDoesNotSkip(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("lane", "implementer", top)
@@ -277,6 +279,7 @@ func TestBoundedLogForwardCapDoesNotSkip(t *testing.T) {
 }
 
 func TestBoundedLogLaunchRows(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("lane", "implementer", top)
@@ -339,6 +342,7 @@ func TestBoundedLogLaunchRows(t *testing.T) {
 }
 
 func TestBoundedLogCap150(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	const lanes = 150
@@ -420,6 +424,7 @@ func TestBoundedLogCap150(t *testing.T) {
 }
 
 func TestBoundedLogCapReportsDroppedLaunchOnly(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	const lanes = 150
@@ -466,6 +471,7 @@ func uncappedLog(t *testing.T, h *harness, top int64) string {
 }
 
 func TestBoundedLogCapKeepsClosedRowsWhenEventsFit(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	text := strings.Repeat("x", 1500)
@@ -500,6 +506,7 @@ func TestBoundedLogCapKeepsClosedRowsWhenEventsFit(t *testing.T) {
 }
 
 func TestBoundedStatusTreeTrailer(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	a := h.newTask("a", "implementer", top)
@@ -537,6 +544,7 @@ func TestBoundedStatusTreeTrailer(t *testing.T) {
 }
 
 func TestBoundedStatusOpenRowsOverCap(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	text := strings.Repeat("n", 400)
@@ -557,6 +565,7 @@ func TestBoundedStatusOpenRowsOverCap(t *testing.T) {
 }
 
 func TestBoundedAsksBudget(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("lane", "implementer", top)
@@ -668,6 +677,7 @@ func TestBoundedAsksBudget(t *testing.T) {
 }
 
 func TestBoundedBudgetSubset(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("lane", "implementer", top)

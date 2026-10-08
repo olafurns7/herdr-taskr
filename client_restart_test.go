@@ -39,7 +39,7 @@ func (r *restartRig) runClient(args ...string) (int, map[string]any) {
 			return r.env[k]
 		}
 	}
-	code := cliMain(append([]string{"--json"}, args...), env, &out, &errb)
+	code := contractCLIMain(r.h.t, append([]string{"--json"}, args...), env, &out, &errb)
 	lines := bytes.Split(bytes.TrimSpace(out.Bytes()), []byte("\n"))
 	var result map[string]any
 	if len(lines) == 0 || json.Unmarshal(lines[len(lines)-1], &result) != nil {
@@ -49,6 +49,7 @@ func (r *restartRig) runClient(args ...string) (int, map[string]any) {
 }
 
 func TestClientDaemonRestart(t *testing.T) {
+	contractGuard(t)
 	fakeTailnetHooks(t)
 	r := newRestartRig(t)
 	r.clientMode(t)
@@ -100,6 +101,7 @@ func TestClientDaemonRestart(t *testing.T) {
 }
 
 func TestClientDaemonRestartRefusesUnverifiedRecord(t *testing.T) {
+	contractGuard(t)
 	fakeTailnetHooks(t)
 	for _, tc := range []struct {
 		name   string
@@ -166,6 +168,7 @@ func writeClientDaemonRecordOrFail(t *testing.T, path string, rec clientDaemonRe
 }
 
 func TestClientDaemonStatusUsesIdentityRecord(t *testing.T) {
+	contractGuard(t)
 	r := newRestartRig(t)
 	r.clientMode(t)
 	path := filepath.Join(filepath.Dir(r.lock), clientDaemonRecordFile)
@@ -181,6 +184,7 @@ func TestClientDaemonStatusUsesIdentityRecord(t *testing.T) {
 }
 
 func TestClientDaemonIdentityFailureDoesNotStopDaemon(t *testing.T) {
+	contractGuard(t)
 	fakeTailnetHooks(t)
 	r := newRestartRig(t)
 	r.clientMode(t)

@@ -3,6 +3,7 @@ package main
 import "testing"
 
 func TestValidateNameAndHerdrIDShapes(t *testing.T) {
+	contractGuard(t)
 	for _, name := range []string{"a", "worker-1", "sub_orch"} {
 		if err := validateName(name, "name"); err != nil {
 			t.Errorf("validateName(%q): %v", name, err)

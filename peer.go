@@ -225,7 +225,7 @@ func (p *pusher) run(cx context.Context) {
 			return
 		}
 	}
-	force, due := true, time.Now()
+	force, due := true, clockNow()
 	for {
 		if cx.Err() != nil {
 			return
@@ -255,16 +255,16 @@ func (p *pusher) run(cx context.Context) {
 		// or just-woken machine, a poke), a push that is due is forced.
 		// Otherwise an unchanged state skips it, due stays in the past, and
 		// the loop spins on skipped pushes without ever pushing or waiting.
-		if !time.Now().Before(due) {
+		if !clockNow().Before(due) {
 			force = true
 		}
 		sent := p.push(force)
 		force = false
 		switch {
 		case p.fails > 0:
-			due = time.Now().Add(p.backoff())
+			due = clockNow().Add(p.backoff())
 		case sent:
-			due = time.Now().Add(peerPushEvery)
+			due = clockNow().Add(peerPushEvery)
 		}
 	}
 }
@@ -320,7 +320,7 @@ func digest(s *dashState) [32]byte {
 // push sends one snapshot unless nothing changed and force is false. It
 // returns whether it sent one that the hub took.
 func (p *pusher) push(force bool) bool {
-	at := time.Now()
+	at := clockNow()
 	s, err := readState(context.Background(), p.db, at)
 	if err != nil {
 		p.failed(fmt.Errorf("reading state: %v", err))

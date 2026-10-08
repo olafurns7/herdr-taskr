@@ -38,7 +38,7 @@ func spoolDeadURL(t *testing.T, r *twoHost) string {
 func spoolRunCLI(r *twoHost, host, home string, env map[string]string, args ...string) (int, string, string) {
 	r.caller.Store(host)
 	var out, errb bytes.Buffer
-	code := cliMain(args, clientEnv(home, env), &out, &errb)
+	code := contractCLIMain(r.t, args, clientEnv(home, env), &out, &errb)
 	return code, out.String(), errb.String()
 }
 
@@ -84,6 +84,7 @@ func spoolOutputMap(out string) map[string]any {
 }
 
 func TestSpoolRetryWindow(t *testing.T) {
+	contractGuard(t)
 	if got := rpcRetryWindow([]string{"got", "1"}); got != 3*time.Second {
 		t.Fatalf("record retry window = %s, want 3s", got)
 	}
@@ -93,6 +94,7 @@ func TestSpoolRetryWindow(t *testing.T) {
 }
 
 func TestSpoolRecordCommandsQueueAfterTransportWindow(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	deadURL := spoolDeadURL(t, r)
@@ -163,6 +165,7 @@ func TestSpoolRecordCommandsQueueAfterTransportWindow(t *testing.T) {
 }
 
 func TestSpoolHookQueuesSilently(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	deadURL := spoolDeadURL(t, r)
@@ -182,6 +185,7 @@ func TestSpoolHookQueuesSilently(t *testing.T) {
 }
 
 func TestSpoolBadFilesQuarantineAndNotify(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top, task, launch := spoolMakeWorker(t, r, host, 22)
@@ -280,6 +284,7 @@ func TestSpoolBadFilesQuarantineAndNotify(t *testing.T) {
 }
 
 func TestSpoolStallAgeUsesClientClock(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	oldClock := spoolNow
@@ -329,6 +334,7 @@ func TestSpoolStallAgeUsesClientClock(t *testing.T) {
 }
 
 func TestSpoolQueuedBehindSaysWhy(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(exitOK, host, nil, "new", "root-queue-reason", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -352,6 +358,7 @@ func TestSpoolQueuedBehindSaysWhy(t *testing.T) {
 }
 
 func TestSpoolRecordQueuesWhileSenderOwnsSendLock(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-send-lock", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -378,6 +385,7 @@ func TestSpoolRecordQueuesWhileSenderOwnsSendLock(t *testing.T) {
 }
 
 func TestSpoolHookQueueLockPollingAndDirectFallback(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top, task, launch := spoolMakeWorker(t, r, host, 23)
@@ -436,6 +444,7 @@ func TestSpoolHookQueueLockPollingAndDirectFallback(t *testing.T) {
 }
 
 func TestSpoolConcurrentSendersUseSendLock(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-two-senders", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -485,6 +494,7 @@ func TestSpoolConcurrentSendersUseSendLock(t *testing.T) {
 }
 
 func TestSpoolHookNeverAnswerProcessHelper(t *testing.T) {
+	contractGuard(t)
 	if os.Getenv("TASKR_SPOOL_HOOK_HELPER") != "1" {
 		return
 	}
@@ -499,13 +509,14 @@ func TestSpoolHookNeverAnswerProcessHelper(t *testing.T) {
 		t.Fatalf("hook helper RPC client: %v", err)
 	}
 	var out, errb bytes.Buffer
-	code := cliMain([]string{"hook", "claude", "Stop"}, os.Getenv, &out, &errb)
+	code := contractCLIMain(t, []string{"hook", "claude", "Stop"}, os.Getenv, &out, &errb)
 	if code != exitOK || out.Len() != 0 || errb.Len() != 0 {
 		t.Fatalf("hook helper = %d %q %q", code, out.String(), errb.String())
 	}
 }
 
 func TestSpoolHookTimeoutWritesBeforeProcessExit(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	_, task, launch := spoolMakeWorker(t, r, host, 24)
@@ -557,6 +568,7 @@ func TestSpoolHookTimeoutWritesBeforeProcessExit(t *testing.T) {
 }
 
 func TestSpoolHookLargeQueueWritesBeforeExit(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	_, task, launch := spoolMakeWorker(t, r, host, 25)
@@ -625,6 +637,7 @@ func TestSpoolHookLargeQueueWritesBeforeExit(t *testing.T) {
 }
 
 func TestSpoolOutcomeUnknownKeepsQueue(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-still-running", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -652,6 +665,7 @@ func TestSpoolOutcomeUnknownKeepsQueue(t *testing.T) {
 }
 
 func TestSpoolOutcomeUnknownStaysStuckThenRefuses(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-stuck-expire", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -719,6 +733,7 @@ func TestSpoolOutcomeUnknownStaysStuckThenRefuses(t *testing.T) {
 }
 
 func TestSpoolOutcomeUnknownStoredResultClearsQueue(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-stuck-resolved", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -757,6 +772,7 @@ func TestSpoolOutcomeUnknownStoredResultClearsQueue(t *testing.T) {
 }
 
 func TestSpoolForbiddenHeadStaysQueuedAndNotifiesOnce(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-forbidden-stuck", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -834,6 +850,7 @@ func TestSpoolForbiddenHeadStaysQueuedAndNotifiesOnce(t *testing.T) {
 }
 
 func TestSpoolTransportFailureNeverStartsStuckClock(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-transport-clock", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -863,6 +880,7 @@ func TestSpoolTransportFailureNeverStartsStuckClock(t *testing.T) {
 }
 
 func TestSpoolNonRecordAndServerRefusalDoNotQueue(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	deadURL := spoolDeadURL(t, r)
@@ -890,6 +908,7 @@ func TestSpoolNonRecordAndServerRefusalDoNotQueue(t *testing.T) {
 }
 
 func TestSpoolQueuedOrderAndManualSend(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	deadURL := spoolDeadURL(t, r)
@@ -942,6 +961,7 @@ func TestSpoolQueuedOrderAndManualSend(t *testing.T) {
 }
 
 func TestSpoolAppliedRequestIsNotAppliedTwice(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-applied", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -975,6 +995,7 @@ func TestSpoolAppliedRequestIsNotAppliedTwice(t *testing.T) {
 }
 
 func TestSpoolTransportErrorStopsInSequence(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-middle", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -1031,6 +1052,7 @@ func TestSpoolTransportErrorStopsInSequence(t *testing.T) {
 }
 
 func TestSpoolRefusalMovesOnAndNotifiesOnce(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-refusal", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -1069,6 +1091,7 @@ func TestSpoolRefusalMovesOnAndNotifiesOnce(t *testing.T) {
 }
 
 func TestSpoolReadyReportCapturedAtQueueTime(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	deadURL := spoolDeadURL(t, r)
@@ -1112,6 +1135,7 @@ func TestSpoolReadyReportCapturedAtQueueTime(t *testing.T) {
 }
 
 func TestSpoolDoneUploadsServerRequestedReport(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	deadURL := spoolDeadURL(t, r)
@@ -1151,6 +1175,7 @@ func TestSpoolDoneUploadsServerRequestedReport(t *testing.T) {
 }
 
 func TestSpoolUploadFailureKeepsReady(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	deadURL := spoolDeadURL(t, r)
@@ -1213,6 +1238,7 @@ func TestSpoolUploadFailureKeepsReady(t *testing.T) {
 }
 
 func TestSpoolUploadRefusalDropsAndContinues(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	deadURL := spoolDeadURL(t, r)
@@ -1282,6 +1308,7 @@ func TestSpoolUploadRefusalDropsAndContinues(t *testing.T) {
 }
 
 func TestSpoolUpload429KeepsThenSendsInOrder(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	deadURL := spoolDeadURL(t, r)
@@ -1362,6 +1389,7 @@ func TestSpoolUpload429KeepsThenSendsInOrder(t *testing.T) {
 }
 
 func TestSpoolQueueWriteFailurePrintsRetry(t *testing.T) {
+	contractGuard(t)
 	if os.Geteuid() == 0 {
 		t.Skip("root can write to read-only directories")
 	}
@@ -1386,6 +1414,7 @@ func TestSpoolQueueWriteFailurePrintsRetry(t *testing.T) {
 }
 
 func TestSpoolHTTPProxyErrorsKeepOrRefuse(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-proxy-errors", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -1438,6 +1467,7 @@ func TestSpoolHTTPProxyErrorsKeepOrRefuse(t *testing.T) {
 }
 
 func TestSpoolHTTPErrorUsesJSONErrorAndLimitsBody(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	var requests atomic.Int32
@@ -1470,6 +1500,7 @@ func TestSpoolHTTPErrorUsesJSONErrorAndLimitsBody(t *testing.T) {
 }
 
 func TestSpoolRemoveBadFileByName(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	home := r.clientHome(r.url)
@@ -1497,6 +1528,7 @@ func TestSpoolRemoveBadFileByName(t *testing.T) {
 }
 
 func TestSpoolProxyFiveXXQueuesRecordOnly(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-proxy-five-xx", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -1520,6 +1552,7 @@ func TestSpoolProxyFiveXXQueuesRecordOnly(t *testing.T) {
 }
 
 func TestSpoolOlderServerIgnoresQueuedAt(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-old-server", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -1572,6 +1605,7 @@ func TestSpoolOlderServerIgnoresQueuedAt(t *testing.T) {
 }
 
 func TestSpoolQueuedAtCoversEveryRecordEventPath(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	queuedAt := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
@@ -1647,6 +1681,7 @@ func TestSpoolQueuedAtCoversEveryRecordEventPath(t *testing.T) {
 }
 
 func TestSpoolQueuedDoneTimeAndOrdinaryDone(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	_, task, launch := spoolMakeWorker(t, r, host, 70)
@@ -1688,6 +1723,7 @@ func TestSpoolQueuedDoneTimeAndOrdinaryDone(t *testing.T) {
 }
 
 func TestSpoolOldStallExpiresAndOldSessionStartRecords(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	_, task, launch := spoolMakeWorker(t, r, host, 80)
@@ -1727,6 +1763,7 @@ func TestSpoolOldStallExpiresAndOldSessionStartRecords(t *testing.T) {
 }
 
 func TestSpoolCompactQueuedContract(t *testing.T) {
+	contractGuard(t)
 	key := "queued-contract-key-1"
 	var compact bytes.Buffer
 	(&ctx{cmd: "done", out: &compact}).emitCompact(map[string]any{"queued": true, "request_key": key})
@@ -1741,6 +1778,7 @@ func TestSpoolCompactQueuedContract(t *testing.T) {
 }
 
 func TestSpoolListRemoveAndStatusStayLocal(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-local", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -1797,7 +1835,7 @@ func TestSpoolListRemoveAndStatusStayLocal(t *testing.T) {
 		t.Fatalf("local ledger host created spool path: %v", err)
 	}
 	var localOut, localErr bytes.Buffer
-	if code := cliMain([]string{"spool", "ls"}, h.getenv(nil), &localOut, &localErr); code != exitOK {
+	if code := contractCLIMain(t, []string{"spool", "ls"}, h.getenv(nil), &localOut, &localErr); code != exitOK {
 		t.Fatalf("local spool ls = %d %q", code, localErr.String())
 	}
 	if _, err := os.Stat(localSpool); !os.IsNotExist(err) {
@@ -1806,6 +1844,7 @@ func TestSpoolListRemoveAndStatusStayLocal(t *testing.T) {
 }
 
 func TestSpoolFileBound(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-bound", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -1833,6 +1872,7 @@ func TestSpoolFileBound(t *testing.T) {
 }
 
 func TestSpoolQueueProcessHelper(t *testing.T) {
+	contractGuard(t)
 	if os.Getenv("TASKR_SPOOL_HELPER") != "1" {
 		return
 	}
@@ -1855,6 +1895,7 @@ func TestSpoolQueueProcessHelper(t *testing.T) {
 }
 
 func TestSpoolClientDaemonSendsAfterSuccessfulObserve(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	top := num(r.want(0, host, nil, "new", "root-daemon", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -1876,6 +1917,7 @@ func TestSpoolClientDaemonSendsAfterSuccessfulObserve(t *testing.T) {
 }
 
 func TestSpoolConcurrentProcessesAllocateOrderedSequences(t *testing.T) {
+	contractGuard(t)
 	dir := t.TempDir()
 	gate := filepath.Join(dir, "go")
 	keys := []string{"process-record-key-1", "process-record-key-2"}

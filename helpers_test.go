@@ -20,6 +20,19 @@ func TestMain(m *testing.M) {
 	dbPollInterval = 50 * time.Millisecond
 	dashboardDefaultAddr = "127.0.0.1:0" // never the owner's 7788
 	tailscaleFallbacks = nil             // never the real tailscale
+	if os.Getenv("TASKR_CONTRACT_ORACLE") == "1" {
+		if len(os.Args) == 2 && os.Args[1] == "--contract-migrate" {
+			db, err := openDB(&ctx{getenv: os.Getenv, out: os.Stdout, errw: os.Stderr})
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(exitDB)
+			}
+			db.Close()
+			os.Exit(0)
+		}
+		os.Exit(cliMain(os.Args[1:], os.Getenv, os.Stdout, os.Stderr))
+	}
+	contractInit()
 	// These subprocess probes already receive scratch state (or create a harness).
 	// Preserve their deliberately restricted launch environment and PATH.
 	if os.Getenv("TASKR_HOOK_LOCK_CHILD") == "1" || os.Getenv("TASKR_RETRY_SIGNAL_CHILD") == "1" ||
@@ -53,6 +66,7 @@ func TestMain(m *testing.M) {
 	os.Setenv("HERDR_SOCKET_PATH", filepath.Join(home, "absent.sock"))
 	os.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	code := m.Run()
+	contractSummary()
 	if buildDir != "" {
 		os.RemoveAll(buildDir)
 	}
@@ -217,7 +231,7 @@ func (h *harness) getenv(env map[string]string) func(string) string {
 func (h *harness) run(env map[string]string, args ...string) (int, []map[string]any) {
 	h.t.Helper()
 	var out, errb bytes.Buffer
-	code := run(append([]string{"--json"}, args...), h.getenv(env), &out, &errb)
+	code := contractRun(h.t, append([]string{"--json"}, args...), h.getenv(env), &out, &errb)
 	h.mu.Lock()
 	h.stderr = errb.String()
 	h.mu.Unlock()

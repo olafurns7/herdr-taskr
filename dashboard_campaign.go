@@ -356,7 +356,7 @@ func readCampaignDetail(q queryer, root int64, page int, unpaged, allLanes bool)
 		}
 	}
 	out["goal"], out["plan"], out["documents"], out["decisions"], out["handovers"], out["lanes"] = goal, plan, named, ds, handovers, lanes
-	if out["notes"], err = campaignNotes(q, root, time.Now()); err != nil {
+	if out["notes"], err = campaignNotes(q, root, clockNow()); err != nil {
 		return nil, err
 	}
 	return out, nil

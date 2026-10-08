@@ -16,6 +16,7 @@ const (
 // A host-a lane's owner ask marks the host-a pane through the client daemon,
 // never the server's pane of the same id; answering clears it.
 func TestRelayOwnerAskToken(t *testing.T) {
+	contractGuard(t)
 	r, client, h := clientCampaignHarness(t)
 	_, _, top, lane, launch := r.lanes()
 	r.agents(r.hostADir, sharedPane+"/working/1")
@@ -53,6 +54,7 @@ func TestRelayOwnerAskToken(t *testing.T) {
 // An older server sends no owner_ask_tokens: the client neither lists nor
 // clears. An empty map from a current server clears the stale token.
 func TestRelayOwnerAskTokenOlderServer(t *testing.T) {
+	contractGuard(t)
 	for _, older := range []bool{true, false} {
 		r, client, h := clientCampaignHarness(t)
 		ownerAskPanes(client, map[string]string{sharedPane: "1"})

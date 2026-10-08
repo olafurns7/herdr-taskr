@@ -7,6 +7,7 @@ import (
 )
 
 func TestAsksHideOrphans(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("open-root", "orchestrator", 0)
 	lane := h.newTask("closed-asker", "implementer", root)
@@ -91,6 +92,7 @@ func TestAsksHideOrphans(t *testing.T) {
 }
 
 func TestCloseOrphanOwnerAsks(t *testing.T) {
+	contractGuard(t)
 	for _, target := range []string{"lane", "root", "none"} {
 		for _, jsonMode := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/json=%v", target, jsonMode), func(t *testing.T) {
@@ -165,6 +167,7 @@ func TestCloseOrphanOwnerAsks(t *testing.T) {
 }
 
 func TestCloseOrphanWarningRPC(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	_, lane, launch := spoolMakeWorker(t, r, "host-a", 1)
 	ask := num(r.want(exitOK, "host-a", as(lane, launch), "ask", "owner question", "--owner"), "ask_id")
@@ -180,6 +183,7 @@ func TestCloseOrphanWarningRPC(t *testing.T) {
 }
 
 func TestCloseMidLevelKeepsDescendantAsks(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	sub := h.newTask("sub", "sub-orchestrator", root)

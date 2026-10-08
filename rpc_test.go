@@ -28,6 +28,7 @@ func stateFiles(t *testing.T, home string) []string {
 }
 
 func TestRPCModes(t *testing.T) {
+	contractGuard(t)
 	setVar(t, &rpcRetryWindow, func([]string) time.Duration { return 120 * time.Millisecond })
 	fakeTailnetHooks(t) // [::1] counts as a tailnet address
 	h := newHarness(t)
@@ -46,7 +47,7 @@ func TestRPCModes(t *testing.T) {
 		}
 		return ""
 	}
-	if code := cliMain([]string{"--json", "new", "local", "--role", "gate"}, env, &out, &errb); code != 0 {
+	if code := contractCLIMain(t, []string{"--json", "new", "local", "--role", "gate"}, env, &out, &errb); code != 0 {
 		t.Fatalf("TASKR_DB with server.url = %d %s", code, out.String())
 	}
 
@@ -57,7 +58,7 @@ func TestRPCModes(t *testing.T) {
 		{"note", "x", "--as", "1"}, {"bogus"}, {}} {
 		out.Reset()
 		errb.Reset()
-		code := cliMain(args, clientEnv(home, nil), &out, &errb)
+		code := contractCLIMain(t, args, clientEnv(home, nil), &out, &errb)
 		switch {
 		case len(args) == 0 || args[0] == "bogus":
 			if code != exitUsage {
@@ -88,7 +89,7 @@ func TestRPCModes(t *testing.T) {
 	os.MkdirAll(filepath.Join(bad, ".local", "state", "taskr"), 0o755)
 	os.WriteFile(filepath.Join(bad, ".local", "state", "taskr", serverURLFile), []byte("http://192.168.1.5:7788\n"), 0o644)
 	out.Reset()
-	if code := cliMain([]string{"status"}, clientEnv(bad, nil), &out, &errb); code != exitUsage || !strings.Contains(out.String(), "server.url refused") {
+	if code := contractCLIMain(t, []string{"status"}, clientEnv(bad, nil), &out, &errb); code != exitUsage || !strings.Contains(out.String(), "server.url refused") {
 		t.Fatalf("non-tailnet server.url = %d %s", code, out.String())
 	}
 
@@ -97,7 +98,7 @@ func TestRPCModes(t *testing.T) {
 	os.MkdirAll(filepath.Join(hubOnly, ".local", "state", "taskr"), 0o755)
 	os.WriteFile(filepath.Join(hubOnly, ".local", "state", "taskr", hubURLFile), []byte(dead+"\n"), 0o644)
 	out.Reset()
-	if code := cliMain([]string{"--json", "new", "local", "--role", "gate"}, clientEnv(hubOnly, nil), &out, &errb); code != 0 {
+	if code := contractCLIMain(t, []string{"--json", "new", "local", "--role", "gate"}, clientEnv(hubOnly, nil), &out, &errb); code != 0 {
 		t.Fatalf("hub.url only = %d %s", code, out.String())
 	}
 	if _, err := os.Stat(filepath.Join(hubOnly, ".local", "state", "taskr", "taskr.db")); err != nil {
@@ -108,6 +109,7 @@ func TestRPCModes(t *testing.T) {
 }
 
 func TestRPCBudget(t *testing.T) {
+	contractGuard(t)
 	for _, c := range []struct {
 		argv []string
 		want time.Duration
@@ -130,6 +132,7 @@ func TestRPCBudget(t *testing.T) {
 }
 
 func TestRPCRepeatedFlagTokens(t *testing.T) {
+	contractGuard(t)
 	for name := range rpcScalarFlags {
 		args := []string{"--" + name}
 		if !rpcBoolFlags[name] {
@@ -175,6 +178,7 @@ func dumpTable(t *testing.T, db *sql.DB, table string, cols string) []string {
 }
 
 func TestRPCMigration(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	// A v0.9.1 ledger with rows, written through the literal 8715071 schema.
 	db, err := sql.Open("sqlite", "file:"+h.db+"?_pragma=foreign_keys(1)")

@@ -46,9 +46,9 @@ func cutRetryReply(w http.ResponseWriter, status ...int) {
 	buf.Flush()
 }
 
-func retryCLI(home string, args ...string) (int, string, string) {
+func retryCLI(t *testing.T, home string, args ...string) (int, string, string) {
 	var out, errb bytes.Buffer
-	code := cliMain(args, clientEnv(home, nil), &out, &errb)
+	code := contractCLIMain(t, args, clientEnv(home, nil), &out, &errb)
 	return code, out.String(), errb.String()
 }
 
@@ -68,6 +68,7 @@ func checkRetryAnnounce(t *testing.T, stderr, reason, retry string) {
 }
 
 func TestRetryWaitServerReturns(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	top := num(r.want(0, "host-a", nil, "new", "top", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
 	w := num(r.want(0, "host-a", nil, "new", "worker", "--role", "implementer", "--parent", id(top), "--cwd", t.TempDir()), "task_id")
@@ -91,7 +92,7 @@ func TestRetryWaitServerReturns(t *testing.T) {
 	// The event is written while the retry endpoint is down.
 	e := num(r.want(0, "host-a", as(w, l), "ready", "during outage"), "event_id")
 	time.AfterFunc(200*time.Millisecond, func() { close(started) })
-	code, out, stderr := retryCLI(home, "--json", "wait", "--as", id(top), "--timeout", "20000")
+	code, out, stderr := retryCLI(t, home, "--json", "wait", "--as", id(top), "--timeout", "20000")
 	if code != 0 || num(lastJSON(out)["event"].(map[string]any), "id") != e ||
 		strings.Count(stderr, "retrying until") != 1 {
 		t.Fatalf("wait after outage = %d %s %s", code, out, stderr)
@@ -102,6 +103,7 @@ func TestRetryWaitServerReturns(t *testing.T) {
 }
 
 func TestRetryWriteLostReply(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	top := num(r.want(0, "host-a", nil, "new", "top", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
 	var attempts atomic.Int32
@@ -130,7 +132,7 @@ func TestRetryWriteLostReply(t *testing.T) {
 		r.d.ServeHTTP(w, q)
 	})
 	go srv.Serve(ln)
-	code, out, stderr := retryCLI(r.clientHome(url), "--json", "note", "once", "--as", id(top))
+	code, out, stderr := retryCLI(t, r.clientHome(url), "--json", "note", "once", "--as", id(top))
 	mu.Lock()
 	defer mu.Unlock()
 	if code != 0 || len(keys) != 2 || keys[0] != keys[1] || out != stored ||
@@ -141,6 +143,7 @@ func TestRetryWriteLostReply(t *testing.T) {
 }
 
 func TestRetryStillRunning(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	w := r.promptTarget()
 	started, release := make(chan struct{}), make(chan struct{})
@@ -177,6 +180,7 @@ func TestRetryStillRunning(t *testing.T) {
 }
 
 func TestRetryDeadline(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	setVar(t, &rpcRetryWindow, func([]string) time.Duration { return 120 * time.Millisecond })
 	dead := r.clientHome("http://[::1]:1")
@@ -185,7 +189,7 @@ func TestRetryDeadline(t *testing.T) {
 		{"--json", "--request-key", "deadline-retry-1", "note", "once", "--as", "1"},
 	} {
 		start := time.Now()
-		code, out, stderr := retryCLI(dead, args...)
+		code, out, stderr := retryCLI(t, dead, args...)
 		if args[1] == "wait" {
 			if code != exitHerdr || time.Since(start) > 600*time.Millisecond || lastJSON(out)["kind"] != "transport" ||
 				lastJSON(out)["unreachable"] != nil || !strings.Contains(stderr, "retry with:") || strings.Count(stderr, "retrying until") != 1 {
@@ -202,6 +206,7 @@ func TestRetryDeadline(t *testing.T) {
 }
 
 func TestRetrySignal(t *testing.T) {
+	contractGuard(t)
 	if os.Getenv("TASKR_RETRY_SIGNAL_CHILD") == "1" {
 		code := exitOK
 		t.Cleanup(func() { os.Exit(code) }) // Registered first, so scratch cleanup runs before exit.
@@ -223,7 +228,7 @@ func TestRetrySignal(t *testing.T) {
 			go srv.Serve(ln)
 			home = r.clientHome(url)
 		}
-		code = cliMain([]string{"--request-key", "signal-retry-1", "note", "once", "--as", "1"},
+		code = contractCLIMain(t, []string{"--request-key", "signal-retry-1", "note", "once", "--as", "1"},
 			clientEnv(home, nil), os.Stdout, os.Stderr)
 		return
 	}
@@ -273,6 +278,7 @@ func TestRetrySignal(t *testing.T) {
 }
 
 func TestSpoolAttemptHonorsRetryWindow(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	setVar(t, &rpcRetryWindow, func([]string) time.Duration { return 120 * time.Millisecond })
 	top := num(r.want(0, "host-a", nil, "new", "top", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
@@ -287,7 +293,7 @@ func TestSpoolAttemptHonorsRetryWindow(t *testing.T) {
 	go srv.Serve(ln)
 	start := time.Now()
 	home := r.clientHome(url)
-	code, out, stderr := retryCLI(home, "--json", "note", "after window", "--as", id(top))
+	code, out, stderr := retryCLI(t, home, "--json", "note", "after window", "--as", id(top))
 	if code != exitOK || time.Since(start) > 350*time.Millisecond || attempts.Load() != 1 ||
 		lastJSON(out)["queued"] != true || stderr != "taskr: server unreachable; queued (1 waiting)\n" ||
 		countSpoolFiles(filepath.Join(spoolStateDir(home), spoolDirName, spoolQueueDir)) != 1 {
@@ -301,6 +307,7 @@ func TestSpoolAttemptHonorsRetryWindow(t *testing.T) {
 }
 
 func TestRetryWaitLostReplyTimeout(t *testing.T) {
+	contractGuard(t)
 	for _, format := range []string{"compact", "json", "command-json"} {
 		t.Run(format, func(t *testing.T) {
 			r := newTwoHost(t)
@@ -325,7 +332,7 @@ func TestRetryWaitLostReplyTimeout(t *testing.T) {
 				}
 				want = exitTimeout
 			}
-			code, out, stderr := retryCLI(r.clientHome(url), args...)
+			code, out, stderr := retryCLI(t, r.clientHome(url), args...)
 			mu.Lock()
 			defer mu.Unlock()
 			if code != want || len(requests) != 2 || requests[0].RequestKey == requests[1].RequestKey ||
@@ -348,6 +355,7 @@ type retryRoundTripper func(*http.Request) (*http.Response, error)
 func (f retryRoundTripper) RoundTrip(q *http.Request) (*http.Response, error) { return f(q) }
 
 func TestRetryNonRetryable(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct {
 		name   string
 		status int
@@ -367,7 +375,7 @@ func TestRetryNonRetryable(t *testing.T) {
 				io.WriteString(w, tc.body)
 			})
 			go srv.Serve(ln)
-			code, _, stderr := retryCLI(r.clientHome(url), "status")
+			code, _, stderr := retryCLI(t, r.clientHome(url), "status")
 			if code == exitOK || attempts.Load() != 1 || strings.Contains(stderr, "retrying until") {
 				t.Fatalf("non-retryable = %d, attempts %d, %s", code, attempts.Load(), stderr)
 			}
@@ -380,14 +388,14 @@ func TestRetryNonRetryable(t *testing.T) {
 				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{}`)), Header: http.Header{}}, nil
 			})
 		})
-		code, out, stderr := retryCLI(r.homes["host-a"], "status")
+		code, out, stderr := retryCLI(t, r.homes["host-a"], "status")
 		if code != exitHerdr || !strings.Contains(out, "verified server connection") || strings.Contains(stderr, "retrying until") {
 			t.Fatalf("unverified = %d %s %s", code, out, stderr)
 		}
 	})
 	t.Run("usage", func(t *testing.T) {
 		r := newTwoHost(t)
-		code, _, stderr := retryCLI(r.homes["host-a"], "wait", "--timeout", "-1")
+		code, _, stderr := retryCLI(t, r.homes["host-a"], "wait", "--timeout", "-1")
 		if code != exitUsage || strings.Contains(stderr, "retrying until") {
 			t.Fatalf("usage = %d %s", code, stderr)
 		}
@@ -395,11 +403,12 @@ func TestRetryNonRetryable(t *testing.T) {
 }
 
 func TestRetryHookDeadline(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	home := r.clientHome("http://[::1]:1")
 	var out, stderr bytes.Buffer
 	start := time.Now()
-	code := cliMain([]string{"hook", "codex", "Stop", "--session", "retry-hook-session"},
+	code := contractCLIMain(t, []string{"hook", "codex", "Stop", "--session", "retry-hook-session"},
 		clientEnv(home, map[string]string{"TASKR_TASK": "1", "TASKR_LAUNCH": "1"}), &out, &stderr)
 	if code != exitOK || time.Since(start) > hookDeadline+100*time.Millisecond || strings.Contains(stderr.String(), "retrying until") {
 		t.Fatalf("hook = %d %s %s after %v", code, out.String(), stderr.String(), time.Since(start))
@@ -407,6 +416,7 @@ func TestRetryHookDeadline(t *testing.T) {
 }
 
 func TestRetryWindowBudget(t *testing.T) {
+	contractGuard(t)
 	if rpcRetryWindow([]string{"note", "once"}) != 3*time.Second ||
 		rpcRetryWindow([]string{"answer", "1", "yes", "--prompt", "--confirm"}) != 90*time.Second {
 		t.Fatal("retry window does not match command policy")
@@ -414,9 +424,10 @@ func TestRetryWindowBudget(t *testing.T) {
 }
 
 func TestRetryPromptRelayUnchanged(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	start := time.Now()
-	code, out, stderr := retryCLI(r.clientHome("http://[::1]:1"), "--json", "prompt", "1", "--text", "once")
+	code, out, stderr := retryCLI(t, r.clientHome("http://[::1]:1"), "--json", "prompt", "1", "--text", "once")
 	if code != exitHerdr || time.Since(start) > time.Second || strings.Contains(stderr, "retrying until") ||
 		!strings.Contains(out, "no attempt is known") || len(r.calls("agent|prompt|")) != 0 {
 		t.Fatalf("prompt relay = %d %s %s after %v", code, out, stderr, time.Since(start))
@@ -424,6 +435,7 @@ func TestRetryPromptRelayUnchanged(t *testing.T) {
 }
 
 func TestRetryRefusalCutOff(t *testing.T) {
+	contractGuard(t)
 	for _, status := range []int{http.StatusForbidden, http.StatusServiceUnavailable} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			r := newTwoHost(t)
@@ -433,7 +445,7 @@ func TestRetryRefusalCutOff(t *testing.T) {
 				cutRetryReply(w, status)
 			})
 			go srv.Serve(ln)
-			code, _, stderr := retryCLI(r.clientHome(url), "status")
+			code, _, stderr := retryCLI(t, r.clientHome(url), "status")
 			if code != exitHerdr || attempts.Load() != 1 || strings.Contains(stderr, "retrying until") {
 				t.Fatalf("cut-off refusal = %d %s, attempts %d", code, stderr, attempts.Load())
 			}
@@ -442,6 +454,7 @@ func TestRetryRefusalCutOff(t *testing.T) {
 }
 
 func TestRetryHealthyWaitTimeout(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	top := num(r.want(0, "host-a", nil, "new", "top", "--role", "orchestrator", "--cwd", t.TempDir()), "task_id")
 	for _, jsonFormat := range []bool{false, true} {
@@ -451,7 +464,7 @@ func TestRetryHealthyWaitTimeout(t *testing.T) {
 			args = append([]string{"--json"}, args...)
 			want = exitTimeout
 		}
-		code, out, stderr := retryCLI(r.homes["host-a"], args...)
+		code, out, stderr := retryCLI(t, r.homes["host-a"], args...)
 		if code != want || stderr != "" {
 			t.Fatalf("healthy timeout = %d %s %s", code, out, stderr)
 		}

@@ -117,6 +117,7 @@ func (r *relay) statusOf(top, task int64) map[string]any {
 }
 
 func TestRelayMachineFilter(t *testing.T) {
+	contractGuard(t)
 	r := newRelay(t)
 	_, sl, mtop, mw, ml := r.lanes()
 	// The server daemon observes its own lane only, although the host-a lane
@@ -190,6 +191,7 @@ func TestRelayMachineFilter(t *testing.T) {
 }
 
 func TestReviewMacOwnerNotification(t *testing.T) {
+	contractGuard(t)
 	r := newRelay(t)
 	_, _, _, mw, ml := r.lanes()
 	r.agents(r.hostADir, sharedPane+"/working/1")
@@ -213,6 +215,7 @@ func TestReviewMacOwnerNotification(t *testing.T) {
 }
 
 func TestRelayPrompt(t *testing.T) {
+	contractGuard(t)
 	r := newRelay(t)
 	sw, _, _, mw, ml := r.lanes()
 	attempts := func(task int64) int {
@@ -282,6 +285,7 @@ func TestRelayPrompt(t *testing.T) {
 }
 
 func TestRelayMachineFlagAndLimit(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	m := r.want(exitUsage, "host-a", nil, "new", "x", "--role", "gate", "--machine", "laptop")
 	if e := fmt.Sprint(m["error"]); !strings.Contains(e, localMachine()) || !strings.Contains(e, "host-a") || strings.Contains(e, "laptop,") {
@@ -304,6 +308,7 @@ func TestRelayMachineFlagAndLimit(t *testing.T) {
 }
 
 func TestRelayDaemonLoop(t *testing.T) {
+	contractGuard(t)
 	r := newRelay(t)
 	setVar(t, &clientObserveEvery, 100*time.Millisecond)
 	_, _, mtop, mw, ml := r.lanes()
@@ -315,7 +320,7 @@ func TestRelayDaemonLoop(t *testing.T) {
 	var out bytes.Buffer
 	done := make(chan int)
 	go func() {
-		done <- cliMain([]string{"--json", "daemon"}, clientEnv(r.homes["host-a"], r.hostA), &out, io.Discard)
+		done <- contractCLIMain(t, []string{"--json", "daemon"}, clientEnv(r.homes["host-a"], r.hostA), &out, io.Discard)
 	}()
 	// The loop subscribes with the server's watch list.
 	for {

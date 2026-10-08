@@ -300,7 +300,7 @@ func (cl *rpcClient) callRetry(c *ctx, argv []string, cwd, key, retry string, en
 	if name == "wait" {
 		window = rpcBudget(argv)
 	}
-	deadline := time.Now().Add(window)
+	deadline := clockNow().Add(window)
 	backoff := time.Second
 	connected, announced := false, false
 	var rep rpcReply
@@ -342,7 +342,7 @@ func (cl *rpcClient) callRetry(c *ctx, argv []string, cwd, key, retry string, en
 				// Keep response slack for the server's normal timeout counts.
 				httpDeadline = httpDeadline.Add(rpcSlack)
 			} else {
-				if attemptDeadline := time.Now().Add(rpcBudget(argv) + rpcSlack); !spoolRecordCommand(argv) && attemptDeadline.After(httpDeadline) {
+				if attemptDeadline := clockNow().Add(rpcBudget(argv) + rpcSlack); !spoolRecordCommand(argv) && attemptDeadline.After(httpDeadline) {
 					httpDeadline = attemptDeadline
 				}
 			}
