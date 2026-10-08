@@ -863,9 +863,10 @@ func TestSpoolNonRecordAndServerRefusalDoNotQueue(t *testing.T) {
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	deadURL := spoolDeadURL(t, r)
-	setVar(t, &rpcRetryWindow, func([]string) time.Duration { return 30 * time.Millisecond })
 	_, task, launch := spoolMakeWorker(t, r, host, 21)
 	home := r.clientHome(deadURL)
+	retryWindow := rpcRetryWindow
+	setVar(t, &rpcRetryWindow, func([]string) time.Duration { return 30 * time.Millisecond })
 	code, _, stderr := spoolRunCLI(r, host, home, as(task, launch), "start")
 	if code != exitHerdr || !strings.Contains(stderr, "retry with:") || !strings.Contains(stderr, "server unreachable") {
 		t.Fatalf("non-record outage = %d %q", code, stderr)
@@ -874,6 +875,7 @@ func TestSpoolNonRecordAndServerRefusalDoNotQueue(t *testing.T) {
 		t.Fatalf("non-record command created spool path: %v", err)
 	}
 
+	rpcRetryWindow = retryWindow
 	live := r.clientHome(r.url)
 	code, out, _ := spoolRunCLI(r, host, live, as(task, launch), "got", "999999999")
 	if code != exitReject || !strings.Contains(out, "x1 6 ") {
