@@ -401,7 +401,7 @@ func watchGlance(c *ctx, every time.Duration) (any, int, error) {
 		}
 		defer closeDB(c, db)
 		fetch = func(context.Context) (*glanceView, error) {
-			v, err := readGlance(db, time.Now())
+			v, err := readGlance(db, clockNow())
 			if v != nil {
 				v.CallerHost = c.machine
 			}
@@ -413,7 +413,7 @@ func watchGlance(c *ctx, every time.Duration) (any, int, error) {
 	if !ok || !term.IsTerminal(int(file.Fd())) || !term.IsTerminal(int(os.Stdin.Fd())) || os.Getenv("TERM") == "dumb" {
 		v, err := fetch(context.Background())
 		if err == nil {
-			_, err = fmt.Fprintln(c.out, strings.Join(renderGlance(v, 80, int(^uint(0)>>1), 0, "", false, time.Now()), "\n"))
+			_, err = fmt.Fprintln(c.out, strings.Join(renderGlance(v, 80, int(^uint(0)>>1), 0, "", false, clockNow()), "\n"))
 		}
 		if err != nil {
 			return nil, 1, &exitErr{1, "watch", err.Error()}
@@ -438,7 +438,7 @@ func watchGlance(c *ctx, every time.Duration) (any, int, error) {
 		}
 		return w, h
 	}
-	if err := runWatch(cx, fetch, os.Stdin, c.out, size, every, time.Now); err != nil {
+	if err := runWatch(cx, fetch, os.Stdin, c.out, size, every, clockNow); err != nil {
 		return nil, 1, &exitErr{1, "watch", err.Error()}
 	}
 	return nil, exitOK, nil

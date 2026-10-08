@@ -120,6 +120,7 @@ func hookStall(t *testing.T, h *harness, attempt int64) map[string]any {
 }
 
 func TestHookFixtureFlowsAndReceipts(t *testing.T) {
+	contractGuard(t)
 	cases := []struct {
 		name, provider, startFile, startEvent, promptFile, promptEvent, stopFile, stopEvent, session, transcript, errorCode string
 	}{
@@ -202,6 +203,7 @@ func TestHookFixtureFlowsAndReceipts(t *testing.T) {
 }
 
 func TestHookSessionAndPaneBinding(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	_, w, l := hookLane(t, h, "claude", "w9:p1")
 	env := hookLaneEnv(w, l, "w9:p1")
@@ -251,6 +253,7 @@ func TestHookSessionAndPaneBinding(t *testing.T) {
 }
 
 func TestHookNoStallAfterDoneFailOrAsk(t *testing.T) {
+	contractGuard(t)
 	for _, outcome := range []string{"done", "fail", "ask"} {
 		t.Run(outcome, func(t *testing.T) {
 			h := newHarness(t)
@@ -275,6 +278,7 @@ func TestHookNoStallAfterDoneFailOrAsk(t *testing.T) {
 }
 
 func TestHookRoleStalls(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct {
 		role       string
 		plainStall int
@@ -312,6 +316,7 @@ func TestHookRoleStalls(t *testing.T) {
 }
 
 func TestHookUncodedStopFailureStalls(t *testing.T) {
+	contractGuard(t)
 	for _, role := range []string{"orchestrator", "sub-orchestrator", "implementer"} {
 		t.Run(role, func(t *testing.T) {
 			h := newHarness(t)
@@ -332,6 +337,7 @@ func TestHookUncodedStopFailureStalls(t *testing.T) {
 }
 
 func TestHookSilentNoopsAndPanic(t *testing.T) {
+	contractGuard(t)
 	stubHookExit(t)
 	h := newHarness(t)
 	_, w, l := hookLane(t, h, "claude", "w9:p1")
@@ -372,7 +378,7 @@ func TestHookSilentNoopsAndPanic(t *testing.T) {
 	wpipe.Write(hookFixture(t, "claude-session-start.json"))
 	wpipe.Close()
 	os.Stdin = r
-	code := run([]string{"hook", "claude", "SessionStart"}, func(k string) string {
+	code := contractRun(t, []string{"hook", "claude", "SessionStart"}, func(k string) string {
 		return map[string]string{"TASKR_DB": path, "TASKR_LAUNCH": id(l), "TASKR_TASK": id(w), "HERDR_ENV": "1", "HERDR_PANE_ID": "w9:p1"}[k]
 	}, &silent, &silent)
 	os.Stdin, _ = old, r.Close()
@@ -385,6 +391,7 @@ func TestHookSilentNoopsAndPanic(t *testing.T) {
 }
 
 func TestHookOlderBinaryShellGuard(t *testing.T) {
+	contractGuard(t)
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "taskr")
 	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho unknown command >&2\nexit 2\n"), 0o755); err != nil {
@@ -399,6 +406,7 @@ func TestHookOlderBinaryShellGuard(t *testing.T) {
 }
 
 func TestHookLockChild(t *testing.T) {
+	contractGuard(t)
 	if os.Getenv("TASKR_HOOK_LOCK_CHILD") != "1" {
 		return
 	}
@@ -417,6 +425,7 @@ func TestHookLockChild(t *testing.T) {
 }
 
 func TestHookDeadlineWithHeldDBLock(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	_, w, l := hookLane(t, h, "claude", "w9:p1")
 	tx, err := h.openDB().Begin()
@@ -459,6 +468,7 @@ func TestHookDeadlineWithHeldDBLock(t *testing.T) {
 }
 
 func TestHookDBBusyTimeout(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	h.openDB().Close()
 	db, err := openHookDB(&ctx{getenv: h.getenv(nil)}, context.Background())
@@ -476,6 +486,7 @@ func TestHookDBBusyTimeout(t *testing.T) {
 }
 
 func TestHookMigrationFromV010(t *testing.T) {
+	contractGuard(t)
 	path := filepath.Join(t.TempDir(), "v0.10.db")
 	legacy := strings.Replace(schemaSQL, "session_ref  text, session_kind text, session_source text, transcript_path text,",
 		"session_ref  text, session_kind text, session_source text,", 1)
@@ -521,6 +532,7 @@ func TestHookMigrationFromV010(t *testing.T) {
 }
 
 func TestHookedLivenessRule(t *testing.T) {
+	contractGuard(t)
 	h, top, w, l := hintFixture(t)
 	env := hookLaneEnv(w, l, "w9:p1")
 	runHookPayload(t, h, env, "claude", "SessionStart", hookFixture(t, "claude-session-start.json"))
@@ -611,6 +623,7 @@ func promptCreatedAt(t *testing.T, h *harness, attempt int64) time.Time {
 }
 
 func TestHookCodexBindingSurvivesWorkerIdentity(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []string{"start", "model-first got", "nested rebind"} {
 		t.Run(tc, func(t *testing.T) {
 			h := newHarness(t)
@@ -647,6 +660,7 @@ func TestHookCodexBindingSurvivesWorkerIdentity(t *testing.T) {
 }
 
 func TestHookCodexRolloutFallback(t *testing.T) {
+	contractGuard(t)
 	user := func(text string) string {
 		return `{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"` + text + `"}]}}`
 	}
@@ -716,6 +730,7 @@ func TestHookCodexRolloutFallback(t *testing.T) {
 // An error turn already reported for one attempt must not stall a re-prompt
 // that Codex has not yet appended to the rollout.
 func TestHookCodexRolloutReprompt(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	w, _, hookEnv, workerEnv, session, path := codexHookLane(t, h, "implementer")
 	a1 := num(h.ok(nil, "prompt", id(w), "--text", "work", "--receipt-timeout", "0"), "attempt_id")
@@ -744,6 +759,7 @@ func TestHookCodexRolloutReprompt(t *testing.T) {
 }
 
 func TestHookClientRPCNormalizedFieldsAndHostCheck(t *testing.T) {
+	contractGuard(t)
 	stubHookExit(t)
 	r := newTwoHost(t)
 	top := r.newTask("top", "orchestrator", 0)
@@ -833,6 +849,7 @@ func TestHookClientRPCNormalizedFieldsAndHostCheck(t *testing.T) {
 }
 
 func TestHookOpenCodeUncodedErrorStalls(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	_, w, l := hookLane(t, h, "opencode", "w9:p1")
 	env := hookLaneEnv(w, l, "w9:p1")
@@ -858,6 +875,7 @@ func TestHookOpenCodeUncodedErrorStalls(t *testing.T) {
 }
 
 func TestHookPiErrorCodes(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct {
 		name, message, want string
 	}{
@@ -882,6 +900,7 @@ func TestHookPiErrorCodes(t *testing.T) {
 }
 
 func TestHookPiUncodedErrorStalls(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	_, w, l := hookLane(t, h, "pi", "w9:p1")
 	env := hookLaneEnv(w, l, "w9:p1")
@@ -907,6 +926,7 @@ func TestHookPiUncodedErrorStalls(t *testing.T) {
 }
 
 func TestPiWorkerIgnoresInheritedCodexThread(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	_, w, l := hookLane(t, h, "pi", "w9:p1")
 	env := hookLaneEnv(w, l, "w9:p1")

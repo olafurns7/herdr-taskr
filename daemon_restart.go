@@ -377,7 +377,7 @@ func daemonRestartWith(c *ctx, lockPath string, socket func() (string, error),
 		out["old_version"] = old.version
 		if old.supervised {
 			// The supervisor owns relaunch. Accept only a verified lock holder with a new OS start time.
-			for end := time.Now().Add(daemonRestartWait); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+			for end := clockNow().Add(daemonRestartWait); clockNow().Before(end); time.Sleep(50 * time.Millisecond) {
 				newPID := lockPID(lockPath)
 				if held, e := lockHeld(lockPath); e != nil || !held || newPID <= 0 {
 					continue
@@ -396,7 +396,7 @@ func daemonRestartWith(c *ctx, lockPath string, socket func() (string, error),
 			out["started_detached"] = true
 		}
 		freed := false
-		for end := time.Now().Add(daemonRestartWait); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		for end := clockNow().Add(daemonRestartWait); clockNow().Before(end); time.Sleep(50 * time.Millisecond) {
 			if held, err := lockHeld(lockPath); err == nil && !held {
 				freed = true
 				break
@@ -429,7 +429,7 @@ func daemonRestartWith(c *ctx, lockPath string, socket func() (string, error),
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 	out["new_pid"], out["socket"] = newPID, sock
-	for end := time.Now().Add(daemonStartWait); ; time.Sleep(50 * time.Millisecond) {
+	for end := clockNow().Add(daemonStartWait); ; time.Sleep(50 * time.Millisecond) {
 		select {
 		case err := <-exited:
 			out["lock_pid"] = lockPID(lockPath)
@@ -444,7 +444,7 @@ func daemonRestartWith(c *ctx, lockPath string, socket func() (string, error),
 			out["version"], out["started_at"] = rec.version, rec.started
 			return out, exitOK, nil
 		}
-		if time.Now().After(end) {
+		if clockNow().After(end) {
 			return out, 0, rejectErr("the new daemon %d did not record itself within %v; check daemon.log", newPID, daemonStartWait)
 		}
 	}

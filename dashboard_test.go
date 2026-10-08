@@ -96,6 +96,7 @@ func getState(t *testing.T, d *dashboard) (string, dashState) {
 }
 
 func TestDashboardStateShape(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	f := seedDashboard(h)
 	raw, s := getState(t, h.dash())
@@ -169,6 +170,7 @@ func TestDashboardStateShape(t *testing.T) {
 // A note holding markup comes back as JSON text, and the page never parses
 // ledger text as HTML.
 func TestDashboardNoHTMLInjection(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	seedDashboard(h)
 	raw, s := getState(t, h.dash())
@@ -203,6 +205,7 @@ const preactRuntimeSHA256 = "92fd7803f886985b4350f416dd4b898d162f7046e3fef97d8d5
 const markdownItSHA256 = "b29e31221c28a486c3b461971437ca350c5ef608c8ea4a4e9fbe31e082b5864b"
 
 func TestWebNoHTMLSinks(t *testing.T) {
+	contractGuard(t)
 	scanned, pinned, parserPinned := 0, 0, 0
 	for _, root := range []string{"web/src", "web/dist"} {
 		err := filepath.WalkDir(root, func(path string, e os.DirEntry, err error) error {
@@ -276,6 +279,7 @@ func TestWebNoHTMLSinks(t *testing.T) {
 }
 
 func TestDashboardPage(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	d := h.dash()
 	w, _ := serve(d, req("GET", "/", ""))
@@ -339,6 +343,7 @@ func ownerAnswers(t *testing.T, h *harness) []map[string]any {
 // Owner asks are answered with the CLI, in the orchestrator's pane: no via,
 // no owner_answer notice.
 func TestCLIAnswerUnchanged(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	f := seedDashboard(h)
 	out := h.ok(nil, "answer", id(f.workerAsk), "from the CLI")
@@ -358,6 +363,7 @@ func TestCLIAnswerUnchanged(t *testing.T) {
 // The dashboard is read-only: no route writes, however the request looks,
 // and Host is still checked before anything is served.
 func TestDashboardReadOnly(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	f := seedDashboard(h)
 	d := h.dash()
@@ -404,6 +410,7 @@ func TestDashboardReadOnly(t *testing.T) {
 // button in the app's source or its built page, and no call to a write
 // route or token header in the built app.
 func TestPageHasNoAnswerControls(t *testing.T) {
+	contractGuard(t)
 	// Local navigation, search, filters and details are read-only controls.
 	// An answer form/editor or a write-capable request must never ship.
 	tags := regexp.MustCompile(`<(form|textarea)\b`)
@@ -456,6 +463,7 @@ func TestPageHasNoAnswerControls(t *testing.T) {
 }
 
 func TestDashboardAddr(t *testing.T) {
+	contractGuard(t)
 	dir := t.TempDir()
 	write := func(s string) {
 		if err := os.WriteFile(filepath.Join(dir, dashboardAddrFile), []byte(s), 0o644); err != nil {
@@ -519,6 +527,7 @@ func dashLines(log string) []string {
 // The resident daemon serves the dashboard, --status reports it, and a
 // clean exit takes it down and clears the URL.
 func TestDashboardServedByDaemon(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	f := seedDashboard(h)
 	s := newFakeSocket(t)
@@ -584,6 +593,7 @@ func TestDashboardServedByDaemon(t *testing.T) {
 
 // A port in use costs one log line; the event bridge keeps passing.
 func TestDashboardBindConflictDaemonCarriesOn(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -620,6 +630,7 @@ func TestDashboardBindConflictDaemonCarriesOn(t *testing.T) {
 }
 
 func TestDashboardOffAndRefusedInDaemon(t *testing.T) {
+	contractGuard(t)
 	for _, c := range []struct{ addr, status, log string }{
 		{"off", "off", "dashboard: off"},
 		{"0.0.0.0:7788", "refused", "refused: the dashboard binds only 127.0.0.1 or ::1; not serving"},
@@ -649,6 +660,7 @@ func TestDashboardOffAndRefusedInDaemon(t *testing.T) {
 }
 
 func TestDaemonOnceDoesNotServe(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -672,6 +684,7 @@ func TestDaemonOnceDoesNotServe(t *testing.T) {
 
 // An IPv6 loopback listener accepts its own bracketed Host.
 func TestDashboardIPv6Host(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	f := seedDashboard(h)
 	d := newDashboard(h.openDB(), &daemonLog{}, "[::1]:7788")
@@ -692,6 +705,7 @@ func TestDashboardIPv6Host(t *testing.T) {
 // Closed history cannot use up the per-root cap: closed descendants are
 // counted, open ones are listed, including open tasks under a closed parent.
 func TestDashboardClosedHistoryDoesNotHideOpenTasks(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	db := h.openDB()
 	ts := now()
@@ -784,6 +798,7 @@ func kindsOf(items []attentionItem) string {
 // Every attention kind this machine can raise, ordered by severity, each
 // with its orchestrator, lane, text and action; the tallies follow.
 func TestAttentionKinds(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	db := h.openDB()
 	top := h.newTask("orch-cart", "orchestrator", 0, "--pane", "w1:p1")
@@ -870,6 +885,7 @@ func TestAttentionKinds(t *testing.T) {
 // blocked dialog always keeps its pane action; a wait lease only words it
 // as a condition.
 func TestAttentionFoldsIntoAsk(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	db := h.openDB()
 	db.Exec(`insert into meta (key, value) values (?, ?)`, heartbeatKey, now())
@@ -930,6 +946,7 @@ func TestAttentionFoldsIntoAsk(t *testing.T) {
 // Full owner questions reach the read-only page, whose two-line clamp and
 // title attribute handle display without losing the rest of the question.
 func TestOwnerAskKeepsFullQuestion(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("orch-question", "orchestrator", 0, "--pane", "w1:p1")
 	question := strings.Repeat("Which option? ", 30) + "\nKeep this final detail."
@@ -944,6 +961,7 @@ func TestOwnerAskKeepsFullQuestion(t *testing.T) {
 // a dead `taskr wait` leaves it, must not erase a dialog Herdr observes in
 // the pane. The owner cue keeps it: tag, pane action and read command.
 func TestWaitLeaseKeepsObservedDialog(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	db := h.openDB()
 	top := h.newTask("orch-review", "orchestrator", 0, "--pane", "w1:p1")
@@ -972,6 +990,7 @@ func TestWaitLeaseKeepsObservedDialog(t *testing.T) {
 // Work waiting starts at workWaitingAfter and ends when the orchestrator
 // acks; the tally goes amber only for it.
 func TestWorkWaitingThreshold(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	db := h.openDB()
 	db.Exec(`insert into meta (key, value) values (?, ?)`, heartbeatKey, now())
@@ -1010,6 +1029,7 @@ func TestWorkWaitingThreshold(t *testing.T) {
 // notes and pr/release/tag/merged refs, newest first, across open and
 // closed campaigns, capped.
 func TestMilestonesSelection(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	db := h.openDB()
 	top := h.newTask("orch-m", "orchestrator", 0)
@@ -1054,6 +1074,7 @@ func TestMilestonesSelection(t *testing.T) {
 
 // Tally precedence and lane marks, derived from a state alone.
 func TestTallyAndMarks(t *testing.T) {
+	contractGuard(t)
 	at := time.Now()
 	yes, no := true, false
 	ts := func(d time.Duration) string { return stamp(at.Add(-d)) }
@@ -1133,6 +1154,7 @@ func lazyMarkdownImports(app, renderer, parser string) bool {
 }
 
 func TestDashboardAssetImportMutations(t *testing.T) {
+	contractGuard(t)
 	entries, err := webFS.ReadDir("web/dist/assets")
 	if err != nil {
 		t.Fatal(err)
@@ -1170,6 +1192,7 @@ func TestDashboardAssetImportMutations(t *testing.T) {
 }
 
 func TestDashboardAssets(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	d := h.dash()
 	entries, err := webFS.ReadDir("web/dist/assets")
@@ -1240,6 +1263,7 @@ func TestDashboardAssets(t *testing.T) {
 }
 
 func TestDashboardUsageClassification(t *testing.T) {
+	contractGuard(t)
 	fakeTailnetHooks(t)
 	h := newHarness(t)
 	d := h.hubDash()
@@ -1309,6 +1333,7 @@ func TestDashboardUsageClassification(t *testing.T) {
 }
 
 func TestDaemonStatusDashboardUsage(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	db := h.openDB()
 	at := time.Now().UTC()
@@ -1347,6 +1372,7 @@ func TestDaemonStatusDashboardUsage(t *testing.T) {
 }
 
 func TestDaemonStatusInvalidDashboardUsage(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	db := h.openDB()
 	key := "usage:" + time.Now().UTC().Format("2006-01-02T15")

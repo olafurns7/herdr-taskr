@@ -175,7 +175,7 @@ func plannedAncestor(q queryer, id int64) (int64, error) {
 
 const timeFormat = "2006-01-02T15:04:05.000Z"
 
-func now() string { return stamp(time.Now()) }
+func now() string { return stamp(clockNow()) }
 
 func stamp(t time.Time) string { return t.UTC().Format(timeFormat) }
 

@@ -59,6 +59,7 @@ func docLane(t *testing.T, h *harness) (int64, int64, int64) {
 
 // 1. Schema creation is additive, including a pre-document ledger.
 func TestDocumentsSchema(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	db := h.openDB()
 	if n := docCount(t, db, `select count(*) from sqlite_master where type = 'table' and name in ('documents', 'doc_blobs')`); n != 2 {
@@ -67,7 +68,10 @@ func TestDocumentsSchema(t *testing.T) {
 	root := h.newTask("root", "orchestrator", 0)
 	docExec(t, db, `drop table documents`)
 	docExec(t, db, `drop table doc_blobs`)
-	reopened := h.openDB()
+	if code, _ := h.run(nil, "status", "--tree", id(root)); code != exitOK {
+		t.Fatal("selected CLI migration failed", code, h.lastStderr())
+	} // migration must be performed by the selected CLI
+	reopened := db
 	if n := docCount(t, reopened, `select count(*) from sqlite_master where type = 'table' and name in ('documents', 'doc_blobs')`); n != 2 {
 		t.Fatal(n)
 	}
@@ -78,6 +82,7 @@ func TestDocumentsSchema(t *testing.T) {
 
 // 2. File prompt captures the already-read bytes and versions only changes.
 func TestDocumentsPromptFile(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	_, lane, _ := docLane(t, h)
 	db := h.openDB()
@@ -106,6 +111,7 @@ func TestDocumentsPromptFile(t *testing.T) {
 
 // 3. Literal prompts are text and have an empty name.
 func TestDocumentsPromptText(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	_, lane, _ := docLane(t, h)
 	body := "literal\ntext λ"
@@ -122,6 +128,7 @@ func TestDocumentsPromptText(t *testing.T) {
 
 // 4. Every terminal capture re-reads the latest ready path.
 func TestDocumentsReports(t *testing.T) {
+	contractGuard(t)
 	for _, terminal := range []string{"done", "fail", "close"} {
 		t.Run(terminal, func(t *testing.T) {
 			h := newHarness(t)
@@ -163,6 +170,7 @@ func TestDocumentsReports(t *testing.T) {
 
 // 5. Misses retain metadata, never truncate, and deduplicate.
 func TestDocumentsMisses(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct{ name, body, reason string }{
 		{"large", strings.Repeat("a", documentCap+1), "too_large"}, {"nul", "a\x00b", "binary"}, {"utf8", "\xff", "binary"}, {"missing", "x", "missing"},
 	} {
@@ -205,6 +213,7 @@ func TestDocumentsMisses(t *testing.T) {
 
 // 6. SQL capture failure leaves every command's output and event untouched.
 func TestDocumentsCaptureIsolation(t *testing.T) {
+	contractGuard(t)
 	setVar(t, &handoverNow, func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) })
 	for _, cmd := range []string{"new", "prompt", "ready", "done", "fail", "close", "handover"} {
 		t.Run(cmd, func(t *testing.T) {
@@ -261,6 +270,7 @@ func TestDocumentsCaptureIsolation(t *testing.T) {
 
 // 7. Briefs and prompt files belong to the caller; reports belong to the lane.
 func TestDocumentsRPCCapture(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := r.newTask("root", "orchestrator", 0)
 	brief := docFile(t, r.dir, "brief.md", "server brief must not be read")
@@ -300,6 +310,7 @@ func TestDocumentsRPCCapture(t *testing.T) {
 
 // 8. Explicit sets validate before any ledger write and keep stable versions.
 func TestDocumentsSet(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	lane := h.newTask("lane", "implementer", root)
@@ -342,6 +353,7 @@ func TestDocumentsSet(t *testing.T) {
 
 // 9. Get is byte-exact and ls combines filters, history and continuation.
 func TestDocumentsGetAndLs(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	lane := h.newTask("lane", "implementer", root)
@@ -389,6 +401,7 @@ func TestDocumentsGetAndLs(t *testing.T) {
 
 // 10. Read RPCs never enter the request ledger; writes do.
 func TestDocumentsRPCRequests(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := r.newTask("root", "orchestrator", 0)
 	dir := t.TempDir()
@@ -416,6 +429,7 @@ func TestDocumentsRPCRequests(t *testing.T) {
 
 // 11. Both handover and adopt show escaped document summaries and counts.
 func TestDocumentsHandover(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	db := h.openDB()
@@ -469,6 +483,7 @@ func TestDocumentsHandover(t *testing.T) {
 
 // 12. New root hints go only to stderr; --brief records an eventless goal.
 func TestDocumentsNew(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	code, out, stderr := h.compact(nil, "new", "root", "--role", "orchestrator", "--cwd", h.dir, "--pane", "wDemo:p1")
 	if code != 0 || out != "n1 1\n" || stderr != "taskr: no goal recorded for root 1; run `taskr doc set 1 goal --file PATH`\n" {
@@ -491,6 +506,7 @@ func TestDocumentsNew(t *testing.T) {
 
 // 13. Backfill verifies historical hashes, labels changes and is idempotent.
 func TestDocumentsBackfill(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root, lane, _ := docLane(t, h)
 	db := h.openDB()
@@ -548,6 +564,7 @@ func TestDocumentsBackfill(t *testing.T) {
 
 // 14. Purge deletes all versions, retaining shared blobs and writing an event.
 func TestDocumentsPurge(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	db := h.openDB()
@@ -577,6 +594,7 @@ func TestDocumentsPurge(t *testing.T) {
 
 // 15. Frames, documented code and inbox behavior are independent contracts.
 func TestDocumentsCompactContract(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	path := docFile(t, h.dir, "goal.md", "goal")
@@ -635,6 +653,7 @@ func TestDocumentsCompactContract(t *testing.T) {
 }
 
 func TestDocumentsBackfillSameBasename(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	_, lane, _ := docLane(t, h)
 	db := h.openDB()
@@ -657,6 +676,7 @@ func TestDocumentsBackfillSameBasename(t *testing.T) {
 }
 
 func TestDocumentsFixBackfillHistory(t *testing.T) {
+	contractGuard(t)
 	for _, scenario := range []string{"backfill_over_set", "backfill_miss", "backfill_report"} {
 		t.Run(scenario, func(t *testing.T) {
 			h := newHarness(t)
@@ -702,6 +722,7 @@ func TestDocumentsFixBackfillHistory(t *testing.T) {
 }
 
 func TestDocumentsFixRemovedReportAndGoal(t *testing.T) {
+	contractGuard(t)
 	for _, terminal := range []string{"done", "close"} {
 		t.Run(terminal, func(t *testing.T) {
 			h := newHarness(t)
@@ -748,6 +769,7 @@ func TestDocumentsFixRemovedReportAndGoal(t *testing.T) {
 }
 
 func TestDocumentsFixFatalRollback(t *testing.T) {
+	contractGuard(t)
 	for _, command := range []string{"ready", "done", "close", "prompt", "handover"} {
 		t.Run(command, func(t *testing.T) {
 			h := newHarness(t)
@@ -811,6 +833,7 @@ func TestDocumentsFixFatalRollback(t *testing.T) {
 }
 
 func TestDocumentsFixPurgeMissReference(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	db := h.openDB()
@@ -830,6 +853,7 @@ func TestDocumentsFixPurgeMissReference(t *testing.T) {
 }
 
 func TestDocumentsFixPurgeClosedAndIDs(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	lane := h.newTask("lane", "implementer", root)
@@ -844,6 +868,7 @@ func TestDocumentsFixPurgeClosedAndIDs(t *testing.T) {
 }
 
 func TestDocumentsFixDashboardSkip(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	_, lane, launch := docLane(t, h)
 	h.ok(as(lane, launch), "ready", "slice ready")
@@ -872,6 +897,7 @@ func TestDocumentsFixDashboardSkip(t *testing.T) {
 }
 
 func TestDocumentsFixReadsOutsideTransactions(t *testing.T) {
+	contractGuard(t)
 	for _, command := range []string{"new", "ready", "done", "fail", "close", "backfill"} {
 		t.Run(command, func(t *testing.T) {
 			h := newHarness(t)
@@ -925,6 +951,7 @@ func TestDocumentsFixReadsOutsideTransactions(t *testing.T) {
 }
 
 func TestDocumentsFixReportABAAndAnswer(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root, lane, launch := docLane(t, h)
 	db := h.openDB()
@@ -947,6 +974,7 @@ func TestDocumentsFixReportABAAndAnswer(t *testing.T) {
 }
 
 func TestDocumentsFixLaneDocNoRecipient(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root, lane, _ := docLane(t, h)
 	db := h.openDB()
@@ -963,6 +991,7 @@ func TestDocumentsFixLaneDocNoRecipient(t *testing.T) {
 }
 
 func TestDocumentsFixReadCapAndFileTypes(t *testing.T) {
+	contractGuard(t)
 	t.Run("cap", func(t *testing.T) {
 		dir := t.TempDir()
 		path := docFile(t, dir, "report.md", "small")
@@ -1017,6 +1046,7 @@ func TestDocumentsFixReadCapAndFileTypes(t *testing.T) {
 }
 
 func TestDocumentsFixPurgeSecureAndCheckpoint(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	db := h.openDB()
@@ -1068,6 +1098,7 @@ func assertReportRetained(t *testing.T, h *harness, db *sql.DB, lane int64, expe
 }
 
 func TestDocumentsReportStaleRead(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	_, lane, launch := docLane(t, h)
 	db := h.openDB()
@@ -1090,6 +1121,7 @@ func TestDocumentsReportStaleRead(t *testing.T) {
 }
 
 func TestDocumentsReportPathRace(t *testing.T) {
+	contractGuard(t)
 	for _, command := range []string{"done", "close"} {
 		t.Run(command, func(t *testing.T) {
 			h := newHarness(t)
@@ -1119,6 +1151,7 @@ func TestDocumentsReportPathRace(t *testing.T) {
 }
 
 func TestDocumentsReportPathOnlyRace(t *testing.T) {
+	contractGuard(t)
 	for _, command := range []string{"done", "close"} {
 		t.Run(command, func(t *testing.T) {
 			h := newHarness(t)
@@ -1153,6 +1186,7 @@ func TestDocumentsReportPathOnlyRace(t *testing.T) {
 }
 
 func TestDocumentsReportHostChangeBetween(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	_, lane, launch := docLane(t, h)
 	db := h.openDB()
@@ -1169,6 +1203,7 @@ func TestDocumentsReportHostChangeBetween(t *testing.T) {
 }
 
 func TestDocumentsPurgeBusyReader(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	path := docFile(t, h.dir, "plan.md", "purge text")
@@ -1226,6 +1261,7 @@ func TestDocumentsPurgeBusyReader(t *testing.T) {
 }
 
 func TestDocumentsFixCapturePanic(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	db := h.openDB()

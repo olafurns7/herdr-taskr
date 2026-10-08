@@ -292,7 +292,7 @@ func (d *dashboard) peerPush(w http.ResponseWriter, r *http.Request) {
 	reply := pushReply{Hub: hubRef{NodeID: hub.self.NodeID, Machine: hub.self.Short}, Answers: []struct{}{}}
 	full := false
 	err = withTx(d.db, func(tx *sql.Tx) error {
-		at := time.Now()
+		at := clockNow()
 		var known, active int
 		if err := tx.QueryRow(`select count(*) from peers where node_id = ? and received_at > ?`, id.NodeID,
 			stamp(at.Add(-peerDropAfter))).Scan(&known); err != nil {

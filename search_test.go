@@ -12,6 +12,7 @@ import (
 )
 
 func TestSearchFTS5Available(t *testing.T) {
+	contractGuard(t)
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -46,6 +47,7 @@ func searchHits(t *testing.T, h *harness, query string, flags ...string) []map[s
 }
 
 func TestSearchSources(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	lane := h.newTask("lane", "implementer", root)
@@ -88,6 +90,7 @@ func TestSearchSources(t *testing.T) {
 }
 
 func TestSearchDocumentVersionAndPurge(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	path := docFile(t, h.dir, "goal.md", "oldtoken")
@@ -129,6 +132,7 @@ func TestSearchDocumentVersionAndPurge(t *testing.T) {
 }
 
 func TestSearchMigration(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	h.db = filepath.Join(h.dir, "previous.db")
 	db, err := sql.Open("sqlite", h.db)
@@ -185,6 +189,7 @@ func TestSearchMigration(t *testing.T) {
 }
 
 func TestSearchSecureDeleteExisting(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	db := h.openDB()
 	docExec(t, db, `insert into search_fts(search_fts, rank) values('secure-delete', 0)`)
@@ -195,6 +200,7 @@ func TestSearchSecureDeleteExisting(t *testing.T) {
 }
 
 func TestSearchRepair(t *testing.T) {
+	contractGuard(t)
 	for _, missing := range []string{"table", "trigger", "old-trigger"} {
 		t.Run(missing, func(t *testing.T) {
 			h := newHarness(t)
@@ -225,7 +231,9 @@ func TestSearchRepair(t *testing.T) {
 			}
 			// Preserve distinctive rowids to detect an unnecessary second rebuild.
 			docExec(t, db, `update search_fts set rowid = rowid + 1000`)
-			db = h.openDB()
+			if code, _ := h.run(nil, "status", "--tree", id(root)); code != exitOK {
+				t.Fatal("selected CLI migration failed", code, h.lastStderr())
+			} // selected CLI performs the second migration
 			if docCount(t, db, `select count(*) from search_fts`) != 4 || docCount(t, db, `select count(*) from search_fts where rowid > 1000`) != 4 {
 				var storedSQL string
 				if err := db.QueryRow(`select sql from sqlite_master where name = 'search_events_insert'`).Scan(&storedSQL); err != nil {
@@ -241,6 +249,7 @@ func TestSearchRepair(t *testing.T) {
 }
 
 func TestSearchNULQuery(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	for _, flags := range [][]string{nil, {"--raw"}} {
 		h.one(exitUsage, nil, append([]string{"search", "a\x00b"}, flags...)...)
@@ -255,6 +264,7 @@ func TestSearchNULQuery(t *testing.T) {
 }
 
 func TestSearchControlSnippet(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	docExec(t, h.openDB(), `insert into events(task_id, kind, summary, created_at) values (?, 'note', ?, ?)`, root, "controltoken\tESC\x1bBEL\aDEL\x7fend", now())
@@ -269,6 +279,7 @@ func TestSearchControlSnippet(t *testing.T) {
 }
 
 func TestSearchOwnerAnswer(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root, lane, launch := docLane(t, h)
 	for _, owner := range []bool{false, true} {
@@ -298,6 +309,7 @@ func TestSearchOwnerAnswer(t *testing.T) {
 }
 
 func TestSearchQueriesAndFilters(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	other := h.newTask("other", "orchestrator", 0)
@@ -334,6 +346,7 @@ func TestSearchQueriesAndFilters(t *testing.T) {
 }
 
 func TestSearchLimitAndOrder(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	db := h.openDB()
@@ -360,6 +373,7 @@ func TestSearchLimitAndOrder(t *testing.T) {
 }
 
 func TestSearchSnippet(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	db := h.openDB()
@@ -378,6 +392,7 @@ func TestSearchSnippet(t *testing.T) {
 }
 
 func TestSearchRPC(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := r.newTask("root", "orchestrator", 0)
 	searchDocument(t, r.d.db, root, "goal", "", "rpctoken document")
@@ -386,7 +401,7 @@ func TestSearchRPC(t *testing.T) {
 	for _, format := range [][]string{nil, {"--json"}} {
 		args := append(append([]string{}, format...), "search", "rpctoken", "--root", id(root))
 		var localOut, localErr bytes.Buffer
-		code := run(args, r.getenv(nil), &localOut, &localErr)
+		code := contractRun(t, args, r.getenv(nil), &localOut, &localErr)
 		local, stderr := localOut.String(), localErr.String()
 		if code != 0 {
 			t.Fatalf("local = %d %s", code, stderr)
@@ -394,7 +409,7 @@ func TestSearchRPC(t *testing.T) {
 		for _, caller := range []string{"host-a", "host-b"} {
 			r.caller.Store(caller)
 			var out, errw bytes.Buffer
-			code := cliMain(args, clientEnv(r.homes[caller], nil), &out, &errw)
+			code := contractCLIMain(t, args, clientEnv(r.homes[caller], nil), &out, &errw)
 			if code != 0 || out.String() != local {
 				t.Fatalf("RPC = %d %q %s, local %q", code, out.String(), errw.String(), local)
 			}
@@ -407,6 +422,7 @@ func TestSearchRPC(t *testing.T) {
 }
 
 func TestSearchTransactionRollback(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	db := h.openDB()

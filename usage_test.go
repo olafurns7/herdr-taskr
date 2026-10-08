@@ -7,6 +7,7 @@ import (
 )
 
 func TestDashboardUsageFlushMergesPrunesAndSkipsIdle(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	db := h.openDB()
 	at := time.Date(2026, 10, 1, 12, 30, 0, 0, time.UTC)
@@ -62,6 +63,7 @@ func TestDashboardUsageFlushMergesPrunesAndSkipsIdle(t *testing.T) {
 }
 
 func TestDashboardUsageFlushRetainsCountsOnFailure(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	db := h.openDB()
 	at := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)

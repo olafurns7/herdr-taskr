@@ -9,6 +9,7 @@ import (
 )
 
 func TestGlanceTrustNotes(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct {
 		text    string
 		pending int
@@ -47,6 +48,7 @@ func TestGlanceTrustNotes(t *testing.T) {
 }
 
 func TestGlanceTrustParking(t *testing.T) {
+	contractGuard(t)
 	f := newGlanceFixture(t)
 	r := f.task("root", 0, "open")
 	f.lead(r, "gone")
@@ -72,6 +74,7 @@ func TestGlanceTrustParking(t *testing.T) {
 }
 
 func TestGlanceTrustIdleResults(t *testing.T) {
+	contractGuard(t)
 	for _, state := range []string{"idle", "done", "working", "unknown", "blocked", "gone"} {
 		for _, lease := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/lease=%v", state, lease), func(t *testing.T) {
@@ -118,6 +121,7 @@ func TestGlanceTrustIdleResults(t *testing.T) {
 }
 
 func TestGlanceTrustUnregistered(t *testing.T) {
+	contractGuard(t)
 	for _, age := range []time.Duration{119 * time.Minute, 2 * time.Hour, 3 * time.Hour} {
 		for _, lanes := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/lanes=%v", age, lanes), func(t *testing.T) {
@@ -142,6 +146,7 @@ func TestGlanceTrustUnregistered(t *testing.T) {
 }
 
 func TestOwnerNoteTrustWarning(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	r := h.newTask("root", "orchestrator", 0)
 	lane := h.newTask("lane", "implementer", r)
@@ -166,6 +171,7 @@ func TestOwnerNoteTrustWarning(t *testing.T) {
 }
 
 func TestGlanceStateRootOnly(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	r := h.newTask("root", "orchestrator", 0)
 	w := h.newTask("worker", "implementer", r)
@@ -181,6 +187,7 @@ func TestGlanceStateRootOnly(t *testing.T) {
 }
 
 func TestRenderGlanceTrust(t *testing.T) {
+	contractGuard(t)
 	v := &glanceView{Verdict: "rolling", OwnerNotesPending: 2, Campaigns: []glanceCampaign{
 		{Name: "held", Parked: true, ParkAgeMS: (3 * time.Hour).Milliseconds()},
 		{Name: "unregistered", Lead: "unregistered"},
@@ -208,6 +215,7 @@ func TestRenderGlanceTrust(t *testing.T) {
 }
 
 func TestGlanceTrustUnregisteredQuietLanes(t *testing.T) {
+	contractGuard(t)
 	f := newGlanceFixture(t)
 	r := f.task("root", 0, "open")
 	f.exec(`update tasks set pane_id = null where id = ?`, r)
@@ -220,6 +228,7 @@ func TestGlanceTrustUnregisteredQuietLanes(t *testing.T) {
 }
 
 func TestGlanceBookkeepingKeepsMigration(t *testing.T) {
+	contractGuard(t)
 	f := newGlanceFixture(t)
 	r := f.task("quiet-root", 0, "open")
 	f.event(r, 0, 0, "note", "OWNER: approve synthetic release", `{"owner":true}`, 25*time.Hour)
@@ -236,6 +245,7 @@ func TestGlanceBookkeepingKeepsMigration(t *testing.T) {
 }
 
 func TestGlanceReparkAndHostGuard(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	r := h.newTask("root", "orchestrator", 0)
 	h.one(exitReject, map[string]string{"TASKR_LAUNCH": "1"}, "set", id(r), "glance.state=parked")
@@ -252,6 +262,7 @@ func TestGlanceReparkAndHostGuard(t *testing.T) {
 }
 
 func TestGlanceSyntheticOwnerParser(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct {
 		text  string
 		items bool
@@ -276,6 +287,7 @@ func TestGlanceSyntheticOwnerParser(t *testing.T) {
 }
 
 func TestGlanceBookkeepingGluedOwner(t *testing.T) {
+	contractGuard(t)
 	for _, newer := range []string{"LANES: moved (OWNER: approved earlier)", "XOWNER: nothing", "LANES: moved, see note"} {
 		t.Run(newer, func(t *testing.T) {
 			f := newGlanceFixture(t)
@@ -291,6 +303,7 @@ func TestGlanceBookkeepingGluedOwner(t *testing.T) {
 }
 
 func TestGlanceOwnerSQLSegmentBoundaries(t *testing.T) {
+	contractGuard(t)
 	f := newGlanceFixture(t)
 	r := f.task("demo-root", 0, "open")
 	f.event(r, 0, 0, "note", "OWNER: approve demo", `{"owner":true}`, time.Hour)

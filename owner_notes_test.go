@@ -12,6 +12,7 @@ import (
 )
 
 func TestOwnerNoteStoredAndWhole(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("campaign", "orchestrator", 0)
 	text := strings.Repeat("界", 1650)
@@ -33,6 +34,7 @@ func TestOwnerNoteStoredAndWhole(t *testing.T) {
 }
 
 func TestOwnerNoteRejectsWorkersWithoutWriting(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	lane := h.newTask("lane", "implementer", root)
@@ -64,6 +66,7 @@ func TestOwnerNoteRejectsWorkersWithoutWriting(t *testing.T) {
 }
 
 func TestOwnerNoteKeyMatchesOwnerFlag(t *testing.T) {
+	contractGuard(t)
 	for _, storedOwner := range []bool{false, true} {
 		t.Run(fmt.Sprint(storedOwner), func(t *testing.T) {
 			h := newHarness(t)
@@ -111,6 +114,7 @@ func TestOwnerNoteKeyMatchesOwnerFlag(t *testing.T) {
 }
 
 func TestOwnerNoteClientRejectsBeforeSpoolOrRPC(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := "host-a"
 	root, lane, launch := spoolMakeWorker(t, r, host, 1)
@@ -142,6 +146,7 @@ func TestOwnerNoteClientRejectsBeforeSpoolOrRPC(t *testing.T) {
 }
 
 func TestNotesStrictInput(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	db := h.openDB()
@@ -169,6 +174,7 @@ func TestNotesStrictInput(t *testing.T) {
 }
 
 func TestNotesWindowsOrderAndBounds(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	other := h.newTask("other", "orchestrator", 0)
@@ -232,6 +238,7 @@ func TestNotesWindowsOrderAndBounds(t *testing.T) {
 }
 
 func TestStateOwnerNotesContract(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	db := h.openDB()
 	at := time.Now().UTC()
@@ -286,6 +293,7 @@ func TestStateOwnerNotesContract(t *testing.T) {
 }
 
 func TestCampaignNotesOrderCapAndOwner(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	lane := h.newTask("lane", "implementer", root)
@@ -315,6 +323,7 @@ func TestCampaignNotesOrderCapAndOwner(t *testing.T) {
 }
 
 func TestOwnerNotesPeerSnapshot(t *testing.T) {
+	contractGuard(t)
 	at := time.Now().UTC()
 	s, err := decodePeerState(json.RawMessage(`{"owner_asks":[],"orchestrators":[],"activity":[],"closed":[]}`))
 	if err != nil {
@@ -335,6 +344,7 @@ func TestOwnerNotesPeerSnapshot(t *testing.T) {
 }
 
 func TestSpoolOwnerNoteAndFreshRPCNotes(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	host := spoolClientHost(r)
 	root, _, _ := spoolMakeWorker(t, r, host, 1)
@@ -352,7 +362,7 @@ func TestSpoolOwnerNoteAndFreshRPCNotes(t *testing.T) {
 		t.Fatalf("queued owner flag/task lost: %v", err)
 	}
 	r.caller.Store(host)
-	if sent, err := sendSpool(spoolStateDir(home), r.url, nil); err != nil || sent != 1 {
+	if sent, err := contractNetSendSpool(t, spoolStateDir(home), r.url, nil); err != nil || sent != 1 {
 		t.Fatalf("delivery = %d %v", sent, err)
 	}
 	if files, err := readSpoolFiles(spoolQueuePath(home)); err != nil || len(files) != 0 {

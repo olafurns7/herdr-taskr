@@ -16,6 +16,7 @@ import (
 )
 
 func TestDaemonStayOfflineRPCAndDashboard(t *testing.T) {
+	contractGuard(t)
 	setVar(t, &daemonHeartbeat, 50*time.Millisecond)
 	setVar(t, &daemonFallback, 50*time.Millisecond)
 	fakeTailnetHooks(t)
@@ -83,6 +84,7 @@ func TestDaemonStayOfflineRPCAndDashboard(t *testing.T) {
 }
 
 func TestDaemonStayAttachesAndReattaches(t *testing.T) {
+	contractGuard(t)
 	setVar(t, &daemonHeartbeat, 50*time.Millisecond)
 	setVar(t, &daemonFallback, 50*time.Millisecond)
 	h := newHarness(t)
@@ -125,6 +127,7 @@ func TestDaemonStayAttachesAndReattaches(t *testing.T) {
 }
 
 func TestDaemonStayListenerRetries(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	busy, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -153,6 +156,7 @@ func TestDaemonStayListenerRetries(t *testing.T) {
 }
 
 func TestDaemonStayResubscribeWritesOnlyNewPane(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	h.launch(h.newTask("a", "implementer", top, "--pane", "w9:p1"))
@@ -183,6 +187,7 @@ func TestDaemonStayResubscribeWritesOnlyNewPane(t *testing.T) {
 }
 
 func TestDaemonStayResubscribeBeforeAckWritesAllPanes(t *testing.T) {
+	contractGuard(t)
 	setVar(t, &daemonFallback, 50*time.Millisecond)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
@@ -220,6 +225,7 @@ func TestDaemonStayResubscribeBeforeAckWritesAllPanes(t *testing.T) {
 }
 
 func TestDaemonStayHerdrMissingDoesNotClaimOwnerAsk(t *testing.T) {
+	contractGuard(t)
 	setVar(t, &daemonFallback, 50*time.Millisecond)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
@@ -258,6 +264,7 @@ func TestDaemonStayHerdrMissingDoesNotClaimOwnerAsk(t *testing.T) {
 }
 
 func TestDaemonStayHerdrMissingStatus(t *testing.T) {
+	contractGuard(t)
 	for _, missing := range []bool{false, true} {
 		t.Run(strconv.FormatBool(missing), func(t *testing.T) {
 			r := newRestartRig(t)
@@ -295,6 +302,7 @@ func TestDaemonStayHerdrMissingStatus(t *testing.T) {
 }
 
 func TestClientDaemonStayUsageError(t *testing.T) {
+	contractGuard(t)
 	r := newRestartRig(t)
 	r.clientMode(t)
 	cx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

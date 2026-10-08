@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -22,14 +23,37 @@ type goResult struct {
 
 func (h *harness) goRun(env map[string]string, args ...string) <-chan goResult {
 	ch := make(chan goResult, 1)
-	go func() {
-		var out, errb bytes.Buffer
-		code := run(append([]string{"--json"}, args...), h.getenv(env), &out, &errb)
-		var m map[string]any
-		lines := bytes.Split(bytes.TrimSpace(out.Bytes()), []byte("\n"))
-		json.Unmarshal(lines[len(lines)-1], &m)
-		ch <- goResult{code, m}
-	}()
+	args = append([]string{"--json"}, args...)
+	var out, errb bytes.Buffer
+	if os.Getenv("TASKR_BIN") != "" {
+		// Start in the test goroutine: NI is delivered as a result, never t.Skip off-thread.
+		cmd := contractCommand(args, h.getenv(env), &out, &errb)
+		if err := cmd.Start(); err != nil {
+			ch <- goResult{code: 127}
+			return ch
+		}
+		h.t.Cleanup(func() { _ = cmd.Process.Kill() })
+		root := strings.SplitN(h.t.Name(), "/", 2)[0]
+		go func() {
+			code := 0
+			if err := cmd.Wait(); err != nil {
+				if exit, ok := err.(*exec.ExitError); ok {
+					code = exit.ExitCode()
+				} else {
+					code = 127
+				}
+			}
+			if code == contractNotImplemented {
+				contractMissing.Store(root, true)
+			}
+			ch <- goResult{code, lastJSON(out.String())}
+		}()
+	} else {
+		go func() {
+			code := run(args, h.getenv(env), &out, &errb)
+			ch <- goResult{code, lastJSON(out.String())}
+		}()
+	}
 	return ch
 }
 
@@ -37,6 +61,9 @@ func (h *harness) waitFor(what string, cond func(db *sql.DB) bool) {
 	h.t.Helper()
 	db := h.openDB()
 	for end := time.Now().Add(20 * time.Second); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+		if _, missing := contractMissing.Load(strings.SplitN(h.t.Name(), "/", 2)[0]); missing {
+			h.t.Skip("adapter: asynchronous command not implemented")
+		}
 		if cond(db) {
 			return
 		}
@@ -73,6 +100,7 @@ func statusOf(h *harness, task int64) map[string]any {
 }
 
 func TestReceiptIdempotentAndWrongLaunchRejected(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p4")
@@ -154,6 +182,7 @@ func TestReceiptIdempotentAndWrongLaunchRejected(t *testing.T) {
 }
 
 func TestPromptConfirmReceipt(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p4")
@@ -188,6 +217,7 @@ func TestPromptConfirmReceipt(t *testing.T) {
 }
 
 func TestPromptConfirmNoReceipt(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p4")
@@ -250,6 +280,7 @@ func TestPromptConfirmNoReceipt(t *testing.T) {
 }
 
 func TestBlockingAskRoundTrip(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p4")
@@ -297,6 +328,7 @@ func TestBlockingAskRoundTrip(t *testing.T) {
 }
 
 func TestWorkerWaitMakesNoHerdrCalls(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p4")
@@ -318,6 +350,7 @@ func TestWorkerWaitMakesNoHerdrCalls(t *testing.T) {
 }
 
 func TestLivenessSkipsWaitingTask(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	a := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -394,6 +427,7 @@ func TestLivenessSkipsWaitingTask(t *testing.T) {
 }
 
 func TestMigrationAddsWaitingUntil(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	os.MkdirAll(filepath.Dir(h.db), 0o755)
 	oldSchema := strings.Replace(schemaSQL, "  waiting_until text,\n", "", 1)
@@ -426,6 +460,7 @@ func TestMigrationAddsWaitingUntil(t *testing.T) {
 // A failed clear of waiting_until is a database error, not a delivered event:
 // the offered event stays pending and the next wait replays it.
 func TestWaitCleanupFailureKeepsEventPending(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p4")
@@ -553,6 +588,7 @@ func receiptLane(h *harness) (top, w, l int64) {
 
 // Acceptance: an async send followed by a got before the deadline produces no inbox event.
 func TestAsyncReceiptOnTimeIsSilent(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top, w, l := receiptLane(h)
 	out := h.ok(nil, "prompt", id(w), "--text", "Go.")
@@ -589,6 +625,7 @@ func TestAsyncReceiptOnTimeIsSilent(t *testing.T) {
 
 // Acceptance: without a got, exactly one no_receipt appears across two waits and a daemon pass.
 func TestAsyncNoReceiptExactlyOnce(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top, w, l := receiptLane(h)
 	a := num(h.ok(nil, "prompt", id(w), "--text", "Go."), "attempt_id")
@@ -625,6 +662,7 @@ func TestAsyncNoReceiptExactlyOnce(t *testing.T) {
 
 // Acceptance: a got after an async or confirm no_receipt produces one late_receipt.
 func TestLateReceiptAfterNoReceipt(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top, w, l := receiptLane(h)
 	a := num(h.ok(nil, "prompt", id(w), "--text", "Go."), "attempt_id")
@@ -660,6 +698,7 @@ func TestLateReceiptAfterNoReceipt(t *testing.T) {
 
 // Acceptance: --timeout 0 materializes an overdue alarm.
 func TestWaitTimeoutZeroMaterializesAlarm(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top, w, _ := receiptLane(h)
 	a := num(h.ok(nil, "prompt", id(w), "--text", "Go."), "attempt_id")
@@ -674,6 +713,7 @@ func TestWaitTimeoutZeroMaterializesAlarm(t *testing.T) {
 
 // Acceptance: a relaunch or close inside the window gives no alarm.
 func TestRelaunchOrCloseDropsReceipt(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top, w, l := receiptLane(h)
 	a := num(h.ok(nil, "prompt", id(w), "--text", "Go."), "attempt_id")
@@ -708,6 +748,7 @@ func TestRelaunchOrCloseDropsReceipt(t *testing.T) {
 
 // Acceptance: a root target arms no deadline.
 func TestRootTargetArmsNoReceipt(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("top", "orchestrator", 0, "--pane", "w9:p1")
 	out := h.ok(nil, "prompt", id(root), "--text", "Go.")
@@ -719,6 +760,7 @@ func TestRootTargetArmsNoReceipt(t *testing.T) {
 
 // Acceptance: note --key X:1 exits 2 for each reserved prefix.
 func TestReservedEventKeyPrefixes(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top, w, l := receiptLane(h)
 	for _, p := range []string{"got:", "no_receipt:", "late_receipt:", "quota:", "capacity:"} {
@@ -733,6 +775,7 @@ func TestReservedEventKeyPrefixes(t *testing.T) {
 
 // Acceptance: --receipt-timeout 1000 exits 2 (D15: --confirm-timeout keeps short values).
 func TestReceiptTimeoutFlag(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	_, w, _ := receiptLane(h)
 	for _, args := range [][]string{
@@ -769,6 +812,7 @@ func TestReceiptTimeoutFlag(t *testing.T) {
 
 // Acceptance: the dashboard's lane report ignores prompt_outcome.
 func TestDashboardLaneReportIgnoresReceiptAlarm(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top, w, l := receiptLane(h)
 	h.ok(as(w, l), "ready", "slice one")
@@ -799,6 +843,7 @@ func TestDashboardLaneReportIgnoresReceiptAlarm(t *testing.T) {
 // answer --prompt arms the default window; an answer --as routes the alarm
 // to the answering root.
 func TestAnswerPromptReceiptRouting(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("top", "orchestrator", 0)
 	sub := h.newTask("sub", "sub-orchestrator", root)
@@ -823,6 +868,7 @@ func TestAnswerPromptReceiptRouting(t *testing.T) {
 
 // Client mode: `_prompt begin` arms the deadline on the server ledger.
 func TestRelayAsyncReceipt(t *testing.T) {
+	contractGuard(t)
 	r := newRelay(t)
 	_, _, hostATop, mw, ml := r.lanes()
 	m := r.want(0, "host-a", r.hostA, "prompt", id(mw), "--text", "go")

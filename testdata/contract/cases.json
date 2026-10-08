@@ -1,0 +1,1073 @@
+[
+  {
+    "family": "read:version",
+    "argv": [
+      "version"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "--json",
+      "version"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "--json"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "--json=false"
+    ],
+    "env": {
+      "TASKR_FORMAT": "json"
+    }
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version"
+    ],
+    "env": {
+      "TASKR_FORMAT": "json"
+    }
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "extra"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "--json",
+      "version",
+      "extra"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "--bad"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "--help"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "--json",
+      "version",
+      "--help"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "--json",
+      "version",
+      "--json=false",
+      "--help"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "--help",
+      "-h=false"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "---json"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "--json=invalid"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "extra",
+      "--help"
+    ]
+  },
+  {
+    "family": "read:version",
+    "argv": [
+      "version",
+      "--",
+      "--help"
+    ]
+  },
+  {
+    "family": "schema",
+    "argv": [
+      "--contract-migrate"
+    ]
+  },
+  {
+    "family": "read:status",
+    "argv": [
+      "status",
+      "--all"
+    ]
+  },
+  {
+    "family": "read:asks",
+    "argv": [
+      "asks",
+      "--open"
+    ]
+  },
+  {
+    "family": "read:glance",
+    "argv": [
+      "glance"
+    ],
+    "groups": [
+      "glance-verdict-and-rows",
+      "local-server-caller-hosts"
+    ]
+  },
+  {
+    "family": "read:search",
+    "argv": [
+      "search",
+      "fixture"
+    ]
+  },
+  {
+    "family": "read:doc",
+    "argv": [
+      "doc",
+      "ls",
+      "1"
+    ]
+  },
+  {
+    "family": "read:doc",
+    "argv": [
+      "doc",
+      "get",
+      "1"
+    ]
+  },
+  {
+    "family": "write:new",
+    "argv": [
+      "new",
+      "fixture-new",
+      "--role",
+      "orchestrator"
+    ]
+  },
+  {
+    "family": "write:note",
+    "argv": [
+      "note",
+      "fixture-note <&> \u00de\ud83d\ude00",
+      "--as",
+      "1"
+    ]
+  },
+  {
+    "family": "write:ask",
+    "argv": [
+      "ask",
+      "fixture-question",
+      "--as",
+      "2",
+      "--blocking"
+    ]
+  },
+  {
+    "family": "write:answer",
+    "argv": [
+      "answer",
+      "3",
+      "fixture-answer"
+    ]
+  },
+  {
+    "family": "write:ready",
+    "argv": [
+      "ready",
+      "fixture-ready",
+      "--as",
+      "2"
+    ]
+  },
+  {
+    "family": "write:done",
+    "argv": [
+      "done",
+      "fixture-done",
+      "--as",
+      "2"
+    ]
+  },
+  {
+    "family": "write:close",
+    "argv": [
+      "close",
+      "2"
+    ]
+  },
+  {
+    "family": "write:set",
+    "argv": [
+      "set",
+      "2",
+      "--ref",
+      "a=1",
+      "--ref",
+      "a=2"
+    ]
+  },
+  {
+    "family": "write:prompt",
+    "argv": [
+      "prompt",
+      "2",
+      "--text",
+      "fixture-prompt",
+      "--receipt-timeout",
+      "0"
+    ]
+  },
+  {
+    "family": "write:ack",
+    "argv": [
+      "ack",
+      "3",
+      "--as",
+      "1"
+    ]
+  },
+  {
+    "family": "write:wait",
+    "argv": [
+      "wait",
+      "--as",
+      "1",
+      "--timeout",
+      "0"
+    ]
+  },
+  {
+    "family": "net:daemon",
+    "argv": [
+      "daemon",
+      "--status"
+    ]
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "ls"
+    ],
+    "client_url": "http://100.64.0.1:7788"
+  },
+  {
+    "family": "net:discovery",
+    "argv": [
+      "status",
+      "--help"
+    ],
+    "client_url": "http://100.64.0.1:7788"
+  },
+  {
+    "family": "net:rpc-client",
+    "argv": [
+      "asks",
+      "--help"
+    ],
+    "client_url": "http://100.64.0.1:7788"
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "--help"
+    ]
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "--help"
+    ],
+    "client_url": "http://100.64.0.1:9"
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "-h"
+    ]
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "-h"
+    ],
+    "client_url": "http://100.64.0.1:9"
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "--help=true"
+    ]
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "--help=true"
+    ],
+    "client_url": "http://100.64.0.1:9"
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "--json",
+      "--help"
+    ]
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "spool",
+      "--json",
+      "--help"
+    ],
+    "client_url": "http://100.64.0.1:9"
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "help",
+      "spool"
+    ]
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "help",
+      "spool"
+    ],
+    "client_url": "http://100.64.0.1:9"
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "--json",
+      "help",
+      "spool"
+    ]
+  },
+  {
+    "family": "net:spool",
+    "argv": [
+      "--json",
+      "help",
+      "spool"
+    ],
+    "client_url": "http://100.64.0.1:9"
+  },
+  {
+    "family": "net:daemon",
+    "argv": [
+      "help",
+      "daemon"
+    ]
+  },
+  {
+    "family": "net:daemon",
+    "argv": [
+      "--json",
+      "help",
+      "daemon"
+    ]
+  },
+  {
+    "family": "read:handover",
+    "argv": [
+      "handover",
+      "--as",
+      "1",
+      "--note",
+      "next: <&> `code` | pipe *star* \u00de\ud83d\ude00"
+    ],
+    "sequence": [
+      [
+        "handover",
+        "--as",
+        "1",
+        "--note",
+        "next: <&> `code` | pipe *star* \u00de\ud83d\ude00"
+      ]
+    ]
+  },
+  {
+    "family": "read:handover",
+    "argv": [
+      "--json",
+      "adopt",
+      "1"
+    ],
+    "sequence": [
+      [
+        "handover",
+        "--as",
+        "1"
+      ],
+      [
+        "adopt",
+        "1",
+        "--workspace",
+        "w9",
+        "--tab",
+        "t9",
+        "--pane",
+        "p9"
+      ],
+      [
+        "handover",
+        "--as",
+        "1"
+      ],
+      [
+        "--json",
+        "adopt",
+        "1"
+      ]
+    ]
+  },
+  {
+    "family": "read:handover",
+    "argv": [
+      "handover",
+      "--as",
+      "1"
+    ],
+    "sequence": [
+      [
+        "handover",
+        "--as",
+        "2"
+      ],
+      [
+        "adopt",
+        "2"
+      ],
+      [
+        "adopt",
+        "1"
+      ],
+      [
+        "handover",
+        "--as",
+        "1"
+      ]
+    ]
+  },
+  {
+    "family": "read:handover",
+    "argv": [
+      "handover",
+      "--as",
+      "1"
+    ],
+    "sequence": [
+      [
+        "close",
+        "3",
+        "--outcome",
+        "accepted"
+      ],
+      [
+        "decide",
+        "--as",
+        "1",
+        "use <b>x</b>"
+      ],
+      [
+        "next",
+        "1",
+        "then | this"
+      ],
+      [
+        "set",
+        "1",
+        "pr=12"
+      ],
+      [
+        "handover",
+        "--as",
+        "1"
+      ]
+    ]
+  },
+  {
+    "family": "read:glance",
+    "argv": [
+      "--json",
+      "glance"
+    ],
+    "groups": [
+      "glance-verdict-and-rows",
+      "local-server-caller-hosts"
+    ]
+  },
+  {
+    "family": "read:glance",
+    "argv": [
+      "glance",
+      "--watch"
+    ],
+    "groups": [
+      "glance-verdict-and-rows"
+    ]
+  },
+  {
+    "family": "read:glance",
+    "argv": [
+      "glance",
+      "--watch",
+      "--every",
+      "1s"
+    ],
+    "groups": [
+      "glance-verdict-and-rows"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "campaign",
+      "1"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "--json",
+      "campaign",
+      "1"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "campaign",
+      "1",
+      "--all"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "campaign",
+      "1",
+      "--page",
+      "2"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "campaign",
+      "1",
+      "--page",
+      "999"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "campaign",
+      "2"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "campaign",
+      "999999"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "campaign",
+      "0"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "campaign",
+      "bad"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "campaign"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "campaign",
+      "1",
+      "--page",
+      "0"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "campaign",
+      "1",
+      "--unknown"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "campaign",
+      "1",
+      "extra"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "campaign",
+      "--help"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "help",
+      "campaign"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "argv": [
+      "--json",
+      "campaign",
+      "--help"
+    ],
+    "groups": [
+      "campaign-page-all-pr-shapes"
+    ]
+  },
+  {
+    "family": "write:set",
+    "argv": [
+      "set",
+      "1",
+      "glance.state=parked"
+    ],
+    "sequence": [
+      [
+        "set",
+        "1",
+        "glance.state=parked"
+      ],
+      [
+        "set",
+        "1",
+        "glance.state=parked"
+      ],
+      [
+        "set",
+        "1",
+        "glance.state="
+      ],
+      [
+        "glance"
+      ]
+    ],
+    "groups": [
+      "parking-accepted-refused"
+    ]
+  },
+  {
+    "family": "write:set",
+    "argv": [
+      "set",
+      "2",
+      "glance.state=parked"
+    ],
+    "env": {},
+    "groups": [
+      "parking-accepted-refused"
+    ]
+  },
+  {
+    "family": "write:set",
+    "argv": [
+      "set",
+      "1",
+      "glance.state=active"
+    ],
+    "env": {},
+    "groups": [
+      "parking-accepted-refused"
+    ]
+  },
+  {
+    "family": "write:set",
+    "argv": [
+      "set",
+      "1",
+      "glance.state=parked"
+    ],
+    "env": {
+      "TASKR_TASK": "2"
+    },
+    "groups": [
+      "parking-accepted-refused"
+    ]
+  },
+  {
+    "family": "write:set",
+    "argv": [
+      "set",
+      "1",
+      "glance.state=parked"
+    ],
+    "env": {
+      "TASKR_LAUNCH": "2"
+    },
+    "groups": [
+      "parking-accepted-refused"
+    ]
+  },
+  {
+    "family": "write:new",
+    "groups": [
+      "adopt-registration-hint"
+    ],
+    "argv": [
+      "new",
+      "synthetic-lead",
+      "--role",
+      "orchestrator"
+    ]
+  },
+  {
+    "family": "write:new",
+    "groups": [
+      "adopt-registration-hint"
+    ],
+    "argv": [
+      "new",
+      "synthetic-lead",
+      "--role",
+      "orchestrator",
+      "--pane",
+      "wDemo:p9"
+    ]
+  },
+  {
+    "family": "write:new",
+    "groups": [
+      "adopt-registration-hint"
+    ],
+    "argv": [
+      "new",
+      "synthetic-child",
+      "--role",
+      "orchestrator",
+      "--parent",
+      "1"
+    ]
+  },
+  {
+    "family": "read:hub-context",
+    "groups": [
+      "hub-child-server-caller-hosts"
+    ],
+    "rpc_caller": "host-a",
+    "argv": [
+      "glance"
+    ]
+  },
+  {
+    "family": "read:hub-context",
+    "groups": [
+      "hub-child-server-caller-hosts"
+    ],
+    "rpc_caller": "host-a",
+    "argv": [
+      "--json",
+      "glance"
+    ]
+  },
+  {
+    "family": "read:hub-context",
+    "groups": [
+      "hub-child-server-caller-hosts"
+    ],
+    "rpc_caller": "host-a",
+    "argv": [
+      "campaign",
+      "1"
+    ]
+  },
+  {
+    "family": "read:hub-context",
+    "groups": [
+      "hub-child-server-caller-hosts"
+    ],
+    "rpc_caller": "host-a",
+    "argv": [
+      "--json",
+      "campaign",
+      "1"
+    ]
+  },
+  {
+    "family": "read:hub-context",
+    "groups": [
+      "hub-child-server-caller-hosts"
+    ],
+    "rpc_caller": "host-b",
+    "argv": [
+      "glance"
+    ]
+  },
+  {
+    "family": "read:hub-context",
+    "groups": [
+      "hub-child-server-caller-hosts"
+    ],
+    "rpc_caller": "host-b",
+    "argv": [
+      "--json",
+      "glance"
+    ]
+  },
+  {
+    "family": "read:hub-context",
+    "groups": [
+      "hub-child-server-caller-hosts"
+    ],
+    "rpc_caller": "host-b",
+    "argv": [
+      "campaign",
+      "1"
+    ]
+  },
+  {
+    "family": "read:hub-context",
+    "groups": [
+      "hub-child-server-caller-hosts"
+    ],
+    "rpc_caller": "host-b",
+    "argv": [
+      "--json",
+      "campaign",
+      "1"
+    ]
+  },
+  {
+    "family": "write:set",
+    "groups": [
+      "parking-accepted-refused"
+    ],
+    "rpc_caller": "host-a",
+    "argv": [
+      "set",
+      "1",
+      "glance.state=parked"
+    ]
+  },
+  {
+    "family": "write:set",
+    "groups": [
+      "parking-accepted-refused"
+    ],
+    "rpc_caller": "host-a",
+    "argv": [
+      "set",
+      "2",
+      "glance.state=parked"
+    ]
+  },
+  {
+    "family": "read:glance",
+    "groups": [
+      "spark-bucket-edges"
+    ],
+    "fixtures": [
+      "sparks"
+    ],
+    "argv": [
+      "glance"
+    ]
+  },
+  {
+    "family": "read:glance",
+    "groups": [
+      "spark-bucket-edges"
+    ],
+    "fixtures": [
+      "sparks"
+    ],
+    "argv": [
+      "--json",
+      "glance"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "groups": [
+      "spark-bucket-edges"
+    ],
+    "fixtures": [
+      "sparks"
+    ],
+    "argv": [
+      "campaign",
+      "1"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "groups": [
+      "spark-bucket-edges"
+    ],
+    "fixtures": [
+      "sparks"
+    ],
+    "argv": [
+      "--json",
+      "campaign",
+      "1"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "groups": [
+      "spark-bucket-edges"
+    ],
+    "fixtures": [
+      "sparks"
+    ],
+    "argv": [
+      "campaign",
+      "1",
+      "--all"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "groups": [
+      "spark-bucket-edges"
+    ],
+    "fixtures": [
+      "sparks"
+    ],
+    "argv": [
+      "campaign",
+      "1",
+      "--page",
+      "2"
+    ]
+  },
+  {
+    "family": "read:campaign",
+    "groups": [
+      "spark-bucket-edges"
+    ],
+    "fixtures": [
+      "sparks"
+    ],
+    "argv": [
+      "campaign",
+      "1",
+      "--page",
+      "999"
+    ]
+  }
+]

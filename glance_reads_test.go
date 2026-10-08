@@ -8,6 +8,7 @@ import (
 )
 
 func TestGlanceReadTargets(t *testing.T) {
+	contractGuard(t)
 	f := newGlanceFixture(t)
 	r := f.task("campaign", 0, "open")
 	w := f.task("asker", r, "open")
@@ -38,6 +39,7 @@ func TestGlanceReadTargets(t *testing.T) {
 }
 
 func TestGlanceReadHostsRPC(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	for _, host := range []string{"host-a", "host-b"} {
 		v := r.want(exitOK, host, nil, "glance")
@@ -52,6 +54,7 @@ func TestGlanceReadHostsRPC(t *testing.T) {
 }
 
 func TestGlanceSparkBuckets(t *testing.T) {
+	contractGuard(t)
 	f := newGlanceFixture(t)
 	f.at = time.Date(2026, 10, 8, 12, 5, 0, 0, time.UTC)
 	r := f.task("spark", 0, "open")

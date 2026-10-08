@@ -11,6 +11,7 @@ import (
 )
 
 func TestCampaignReadContract(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("demo-campaign", "orchestrator", 0, "--pane", "wDemo:p1")
 	lane := h.newTask("demo-worker", "implementer", root, "--pane", "wDemo:p2")
@@ -120,6 +121,7 @@ func TestCampaignReadContract(t *testing.T) {
 }
 
 func TestCampaignReadPagingAndEmpty(t *testing.T) {
+	contractGuard(t)
 	f := newGlanceFixture(t)
 	root := f.task("empty", 0, "open")
 	out, err := readTUICampaign(f.db, root, 1, false, f.at)
@@ -159,6 +161,7 @@ func TestCampaignReadPagingAndEmpty(t *testing.T) {
 }
 
 func TestCampaignReadRPCFresh(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	root := num(r.want(exitOK, "host-a", nil, "new", "demo-root", "--role", "orchestrator", "--pane", "wDemo:p1"), "task_id")
 	body := rpcBody(r.dir, nil, "same-read-key", "campaign", id(root))
@@ -182,6 +185,7 @@ func TestCampaignReadRPCFresh(t *testing.T) {
 }
 
 func TestCampaignReadValidationAndHint(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	lane := h.newTask("lane", "implementer", root)
@@ -225,6 +229,7 @@ func TestCampaignReadValidationAndHint(t *testing.T) {
 }
 
 func TestCampaignReadAsksRefsAndStaleHost(t *testing.T) {
+	contractGuard(t)
 	f := newGlanceFixture(t)
 	root := f.task("demo", 0, "open")
 	closed := f.task("old-sub", root, "closed")

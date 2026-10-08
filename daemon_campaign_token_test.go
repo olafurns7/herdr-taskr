@@ -86,6 +86,7 @@ func campaignWrites(t *testing.T, h *harness, want ...string) {
 }
 
 func TestDaemonCampaignRootAndLanes(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
 	campaignTask(h, d, "lane-a", root, "w2", "w2:p1")
@@ -101,6 +102,7 @@ func TestDaemonCampaignRootAndLanes(t *testing.T) {
 }
 
 func TestDaemonCampaignSameWorkspaceTab(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
 	lane := campaignTask(h, d, "lane-a", root, "w1", "w1:p2")
@@ -111,6 +113,7 @@ func TestDaemonCampaignSameWorkspaceTab(t *testing.T) {
 }
 
 func TestDaemonCampaignMixedRoots(t *testing.T) {
+	contractGuard(t)
 	for _, existing := range []bool{false, true} {
 		t.Run(map[bool]string{false: "initial", true: "previously-written"}[existing], func(t *testing.T) {
 			h, d := campaignHarness(t)
@@ -134,6 +137,7 @@ func TestDaemonCampaignMixedRoots(t *testing.T) {
 }
 
 func TestDaemonCampaignClientRoot(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
 	campaignExec(t, d, `update tasks set machine = 'client' where id = ?`, root)
@@ -144,6 +148,7 @@ func TestDaemonCampaignClientRoot(t *testing.T) {
 }
 
 func TestDaemonCampaignTopRoot(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
 	sub := campaignTask(h, d, "sub", root, "w2", "w2:p1")
@@ -154,6 +159,7 @@ func TestDaemonCampaignTopRoot(t *testing.T) {
 }
 
 func TestDaemonCampaignClosure(t *testing.T) {
+	contractGuard(t)
 	for _, closeRoot := range []bool{false, true} {
 		t.Run(map[bool]string{false: "last-lane", true: "root"}[closeRoot], func(t *testing.T) {
 			h, d := campaignHarness(t)
@@ -180,6 +186,7 @@ func TestDaemonCampaignClosure(t *testing.T) {
 }
 
 func TestDaemonCampaignRelaunch(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
 	lane := campaignTask(h, d, "lane-a", root, "w2", "w2:p1")
@@ -198,6 +205,7 @@ func TestDaemonCampaignRelaunch(t *testing.T) {
 }
 
 func TestDaemonCampaignUnchanged(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
 	campaignWorkspaces(h, map[string]map[string]string{"w1": nil})
@@ -212,6 +220,7 @@ func TestDaemonCampaignUnchanged(t *testing.T) {
 }
 
 func TestDaemonCampaignFirstReconcile(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
 	campaignTask(h, d, "lane-a", root, "w2", "w2:p1")
@@ -231,6 +240,7 @@ func TestDaemonCampaignFirstReconcile(t *testing.T) {
 }
 
 func TestDaemonCampaignFailureRetry(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
 	campaignTask(h, d, "lane-a", root, "w2", "w2:p1")
@@ -255,6 +265,7 @@ func TestDaemonCampaignFailureRetry(t *testing.T) {
 }
 
 func TestProbeUnlistedWorkspaceListsEveryPass(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
 	// Include a lane: under the new rule the root workspace wants no tokens.
@@ -270,6 +281,7 @@ func TestProbeUnlistedWorkspaceListsEveryPass(t *testing.T) {
 }
 
 func TestProbeLostTokensNotRepaired(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
 	campaignTask(h, d, "lane-a", root, "w2", "w2:p1")
@@ -286,6 +298,7 @@ func TestProbeLostTokensNotRepaired(t *testing.T) {
 }
 
 func TestProbeClientRootTwoLaneWorkspaces(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
 	campaignExec(t, d, `update tasks set machine = 'client' where id = ?`, root)
@@ -297,6 +310,7 @@ func TestProbeClientRootTwoLaneWorkspaces(t *testing.T) {
 }
 
 func TestDaemonCampaignPaneTokensBeforeWorkspaceCalls(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
 	lane := campaignTask(h, d, "lane-a", root, "w2", "w2:p1")
@@ -313,6 +327,7 @@ func TestDaemonCampaignPaneTokensBeforeWorkspaceCalls(t *testing.T) {
 }
 
 func TestDaemonHeartbeatBeforeBlockedWorkspaceList(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	campaignWorkspaces(h, map[string]map[string]string{})
 	setVar(t, &herdrListDeadline, 2*time.Second)
@@ -343,6 +358,7 @@ func TestDaemonHeartbeatBeforeBlockedWorkspaceList(t *testing.T) {
 }
 
 func TestDaemonFailedWorkspaceListRetryGate(t *testing.T) {
+	contractGuard(t)
 	for _, wanted := range []bool{false, true} {
 		t.Run(map[bool]string{false: "nothing-wanted", true: "wanted"}[wanted], func(t *testing.T) {
 			h, d := campaignHarness(t)
@@ -374,6 +390,7 @@ func TestDaemonFailedWorkspaceListRetryGate(t *testing.T) {
 }
 
 func TestDaemonFailedWorkspaceListRetriesOnFallback(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	campaignWorkspaces(h, map[string]map[string]string{})
 	h.write("workspaces.exit", "1", 0o644)
@@ -401,6 +418,7 @@ func TestDaemonFailedWorkspaceListRetriesOnFallback(t *testing.T) {
 }
 
 func TestDaemonCampaignMissingLaunchDoesNotCount(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
 	lane := campaignTask(h, d, "lane-a", root, "w2", "w2:p1")
@@ -415,6 +433,7 @@ func TestDaemonCampaignMissingLaunchDoesNotCount(t *testing.T) {
 }
 
 func TestDaemonCampaignPlannedTaskDoesNotCount(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
 	lane := campaignTask(h, d, "lane-a", root, "w2", "w2:p1")
@@ -428,6 +447,7 @@ func TestDaemonCampaignPlannedTaskDoesNotCount(t *testing.T) {
 }
 
 func TestDaemonCampaignGoodListClearsRetryGate(t *testing.T) {
+	contractGuard(t)
 	h, d := campaignHarness(t)
 	root := campaignTask(h, d, "root-a", 0, "w1", "w1:p1")
 	campaignTask(h, d, "lane-a", root, "w2", "w2:p1")
@@ -457,6 +477,7 @@ func TestDaemonCampaignGoodListClearsRetryGate(t *testing.T) {
 // Pane-token compatibility is checked against exact CLI arguments across all
 // campaign transitions above; the existing pane test covers asks and waits.
 func TestDaemonCampaignPaneCompatibility(t *testing.T) {
+	contractGuard(t)
 	for _, change := range []string{"lanes", "same-workspace", "mixed", "client-root", "sub", "close-lane", "close-root", "relaunch", "unchanged", "reconcile", "failure"} {
 		t.Run(change, func(t *testing.T) {
 			h, d := campaignHarness(t)

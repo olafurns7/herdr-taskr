@@ -144,7 +144,7 @@ func cmdWait(c *ctx, args []string) (res any, code int, err error) {
 			res = m
 		}
 	}()
-	deadline := time.Now().Add(time.Duration(*timeout) * time.Millisecond)
+	deadline := clockNow().Add(time.Duration(*timeout) * time.Millisecond)
 	// The server passes the request's context; the CLI stops on a signal.
 	sig := c.cx
 	if sig == nil {

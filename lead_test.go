@@ -47,6 +47,7 @@ func countEvents(t *testing.T, db *sql.DB) int {
 // A root with no child launches is observed by the hub pass alone, from the
 // one listing that pass fetches, and writes no event.
 func TestLeadObservedByHubPass(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("top", "orchestrator", 0, "--pane", "w1:p1")
 	bare := h.newTask("bare", "orchestrator", 0)
@@ -145,6 +146,7 @@ func TestLeadObservedByHubPass(t *testing.T) {
 // roots, a stale client heartbeat hides the stored status, and adopt forgets
 // the old pane's observation.
 func TestLeadHostsDoNotCross(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	db := r.openDB()
 	const pane = "w1:p1"
@@ -266,6 +268,7 @@ func leadMigrationHarness(t *testing.T) *harness {
 }
 
 func TestMigrationAddsLeadColumns(t *testing.T) {
+	contractGuard(t)
 	h := leadMigrationHarness(t)
 	db := h.openDB()
 	if got := leadOf(t, db, 1); got != "unknown" {
@@ -282,6 +285,7 @@ func TestMigrationAddsLeadColumns(t *testing.T) {
 }
 
 func TestLeadHubListingFreshness(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("top", "orchestrator", 0, "--pane", "w1:p1")
 	db := h.openDB()
@@ -345,6 +349,7 @@ func TestLeadHubListingFreshness(t *testing.T) {
 }
 
 func TestLeadRebindInvalidatesObservation(t *testing.T) {
+	contractGuard(t)
 	h := leadMigrationHarness(t)
 	db := h.openDB()
 	for _, key := range []string{heartbeatKey, "lead_listed_at", hostHeartbeatKey("host-a")} {

@@ -47,6 +47,7 @@ func wantCalls(t *testing.T, got []string, want ...string) {
 }
 
 func TestDaemonOwnerAskToken(t *testing.T) {
+	contractGuard(t)
 	h, d, writes := ownerAskHarness(t)
 	top := h.newTask("top", "orchestrator", 0, "--pane", "w1:p1")
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -86,6 +87,7 @@ func TestDaemonOwnerAskToken(t *testing.T) {
 }
 
 func TestDaemonOwnerAskTokenMove(t *testing.T) {
+	contractGuard(t)
 	h, d, writes := ownerAskHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -112,6 +114,7 @@ func TestDaemonOwnerAskTokenMove(t *testing.T) {
 }
 
 func TestDaemonOwnerAskTokenRestart(t *testing.T) {
+	contractGuard(t)
 	h, d, writes := ownerAskHarness(t)
 	top := h.newTask("top", "orchestrator", 0, "--pane", "w1:p1")
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -135,6 +138,7 @@ func TestDaemonOwnerAskTokenRestart(t *testing.T) {
 }
 
 func TestDaemonOwnerAskTokenRetry(t *testing.T) {
+	contractGuard(t)
 	h, d, writes := ownerAskHarness(t)
 	top := h.newTask("top", "orchestrator", 0, "--pane", "w1:p1")
 	ownerAskPanes(h, map[string]string{"w1:p1": ""})
@@ -160,6 +164,7 @@ func TestDaemonOwnerAskTokenRetry(t *testing.T) {
 }
 
 func TestDaemonOwnerAskTokenUnlistedPane(t *testing.T) {
+	contractGuard(t)
 	h, d, writes := ownerAskHarness(t)
 
 	// A launchless root registered before its pane exists: the first list is empty.
@@ -181,6 +186,7 @@ func TestDaemonOwnerAskTokenUnlistedPane(t *testing.T) {
 }
 
 func TestDaemonOwnerAskTokenStaleUnlistedPane(t *testing.T) {
+	contractGuard(t)
 	h, d, writes := ownerAskHarness(t)
 	h.newTask("top", "orchestrator", 0, "--pane", "w1:p1")
 

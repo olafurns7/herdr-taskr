@@ -22,6 +22,7 @@ const capacityFooter = "\n\n› Summarize recent commits\n\n  ? for shortcuts   
 
 // These are presentation fixtures, not provider failures or live runtime proof.
 func TestCapacityTail(t *testing.T) {
+	contractGuard(t)
 	for _, suggestion := range []string{"Summarize recent commits", "Write tests for @filename", "Explain this codebase", "Implement {feature}", "Find and fix a bug in @filename", "Improve documentation in @filename"} {
 		text := nativeCapacity + "\n\n› " + suggestion + "\n\n  ? for shortcuts\n"
 		if capacityOf(text).signal != capacityWarning {
@@ -170,6 +171,7 @@ func scanCapacityTest(t *testing.T, h *harness, db *sql.DB, top int64) {
 }
 
 func TestCapacityCurrentWarningStates(t *testing.T) {
+	contractGuard(t)
 	for _, status := range []string{"idle", "unknown", "working"} {
 		for variant, text := range map[string]string{"plain": nativeCapacity + capacityFooter,
 			"wrapped": "■ Selected model is at capacity. Please try a\n  different model." + capacityFooter,
@@ -190,6 +192,7 @@ func TestCapacityCurrentWarningStates(t *testing.T) {
 }
 
 func TestCapacityRecoveredHistory(t *testing.T) {
+	contractGuard(t)
 	h, db, top, _, _, p := capacityFixture(t)
 	p.text = nativeCapacity + "\n\n› continue\n\n• New tool output\n\n• Working (3s • esc to interrupt)" + capacityFooter
 	scanCapacityTest(t, h, db, top)
@@ -202,6 +205,7 @@ func TestCapacityRecoveredHistory(t *testing.T) {
 }
 
 func TestCapacityEpisodesAndPrivacy(t *testing.T) {
+	contractGuard(t)
 	h, db, top, w, l, p := capacityFixture(t)
 	const secret = "SECRET-CAPACITY-PANE-61f8"
 	p.text = "› First taskr got 42. " + secret + "\n\n" + nativeCapacity + capacityFooter
@@ -317,6 +321,7 @@ func TestCapacityEpisodesAndPrivacy(t *testing.T) {
 }
 
 func TestCapacityCandidateRaces(t *testing.T) {
+	contractGuard(t)
 	for _, scenario := range []string{"native session", "terminal", "name", "provider", "current launch", "parent", "pane", "waiting", "closed", "prompt attempt", "binding deleted"} {
 		t.Run(scenario, func(t *testing.T) {
 			h, db, top, w, l, p := capacityFixture(t)
@@ -359,6 +364,7 @@ func TestCapacityCandidateRaces(t *testing.T) {
 }
 
 func TestCapacityIdentityAndLaunchFences(t *testing.T) {
+	contractGuard(t)
 	for _, scenario := range []string{"session", "terminal", "provider", "name", "read race", "relaunch", "parent", "pane", "waiting", "status", "session record"} {
 		t.Run(scenario, func(t *testing.T) {
 			h, db, top, w, l, p := capacityFixture(t)
@@ -422,6 +428,7 @@ func TestCapacityIdentityAndLaunchFences(t *testing.T) {
 }
 
 func TestCapacityBootstrapAndPromptBinding(t *testing.T) {
+	contractGuard(t)
 	for _, scenario := range []string{"recorded", "alias", "parent-bound", "missing", "latest marker", "older marker", "old launch marker", "quoted marker", "wrong session", "alias changed value", "unknown kind", "live unknown kind", "session provider", "empty value"} {
 		t.Run(scenario, func(t *testing.T) {
 			h, db, top, w, l, p := capacityFixture(t)
@@ -490,6 +497,7 @@ func TestCapacityBootstrapAndPromptBinding(t *testing.T) {
 }
 
 func TestCapacityWaitDefaultAndHeartbeat(t *testing.T) {
+	contractGuard(t)
 	h, db, top, w, l, p := capacityFixture(t)
 	setMeta(db, heartbeatKey, now()) // old daemon knows nothing about capacity
 	// A pending ordinary event must not starve the default scan.
@@ -535,6 +543,7 @@ func TestCapacityWaitDefaultAndHeartbeat(t *testing.T) {
 }
 
 func TestCapacityWaitSkipsIneligible(t *testing.T) {
+	contractGuard(t)
 	for _, scenario := range []string{"timeout0", "gate", "ready", "done", "failed", "planned", "closed", "waiting", "no pane", "no launch", "other provider", "worker inbox", "no children"} {
 		t.Run(scenario, func(t *testing.T) {
 			h, db, top, w, _, p := capacityFixture(t)
@@ -573,6 +582,7 @@ func TestCapacityWaitSkipsIneligible(t *testing.T) {
 }
 
 func TestCapacitySocketFailureBounds(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	for _, executable := range []string{"herdr", "ssh", "sh"} {
 		h.write(executable, "#!/bin/sh\necho called >> \""+filepath.Join(h.bin, "forbidden")+"\"\n", 0o755)
@@ -622,6 +632,7 @@ func TestCapacitySocketFailureBounds(t *testing.T) {
 }
 
 func TestCapacityUnavailableServer(t *testing.T) {
+	contractGuard(t)
 	for _, scenario := range []string{"missing", "stale", "disconnect"} {
 		t.Run(scenario, func(t *testing.T) {
 			h, db, top, _, _, _ := capacityFixture(t)
@@ -646,6 +657,7 @@ func TestCapacityUnavailableServer(t *testing.T) {
 }
 
 func TestCapacityMalformedReadAndWriteFailure(t *testing.T) {
+	contractGuard(t)
 	for _, scenario := range []string{"pane", "source", "format", "revision", "truncated cell", "truncated complete", "read error", "write failure"} {
 		t.Run(scenario, func(t *testing.T) {
 			h, db, top, _, _, p := capacityFixture(t)
@@ -694,6 +706,7 @@ func TestCapacityMalformedReadAndWriteFailure(t *testing.T) {
 }
 
 func TestCapacityBudgetCursor(t *testing.T) {
+	contractGuard(t)
 	h, db, top, _, _, p := capacityFixture(t)
 	w2 := h.newTask("second", "implementer", top, "--pane", "w9:p2")
 	l2 := num(h.ok(nil, "launch", id(w2), "--provider", "codex", "--model", "gpt-6-luna", "--effort", "max"), "launch_id")
@@ -719,6 +732,7 @@ func TestCapacityBudgetCursor(t *testing.T) {
 }
 
 func TestCapacityNewCLIProcessDedupe(t *testing.T) {
+	contractGuard(t)
 	h, db, top, _, _, p := capacityFixture(t)
 	setMeta(db, heartbeatKey, now())
 	scanCapacityTest(t, h, db, top)

@@ -11,6 +11,7 @@ import (
 )
 
 func TestWaitCapacityFilterReplay(t *testing.T) {
+	contractGuard(t)
 	for _, tc := range []struct {
 		name string
 		data map[string]any
@@ -46,6 +47,7 @@ func TestWaitCapacityFilterReplay(t *testing.T) {
 }
 
 func TestWaitBypassStaysNarrow(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	a := h.newTask("alpha", "implementer", top)
@@ -62,6 +64,7 @@ func TestWaitBypassStaysNarrow(t *testing.T) {
 }
 
 func TestWaitWorkerIdentity(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("worker", "implementer", top)
@@ -81,6 +84,7 @@ func TestWaitWorkerIdentity(t *testing.T) {
 }
 
 func TestWaitWorkerIdentityClientMode(t *testing.T) {
+	contractGuard(t)
 	r := newTwoHost(t)
 	dir := t.TempDir()
 	top := num(r.want(0, "host-a", nil, "new", "top", "--role", "orchestrator", "--cwd", dir), "task_id")
@@ -95,6 +99,7 @@ func TestWaitWorkerIdentityClientMode(t *testing.T) {
 }
 
 func TestWaitFilterDeadlinePreservesBacklog(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("lane", "implementer", top)
@@ -144,6 +149,7 @@ func TestWaitFilterDeadlinePreservesBacklog(t *testing.T) {
 }
 
 func TestWaitFilterSkipAckReplay(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	a := h.newTask("alpha", "implementer", top)
@@ -188,6 +194,7 @@ func TestWaitFilterSkipAckReplay(t *testing.T) {
 }
 
 func TestWaitFilterObservedEventAndTimeout(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("lane", "implementer", top, "--pane", "w9:p1")
@@ -214,6 +221,7 @@ func TestWaitFilterObservedEventAndTimeout(t *testing.T) {
 }
 
 func TestWaitCountsIgnoreClosedChild(t *testing.T) {
+	contractGuard(t)
 	h, top, w, _ := hintFixture(t)
 	h.ok(nil, "prompt", id(w), "--text", "Go.", "--receipt-timeout", "0")
 	h.ok(nil, "close", id(w))
@@ -241,6 +249,7 @@ func TestWaitCountsIgnoreClosedChild(t *testing.T) {
 }
 
 func TestWaitFilterInterruptClearsWaiting(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("lane", "implementer", top)
@@ -266,6 +275,7 @@ func TestWaitFilterInterruptClearsWaiting(t *testing.T) {
 }
 
 func TestCompactWaitInterruptClearsWaiting(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("lane", "implementer", top)
@@ -302,6 +312,7 @@ func TestCompactWaitInterruptClearsWaiting(t *testing.T) {
 }
 
 func TestCompactWaitTimeoutCleanupFailure(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	if _, err := h.openDB().Exec(`create trigger reject_clear before update of waiting_until on tasks
@@ -317,6 +328,7 @@ func TestCompactWaitTimeoutCleanupFailure(t *testing.T) {
 }
 
 func TestWaitAckCleanupFailureRetainsBothIDs(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("lane", "implementer", top)

@@ -28,6 +28,9 @@ var (
 // real taskr daemon rather than the test binary.
 func buildTaskr(t *testing.T) string {
 	t.Helper()
+	if bin := os.Getenv("TASKR_BIN"); bin != "" {
+		return bin
+	}
 	buildOnce.Do(func() {
 		buildDir, buildErr = os.MkdirTemp("", "taskr-bin")
 		if buildErr != nil {
@@ -93,7 +96,7 @@ func (r *restartRig) getenv(over map[string]string) func(string) string {
 func (r *restartRig) run(over map[string]string, args ...string) (int, map[string]any) {
 	r.h.t.Helper()
 	var out bytes.Buffer
-	code := run(append([]string{"--json"}, args...), r.getenv(over), &out, io.Discard)
+	code := contractRun(r.h.t, append([]string{"--json"}, args...), r.getenv(over), &out, io.Discard)
 	var m map[string]any
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &m); err != nil {
@@ -152,6 +155,7 @@ func readEnvFile(t *testing.T, path string) map[string]string {
 }
 
 func TestDaemonRestartReplacesWithMinimalEnv(t *testing.T) {
+	contractGuard(t)
 	r := newRestartRig(t)
 	root := num(func() map[string]any {
 		_, m := r.run(nil, "new", "top", "--role", "orchestrator", "--cwd", r.h.dir)
@@ -217,6 +221,7 @@ func TestDaemonRestartReplacesWithMinimalEnv(t *testing.T) {
 }
 
 func TestDaemonRestartWithoutDaemonStartsOne(t *testing.T) {
+	contractGuard(t)
 	r := newRestartRig(t)
 	code, out := r.run(nil, "daemon", "--restart")
 	if code != 0 {
@@ -274,6 +279,7 @@ func (r *restartRig) refused(t *testing.T, want string) map[string]any {
 }
 
 func TestDaemonRestartRefusesNonTaskrPID(t *testing.T) {
+	contractGuard(t)
 	r := newRestartRig(t)
 	sleeper := exec.Command("sleep", "30")
 	if err := sleeper.Start(); err != nil {
@@ -347,6 +353,7 @@ func (r *restartRig) recordDaemon(t *testing.T, pid int, exe, start string) {
 // received SIGTERM; now nothing is signalled whatever the ledger claims,
 // unless every part of the recorded identity matches.
 func TestDaemonRestartRefusesLookalike(t *testing.T) {
+	contractGuard(t)
 	r := newRestartRig(t)
 	cmd, fake := r.startLookalike(t, "daemon")
 	pid := cmd.Process.Pid
@@ -387,6 +394,7 @@ func TestDaemonRestartRefusesLookalike(t *testing.T) {
 // A real taskr daemon whose recorded start time differs (its pid reused by
 // a later process, as far as the ledger can tell) is not signalled.
 func TestDaemonRestartRefusesReusedPID(t *testing.T) {
+	contractGuard(t)
 	r := newRestartRig(t)
 	root := num(func() map[string]any {
 		_, m := r.run(nil, "new", "top", "--role", "orchestrator", "--cwd", r.h.dir)
@@ -420,6 +428,7 @@ func TestDaemonRestartRefusesReusedPID(t *testing.T) {
 // executable (a new inode at the same path) while the old daemon runs. The
 // path is still the recorded one, so --restart replaces it.
 func TestDaemonRestartAfterBinaryReplaced(t *testing.T) {
+	contractGuard(t)
 	r := newRestartRig(t)
 	own := filepath.Join(r.h.dir, "inst", "taskr")
 	copyFile := func(dst string) {
@@ -458,6 +467,7 @@ func TestDaemonRestartAfterBinaryReplaced(t *testing.T) {
 }
 
 func TestReplacedExe(t *testing.T) {
+	contractGuard(t)
 	for in, want := range map[string]string{
 		"/home/u/.local/bin/taskr (deleted)": "/home/u/.local/bin/taskr",
 		"/home/u/.local/bin/taskr":           "/home/u/.local/bin/taskr",
@@ -470,6 +480,7 @@ func TestReplacedExe(t *testing.T) {
 }
 
 func TestDaemonStatusStale(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	s := newFakeSocket(t)
 	h.startDaemon(s)
@@ -491,6 +502,7 @@ func TestDaemonStatusStale(t *testing.T) {
 }
 
 func TestProcIdentitySelf(t *testing.T) {
+	contractGuard(t)
 	id, err := procIdentity(os.Getpid())
 	if err != nil {
 		t.Fatal(err)
@@ -564,6 +576,7 @@ func (r *restartRig) startStay(t *testing.T, supervised bool) (*exec.Cmd, chan s
 }
 
 func TestDaemonStayWaitsForLockAndTakesOver(t *testing.T) {
+	contractGuard(t)
 	r := newRestartRig(t)
 	old, oldDone := r.startOld(t)
 	second, secondDone := r.startStay(t, false)
@@ -587,6 +600,7 @@ func TestDaemonStayWaitsForLockAndTakesOver(t *testing.T) {
 }
 
 func TestDaemonRestartKeepsStay(t *testing.T) {
+	contractGuard(t)
 	r := newRestartRig(t)
 	r.s.shutdown()
 	old, _ := r.startStay(t, false)
@@ -606,6 +620,7 @@ func TestDaemonRestartKeepsStay(t *testing.T) {
 }
 
 func TestDaemonStayLockWaitCanBeStopped(t *testing.T) {
+	contractGuard(t)
 	r := newRestartRig(t)
 	old, _ := r.startOld(t)
 	second, done := r.startStay(t, false)
@@ -622,6 +637,7 @@ func TestDaemonStayLockWaitCanBeStopped(t *testing.T) {
 }
 
 func TestDaemonSupervisedRestartWaitsForReplacement(t *testing.T) {
+	contractGuard(t)
 	r := newRestartRig(t)
 	r.s.shutdown()
 	old, _ := r.startStay(t, true)
@@ -638,6 +654,7 @@ func TestDaemonSupervisedRestartWaitsForReplacement(t *testing.T) {
 }
 
 func TestDaemonSupervisedInheritedInvocationRestartsQuickly(t *testing.T) {
+	contractGuard(t)
 	setVar(t, &daemonRestartWait, 2*time.Second)
 	r := newRestartRig(t)
 	r.s.shutdown()
@@ -659,6 +676,7 @@ func TestDaemonSupervisedInheritedInvocationRestartsQuickly(t *testing.T) {
 }
 
 func TestDaemonStayRestartStaleIdentityNamesFile(t *testing.T) {
+	contractGuard(t)
 	r := newRestartRig(t)
 	r.s.shutdown()
 	old, _ := r.startStay(t, false)
@@ -682,6 +700,7 @@ func TestDaemonStayRestartStaleIdentityNamesFile(t *testing.T) {
 }
 
 func TestDaemonSupervisedRestartFallsBack(t *testing.T) {
+	contractGuard(t)
 	setVar(t, &daemonRestartWait, 250*time.Millisecond)
 	r := newRestartRig(t)
 	r.s.shutdown()

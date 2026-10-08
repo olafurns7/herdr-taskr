@@ -22,11 +22,12 @@ func errOf(m map[string]any) string { s, _ := m["error"].(string); return s }
 func (h *harness) runText(env map[string]string, args ...string) (int, string, string) {
 	h.t.Helper()
 	var out, errb bytes.Buffer
-	code := run(append([]string{"--json"}, args...), h.getenv(env), &out, &errb)
+	code := contractRun(h.t, append([]string{"--json"}, args...), h.getenv(env), &out, &errb)
 	return code, out.String(), errb.String()
 }
 
 func TestPlannedLifecycle(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	if out := h.one(exitUsage, nil, "new", "p", "--role", "implementer", "--planned"); !strings.Contains(errOf(out), "--planned needs --parent") {
@@ -105,6 +106,7 @@ func TestPlannedLifecycle(t *testing.T) {
 }
 
 func TestNextLatestWinsAndClear(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	lane := h.newTask("lane", "implementer", top)
@@ -159,6 +161,7 @@ func TestNextLatestWinsAndClear(t *testing.T) {
 }
 
 func TestDecideRevokeAndOwnerAsks(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("w", "implementer", top)
@@ -215,6 +218,7 @@ func TestDecideRevokeAndOwnerAsks(t *testing.T) {
 }
 
 func TestSetRefs(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	lane := h.newTask("lane", "implementer", top)
@@ -353,6 +357,7 @@ func pinHandoverClock(t *testing.T) {
 }
 
 func TestHandoverGolden(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	pinHandoverClock(t)
 	f := seedHandover(h)
@@ -418,6 +423,7 @@ func TestHandoverGolden(t *testing.T) {
 }
 
 func TestAdopt(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	pinHandoverClock(t)
 	f := seedHandover(h)
@@ -489,6 +495,7 @@ func TestAdopt(t *testing.T) {
 }
 
 func TestAdoptWithoutHandover(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	pinHandoverClock(t)
 	top := h.newTask("solo", "orchestrator", 0)
@@ -499,6 +506,7 @@ func TestAdoptWithoutHandover(t *testing.T) {
 }
 
 func TestDashboardPlanFields(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	f := seedHandover(h)
 	h.runText(nil, "handover", "--as", id(f.top), "--note", "away")
@@ -554,6 +562,7 @@ func TestDashboardPlanFields(t *testing.T) {
 }
 
 func TestHubPeerStateWithAndWithoutPlanFields(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	d := h.hubDash()
 	at := time.Now()
@@ -597,6 +606,7 @@ func TestHubPeerStateWithAndWithoutPlanFields(t *testing.T) {
 // millisecond as the handover, or under a clock that went backwards, is still
 // listed once, and consecutive handovers never repeat a lane.
 func TestHandoverClosedSinceByEventID(t *testing.T) {
+	contractGuard(t)
 	for _, delta := range []time.Duration{0, -time.Second, -time.Hour} {
 		t.Run(delta.String(), func(t *testing.T) {
 			h := newHarness(t)
@@ -664,6 +674,7 @@ func TestHandoverClosedSinceByEventID(t *testing.T) {
 // cannot write, and the planned task's inbox is refused, until the ancestor
 // is launched. The planned subtree itself may still be registered.
 func TestPlannedAncestorBlocksSubtree(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("top", "orchestrator", 0)
 	plan := h.newTask("future-sub", "sub-orchestrator", root, "--planned")
@@ -707,6 +718,7 @@ func TestPlannedAncestorBlocksSubtree(t *testing.T) {
 // Worker-event routing refuses a planned recipient on its own, behind the
 // launch and resolve guards: the insert paths call it inside their transaction.
 func TestNotPlannedRecipientDefensive(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("top", "orchestrator", 0)
 	plan := num(h.ok(nil, "new", "later", "--role", "sub-orchestrator", "--parent", id(root), "--planned"), "task_id")
@@ -743,6 +755,7 @@ func unescapedPipes(s string) int {
 // Every ledger string is escaped once: backticks, pipes, a backslash before a
 // pipe, HTML and newlines cannot break the table or inject markup.
 func TestHandoverEscapesLedgerText(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	pinHandoverClock(t)
 	root := h.newTask("top", "orchestrator", 0)

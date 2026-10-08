@@ -50,6 +50,7 @@ func clientCampaignReply(r *relay, machine string) map[string]any {
 }
 
 func TestRelayCampaignTokens(t *testing.T) {
+	contractGuard(t)
 	r, client, h := clientCampaignHarness(t)
 	root := clientCampaignTask(r, "root-a", 0, "w1", "host-a")
 	clientCampaignTask(r, "lane-a", root, "w2", "host-a")
@@ -86,6 +87,7 @@ func TestRelayCampaignTokens(t *testing.T) {
 }
 
 func TestRelayCampaignClosure(t *testing.T) {
+	contractGuard(t)
 	r, client, h := clientCampaignHarness(t)
 	root := clientCampaignTask(r, "root-a", 0, "w1", "host-a")
 	lane := clientCampaignTask(r, "lane-a", root, "w2", "host-a")
@@ -109,6 +111,7 @@ func TestRelayCampaignClosure(t *testing.T) {
 }
 
 func TestRelayCampaignPreserveWithoutReply(t *testing.T) {
+	contractGuard(t)
 	for _, mode := range []string{"older-server", "rejected", "rejected-malformed", "unreachable", "malformed"} {
 		t.Run(mode, func(t *testing.T) {
 			r, client, h := clientCampaignHarness(t)
@@ -169,6 +172,7 @@ func TestRelayCampaignPreserveWithoutReply(t *testing.T) {
 }
 
 func TestRelayCampaignTokenFailureDeliversOwnerAsk(t *testing.T) {
+	contractGuard(t)
 	r, client, h := clientCampaignHarness(t)
 	_, _, _, lane, launch := r.lanes()
 	r.agents(r.hostADir, sharedPane+"/working/1")
@@ -249,6 +253,7 @@ func TestRelayCampaignTokenFailureDeliversOwnerAsk(t *testing.T) {
 }
 
 func TestRelayCampaignNotifiesBeforeTokenWrite(t *testing.T) {
+	contractGuard(t)
 	for _, failWrite := range []bool{false, true} {
 		t.Run(fmt.Sprintf("fail-write=%v", failWrite), func(t *testing.T) {
 			r, client, h := clientCampaignHarness(t)

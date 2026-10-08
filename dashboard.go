@@ -413,7 +413,7 @@ func tooLarge(err error) bool {
 }
 
 func (d *dashboard) state(w http.ResponseWriter, r *http.Request) {
-	at := time.Now()
+	at := clockNow()
 	s, err := readState(r.Context(), d.db, at)
 	if err != nil {
 		d.log.logf("dashboard state failed: %v", err)

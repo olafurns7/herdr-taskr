@@ -342,7 +342,7 @@ func (d *dashboard) rpc(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "request_key must match [A-Za-z0-9_-]{8,128}")
 		return
 	}
-	http.NewResponseController(w).SetWriteDeadline(time.Now().Add(rpcBudget(req.Argv) + rpcSlack))
+	http.NewResponseController(w).SetWriteDeadline(clockNow().Add(rpcBudget(req.Argv) + rpcSlack))
 	name, _ := rpcCommand(req.Argv)
 	if _, ok := commands[name]; !ok && name != "help" && hiddenCommands[name] == nil {
 		name = "unknown" // the log never carries argv text
@@ -410,7 +410,7 @@ func (d *dashboard) rpcStored(machine string, req rpcRequest) rpcReply {
 	var prior *rpcReply
 	var refusal error
 	err := withTx(d.db, func(tx *sql.Tx) error {
-		if _, err := tx.Exec(`delete from requests where created_at < ?`, stamp(time.Now().Add(-requestsKeep))); err != nil {
+		if _, err := tx.Exec(`delete from requests where created_at < ?`, stamp(clockNow().Add(-requestsKeep))); err != nil {
 			return err
 		}
 		var m sql.NullString

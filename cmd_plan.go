@@ -30,7 +30,7 @@ const (
 var refKeyRe = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,31}$`)
 
 // handoverNow is the render clock; tests pin it for golden output.
-var handoverNow = time.Now
+var handoverNow = clockNow
 
 // openPlanTask loads a task an orchestrator annotates: any task but a closed one.
 func openPlanTask(tx *sql.Tx, id int64) (*task, error) {

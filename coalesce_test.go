@@ -21,6 +21,7 @@ func insertCoalesceEvent(t *testing.T, db *sql.DB, e event) int64 {
 }
 
 func TestCoalescePlainHintRules(t *testing.T) {
+	contractGuard(t)
 	tests := []struct {
 		name      string
 		coalesced bool
@@ -107,6 +108,7 @@ func TestCoalescePlainHintRules(t *testing.T) {
 }
 
 func TestCoalesceUnfilteredWaitKeepsOldestEnvelope(t *testing.T) {
+	contractGuard(t)
 	h, top, w, l := hintFixture(t)
 	db := h.openDB()
 	first := insertCoalesceEvent(t, db, event{TaskID: w, RecipientTaskID: ptr(top), LaunchID: ptr(l), Kind: "herdr"})
@@ -119,6 +121,7 @@ func TestCoalesceUnfilteredWaitKeepsOldestEnvelope(t *testing.T) {
 }
 
 func TestCoalesceResolvedReceiptPair(t *testing.T) {
+	contractGuard(t)
 	h, top, w, l := hintFixture(t)
 	db := h.openDB()
 	attempt := insertCoalesceEvent(t, db, event{TaskID: w, LaunchID: ptr(l), Kind: "prompt"})
@@ -143,6 +146,7 @@ func TestCoalesceResolvedReceiptPair(t *testing.T) {
 }
 
 func TestCoalesceLateReceiptAfterDeliveredNoReceipt(t *testing.T) {
+	contractGuard(t)
 	h, top, w, l := hintFixture(t)
 	attempt := num(h.ok(nil, "prompt", id(w), "--text", "Go."), "attempt_id")
 	overdue(h, attempt)
@@ -172,6 +176,7 @@ func TestCoalesceLateReceiptAfterDeliveredNoReceipt(t *testing.T) {
 }
 
 func TestCoalesceLateReceiptAfterConfirmNoReceipt(t *testing.T) {
+	contractGuard(t)
 	h, top, w, l := hintFixture(t)
 	c := h.one(exitHerdr, nil, "prompt", id(w), "--text", "Go.", "--confirm", "--confirm-timeout", "300")
 	attempt := num(c, "attempt_id")

@@ -371,7 +371,7 @@ func claimPoll(db *sql.DB, get, set string, key any) (bool, error) {
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if last.Valid && time.Since(parseTime(last.String)) < livenessInterval {
+		if last.Valid && clockNow().Sub(parseTime(last.String)) < livenessInterval {
 			return nil
 		}
 		due = true

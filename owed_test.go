@@ -54,6 +54,7 @@ func promptOwed(t *testing.T, h *harness, task int64, extra ...string) int64 {
 }
 
 func TestHintStartupUnknownSilent(t *testing.T) {
+	contractGuard(t)
 	h, top, _, l := hintFixture(t)
 	h.setAgents("w9:p1/unknown/1")
 	if out := h.ok(nil, "daemon", "--once"); out["once"] != true {
@@ -75,6 +76,7 @@ func TestHintStartupUnknownSilent(t *testing.T) {
 }
 
 func TestHintMidTurnIdleWithGotEmits(t *testing.T) {
+	contractGuard(t)
 	h, top, w, l := hintFixture(t)
 	a := promptOwed(t, h, w)
 	h.ok(as(w, l), "got", id(a))
@@ -94,6 +96,7 @@ func TestHintMidTurnIdleWithGotEmits(t *testing.T) {
 }
 
 func TestHintArmedRowSilent(t *testing.T) {
+	contractGuard(t)
 	h, top, w, l := hintFixture(t)
 	promptOwed(t, h, w) // the prompt arms receipt_due:<attempt> itself
 	h.setAgents("w9:p1/idle/2")
@@ -113,6 +116,7 @@ func TestHintArmedRowSilent(t *testing.T) {
 }
 
 func TestHintUnarmedEmits(t *testing.T) {
+	contractGuard(t)
 	h, top, w, l := hintFixture(t)
 	promptOwed(t, h, w, "--receipt-timeout", "0") // --receipt-timeout 0 disarms
 	h.setAgents("w9:p1/idle/2")
@@ -132,6 +136,7 @@ func TestHintUnarmedEmits(t *testing.T) {
 }
 
 func TestHintPostReady(t *testing.T) {
+	contractGuard(t)
 	h, top, w, l := hintFixture(t)
 	promptOwed(t, h, w)
 	h.ok(as(w, l), "ready", "slice")
@@ -159,6 +164,7 @@ func TestHintPostReady(t *testing.T) {
 }
 
 func TestHintAfterDoneSilent(t *testing.T) {
+	contractGuard(t)
 	h, top, w, l := hintFixture(t)
 	promptOwed(t, h, w)
 	h.ok(as(w, l), "done", "did it")
@@ -187,6 +193,7 @@ func TestHintAfterDoneSilent(t *testing.T) {
 }
 
 func TestHintBlockedAlwaysEmits(t *testing.T) {
+	contractGuard(t)
 	h, top, _, l := hintFixture(t)
 	h.setAgents("w9:p1/blocked/1")
 	h.ok(nil, "daemon", "--once")
@@ -205,6 +212,7 @@ func TestHintBlockedAlwaysEmits(t *testing.T) {
 }
 
 func TestHintCapacityEmitsOnOwnPath(t *testing.T) {
+	contractGuard(t)
 	h, db, top, _, _, p := capacityFixture(t)
 	p.status, p.text = "idle", nativeCapacity+capacityFooter
 	scanCapacityTest(t, h, db, top)
@@ -217,6 +225,7 @@ func TestHintCapacityEmitsOnOwnPath(t *testing.T) {
 }
 
 func TestOwes(t *testing.T) {
+	contractGuard(t)
 	h, _, w, _ := hintFixture(t)
 	db := h.openDB()
 	owed := func() bool {

@@ -28,7 +28,7 @@ func cmdNotes(c *ctx, args []string) (any, int, error) {
 		qargs = append(qargs, n)
 	} else if duration, err := time.ParseDuration(*since); err == nil && duration > 0 {
 		where += ` and e.created_at > ?`
-		qargs = append(qargs, stamp(time.Now().Add(-duration)))
+		qargs = append(qargs, stamp(clockNow().Add(-duration)))
 	} else {
 		return nil, 0, usageErr("--since must be a nonnegative event id or positive Go duration")
 	}

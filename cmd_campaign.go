@@ -35,7 +35,7 @@ func cmdCampaign(c *ctx, args []string) (any, int, error) {
 		return nil, 0, dbErr(err)
 	}
 	defer tx.Rollback()
-	out, err := readTUICampaign(tx, root, *page, *all, time.Now())
+	out, err := readTUICampaign(tx, root, *page, *all, clockNow())
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, 0, rejectErr("campaign %d does not exist or is not a root", root)
 	}

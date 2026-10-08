@@ -73,6 +73,7 @@ func campaignGET(t *testing.T, d *dashboard, path string) map[string]any {
 	return m
 }
 func TestCampaignRoutes(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	open := h.newTask("open", "implementer", root)
@@ -218,6 +219,7 @@ func TestCampaignRoutes(t *testing.T) {
 }
 
 func TestCampaignPagingAndEmpty(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	db := h.openDB()
@@ -259,6 +261,7 @@ func TestCampaignPagingAndEmpty(t *testing.T) {
 	}
 }
 func TestCampaignNotFoundAndAdmission(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	lane := h.newTask("lane", "implementer", root)
@@ -302,6 +305,7 @@ func TestCampaignNotFoundAndAdmission(t *testing.T) {
 	}
 }
 func TestCampaignDocumentsDoNotChangeSnapshots(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	f := seedDashboard(h)
 	d := h.dash()
@@ -340,6 +344,7 @@ func TestCampaignDocumentsDoNotChangeSnapshots(t *testing.T) {
 }
 
 func TestCampaignGoalMatchesHandover(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("root", "orchestrator", 0)
 	db := h.openDB()

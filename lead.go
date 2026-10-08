@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"time"
 )
 
 // Lead liveness: an open root (a campaign lead) has no launch, so its pane's
@@ -99,7 +98,7 @@ func leadObservations(q queryer) (map[int64]leadObs, error) {
 	if err != nil {
 		return nil, err
 	}
-	hubLive := hub == "fresh" && listed && time.Since(parseTime(listedAt)) < leadListedFresh
+	hubLive := hub == "fresh" && listed && clockNow().Sub(parseTime(listedAt)) < leadListedFresh
 	type row struct {
 		id            int64
 		pane, machine sql.NullString

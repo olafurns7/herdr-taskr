@@ -234,7 +234,7 @@ func (c *whoisCache) admit(ip net.IP) (peerIdent, error) {
 	c.mu.Lock()
 	for _, m := range []map[string]whoisEntry{c.ok, c.bad} {
 		if e, ok := m[key]; ok {
-			if time.Since(e.at) < whoisTTL {
+			if clockNow().Sub(e.at) < whoisTTL {
 				c.mu.Unlock()
 				return e.id, e.err
 			}
@@ -251,7 +251,7 @@ func (c *whoisCache) admit(ip net.IP) (peerIdent, error) {
 	if len(m) >= whoisCacheMax {
 		clear(m)
 	}
-	m[key] = whoisEntry{id: id, err: err, at: time.Now()}
+	m[key] = whoisEntry{id: id, err: err, at: clockNow()}
 	c.mu.Unlock()
 	return id, err
 }

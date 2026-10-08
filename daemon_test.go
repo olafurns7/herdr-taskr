@@ -185,6 +185,7 @@ func eventLines(n int) string {
 }
 
 type daemonProc struct {
+	pid  int
 	done chan struct{}
 	code int
 	out  bytes.Buffer
@@ -193,12 +194,37 @@ type daemonProc struct {
 // startDaemon runs `taskr daemon` in-process against sock. Cleanup shuts the
 // socket down and waits for the daemon to exit.
 func (h *harness) startDaemon(s *fakeSocket) *daemonProc {
-	p := &daemonProc{done: make(chan struct{})}
+	p := &daemonProc{done: make(chan struct{}), pid: os.Getpid()}
 	env := h.getenv(map[string]string{"HERDR_SOCKET_PATH": s.path})
-	go func() {
-		defer close(p.done)
-		p.code = run([]string{"--json", "daemon"}, env, &p.out, io.Discard)
-	}()
+	if os.Getenv("TASKR_BIN") != "" {
+		cmd := contractCommand([]string{"--json", "daemon"}, env, &p.out, io.Discard)
+		if err := cmd.Start(); err != nil {
+			h.t.Fatal(err)
+		}
+		p.pid = cmd.Process.Pid
+		go func() {
+			defer close(p.done)
+			err := cmd.Wait()
+			p.code = 0
+			if err != nil {
+				if ex, ok := err.(*exec.ExitError); ok {
+					p.code = ex.ExitCode()
+				} else {
+					p.code = exitHerdr
+				}
+			}
+		}()
+		h.t.Cleanup(func() {
+			if cmd.ProcessState == nil {
+				cmd.Process.Kill()
+			}
+		})
+	} else {
+		go func() {
+			defer close(p.done)
+			p.code = contractRun(h.t, []string{"--json", "daemon"}, env, &p.out, io.Discard)
+		}()
+	}
 	h.t.Cleanup(func() {
 		s.shutdown()
 		p.wait(h.t)
@@ -210,6 +236,10 @@ func (p *daemonProc) wait(t *testing.T) {
 	t.Helper()
 	select {
 	case <-p.done:
+		if p.code == contractNotImplemented {
+			contractMissing.Store(strings.SplitN(t.Name(), "/", 2)[0], true)
+			t.Skip("adapter: daemon not implemented")
+		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("daemon did not exit")
 	}
@@ -244,6 +274,7 @@ func (h *harness) sock(s *fakeSocket) map[string]string {
 }
 
 func TestDaemonSubscriptionShapeAndWriteSilence(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	s := newFakeSocket(t)
 	p := h.startDaemon(s)
@@ -269,7 +300,7 @@ func TestDaemonSubscriptionShapeAndWriteSilence(t *testing.T) {
 		return st["daemon"] == "fresh"
 	})
 	st := h.ok(h.sock(s), "daemon", "--status")
-	if st["running"] != true || num(st, "pid") != int64(os.Getpid()) || st["socket"] != s.path {
+	if st["running"] != true || num(st, "pid") != int64(p.pid) || st["socket"] != s.path {
 		t.Fatalf("daemon --status = %v", st)
 	}
 	if _, lines := h.run(nil, "status"); lines[len(lines)-1]["daemon"] != "fresh" {
@@ -279,7 +310,7 @@ func TestDaemonSubscriptionShapeAndWriteSilence(t *testing.T) {
 	s.shutdown()
 	p.wait(t)
 	out := p.lines(t)
-	if p.code != exitOK || len(out) != 1 || out[0]["ok"] != true || out[0]["socket"] != s.path || num(out[0], "pid") != int64(os.Getpid()) {
+	if p.code != exitOK || len(out) != 1 || out[0]["ok"] != true || out[0]["socket"] != s.path || num(out[0], "pid") != int64(p.pid) {
 		t.Fatalf("daemon exit %d, stdout %v", p.code, out)
 	}
 	if st := h.ok(nil, "daemon", "--status"); st["daemon"] != "none" || st["running"] != false {
@@ -292,6 +323,7 @@ func TestDaemonSubscriptionShapeAndWriteSilence(t *testing.T) {
 }
 
 func TestDaemonCoalescesBurst(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -328,6 +360,7 @@ func TestDaemonCoalescesBurst(t *testing.T) {
 }
 
 func TestDaemonReconnects(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	s := newFakeSocket(t)
 	h.startDaemon(s)
@@ -346,6 +379,7 @@ func TestDaemonReconnects(t *testing.T) {
 }
 
 func TestDaemonExitsWhenSocketRemoved(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	s := newFakeSocket(t)
 	p := h.startDaemon(s)
@@ -370,12 +404,13 @@ func TestDaemonExitsWhenSocketRemoved(t *testing.T) {
 }
 
 func TestDaemonLockRefusesSecondInstance(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	s := newFakeSocket(t)
 	p := h.startDaemon(s)
 	s.next() // the first instance holds the lock before it connects
 	out := h.ok(h.sock(s), "daemon")
-	if out["ok"] != true || out["already_running"] != true || num(out, "pid") != int64(os.Getpid()) {
+	if out["ok"] != true || out["already_running"] != true || num(out, "pid") != int64(p.pid) {
 		t.Fatalf("second daemon = %v", out)
 	}
 	s.shutdown()
@@ -443,6 +478,7 @@ func herdrEvents(h *harness) []map[string]any {
 }
 
 func TestDaemonOnceMatchesWaitPoll(t *testing.T) {
+	contractGuard(t)
 	hw := newHarness(t)
 	livenessFixture(hw, func(top int64) {
 		hw.openDB().Exec(`update tasks set last_poll_at = null`)
@@ -485,6 +521,7 @@ func TestDaemonOnceMatchesWaitPoll(t *testing.T) {
 }
 
 func TestWaitHeartbeatGating(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -525,6 +562,7 @@ func TestWaitHeartbeatGating(t *testing.T) {
 }
 
 func TestDaemonOwnerNotificationOnce(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -560,6 +598,7 @@ func TestDaemonOwnerNotificationOnce(t *testing.T) {
 }
 
 func TestDaemonTokensOnlyOnChange(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -606,6 +645,7 @@ func TestDaemonTokensOnlyOnChange(t *testing.T) {
 }
 
 func TestFakeSocketEnforcesPaneID(t *testing.T) {
+	contractGuard(t)
 	bad := map[string]any{"method": "events.subscribe", "params": map[string]any{"subscriptions": []any{
 		map[string]any{"type": "pane.exited"}, map[string]any{"type": "pane.agent_status_changed"}}}}
 	want := `{"id":"taskr-daemon","error":{"code":"invalid_request","message":"missing field pane_id"}}` + "\n"
@@ -679,6 +719,7 @@ func noMorePanes(t *testing.T, reqs <-chan []string) {
 }
 
 func TestDaemonPerPaneSubscriptions(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0, "--pane", "w9:p0")
 	// A legacy root launch (written before launch rejected roots) is not watched.
@@ -739,6 +780,7 @@ func TestDaemonPerPaneSubscriptions(t *testing.T) {
 }
 
 func TestDaemonEmptyPaneSetSubscribes(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	s := newFakeSocket(t)
 	reqs := s.serve()
@@ -753,6 +795,7 @@ func TestDaemonEmptyPaneSetSubscribes(t *testing.T) {
 // The heartbeat handoff: a skip under a fresh heartbeat claims nothing, so
 // the first wait after it goes stale observes, inside the same 15 s window.
 func TestWaitObservesWhenHeartbeatGoesStale(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -776,6 +819,7 @@ func TestWaitObservesWhenHeartbeatGoesStale(t *testing.T) {
 // exit 0. The fake daemon lives 10 s and the launcher must return within 2 s,
 // so a foreground start fails; the fake is killed and reaped at cleanup.
 func TestPluginRunShDetaches(t *testing.T) {
+	contractGuard(t)
 	home := t.TempDir()
 	script, _ := filepath.Abs(filepath.Join("plugin", "run.sh"))
 	cmd := exec.Command("sh", script)
@@ -837,6 +881,7 @@ func TestPluginRunShDetaches(t *testing.T) {
 // (keeping the request id). The daemon logs it once, resubscribes at once
 // (no backoff), and runs a pass to recover what was lost.
 func TestDaemonStreamErrorResubscribes(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	top := h.newTask("top", "orchestrator", 0)
 	w := h.newTask("impl-a", "implementer", top, "--pane", "w9:p1")
@@ -877,6 +922,7 @@ func TestDaemonStreamErrorResubscribes(t *testing.T) {
 // A second error right after the first reconnects with backoff, not in a
 // tight loop; an event payload that merely mentions "error" is not a reply.
 func TestDaemonStreamErrorNoSpin(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	s := newFakeSocket(t)
 	h.startDaemon(s)
@@ -896,6 +942,7 @@ func TestDaemonStreamErrorNoSpin(t *testing.T) {
 // A subscription setup error carrying the request id is still an ack-path
 // rejection, not a stream error.
 func TestDaemonSetupErrorWithID(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	s := newFakeSocket(t)
 	h.startDaemon(s)
@@ -913,6 +960,7 @@ func TestDaemonSetupErrorWithID(t *testing.T) {
 // (one could start a server from here), logs once, and still exits when the
 // path disappears.
 func TestDaemonNoHerdrCallsWithoutServer(t *testing.T) {
+	contractGuard(t)
 	h := newHarness(t)
 	root := h.newTask("top", "orchestrator", 0)
 	h.launch(h.newTask("worker", "implementer", root, "--pane", "w9:p1"))
