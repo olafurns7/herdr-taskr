@@ -86,3 +86,15 @@ file target/x86_64-unknown-linux-musl/release/taskr target/aarch64-unknown-linux
 The static builds above are parity artifacts. Omit `--features contract` for production artifacts; never ship a contract build.
 
 Versions and observed static-link results belong in the worker report; successful native tests do not prove aarch64 runtime behavior. No system packages or shell startup files are changed.
+
+## Test mapping (S3)
+
+`testdata/contract/mapping.tsv` has one row per Go top-level test and one per named `t.Run` site inside it; a site is named by its first argument's source text (`tc.name`, `#2` for a repeat in the same test). Columns: go_test, go_subtest, go_file, family and class (tests.tsv group; `b-conv` is a b test the adapter runs against the binary), disposition (`blackbox`, `rust-unit`, `golden`, `shell`, `dropped`, `todo`), target, surface (`;`-separated: `cmd:<command>` with `doc-set`-style subcommands, `daemon:<flag>`, `rpc:<route>`, `spool`, `migration`, `install:<path>`, `env:<VAR>`), reason and reviewed_by. Targets are `cargo:<test binary>:<test path>` as `cargo test --workspace -- --list` prints them, `cell:<stem>` for crates/taskr/tests/<stem>.py, or `cell:run.py#<family>` for a cases.json family. A row with go_test `-` covers a Rust-only surface (`/api/events`). Port lanes fill disposition and target; `dropped` needs a reason and a reviewer. A surface names what the test exercises, not a literal it only seeds or passes as data. Keys are unique and class is a, b, b-conv, c (or rust on the `-` row); strict mode also fails every non-todo row whose reviewed_by is empty or `pending`, and go_set_check compares go_file, family and class with tests.tsv.
+
+```sh
+python3 tools/contract/mapping_check.py                        # also cargo test -p taskr --test mapping
+TASKR_MAPPING_STRICT=1 python3 tools/contract/mapping_check.py # S5 gate: todo rows fail
+tools/contract/go_set_check.sh                                 # devbox only: Go tests and t.Run sites == rows
+```
+
+The checker reads the command and daemon-flag list from crates/taskr/src/read/usage.txt and the routes from crates/taskr/src/hub/mod.rs, and needs no Go. `go_set_check.sh --emit` prints the Go set for seeding new rows.
