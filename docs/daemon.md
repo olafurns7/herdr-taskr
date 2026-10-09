@@ -60,12 +60,16 @@ with `pr=`. Without `default_repo`, only `owner/repo#N` links are followed.
   per 20. `gh` runs in a worker thread with a 20-second deadline; the result is
   applied in one short ledger transaction, never across the network call.
 - **What is followed:** PRs whose linked task is not closed, until they merge
-  or close.
+  or close. A task linked later to a merged or closed PR gets its refs from
+  the cached state, with no query and no event.
 - **Events:** kind `pr` (compact code `pu`), on change only, to the linked
   task's lead (a linked root gets its own); a closed lead's inbox is skipped.
   Subs: `checks_green`, `checks_failed` (each after two polls that agree, over
-  the required checks, or all checks when none is required), `dirty`,
+  the required checks, or all checks when none is required; more than 50
+  checks is no verdict), `dirty`,
   `behind`, `blocked`, `thread_opened`, `threads_clear`, `merged`, `closed`.
+  More than 50 review threads, or a thread GitHub could not return, keeps the
+  last thread count.
   A PR GitHub reports as not found gets `closed` with a `reason` and is
   unlinked. Data: `pr`, `sub`, `head`, `checks`, `merge_state`,
   `threads_open`, plus `merge_commit` or `reason`. An unacked older `pr`
@@ -74,8 +78,10 @@ with `pr=`. Without `default_repo`, only `owner/repo#N` links are followed.
   are not campaign activity (glance, park, R2) except `merged`.
 - **Refs:** the poller keeps the task's `pr.state` (`open`, `merged`,
   `closed`) and `pr.ci` (`pass`, `fail`, `running`) refs current, so
-  `taskr campaign` and the TUI's PR panel show live state. Its refs carry
-  `"source":"github"` in their data.
+  `taskr campaign` and the TUI's PR panel show live state. A new head or a
+  newly linked PR clears `pr.ci` until it has a verdict. Its refs carry
+  `"source":"github"` in their data and do not count toward a task's 20
+  references.
 - **Failures:** JSON on stdout is used whatever `gh`'s exit code. With no
   JSON or `data: null` the poller backs off 1, 2, 4, 8 then 15 minutes; `gh`
   exit 4 (not authenticated) retries every 15 minutes. `daemon.log` gets one

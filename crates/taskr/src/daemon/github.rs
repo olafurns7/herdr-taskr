@@ -109,16 +109,20 @@ pub(super) fn query(batch: &[Pr]) -> String {
     for (i, pr) in batch.iter().enumerate() {
         let (owner, name) = pr.repo.split_once('/').expect("validated repo");
         let n = pr.number;
-        q.push_str(&format!("p{i}:repository(owner:\"{owner}\",name:\"{name}\"){{pullRequest(number:{n}){{state merged headRefOid mergeStateStatus mergeCommit{{oid}} commits(last:1){{nodes{{commit{{statusCheckRollup{{contexts(first:50){{nodes{{__typename ...on CheckRun{{name status conclusion isRequired(pullRequestNumber:{n})}} ...on StatusContext{{context state isRequired(pullRequestNumber:{n})}}}}}}}}}}}}}} reviewThreads(first:50){{nodes{{isResolved}}}}}}}}"));
+        q.push_str(&format!("p{i}:repository(owner:\"{owner}\",name:\"{name}\"){{pullRequest(number:{n}){{state merged headRefOid mergeStateStatus mergeCommit{{oid}} commits(last:1){{nodes{{commit{{statusCheckRollup{{contexts(first:50){{pageInfo{{hasNextPage}} nodes{{__typename ...on CheckRun{{name status conclusion isRequired(pullRequestNumber:{n})}} ...on StatusContext{{context state isRequired(pullRequestNumber:{n})}}}}}}}}}}}}}} reviewThreads(first:50){{pageInfo{{hasNextPage}} nodes{{isResolved}}}}}}}}"));
     }
     q.push('}');
     q
 }
 /// `green`, `failed` or `pending` over the required contexts (all of them when none
-/// is required); None when GitHub has no rollup or no contexts yet (no change).
+/// is required); None when GitHub has no rollup or no contexts yet, or more than one
+/// page of them, where a failed check may be unseen (no change).
 fn verdict(node: &Value) -> Option<&'static str> {
-    let rollup = &node["commits"]["nodes"][0]["commit"]["statusCheckRollup"];
-    let all = rollup["contexts"]["nodes"].as_array()?;
+    let contexts = &node["commits"]["nodes"][0]["commit"]["statusCheckRollup"]["contexts"];
+    if contexts["pageInfo"]["hasNextPage"] != false {
+        return None;
+    }
+    let all = contexts["nodes"].as_array()?;
     let required: Vec<&Value> = all.iter().filter(|c| c["isRequired"] == true).collect();
     let set = if required.is_empty() {
         all.iter().collect()
@@ -200,7 +204,13 @@ fn diff(prev: &State, node: &Value) -> (State, Vec<(&'static str, String)>) {
             _ => {}
         }
     }
-    if let Some(threads) = node["reviewThreads"]["nodes"].as_array() {
+    // Only a complete list counts: a further page, or a node lost to a field error,
+    // keeps the previous count.
+    let threads = &node["reviewThreads"];
+    if let Some(threads) = threads["nodes"].as_array().filter(|nodes| {
+        threads["pageInfo"]["hasNextPage"] == false
+            && nodes.iter().all(|t| t["isResolved"].is_boolean())
+    }) {
         next.threads = threads.iter().filter(|t| t["isResolved"] == false).count() as u64;
         if next.threads > prev.threads {
             subs.push((
@@ -268,6 +278,19 @@ fn refs(tx: &db::Connection, task: i64, pairs: &[(&str, &str)]) -> Result<()> {
     }
     Ok(())
 }
+/// A linked task's `pr.state` and `pr.ci` refs from its PR's state. An empty `pr.ci`
+/// clears it: a new head or a newly linked PR has no verdict yet. On the same head an
+/// unknown result keeps `seen`, so the ref does not change.
+fn task_refs(tx: &db::Connection, task: i64, s: &State) -> Result<()> {
+    let ci = match s.seen.as_str() {
+        "green" => "pass",
+        "failed" => "fail",
+        "pending" => "running",
+        _ => "",
+    };
+    let state = s.state.to_lowercase();
+    refs(tx, task, &[("pr.state", state.as_str()), ("pr.ci", ci)])
+}
 /// Apply one poll's JSON in one transaction. Links are re-read inside it, since the
 /// fetch ran outside any lock. Returns the number of `pr` events written.
 pub(super) fn apply(
@@ -319,12 +342,6 @@ pub(super) fn apply(
             }
             let (next, subs) = diff(&prev, node);
             set_meta(tx, &key, &serde_json::to_string(&next)?)?;
-            let ci = match next.seen.as_str() {
-                "green" => "pass",
-                "failed" => "fail",
-                "pending" => "running",
-                _ => "",
-            };
             for &task in &tasks {
                 for (sub, text) in &subs {
                     let mut data = json!({"head":next.head,"checks":next.seen,"merge_state":next.merge,"threads_open":next.threads});
@@ -334,12 +351,7 @@ pub(super) fn apply(
                     emit(tx, task, pr, sub, text, data)?;
                     n += 1;
                 }
-                let st = next.state.to_lowercase();
-                let mut pairs = vec![("pr.state", st.as_str())];
-                if !ci.is_empty() {
-                    pairs.push(("pr.ci", ci));
-                }
-                refs(tx, task, &pairs)?;
+                task_refs(tx, task, &next)?;
             }
         }
         Ok(n)
@@ -360,7 +372,7 @@ fn first_line(bytes: &[u8]) -> String {
         .collect()
 }
 /// Run `gh api graphql` once. JSON on stdout is used whatever the exit code.
-fn fetch(query: &str, path: Option<&str>) -> Fetch {
+fn fetch(query: &str, path: Option<&str>, timeout: Duration) -> Fetch {
     let mut cmd = Command::new("gh");
     cmd.args(["api", "graphql", "-f"])
         .arg(format!("query={query}"))
@@ -369,7 +381,7 @@ fn fetch(query: &str, path: Option<&str>) -> Fetch {
     if let Some(path) = path {
         cmd.env("PATH", path);
     }
-    let out = match herdr::run(cmd, TIMEOUT) {
+    let out = match herdr::run(cmd, timeout) {
         Ok(out) => out,
         Err(e) => return Fetch::Failed(format!("gh did not run: {e}")),
     };
@@ -382,7 +394,9 @@ fn fetch(query: &str, path: Option<&str>) -> Fetch {
             "gh returned no data: {}",
             v["errors"][0]["message"].as_str().unwrap_or("")
         )),
-        Err(_) if out.deadline => Fetch::Failed("gh timed out after 20s".into()),
+        Err(_) if out.deadline => {
+            Fetch::Failed(format!("gh timed out after {}s", timeout.as_secs()))
+        }
         Err(_) => Fetch::Failed(format!(
             "gh exit {} without JSON: {}",
             out.code.unwrap_or(-1),
@@ -395,6 +409,8 @@ pub(super) struct Poller {
     dir: PathBuf,
     /// Tests put a fake `gh` first on this PATH; the daemon inherits its own.
     path: Option<String>,
+    /// The `gh` deadline: TIMEOUT, shorter in tests.
+    timeout: Duration,
     pub(super) due: Instant,
     failures: u32,
     health: &'static str,
@@ -407,6 +423,7 @@ impl Poller {
         ledger.then(|| Self {
             dir: dir.into(),
             path: None,
+            timeout: TIMEOUT,
             due: Instant::now(),
             failures: 0,
             health: "",
@@ -467,16 +484,34 @@ impl Poller {
         let Some(default) = config(&self.dir) else {
             return;
         };
-        let mut prs = match links(db, &default) {
-            Ok(links) => links.into_iter().map(|l| l.pr).collect::<Vec<_>>(),
+        let links = match links(db, &default) {
+            Ok(links) => links,
             Err(e) => {
                 log.line(&format!("github poll link query failed: {}", e.message));
                 return;
             }
         };
+        // A PR cached as merged or closed is not polled again; its links still get
+        // its refs (a no-op once they have them), with no event.
+        let mut prs = vec![];
+        let mut done = vec![];
+        for l in links {
+            match state(db, &l.pr) {
+                Ok(s) if s.done => done.push((l.task, s)),
+                Ok(_) => prs.push(l.pr),
+                Err(_) => {}
+            }
+        }
+        if !done.is_empty()
+            && let Err(e) = store::transaction(db, |tx| {
+                done.iter()
+                    .try_for_each(|(task, s)| task_refs(tx, *task, s))
+            })
+        {
+            log.line(&format!("github poll refs failed: {}", e.message));
+        }
         prs.sort();
         prs.dedup();
-        prs.retain(|pr| state(db, pr).is_ok_and(|s| !s.done));
         if prs.is_empty() {
             return;
         }
@@ -493,9 +528,9 @@ impl Poller {
         self.due = Instant::now() + MINUTE * batch.len().div_ceil(PER_MINUTE) as u32;
         let (send, recv) = mpsc::channel();
         let query = query(&batch);
-        let path = self.path.clone();
+        let (path, timeout) = (self.path.clone(), self.timeout);
         std::thread::spawn(move || {
-            let _ = send.send(fetch(&query, path.as_deref()));
+            let _ = send.send(fetch(&query, path.as_deref(), timeout));
         });
         self.inflight = Some((batch, default, recv));
     }

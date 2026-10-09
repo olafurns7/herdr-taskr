@@ -6,7 +6,7 @@ const FAKE_GH: &str = r#"#!/bin/sh
 d=$(dirname "$0")/..
 printf '%s\n' "$@" > "$d/args"
 echo x >> "$d/calls"
-[ -f "$d/sleep" ] && sleep "$(cat "$d/sleep")"
+[ -f "$d/sleep" ] && { sleep "$(cat "$d/sleep")" & wait; }
 cat "$d/reply" 2>/dev/null
 exit "$(cat "$d/code" 2>/dev/null || echo 0)"
 "#;
@@ -114,8 +114,8 @@ fn pr(head: &str, merge: &str, checks: &[&str], open_threads: usize) -> Value {
         .chain([json!({"isResolved":true})])
         .collect();
     json!({"state":"OPEN","merged":false,"headRefOid":head,"mergeStateStatus":merge,"mergeCommit":null,
-        "commits":{"nodes":[{"commit":{"statusCheckRollup":{"contexts":{"nodes":contexts}}}}]},
-        "reviewThreads":{"nodes":threads}})
+        "commits":{"nodes":[{"commit":{"statusCheckRollup":{"contexts":{"pageInfo":{"hasNextPage":false},"nodes":contexts}}}}]},
+        "reviewThreads":{"pageInfo":{"hasNextPage":false},"nodes":threads}})
 }
 fn data(nodes: &[Value]) -> String {
     let mut d = json!({});
@@ -363,7 +363,12 @@ fn no_transaction_is_held_while_gh_runs() {
     f.reply(&data(&[pr(HEAD, "DIRTY", &[], 0)]), 0);
     fs::write(f.dir.join("sleep"), "2").unwrap();
     f.poller.due = Instant::now();
+    let start = Instant::now();
     f.poller.tick(&mut f.db, &f.log);
+    assert!(
+        start.elapsed() < Duration::from_millis(500),
+        "tick waited for gh"
+    );
     assert!(f.poller.inflight.is_some());
     std::thread::sleep(Duration::from_millis(300));
     // Another connection takes the write lock at once while gh sleeps.
@@ -382,4 +387,137 @@ fn no_transaction_is_held_while_gh_runs() {
         f.poller.tick(&mut f.db, &f.log);
     }
     assert_eq!(f.subs(), ["dirty"]);
+}
+
+#[test]
+fn gh_deadline_kills_its_process_group() {
+    let mut f = fixture("deadline");
+    assert_eq!(f.poller.timeout, Duration::from_secs(20));
+    f.poller.timeout = Duration::from_secs(1);
+    f.link(2, "31");
+    f.reply(&data(&[pr(HEAD, "DIRTY", &[], 0)]), 0);
+    // The fake's `sleep` is a child of its shell: only a group kill closes the pipes.
+    fs::write(f.dir.join("sleep"), "30").unwrap();
+    let start = Instant::now();
+    f.poll();
+    let took = start.elapsed();
+    assert!(
+        (Duration::from_secs(1)..Duration::from_millis(2500)).contains(&took),
+        "{took:?}"
+    );
+    assert_eq!(f.log_lines("gh timed out after 1s"), 1);
+    assert_eq!(f.subs().len(), 0);
+}
+
+#[test]
+fn a_fresh_unfiltered_inbox_skips_superseded_pr_events() {
+    let mut f = fixture("unfiltered");
+    let pr = parse("31", "demo-org/demo").unwrap();
+    let mut ids = vec![];
+    for sub in ["blocked", "checks_green"] {
+        ids.push(emit(&f.db, 2, &pr, sub, sub, json!({"head": HEAD})).unwrap());
+    }
+    let (event, _, skipped) = store::inbox::offer(&mut f.db, 1, false).unwrap();
+    assert!(event.is_none() && skipped, "blocked is superseded");
+    let (event, _, _) = store::inbox::offer(&mut f.db, 1, false).unwrap();
+    assert_eq!(event.unwrap()["id"], ids[1]);
+}
+
+/// More than one page of checks or threads is no verdict and no clear.
+#[test]
+fn truncated_checks_and_threads_change_nothing() {
+    let mut f = fixture("truncated");
+    f.link(2, "31");
+    f.reply(&data(&[pr(HEAD, "CLEAN", &[], 1)]), 0);
+    f.poll();
+    let mut node = pr(HEAD, "CLEAN", &["SUCCESS"; 50], 0);
+    node["commits"]["nodes"][0]["commit"]["statusCheckRollup"]["contexts"]["pageInfo"] =
+        json!({"hasNextPage": true});
+    node["reviewThreads"]["nodes"] = Value::Array(vec![json!({"isResolved": true}); 50]);
+    node["reviewThreads"]["pageInfo"] = json!({"hasNextPage": true});
+    f.reply(&data(&[node]), 0);
+    f.poll();
+    f.poll();
+    assert_eq!(f.subs(), ["thread_opened"]);
+    assert_eq!(f.latest_ref(2, "pr.ci"), None);
+    let args = fs::read_to_string(f.dir.join("args")).unwrap();
+    assert_eq!(args.matches("pageInfo{hasNextPage}").count(), 2);
+}
+
+/// A thread node lost to a field error keeps the count; the rest still applies.
+#[test]
+fn partial_threads_keep_the_count() {
+    let mut f = fixture("partial");
+    f.link(2, "31");
+    f.reply(&data(&[pr(HEAD, "CLEAN", &[], 1)]), 0);
+    f.poll();
+    let mut node = pr(HEAD, "DIRTY", &[], 0);
+    node["reviewThreads"]["nodes"] = json!([null, {"isResolved": true}]);
+    let mut response: Value = serde_json::from_str(&data(&[node])).unwrap();
+    response["errors"] = json!([{"type":"FORBIDDEN","path":["p0","pullRequest","reviewThreads","nodes",0,"isResolved"],"message":"field unavailable"}]);
+    f.reply(&response.to_string(), 1);
+    f.poll();
+    assert_eq!(f.subs(), ["thread_opened", "dirty"]);
+}
+
+/// pr.ci follows the PR and head: unknown on the same head keeps it, a new head or
+/// another PR with no verdict clears it.
+#[test]
+fn ci_ref_clears_on_a_new_head_or_pr() {
+    let mut f = fixture("ci-identity");
+    f.link(2, "31");
+    f.reply(&data(&[pr(HEAD, "CLEAN", &["SUCCESS"], 0)]), 0);
+    f.poll();
+    f.reply(&data(&[pr(HEAD, "CLEAN", &[], 0)]), 0);
+    f.poll();
+    assert_eq!(f.latest_ref(2, "pr.ci").as_deref(), Some("pass"));
+    let head2 = "bbbbbbbcccccccccccccccccccccccccccccccc";
+    f.reply(&data(&[pr(head2, "UNKNOWN", &[], 0)]), 0);
+    f.poll();
+    assert_eq!(f.latest_ref(2, "pr.ci").as_deref(), Some(""));
+    f.reply(&data(&[pr(head2, "CLEAN", &["SUCCESS"], 0)]), 0);
+    f.poll();
+    assert_eq!(f.latest_ref(2, "pr.ci").as_deref(), Some("pass"));
+    f.link(2, "32");
+    f.reply(&data(&[pr(HEAD, "UNKNOWN", &[], 0)]), 0);
+    f.poll();
+    assert_eq!(f.latest_ref(2, "pr.ci").as_deref(), Some(""));
+}
+
+/// A task linked after its PR merged gets the cached refs, with no call or event.
+#[test]
+fn a_late_link_to_a_merged_pr_gets_its_refs() {
+    let mut f = fixture("late-link");
+    f.link(2, "31");
+    let mut node = pr(HEAD, "CLEAN", &["FAILURE"], 0);
+    node["state"] = json!("MERGED");
+    node["merged"] = json!(true);
+    f.reply(&data(&[node]), 0);
+    f.poll();
+    let (calls, events) = (f.calls(), f.events().len());
+    f.link(3, "40");
+    f.db.execute("insert into events(task_id,kind,summary,data,created_at) values(3,'ref','pr.state=open',json_object('key','pr.state','value','open'),?)",[store::now()]).unwrap();
+    f.link(3, "31");
+    f.poll();
+    assert_eq!(f.latest_ref(3, "pr.state").as_deref(), Some("merged"));
+    assert_eq!((f.calls(), f.events().len()), (calls, events));
+}
+
+/// pr.state and pr.ci sit outside the 20-ref budget.
+#[test]
+fn poller_refs_do_not_count_against_the_budget() {
+    let mut f = fixture("budget");
+    let mut pairs: Vec<(String, String)> = (0..19).map(|n| (format!("k{n}"), "v".into())).collect();
+    pairs.push(("pr".into(), "31".into()));
+    store::orch::set(&mut f.db, 2, &pairs).unwrap();
+    f.reply(&data(&[pr(HEAD, "CLEAN", &["SUCCESS"], 0)]), 0);
+    f.poll();
+    assert_eq!(f.latest_ref(2, "pr.ci").as_deref(), Some("pass"));
+    store::orch::set(&mut f.db, 2, &[("pr".into(), "32".into())]).unwrap();
+    let err = store::orch::set(&mut f.db, 2, &[("k19".into(), "v".into())]).unwrap_err();
+    assert!(
+        err.message.contains("would have 21 references"),
+        "{}",
+        err.message
+    );
 }

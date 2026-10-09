@@ -420,10 +420,14 @@ pub fn set(db: &mut Connection, id: i64, pairs: &[(String, String)]) -> Result<V
                 have.insert(k.clone(), v.clone());
             }
         }
-        if have.len() > 20 {
+        // pr.state and pr.ci are the PR poller's bookkeeping, outside the 20.
+        let ordinary = have
+            .keys()
+            .filter(|k| !["pr.state", "pr.ci"].contains(&k.as_str()))
+            .count();
+        if ordinary > 20 {
             return Err(reject(format!(
-                "task {id} would have {} references; at most 20 (delete one with KEY=)",
-                have.len()
+                "task {id} would have {ordinary} references; at most 20 (delete one with KEY=)"
             )));
         }
         let mut ids = Vec::new();
