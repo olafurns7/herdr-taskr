@@ -1,6 +1,6 @@
-# taskr byte-parity harness (R0)
+# taskr contract harness
 
-No installed binary or live service is used. All adapter commands receive scratch HOME/DB and explicit environment; fixture `herdr`/`tailscale` commands cannot reach the real services. The Rust CLI supports `version`; other commands return **125**, which the adapter records as `not-implemented` and skips rather than reporting a pass. Real output/exit/assertion failures remain mismatches. SQL fixture seed/read helpers and passive data types are reusable. tests.tsv group a runs CLI behavior against the shared scratch TASKR_DB; group b records in-process fakes and replacement hints; group c records truly white-box behavior. b/c skip with their generated reason.
+No installed binary or live service is used. All adapter commands receive scratch HOME/DB and explicit environment; fixture `herdr`/`tailscale` commands cannot reach the real services. Exit **125** remains a separate `not-implemented` result in differential mode, never a parity pass. Real output/exit/assertion failures remain mismatches. SQL fixture seed/read helpers and passive data types are reusable. tests.tsv group a runs CLI behavior against the shared scratch TASKR_DB; group b records in-process fakes and replacement hints; group c records truly white-box behavior. b/c skip with their generated reason.
 
 ## Build and generate
 
@@ -16,6 +16,8 @@ go run ./tools/contract/classify -packages .scratch/go-packages.json
 # The test-only oracle dispatches the original CLI and a migration-only probe.
 # It compiles the product sources directly; there are no product copies or overlays.
 go test -c -tags taskr_contract -o .scratch/taskr-oracle .
+# Restart deliberately sanitizes its environment; use the real Go entry point there.
+go build -o .scratch/taskr-go-production .
 cargo build --release -p taskr --features contract
 ```
 
@@ -23,7 +25,144 @@ cargo build --release -p taskr --features contract
 
 `TASKR_BIN` unset preserves the original Go test behavior. For the oracle executable, `TASKR_CONTRACT_ORACLE=1` is passed automatically by the adapter/runner. This variable only selects test-binary dispatch; the regular Go CLI has no such mode. `--contract-migrate` exists only in the Go test oracle and Rust binary for schema parity, with no stdout on success.
 
-Full Go suite runs use `/tmp/taskr-test.lock` and `-timeout 20m` (hub amendment after measuring the baseline suite). Targeted Go `-run` and every Cargo command run unlocked. Never use the Trip lock.
+On this host, heavy commands run one at a time under `flock /tmp/trip-heavy.lock COMMAND`. Full Go suites additionally nest `flock /tmp/taskr-test.lock` inside the shared lock and use `-timeout 20m`.
+
+## Record and expect (no Go needed to check)
+
+Every differential Python cell in `crates/taskr/tests/` that accepts `--go`
+(except the separately owned `macos_daemon_cell.py`) and `run.py` accepts:
+
+- `--record BIN`: record the Go-compatible observations from that binary into
+  `testdata/contract/golden/<script>.json` (the runner uses `.json.gz`). `--rust BIN` supplies the current Rust
+  contract build for the existing Rust-only assertions. The runner itself only
+  executes the recording binary.
+- `--expect DIR --rust BIN`: execute the same synthetic fixtures against Rust and
+  compare exit status, stdout/stderr and recorded state with DIR. This mode
+  neither runs Go nor discovers/builds an oracle.
+- `--go BIN --rust BIN`: retain the original differential checks until Go retires.
+
+```sh
+# Freeze a Rust artifact before running cargo in another configuration.
+cargo build -p taskr --features contract
+cp target/debug/taskr .scratch/taskr-rust-contract
+# Record the complete corpus, including catch-up fixtures and the hub/net matrix.
+python3 tools/contract/cells.py --record .scratch/taskr-oracle \
+  --production-go .scratch/taskr-go-production --rust .scratch/taskr-rust-contract
+# Copy the recorded directory, repeat the same command, then compare with diff -r.
+# Rust-only complete check:
+python3 tools/contract/cells.py --expect testdata/contract/golden \
+  --rust .scratch/taskr-rust-contract
+# Individual runner/cell examples:
+python3 tools/contract/run.py --expect testdata/contract/golden \
+  --rust .scratch/taskr-rust-contract --catchup-fixtures
+python3 crates/taskr/tests/daemon_cell.py --record .scratch/taskr-oracle \
+  --rust .scratch/taskr-rust-contract
+cargo test --workspace --features contract
+cargo test --workspace
+```
+
+The Go oracle retains its clock, internal RPC and loopback tailnet test seams;
+these are never release artifacts. `run.py` explicitly writes the scratch
+`dashboard.addr` as `127.0.0.1:7788`, overriding TestMain's `:0` default **before
+execution**. Goldens therefore check the product `:7788` value without rewriting
+or ignoring the port difference. Other hub cells explicitly request ephemeral
+listeners to isolate their processes. The fixed clock remains exact in the runner
+and daemon cell. Goldens reject live snapshots.
+
+`golden_contract` is discovered automatically as a Cargo integration test and
+uses `CARGO_BIN_EXE_taskr`. `python3` is required. The three `/proc` process
+proof cells (`daemon_cell`, `daemon_restart_cell`, `daemon_limits`) explicitly
+report SKIP on non-Linux hosts; the portable cells still run. With `--features contract` it
+runs the whole corpus. Default cargo runs the seam-free local-child/context
+cell, including the production-only migration-command refusal, and reports **1 ignored** for `golden_contract`, which needs contract RPC/tailnet/clock seams. The
+child-context cell's `--contract BIN` exercises the matching contract-only
+migration assertion when the tested binary has that feature.
+
+### Provenance and what is compared
+
+The goldens use synthetic ledgers at the frozen migration base. Every observation
+has its own producer provenance: Go oracle, production Go, or Rust hub with the
+client identified. Rust-hub responses remain Rust snapshots when a Go client
+prints them. Unchanged observations retain their provenance on re-recording. `run.json.gz` stores each command's exit/stdout/stderr plus a
+SHA-256 of the normalized logical database (application schema, sorted visible
+rows and FTS contents; shadow tables excluded; integrity/FKs still checked).
+Each observation occupies one JSON line. The runner snapshot uses deterministic
+gzip (`mtime=0`). `.gitattributes` selects the gzip diff driver; enable readable
+diffs locally with `git config diff.gzip.textconv "gzip -cd"`, or inspect with
+`gzip -cd testdata/contract/golden/run.json.gz`.
+Runner selections (`--family`, or omitting catch-up fixtures) check their recorded
+subset; the complete cargo run must consume the entire runner golden.
+
+| Golden | Producer and observations |
+| --- | --- |
+| `run.json.gz` | Go oracle CLI bytes, exits and logical database digests, including catch-up/RPC-context cases |
+| `net_cell.json` | Go hub/client replies, Go queued on-disk spool record, uploaded document rows and blob metadata |
+| `hub_cell.json` | Go hub and Rust hub replies, individually labelled; cross-hub reference replies are Go |
+| `daemon_cell.json` | Go oracle status/help/refusal bytes and Go holder's lock, identity JSON and daemon meta rows |
+| `daemon_hub_cell.json` | Rust hub snapshots, including Go client writes and status |
+| `daemon_relay_cell.json` | Go relay/client daemon replies |
+| `daemon_restart_cell.json` | production-Go restart replies; detached/stay/supervisor behavior remains asserted |
+| `hub_child_context.json` | production-Go local-context, host-fence, default dashboard, version and unknown-command replies |
+| `hub_http_limits.json` | Go hub and Rust hub stored-write replay replies, individually labelled; timing bounds remain runtime assertions |
+| `hub_review_transport.json` | Go client's root write through the Rust hub (Rust snapshot); drain/reaping remain runtime assertions |
+| `hostd_cell.json`, `hostd_legacy.json` | Go owner-token commands and actual empty legacy-observe response |
+| `hostd_liveness.json` | Go relay-once reply through Rust hub; stale-to-fresh predicates remain asserted |
+
+The timing-race cells (`daemon_restart_cell`, `net_cell`, `hostd_cell`) run
+serially after the parallel cells; `hub_cell --net-fixture` also runs serially
+because it repeats the net checks. Stay cancellation waits for a lock-file open event after the daemon
+cancellation handler is installed. The Linux hook-lock test waits for the worker's lock-retry state or completion.
+Other hosts assert queued/direct hook delivery and explicitly skip the Linux
+lock-readiness proof; the same portable golden observations still run.
+The hostd wake floor is 4.8 seconds. Limits and HTTP deadline checks produce
+runtime evidence, without literal-only golden observations.
+
+Expect mode checks the writer's actual spool record against the frozen Go
+record, restores that Go record into the queue with the current scratch path
+and timestamp, and has Rust deliver it. It likewise restores the Go holder's
+lock, identity JSON and daemon meta rows using the current holder's PID, UID,
+executable and process start identity; Rust must accept the holder and restart
+it through the actual OS identity verification.
+
+`hostd_wire.py` has only Rust extension assertions, so it creates no Go golden.
+Rust-only uplink/full/delta/heartbeat/epoch, contract-hub/env, cancellation and
+transport checks remain ordinary runtime assertions in both modes. In the
+cross-hub pair, Rust's additional `hostd` advertisement is explicitly asserted
+before comparing the legacy reply fields; it is not represented as Go output.
+The legacy fallback proxy derives its allowed response fields from the actual
+recorded Go empty-observe reply, while forwarding current fixture values. It
+removes Rust's capability advertisement to exercise the old protocol without
+running an old server. No handwritten legacy response is substituted.
+
+### Normalizations (and their limits)
+
+`golden.py` applies these exact normalizations to observations, never to the
+binary's behavior or to the existing runtime assertions:
+
+- Scratch tree prefixes under the worktree `.scratch/` or the system temporary
+  directory (including its resolved symlink target) become `<tmp>`; the complete suffix within each tree is retained.
+- The explicitly supplied binary paths become `<binary>`.
+- Bound ephemeral `http://[::1]:PORT` URLs (unbound ports, including 0/1/9, remain exact) become `http://[::1]:<port>`; the
+  bound listener ports read from the hub are also normalized in loopback and
+  `hub.example.ts.net` URLs. Unbound `:0` remains exact. The runner's `127.0.0.1:7788` stays exact.
+- PID fields and the identified restart-refusal PID phrases become `<pid>`;
+  the frozen daemon record also masks its UID and OS process-start token, both
+  restored from the current holder before replay;
+  unrelated numbers, including the missing-ledger PID sentinel zero, stay exact.
+- Real-time cells' RFC3339 timestamps and heartbeat ages become `<time>` and
+  `<age>`. Seeded midnight timestamps, and all runner/daemon-cell frozen times
+  and ages, stay exact. Socket/deadline/latency bounds are asserted before any
+  observation is normalized; elapsed measurements are not golden values.
+- The current local OS hostname in runner server-host/document metadata and
+  child-context fence text becomes `<local-host>`; synthetic remote hosts stay
+  exact. This removes host-specific metadata from the public, portable corpus.
+
+`selfcheck.py` checks normalization boundaries, altered rows/FTS, changed exit
+status and missing observations. After Go retires, `--record RUST_BIN --rust
+RUST_BIN` re-records intentional changes as a reviewed diff and marks provenance
+as Rust only for changed observations. The legacy response shape continues to come from the original Go
+fixture. Production-Go binaries are needed only for initial restart/context
+recordings, not for expect mode.
 
 ## Run per family
 

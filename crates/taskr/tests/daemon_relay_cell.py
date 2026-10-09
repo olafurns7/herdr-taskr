@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Go hub + fake Herdr, Go/Rust client daemon observation parity."""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools/contract'))
+import golden
 import argparse
 import json
 import sqlite3
 import tempfile
-from pathlib import Path
 from daemon_cell import Herdr, eventually, start, stop
 from net_cell import Cell
 
@@ -28,9 +31,11 @@ def run(go,rust,out):
             assert cell.count("select count(*) from meta where key='daemon_heartbeat:host-a'")==1
             assert cell.count("select count(*) from tasks where id=? and lead_status='working' and lead_present=1",(top,))==1
             assert not (cell.client_home/'.local/state/taskr/taskr.db').exists()
+            golden.observe('once', (first.returncode,first.stdout,first.stderr))
             results.append('once bytes, host heartbeat, CAS and root lead, no local ledger')
             a=cell.want(go,['--json','daemon','--status']);b=cell.want(rust,['--json','daemon','--status'])
             assert (a.stdout,a.stderr)==(b.stdout,b.stderr),(a.stdout,b.stdout,a.stderr,b.stderr)
+            golden.observe('client status', (a.returncode,a.stdout,a.stderr))
             results.append('client status bytes')
             p=start(rust,cell.client_env)
             try:
@@ -54,4 +59,6 @@ def run(go,rust,out):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--go',type=Path,required=True);p.add_argument('--rust',type=Path,required=True);p.add_argument('--out',type=Path,required=True)
-    a=p.parse_args();run(a.go.resolve(),a.rust.resolve(),a.out)
+    a=golden.parse(p, __file__);run(a.go.resolve(),a.rust.resolve(),a.out)
+
+    golden.finish()

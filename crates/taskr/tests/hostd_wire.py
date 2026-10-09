@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Admitted _host wire boundaries and snapshot generation recovery."""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools/contract'))
+import golden
 import argparse
 import concurrent.futures
 import http.client
 import json
 import sqlite3
 import tempfile
-from pathlib import Path
 from net_cell import Cell
 from events_cell import Subscriber
 from hostd_cell import setup, agent, snapshot, restart_hub
@@ -117,5 +120,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     for name in ('go', 'rust', 'out'):
         parser.add_argument('--'+name, type=Path, required=True)
-    args = parser.parse_args()
+    args = golden.parse(parser, __file__)
     run(args.go.resolve(), args.rust.resolve(), args.out)
+
+    golden.finish()

@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Synthetic Go/Go, Rust/Go, Go/Rust, Rust/Rust hub matrix; no live services."""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools/contract'))
+import golden
 import argparse
 import base64
 import hashlib
 import http.client
 import json
 import os
-from pathlib import Path
 import select
 import socket
 import sqlite3
@@ -19,7 +22,8 @@ ROOT=Path(__file__).resolve().parents[3]
 
 class RustHub(Cell):
     def __init__(self,go,rust,tmp):
-        self.go,self.rust,self.tmp=go,rust,Path(tmp)
+        self.provenance="Rust hub / Go client"
+        self.go,self.rust,self.tmp=go,rust,Path(tmp).resolve()
         self.hub_home=self.tmp/'hub';self.client_home=self.tmp/'client';self.db=self.tmp/'hub.db'
         fake=self.tmp/'bin';fake.mkdir();(fake/'tailscale').write_text(FAKE_TS);(fake/'tailscale').chmod(0o755)
         self.env={'PATH':f'{fake}:/usr/bin:/bin','LANG':'C.UTF-8','TZ':'UTC','TASKR_CONTRACT_TAILNET':'1','TASKR_CONTRACT_ORACLE':'1','HERDR_SOCKET_PATH':str(self.tmp/'absent.sock')}
@@ -32,6 +36,7 @@ class RustHub(Cell):
         assert readable,'Rust hub fixture did not announce its listener'
         self.url=self.hub.stdout.readline().decode().strip()
         assert self.url.startswith('http://[::1]:'),(self.url,(self.tmp/'hub.log').read_text())
+        if golden.session: golden.session.ports.add(int(self.url.rsplit(':',1)[1]))
         self.server_file=self.client_home/'.local/state/taskr/server.url';self.server_file.write_text(self.url+'\n')
         self.seq=0;self.results=[]
     def close(self):
@@ -138,7 +143,7 @@ def checks(cell):
 def cross_hub(go,rust,tmp):
     cells=[]
     for name,cls in [('oracle',Cell),('candidate',RustHub)]:
-        place=Path(tmp)/name;place.mkdir();cells.append(cls(go,rust,place))
+        place=Path(tmp).resolve()/name;place.mkdir();cells.append(cls(go,rust,place))
     sequence=[]
     def pair(key,argv,env=None,document=None,caps=None):
         body=json.dumps({'argv':argv,'cwd':'/synthetic/caller','env':env or {},'request_key':key,'capabilities':caps or [],'document':document})
@@ -147,7 +152,17 @@ def cross_hub(go,rust,tmp):
             port=int(cell.url.rsplit(':',1)[1]);c=http.client.HTTPConnection('::1',port,timeout=10)
             c.request('POST','/api/rpc',body,{'Content-Type':'application/json','X-Taskr-RPC':'1'})
             response=c.getresponse();outputs.append((response.status,response.read()));c.close()
+        if '_host' in argv and 'observe' in argv:
+            for index, (code, raw) in enumerate(outputs):
+                envelope = json.loads(raw)
+                value = json.loads(envelope['stdout'])
+                extension = value.pop('hostd', None)
+                if extension is not None:
+                    assert extension['version'] == 1 and extension['epoch'] and extension['stale_ms'] == 30000, extension
+                    envelope['stdout'] = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(',', ':')) + '\n'
+                    outputs[index] = (code, (json.dumps(envelope, ensure_ascii=False, separators=(',', ':'))+'\n').encode())
         assert outputs[0]==outputs[1],{'argv':argv,'Go':repr(outputs[0]),'Rust':repr(outputs[1])}
+        golden.observe(argv, outputs[0])
         sequence.append({'argv':argv,'pass':True});return json.loads(outputs[0][1])
     try:
         pair('cross-new-root',['--json','new','parity-root','--role','orchestrator'])
@@ -181,19 +196,19 @@ def cross_hub(go,rust,tmp):
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--go',type=Path);ap.add_argument('--rust',type=Path,default=ROOT/'target/debug/taskr')
-    ap.add_argument('--net-fixture',action='store_true');ap.add_argument('--out',type=Path);ap.add_argument('--rust-hub-only',action='store_true');args=ap.parse_args()
+    ap.add_argument('--net-fixture',action='store_true');ap.add_argument('--out',type=Path);ap.add_argument('--rust-hub-only',action='store_true');args=golden.parse(ap, __file__)
     with tempfile.TemporaryDirectory(prefix='taskr-hub-matrix-') as tmp:
         go=args.go
         if go is None:
-            go=Path(tmp)/'taskr-go';subprocess.run(['go','build','-tags','taskr_contract','-o',str(go),'.'],cwd=ROOT,check=True)
+            go=Path(tmp).resolve()/'taskr-go';subprocess.run(['go','build','-tags','taskr_contract','-o',str(go),'.'],cwd=ROOT,check=True)
         results=[]
         for kind,cls in ([('Rust',RustHub)] if args.rust_hub_only else [('Go',Cell),('Rust',RustHub)]):
-            place=Path(tmp)/kind;place.mkdir();cell=cls(go.resolve(),args.rust.resolve(),place)
+            place=Path(tmp).resolve()/kind;place.mkdir();cell=cls(go.resolve(),args.rust.resolve(),place)
             try:
                 checks(cell);results.append({'hub':kind,'clients':['Go','Rust'],'pass':len(cell.results),'mismatch':0,'checks':cell.results})
             finally:cell.close()
             if args.net_fixture:
-                place=Path(tmp)/(kind+'-net');place.mkdir();cell=cls(go.resolve(),args.rust.resolve(),place)
+                place=Path(tmp).resolve()/(kind+'-net');place.mkdir();cell=cls(go.resolve(),args.rust.resolve(),place)
                 try:
                     net_checks(cell);results.append({'hub':kind,'fixture':'impl-rust-net','clients':['Go','Rust'],'pass':len(cell.results),'mismatch':0,'checks':cell.results})
                 finally:cell.close()
@@ -201,4 +216,6 @@ def main():
         result={'cells':results,'cross_hub':cross,'mismatch':0}
         if args.out:args.out.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
         print(json.dumps(result,ensure_ascii=False))
-if __name__=='__main__':main()
+if __name__=='__main__':
+    main()
+    golden.finish()

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """R1 review probes: inherited RPC env must not activate child dispatch."""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools/contract'))
+import golden
 import argparse
 import json
-from pathlib import Path
 import os
 import pty
 import sqlite3
@@ -29,7 +32,7 @@ def probes(binary, place, contract=False):
                 os.close(master)
         else:
             process = subprocess.run([str(binary), *args], input=body, **options)
-        return (process.returncode, process.stdout.decode(), process.stderr.decode())
+        return (process.returncode, process.stdout.decode().replace(str(place), '/synthetic/probe'), process.stderr.decode().replace(str(place), '/synthetic/probe'))
 
     for args in (['--json', 'new', 'root', '--role', 'orchestrator'], ['--json', 'new', 'lane', '--role', 'implementer', '--parent', '1']):
         assert run(args)[0] == 0
@@ -43,6 +46,13 @@ def probes(binary, place, contract=False):
     request = json.dumps({'argv': ['note', 'spoofed'], 'cwd': '/', 'env': {}, 'request_key': 'review-rpc-env01'}).encode()
     results['inherited_env_host_refusal'] = run(['note', 'spoofed'], {**forged, 'TASKR_TASK': '2'}, request)
     assert results['inherited_env_host_refusal'] == results['host_refusal'], results
+    results['dashboard_default'] = run(['--json', 'daemon', '--status'])
+    assert json.loads(results['dashboard_default'][1])['dashboard_url'] == 'http://127.0.0.1:7788/'
+    state = home / '.local/state/taskr'
+    (state / 'dashboard.addr').write_text('tailnet\n')
+    results['tailnet_default'] = run(['--json', 'daemon', '--status'])
+    assert json.loads(results['tailnet_default'][1])['dashboard_url'] == 'http://127.0.0.1:7788/'
+    (state / 'dashboard.addr').unlink()
     results['version'] = run(['version'])
     results['version_empty_stdin'] = run(['version'], forged)
     results['version_open_tty'] = run(['version'], forged, tty=True)
@@ -81,16 +91,22 @@ if __name__ == '__main__':
     parser.add_argument('--rust', required=True, type=Path)
     parser.add_argument('--contract', type=Path)
     parser.add_argument('--out', required=True, type=Path)
-    args = parser.parse_args()
+    args = golden.parse(parser, __file__)
     with tempfile.TemporaryDirectory(prefix='taskr-hub-child-review-') as tmp:
-        oracle = probes(args.go.resolve(), Path(tmp) / 'go')
-        candidate = probes(args.rust.resolve(), Path(tmp) / 'rust')
+        oracle = probes(args.go.resolve(), Path(tmp).resolve() / 'go', contract=bool(golden.session and golden.session.oracle_is_rust and args.contract))
+        candidate = probes(args.rust.resolve(), Path(tmp).resolve() / 'rust', contract=bool(golden.session and args.contract))
+        if golden.session:
+            oracle.pop('contract_migrate_default_client', None)
+            candidate.pop('contract_migrate_default_client', None)
+        golden.observe('local probes', oracle)
         assert candidate == oracle, {'Go': oracle, 'Rust': candidate}
         checks = len(candidate)
         if args.contract:
-            contract = probes(args.contract.resolve(), Path(tmp) / 'contract', contract=True)
+            contract = probes(args.contract.resolve(), Path(tmp).resolve() / 'contract', contract=True)
             assert contract == {key: value for key, value in oracle.items() if key != 'contract_migrate_default_client'}
             checks += len(contract)
         result = {'pass': checks, 'mismatch': 0, 'local_effects': 'host fence, cwd, document capture and upload sentinel unchanged'}
         args.out.write_text(json.dumps(result, indent=2) + '\n')
         print(json.dumps(result))
+
+    golden.finish()

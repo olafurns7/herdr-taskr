@@ -10,6 +10,7 @@ import shutil
 import sqlite3
 import subprocess
 import tempfile
+import golden
 
 ROOT = Path(__file__).resolve().parents[2]
 NOT_IMPLEMENTED = 125
@@ -19,7 +20,7 @@ def quote(name):
     return '"' + name.replace('"', '""') + '"'
 
 
-def logical(path):
+def logical(path, normalized=False):
     """Include visible FTS rows and application schema, exclude implementation shadow tables."""
     if not path.exists():
         return None
@@ -39,7 +40,7 @@ def logical(path):
             digest, count = hashlib.sha256(), 0
             for row in db.execute(f"select {fields} from {quote(name)} order by {fields}"):
                 values = [{"blob": value.hex()} if isinstance(value, bytes) else value for value in row]
-                digest.update(json.dumps(values, ensure_ascii=True, separators=(',', ':')).encode() + b'\n')
+                digest.update(json.dumps(golden.normalize(values) if normalized else values, ensure_ascii=True, separators=(',', ':')).encode() + b'\n')
                 count += 1
             tables[name] = {"columns": columns, "rows": count, "sha256": digest.hexdigest()}
         integrity = list(db.execute('pragma integrity_check'))
@@ -92,13 +93,16 @@ def execute(binary, args, home, db, extra_env, timeout, client_url=None, child_m
         script = fake / name
         script.write_text('#!/bin/sh\necho "contract fixture: service unavailable" >&2\nexit 2\n')
         script.chmod(0o755)
+    state = home / '.local/state/taskr'
+    state.mkdir(parents=True)
+    (state / 'dashboard.addr').write_text('127.0.0.1:7788\n')
     env = {"HOME": str(home), "TASKR_DB": str(db), "PATH": str(fake) + ':/usr/bin:/bin',
            "HERDR_SOCKET_PATH": str(home / 'absent.sock'), "TASKR_FROZEN_NOW": '2026-10-08T00:00:00Z',
            "TASKR_CONTRACT_ORACLE": '1', "LANG": 'C.UTF-8', "TZ": 'UTC',
            "SQLITE_TMPDIR": str(home), **extra_env}
     if client_url:
         state = home / '.local/state/taskr'
-        state.mkdir(parents=True)
+        state.mkdir(parents=True, exist_ok=True)
         (state / 'server.url').write_text(client_url + '\n')
         env['TASKR_DB'] = ''
     input_bytes = None
@@ -108,7 +112,7 @@ def execute(binary, args, home, db, extra_env, timeout, client_url=None, child_m
         input_bytes = json.dumps(request).encode()
         args = ['--contract-rpc-child', caller] if child_mode == 'go' else ['--hub-child', *args]
     try:
-        process = subprocess.run([str(binary), *args], env=env, input=input_bytes, capture_output=True, timeout=timeout)
+        process = subprocess.run([str(binary), *args], env=env, input=input_bytes, capture_output=True, timeout=timeout, cwd=home.parent)
         return process.returncode, process.stdout, process.stderr
     except subprocess.TimeoutExpired:
         return -999, b'', b'contract: process timeout\n'
@@ -128,11 +132,13 @@ def main():
     parser.add_argument('--timeout', type=float, default=30)
     parser.add_argument('--sqlite-module', choices=('sqlite3', 'pysqlite3'), default='sqlite3',
                         help='optional newer user-space SQLite for recent FTS5 indexes')
-    options = parser.parse_args()
+    options = golden.parse(parser, __file__)
     try:
         sqlite3 = importlib.import_module(options.sqlite_module)
     except ImportError as error:
         parser.error(str(error))
+    if (options.record or options.expect) and options.live_snapshot:
+        parser.error('goldens accept synthetic fixtures only')
     if options.require_live and not options.live_snapshot:
         parser.error('--require-live needs --live-snapshot')
     scratch_root = ROOT / '.scratch'
@@ -145,9 +151,12 @@ def main():
     for binary in (go, rust):
         if not binary.is_file():
             parser.error(f'binary does not exist: {binary}')
-    cases = json.loads(options.cases.read_text())
+    indexed_cases = list(enumerate(json.loads(options.cases.read_text())))
     if options.family:
-        cases = [case for case in cases if any(case['family'] == family or case['family'].startswith(family + ':') for family in options.family)]
+        indexed_cases = [(i, case) for i, case in indexed_cases if any(case['family'] == family or case['family'].startswith(family + ':') for family in options.family)]
+    cases = [case for _, case in indexed_cases]
+    if golden.session:
+        golden.session.require_all = options.catchup_fixtures and not options.family
     if not cases:
         parser.error('no cases selected')
     summary, results = defaultdict(lambda: defaultdict(int)), []
@@ -167,11 +176,11 @@ def main():
             for name, source in corpus.items():
                 path = child_dir / (name + '.db')
                 clone(source, path)
-                code, _, stderr = execute(go, ['--contract-migrate'], child_dir / (name + '-home'), path, {}, options.timeout)
+                code, _, stderr = execute(rust if options.expect else go, ['--contract-migrate'], child_dir / (name + '-home'), path, {}, options.timeout)
                 if code != 0:
                     raise RuntimeError(f'RPC fixture migration failed: {name}: {code}: {stderr!r}')
                 child_corpus[name] = path
-        for i, case in enumerate(cases):
+        for i, case in indexed_cases:
             for fixture_name, fixture in corpus.items():
                 if fixture_name not in case.get('fixtures', corpus):
                     continue
@@ -185,17 +194,23 @@ def main():
                 # Both executions see exactly the same pathname/env; restore private state between them.
                 db = root / 'ledger.db'
                 outcomes, after = [], []
-                for binary in (go, rust):
+                for binary in ((go,) if options.record else (rust,) if options.expect else (go, rust)):
                     for old_home in root.glob('home*'):
                         shutil.rmtree(old_home)
                     for suffix in ('', '-wal', '-shm'):
                         Path(str(db) + suffix).unlink(missing_ok=True)
                     clone(fixture, db)
                     steps = case.get('sequence', [case['argv']])
-                    executions = [execute(binary, argv, root / f'home{step}', db, case.get('env', {}), options.timeout, case.get('client_url'), 'go' if binary == go else 'rust', case.get('rpc_caller'))
+                    executions = [execute(binary, argv, root / f'home{step}', db, case.get('env', {}), options.timeout, case.get('client_url'), 'go' if binary == go and not (golden.session and golden.session.oracle_is_rust) else 'rust', case.get('rpc_caller'))
                                   for step, argv in enumerate(steps)]
                     outcomes.append(executions)
-                    after.append(logical(db))
+                    after.append(logical(db, normalized=bool(golden.session)))
+                    if golden.session:
+                        golden.observe([i, fixture_name, steps], {'executions': executions,
+                            'logical_db': golden.digest(after[-1])})
+                if golden.session:
+                    outcomes = [outcomes[0], outcomes[0]]
+                    after = [after[0], after[0]]
                 differences = []
                 go_codes = [out[0] for out in outcomes[0]]
                 rust_codes = [out[0] for out in outcomes[1]]
@@ -221,17 +236,25 @@ def main():
                 for group in case_groups:
                     groups[group][status] += 1
                 result = {'family': family, 'fixture': fixture_name, 'argv': case.get('sequence', case['argv']), 'status': status,
-                          'groups': case_groups, 'go_exit': go_codes if 'sequence' in case else go_codes[0], 'rust_exit': rust_codes if 'sequence' in case else rust_codes[0], 'differences': differences}
+                          'groups': case_groups, 'go_exit': None if golden.session else go_codes if 'sequence' in case else go_codes[0], 'rust_exit': None if options.record else rust_codes if 'sequence' in case else rust_codes[0], 'differences': differences}
+                if options.record:
+                    result['record_exit'] = go_codes if 'sequence' in case else go_codes[0]
                 results.append(result)
                 if status == 'mismatch':
                     print(json.dumps(result, ensure_ascii=True))
+                shutil.rmtree(root)
         payload = {'fixtures': list(corpus), 'summary': dict(summary), 'groups': dict(groups), 'results': results,
-                   'go': str(go), 'rust': str(rust), 'clock': '2026-10-08T00:00:00Z', 'sqlite_version': sqlite3.sqlite_version}
+                   'mode': 'record' if options.record else 'expect' if options.expect else 'differential',
+                   'go': None if golden.session else str(go), 'rust': None if options.record else str(rust),
+                   'record_binary': str(options.record.resolve()) if options.record else None, 'clock': '2026-10-08T00:00:00Z', 'sqlite_version': sqlite3.sqlite_version}
     for family, counts in sorted(summary.items()):
         print(f"{family}: pass={counts['pass']} not-implemented={counts['not-implemented']} mismatch={counts['mismatch']}")
     if options.out:
         options.out.write_text(json.dumps(payload, indent=2) + '\n')
-    return int(any(result['status'] == 'mismatch' for result in results))
+    failed = any(result['status'] == 'mismatch' for result in results)
+    if not failed:
+        golden.finish()
+    return int(failed)
 
 
 if __name__ == '__main__':

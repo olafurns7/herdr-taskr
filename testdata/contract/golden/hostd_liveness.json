@@ -1,0 +1,4 @@
+{
+"observations":[
+{"label":"Go relay once","value":{"mode":"client","ok":true,"once":true,"watch":["wLane:p1"]},"provenance":"Rust hub / Go relay client"}
+]}

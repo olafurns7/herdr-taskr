@@ -1,0 +1,7 @@
+{
+"observations":[
+{"label":["--json","--request-key","net-cell-0001","new","detached-write-root","--role","orchestrator"],"value":[0,"{\"name\":\"detached-write-root\",\"ok\":true,\"status\":\"open\",\"task_id\":1}\n","taskr: no goal recorded for root 1; run `taskr doc set 1 goal --file PATH`\ntaskr: lead has no pane; run `taskr adopt 1 --pane <id>` as your first act\n"],"provenance":"Go hub / Go client"},
+{"label":["--json","--request-key","http-detached-write","note","detached write","--as","1"],"value":[0,"{\"event_id\":1,\"kind\":\"note\",\"ok\":true,\"status\":\"open\",\"task_id\":1}\n",""],"provenance":"Go hub / Go client"},
+{"label":["--json","--request-key","net-cell-0001","new","detached-write-root","--role","orchestrator"],"value":[0,"{\"name\":\"detached-write-root\",\"ok\":true,\"status\":\"open\",\"task_id\":1}\n","taskr: no goal recorded for root 1; run `taskr doc set 1 goal --file PATH`\ntaskr: lead has no pane; run `taskr adopt 1 --pane <id>` as your first act\n"],"provenance":"Rust hub / Go client"},
+{"label":["--json","--request-key","http-detached-write","note","detached write","--as","1"],"value":[0,"{\"event_id\":1,\"kind\":\"note\",\"ok\":true,\"status\":\"open\",\"task_id\":1}\n",""],"provenance":"Rust hub / Go client"}
+]}

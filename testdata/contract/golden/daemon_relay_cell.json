@@ -1,0 +1,5 @@
+{
+"observations":[
+{"label":"once","value":[0,"{\"mode\":\"client\",\"ok\":true,\"once\":true,\"watch\":[\"wLane:p1\"]}\n",""],"provenance":"Go oracle"},
+{"label":"client status","value":[0,"{\"last_call_at\":\"<time>\",\"mode\":\"client\",\"ok\":true,\"running\":false,\"server\":\"http://[::1]:<port>\",\"spool\":{\"bad\":0,\"queued\":0,\"refused\":0,\"stuck\":false}}\n",""],"provenance":"Go oracle"}
+]}
