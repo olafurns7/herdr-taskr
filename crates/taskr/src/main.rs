@@ -5,6 +5,7 @@ mod daemon;
 mod hub;
 mod net;
 mod read;
+mod tmp;
 mod write;
 use taskr_core::ExitCode;
 fn run(mut args: Vec<String>) -> ExitCode {
@@ -55,6 +56,7 @@ fn run(mut args: Vec<String>) -> ExitCode {
     }
     if let Some(code) = daemon::dispatch(json, &args)
         .or_else(|| read::dispatch(json, &args))
+        .or_else(|| tmp::dispatch(json, &args))
         .or_else(|| write::dispatch(json, &args))
     {
         return code;
