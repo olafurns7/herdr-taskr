@@ -66,7 +66,7 @@ with `pr=`. Without `default_repo`, only `owner/repo#N` links are followed.
   task's lead (a linked root gets its own); a closed lead's inbox is skipped.
   Subs: `checks_green`, `checks_failed` (each after two polls that agree, over
   the required checks, or all checks when none is required; more than 50
-  checks is no verdict), `dirty`,
+  checks, or a check GitHub could not return in full, is no verdict), `dirty`,
   `behind`, `blocked`, `thread_opened`, `threads_clear`, `merged`, `closed`.
   More than 50 review threads, or a thread GitHub could not return, keeps the
   last thread count.

@@ -116,36 +116,45 @@ pub(super) fn query(batch: &[Pr]) -> String {
 }
 /// `green`, `failed` or `pending` over the required contexts (all of them when none
 /// is required); None when GitHub has no rollup or no contexts yet, or more than one
-/// page of them, where a failed check may be unseen (no change).
+/// page of them, or any context lost to a field error (null, or no requiredness or
+/// result), where a failed check may be unseen (no change).
 fn verdict(node: &Value) -> Option<&'static str> {
     let contexts = &node["commits"]["nodes"][0]["commit"]["statusCheckRollup"]["contexts"];
     if contexts["pageInfo"]["hasNextPage"] != false {
         return None;
     }
-    let all = contexts["nodes"].as_array()?;
-    let required: Vec<&Value> = all.iter().filter(|c| c["isRequired"] == true).collect();
-    let set = if required.is_empty() {
-        all.iter().collect()
-    } else {
-        required
+    let one = |c: &Value| -> Option<(bool, &'static str)> {
+        let v = match c["__typename"].as_str()? {
+            "StatusContext" => match c["state"].as_str()? {
+                "SUCCESS" => "green",
+                "FAILURE" | "ERROR" => "failed",
+                _ => "pending",
+            },
+            "CheckRun" => match c["status"].as_str()? {
+                "COMPLETED" => match c["conclusion"].as_str()? {
+                    "SUCCESS" | "NEUTRAL" | "SKIPPED" => "green",
+                    _ => "failed",
+                },
+                _ => "pending",
+            },
+            _ => return None,
+        };
+        Some((c["isRequired"].as_bool()?, v))
     };
-    if set.is_empty() {
+    let all = contexts["nodes"]
+        .as_array()?
+        .iter()
+        .map(one)
+        .collect::<Option<Vec<_>>>()?;
+    let any_required = all.iter().any(|(r, _)| *r);
+    let got: Vec<&str> = all
+        .into_iter()
+        .filter(|(r, _)| *r || !any_required)
+        .map(|(_, v)| v)
+        .collect();
+    if got.is_empty() {
         return None;
     }
-    let one = |c: &Value| match (c["__typename"].as_str(), c["status"].as_str()) {
-        (Some("StatusContext"), _) | (None, None) => match c["state"].as_str() {
-            Some("SUCCESS") => "green",
-            Some("FAILURE" | "ERROR") => "failed",
-            _ => "pending",
-        },
-        (_, Some("COMPLETED")) => match c["conclusion"].as_str() {
-            Some("SUCCESS" | "NEUTRAL" | "SKIPPED") => "green",
-            None => "pending",
-            _ => "failed",
-        },
-        _ => "pending",
-    };
-    let got: Vec<&str> = set.into_iter().map(one).collect();
     Some(if got.contains(&"failed") {
         "failed"
     } else if got.contains(&"pending") {
@@ -484,32 +493,27 @@ impl Poller {
         let Some(default) = config(&self.dir) else {
             return;
         };
-        let links = match links(db, &default) {
-            Ok(links) => links,
+        // A PR cached as merged or closed is not polled again; its links still get
+        // its refs (a no-op once they have them), with no event. Links and cache are
+        // read in the write transaction, so a concurrent relink or close is seen.
+        let mut prs = match store::transaction(db, |tx| {
+            let mut prs = vec![];
+            for l in links(tx, &default)? {
+                let s = state(tx, &l.pr)?;
+                if s.done {
+                    task_refs(tx, l.task, &s)?;
+                } else {
+                    prs.push(l.pr);
+                }
+            }
+            Ok(prs)
+        }) {
+            Ok(prs) => prs,
             Err(e) => {
-                log.line(&format!("github poll link query failed: {}", e.message));
+                log.line(&format!("github poll links failed: {}", e.message));
                 return;
             }
         };
-        // A PR cached as merged or closed is not polled again; its links still get
-        // its refs (a no-op once they have them), with no event.
-        let mut prs = vec![];
-        let mut done = vec![];
-        for l in links {
-            match state(db, &l.pr) {
-                Ok(s) if s.done => done.push((l.task, s)),
-                Ok(_) => prs.push(l.pr),
-                Err(_) => {}
-            }
-        }
-        if !done.is_empty()
-            && let Err(e) = store::transaction(db, |tx| {
-                done.iter()
-                    .try_for_each(|(task, s)| task_refs(tx, *task, s))
-            })
-        {
-            log.line(&format!("github poll refs failed: {}", e.message));
-        }
         prs.sort();
         prs.dedup();
         if prs.is_empty() {

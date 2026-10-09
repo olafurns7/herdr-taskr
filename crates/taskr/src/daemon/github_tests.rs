@@ -521,3 +521,79 @@ fn poller_refs_do_not_count_against_the_budget() {
         err.message
     );
 }
+
+/// A check lost to a field error (no requiredness, or a null node) on a complete page
+/// is no verdict: it may be the failed required one.
+#[test]
+fn a_partial_check_is_no_verdict() {
+    for (name, path) in [("required", Some("isRequired")), ("node", None)] {
+        let mut f = fixture(&format!("partial-check-{name}"));
+        f.link(2, "31");
+        let mut node = pr(HEAD, "CLEAN", &["SUCCESS", "FAILURE"], 0);
+        let failed =
+            &mut node["commits"]["nodes"][0]["commit"]["statusCheckRollup"]["contexts"]["nodes"][1];
+        let mut error = json!([
+            "p0",
+            "pullRequest",
+            "commits",
+            "nodes",
+            0,
+            "commit",
+            "statusCheckRollup",
+            "contexts",
+            "nodes",
+            1
+        ]);
+        match path {
+            Some(field) => {
+                failed[field] = Value::Null;
+                error.as_array_mut().unwrap().push(json!(field));
+            }
+            None => *failed = Value::Null,
+        }
+        let mut response: Value = serde_json::from_str(&data(&[node])).unwrap();
+        response["errors"] =
+            json!([{"type":"FORBIDDEN","path":error,"message":"field unavailable"}]);
+        f.reply(&response.to_string(), 1);
+        f.poll();
+        f.poll();
+        assert!(f.subs().is_empty(), "{name}: {:?}", f.subs());
+        assert_eq!(f.latest_ref(2, "pr.ci"), None, "{name}");
+        assert_eq!(
+            f.latest_ref(2, "pr.state").as_deref(),
+            Some("open"),
+            "{name}"
+        );
+    }
+}
+
+/// Cached terminal refs follow the link as it stands in the write transaction: a
+/// relink committed while the poller waits for the lock wins.
+#[test]
+fn cached_refs_recheck_the_link_under_the_lock() {
+    let mut f = fixture("cached-race");
+    f.link(2, "31");
+    let mut node = pr(HEAD, "CLEAN", &[], 0);
+    node["state"] = json!("MERGED");
+    node["merged"] = json!(true);
+    f.reply(&data(&[node]), 0);
+    f.poll();
+    f.link(3, "31");
+    f.reply(&data(&[pr(HEAD, "CLEAN", &[], 0)]), 0);
+    let mut other = db::open(&f.dir.join("taskr.db")).unwrap();
+    let (send, recv) = mpsc::channel();
+    let writer = std::thread::spawn(move || {
+        let tx = other
+            .transaction_with_behavior(db::rusqlite::TransactionBehavior::Immediate)
+            .unwrap();
+        tx.execute("insert into events(task_id,kind,summary,data,created_at) values(3,'ref','pr=32',json_object('key','pr','value','32'),?)",[store::now()]).unwrap();
+        send.send(()).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        tx.commit().unwrap();
+    });
+    recv.recv().unwrap();
+    f.poll();
+    writer.join().unwrap();
+    assert_eq!(f.latest_ref(3, "pr").as_deref(), Some("32"));
+    assert_eq!(f.latest_ref(3, "pr.state").as_deref(), Some("open"));
+}
