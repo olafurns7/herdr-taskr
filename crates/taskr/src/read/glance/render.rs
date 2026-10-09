@@ -77,8 +77,9 @@ fn age(ms: i64) -> String {
         format!("{}d", ms / 86_400_000)
     }
 }
-/// `brief` adds the root id and owner-ask count to campaign rows, clips the quote to 60
-/// and puts `cursor=` in the header; `--watch` passes false and stays byte-identical.
+/// `brief` is the hub's text: ids on every row, names padded to the longest and never cut,
+/// quotes clipped to 60, blank lines between blocks; `--watch` passes false and stays
+/// byte-identical.
 pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64, brief: bool) -> Vec<String> {
     if w == 0 || h == 0 {
         return vec![];
@@ -90,15 +91,18 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64, brief: bool) -> 
     let campaigns = v["campaigns"].as_array().unwrap();
     let right = match s(v, "verdict") {
         "rolling" => "✓ no owner action".into(),
+        "needs_you" if brief => {
+            format!(
+                "{} owner ask{}",
+                needs.len(),
+                if needs.len() == 1 { "" } else { "s" }
+            )
+        }
         "needs_you" => format!("{} need you", needs.len()),
         "attention" | "unknown" => format!("{} to check", attention.len()),
         _ => "? unknown".into(),
     };
-    let mut full = if brief {
-        format!("{left} · cursor={}", n(v, "cursor"))
-    } else {
-        format!("{left} · {}", age(age_ms))
-    };
+    let mut full = format!("{left} · {}", age(age_ms));
     if width(&full) + width(&right) + 1 > w {
         full = left;
     }
@@ -109,20 +113,26 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64, brief: bool) -> 
         full.clear();
     }
     let right = truncate(&right, w);
-    // Brief is read as text, not a pane: no padding, and a short rule keep it under 2 KB.
     let header = if brief {
-        format!("{full} · {right}")
+        format!("taskr · {time}Z · cursor={} · {right}", n(v, "cursor"))
     } else {
         format!(
             "{full}{}{right}",
             " ".repeat(w - width(&full) - width(&right))
         )
     };
-    let rule = "─".repeat(if brief { w.min(40) } else { w });
+    let rule = "─".repeat(w);
+    // Lines that carry an id are never cut in brief: the hub passes the ids back.
+    let cut = |s: String| if brief { s } else { truncate(&s, w) };
     let mut groups: [Vec<Vec<String>>; 3] = std::array::from_fn(|_| vec![]);
     for need in needs {
+        let ids = if brief {
+            format!("  root={} ask={}", n(need, "root_id"), n(need, "ask_id"))
+        } else {
+            String::new()
+        };
         let mut first = format!(
-            "» {}  {}",
+            "» {}{ids}  {}",
             clean(s(need, "campaign")),
             age(n(need, "age_ms") + age_ms)
         );
@@ -140,10 +150,7 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64, brief: bool) -> 
         {
             first.push_str(&format!("  {}", clean(also)));
         }
-        groups[0].push(vec![
-            truncate(&first, w),
-            truncate(&format!("  {}", clean(text)), w),
-        ]);
+        groups[0].push(vec![cut(first), truncate(&format!("  {}", clean(text)), w)]);
     }
     for a in attention {
         let (sym, mut word) = match s(a, "kind") {
@@ -176,21 +183,31 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64, brief: bool) -> 
             name = clean(s(a, "recipient"));
             word = format!("idle · {} results", n(a, "count"));
         }
-        let name = truncate(
-            &name,
-            width(&name)
-                .min(8)
-                .max(w.saturating_sub(width(&format!("{sym}   {word}{when}")))),
-        );
+        let first = if brief {
+            let mut first = format!("{sym} {name}  ");
+            if n(a, "root_id") > 0 {
+                first.push_str(&format!("root={}  ", n(a, "root_id")));
+            }
+            first.push_str(&format!("{word}{when}"));
+            if !s(a, "pane_id").is_empty() {
+                first.push_str(&format!("  → {}", clean(s(a, "pane_id"))));
+            }
+            first
+        } else {
+            let name = truncate(
+                &name,
+                width(&name)
+                    .min(8)
+                    .max(w.saturating_sub(width(&format!("{sym}   {word}{when}")))),
+            );
+            truncate(&format!("{sym} {name}  {word}{when}"), w)
+        };
         let text = match s(a, "kind") {
             "lead_unregistered_silent" => "lead silent with open lanes",
             "parked_active" => "new activity; re-park to hold again",
             _ => s(a, "text"),
         };
-        groups[1].push(vec![
-            truncate(&format!("{sym} {name}  {word}{when}"), w),
-            truncate(&format!("  {}", clean(text)), w),
-        ]);
+        groups[1].push(vec![first, truncate(&format!("  {}", clean(text)), w)]);
     }
     let quote = |t: &str| {
         if brief {
@@ -199,6 +216,19 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64, brief: bool) -> 
             clean(t)
         }
     };
+    let fill = |s: String, n: usize| format!("{s}{}", " ".repeat(n.saturating_sub(width(&s))));
+    let root = |c: &Value| format!("root={}", n(c, "id"));
+    let lanes = |c: &Value| {
+        let l = &c["lanes"];
+        format!("{}/{} working", n(l, "working"), n(l, "open"))
+    };
+    let widest =
+        |f: &dyn Fn(&Value) -> String| campaigns.iter().map(|c| width(&f(c))).max().unwrap_or(0);
+    let widths = [
+        widest(&|c| clean(s(c, "name"))),
+        widest(&root),
+        widest(&lanes),
+    ];
     for c in campaigns {
         let mut sym = if n(&c["lanes"], "working") > 0 {
             "●"
@@ -234,53 +264,78 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64, brief: bool) -> 
             }
             .into();
         }
-        let id = if brief {
-            let asks = needs.iter().filter(|x| x["root_id"] == c["id"]).count();
+        let ago = age(n(c, "activity_age_ms") + age_ms);
+        let mut row = vec![if brief {
             format!(
-                "{} {} ",
-                pad(&format!("#{}", n(c, "id")), 6),
-                pad(&format!("o{asks}"), 3)
+                "{sym} {}  {}  {}  {} {}",
+                fill(clean(s(c, "name")), widths[0]),
+                fill(root(c), widths[1]),
+                fill(lanes(c), widths[2]),
+                fill(ago, 4),
+                quote(&text)
             )
         } else {
-            String::new()
-        };
-        let mut row = vec![truncate(
-            &format!(
-                "{sym} {id}{} {} {} {}",
-                pad(s(c, "name"), 18),
-                pad(
-                    &format!("{}/{}", n(&c["lanes"], "working"), n(&c["lanes"], "open")),
-                    6
+            truncate(
+                &format!(
+                    "{sym} {} {} {} {}",
+                    pad(s(c, "name"), 18),
+                    pad(
+                        &format!("{}/{}", n(&c["lanes"], "working"), n(&c["lanes"], "open")),
+                        6
+                    ),
+                    pad(&ago, 4),
+                    quote(&text)
                 ),
-                pad(&age(n(c, "activity_age_ms") + age_ms), 4),
-                quote(&text)
-            ),
-            w,
-        )];
+                w,
+            )
+        }];
         if !detail.is_empty() {
             row.push(truncate(&detail, w));
         }
         groups[2].push(row);
     }
-    let quiet = if n(&v["quiet"], "count") > 0 {
-        truncate(&format!("· {} quiet", n(&v["quiet"], "count")), w)
-    } else {
-        String::new()
-    };
+    // `unchanged` is set only by brief's `--since`: active campaigns it hid.
+    let quiet = [
+        ("unchanged", n(v, "unchanged")),
+        ("quiet", n(&v["quiet"], "count")),
+    ]
+    .iter()
+    .filter(|(_, count)| *count > 0)
+    .map(|(word, count)| format!(" · {count} {word}"))
+    .collect::<String>();
+    let quiet = truncate(quiet.strip_prefix(' ').unwrap_or_default(), w);
+    let pending = (n(v, "owner_notes_pending") > 0).then(|| {
+        let word = if n(v, "owner_notes_pending") == 1 {
+            "note still carries"
+        } else {
+            "notes still carry"
+        };
+        truncate(
+            &format!("{} {word} OWNER items", n(v, "owner_notes_pending")),
+            w,
+        )
+    });
+    if brief {
+        let mut out: Vec<String> = [header].into_iter().chain(pending).collect();
+        for (g, items) in groups.iter().enumerate() {
+            let mut block: Vec<String> = items.iter().flatten().cloned().collect();
+            if g == 2 && !quiet.is_empty() {
+                block.push(quiet.clone());
+            }
+            if !block.is_empty() {
+                out.push(String::new());
+                out.extend(block);
+            }
+        }
+        for row in &mut out {
+            row.truncate(row.trim_end_matches(' ').len());
+        }
+        return out;
+    }
     let mut keep = [groups[0].len(), groups[1].len(), groups[2].len()];
     let compose = |keep: [usize; 3]| {
         let mut out = vec![header.clone(), rule.clone()];
-        if n(v, "owner_notes_pending") > 0 {
-            let word = if n(v, "owner_notes_pending") == 1 {
-                "note still carries"
-            } else {
-                "notes still carry"
-            };
-            out.push(truncate(
-                &format!("{} {word} OWNER items", n(v, "owner_notes_pending")),
-                w,
-            ));
-        }
+        out.extend(pending.clone());
         for (g, items) in groups.iter().enumerate() {
             for item in &items[..keep[g]] {
                 out.extend(item.clone());
@@ -445,8 +500,16 @@ mod parity_tests {
             }
         }
     }
+    /// `busy()` plus ask and root ids, a lead pane, billing-fix exactly 30m old (the
+    /// `--since 30m` boundary) and a fourth campaign whose last text has two lines.
     fn brief_fixture() -> Value {
         let mut v = busy();
+        v["needs_you"][0]["ask_id"] = json!(70100);
+        v["needs_you"][1]["ask_id"] = json!(70101);
+        v["attention"][0]["root_id"] = json!(15);
+        v["attention"][0]["pane_id"] = json!("wDemoC:p1");
+        v["attention"][1]["root_id"] = json!(16);
+        v["campaigns"][2]["activity_age_ms"] = json!(1_800_000);
         v["campaigns"].as_array_mut().unwrap().push(json!({"id":14,"name":"release-train","activity_age_ms":7200000,"activity_id":69700,"lanes":{"working":0,"open":2},"last":{"age_ms":7200000,"text":"tag v0.9.3\nsecond line is not quoted"}}));
         v
     }
@@ -460,7 +523,8 @@ mod parity_tests {
         for (v, since, want) in [
             (brief_fixture(), "", "brief-busy"),
             (rolling, "", "brief-rolling"),
-            (brief_fixture(), "69800", "brief-since-cursor"),
+            // 69790 is billing-fix's own activity id: equal to the cursor is not newer.
+            (brief_fixture(), "69790", "brief-since-cursor"),
             (brief_fixture(), "30m", "brief-since-30m"),
             (empty, "", "brief-empty"),
         ] {
@@ -474,7 +538,7 @@ mod parity_tests {
             }
             assert_eq!(got, std::fs::read_to_string(&path).unwrap(), "{path}");
         }
-        for bad in ["-5m", "soon", "99999999999999999999", "5"] {
+        for bad in ["-5m", "0s", "soon", "99999999999999999999", "5"] {
             assert_eq!(
                 since_filter(bad).err().map(|e| e.code),
                 (bad != "5").then_some(ExitCode::Usage),
@@ -482,16 +546,22 @@ mod parity_tests {
             );
         }
     }
+    /// 2 KB is the owner's target for typical ASCII text, not a guarantee: names, Unicode
+    /// quotes and owner-note lines can exceed it.
     #[test]
-    fn brief_worst_case_under_2k() {
-        let quote = "x".repeat(200);
+    fn brief_15_campaigns_under_2k() {
+        let quote = "x".repeat(60);
         let campaigns: Vec<Value> = (0..15)
-            .map(|i| json!({"id":99990+i,"name":format!("campaign-with-a-long-name-{i}"),"activity_age_ms":3_540_000,"activity_id":999_990+i,"lanes":{"working":10,"open":10},"last":{"text":quote}}))
+            .map(|i| json!({"id":100_000+i,"name":format!("campaign-with-a-long-name-{i}"),"activity_age_ms":3_540_000,"activity_id":999_990+i,"lanes":{"working":10,"open":10},"last":{"text":quote}}))
             .collect();
         let v = json!({"now":"2026-10-07T17:30:00.000Z","verdict":"rolling","needs_you":[],"attention":[],"campaigns":campaigns,"quiet":{"count":99}});
         let out = brief(v, "").unwrap();
         assert_eq!(out.lines().count(), 18, "{out}");
         assert!(out.len() < 2048, "{} bytes:\n{out}", out.len());
+        assert!(
+            out.contains("  root=100000  ") && out.contains("  root=100001  "),
+            "{out}"
+        );
     }
     #[test]
     fn brief_strips_control_zero_width_and_bidi() {

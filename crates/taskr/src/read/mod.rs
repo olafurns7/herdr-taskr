@@ -114,11 +114,11 @@ fn flags(cmd: &str, json: bool) -> FlagSet {
         "glance" => {
             f.bool("watch", false, "live terminal view")
                 .duration("every", 5_000_000_000, "refresh interval (1s to 5m)")
-                .bool("brief", false, "one plain-text frame for a hub summary")
+                .bool("brief", false, "print the glance once as plain text for the hub")
                 .string(
                     "since",
                     "",
-                    "with --brief: a cursor (campaigns active after it) or a duration such as 30m",
+                    "with --brief: the header's cursor= (an event id) or a Go duration such as 30m; hides campaigns with nothing newer",
                 );
         }
         _ => {}

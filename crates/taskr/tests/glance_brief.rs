@@ -1,4 +1,4 @@
-//! `glance --brief` through the CLI: usage errors, and a client prints the hub's prose unchanged.
+//! `glance --brief` through the CLI: usage errors, and a client prints the hub's text unchanged.
 #[allow(dead_code)]
 #[path = "hook/support.rs"]
 mod support;
@@ -14,16 +14,57 @@ fn brief_with_ask(h: &Harness) -> i64 {
 fn brief_usage_errors() {
     let h = Harness::new();
     let root = brief_with_ask(&h);
-    for args in [
-        &["glance", "--brief", "--watch"][..],
-        &["--json", "glance", "--brief"],
-        &["glance", "--since", "30m"],
-        &["glance", "--brief", "--since", "soon"],
-        &["glance", "--brief", "--since", "-5m"],
+    let json = [("TASKR_FORMAT".to_string(), "json".to_string())];
+    for (env_json, args, why) in [
+        (
+            false,
+            &["glance", "--brief", "--watch"][..],
+            "give --brief or --watch, not both",
+        ),
+        (
+            false,
+            &["--json", "glance", "--brief"],
+            "unset TASKR_FORMAT=json",
+        ),
+        (true, &["glance", "--brief"], "unset TASKR_FORMAT=json"),
+        (
+            false,
+            &["glance", "--since", "30m"],
+            "--since needs --brief",
+        ),
+        (
+            false,
+            &["glance", "--brief", "--since", "soon"],
+            "Go duration",
+        ),
+        (
+            false,
+            &["glance", "--brief", "--since", "-5m"],
+            "Go duration",
+        ),
+        (
+            false,
+            &["glance", "--brief", "--since", "0s"],
+            "Go duration",
+        ),
     ] {
-        let out = h.output(&[], args, b"");
-        assert_eq!(out.status.code(), Some(2), "{args:?}");
+        let out = h.output(if env_json { &json } else { &[] }, args, b"");
+        let text = String::from_utf8_lossy(&out.stdout) + String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(2), "{args:?}: {text}");
+        assert!(text.contains(why), "{args:?}: {text}");
     }
+    // Non-tty --watch prints one frame and exits: the watch frame, without brief's ids.
+    let out = h.output(&[], &["glance", "--watch"], b"");
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(out.status.success(), "{text}");
+    assert!(
+        text.starts_with("taskr · ") && text.contains("Merge now?"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("root=") && !text.contains("cursor="),
+        "{text}"
+    );
     let out = h.output(&[], &["glance", "--brief", "--since", "0"], b"");
     let text = String::from_utf8(out.stdout).unwrap();
     assert!(out.status.success(), "{text}");
@@ -31,10 +72,7 @@ fn brief_usage_errors() {
         text.starts_with("taskr · ") && text.contains(" · cursor="),
         "{text}"
     );
-    assert!(
-        text.contains(&format!("#{root} ")) && text.contains(" o1 "),
-        "{text}"
-    );
+    assert!(text.contains(&format!("  root={root} ask=")), "{text}");
 }
 
 #[cfg(feature = "contract")]
@@ -90,7 +128,7 @@ fn client_prints_hub_brief_unchanged() {
     assert!(local.status.success() && forwarded.status.success());
     let text = String::from_utf8(forwarded.stdout.clone()).unwrap();
     assert!(
-        text.starts_with("taskr · ") && text.contains(" o1 "),
+        text.starts_with("taskr · ") && text.contains("  root=1 ask="),
         "{text}"
     );
     assert_eq!(forwarded.stdout, local.stdout);

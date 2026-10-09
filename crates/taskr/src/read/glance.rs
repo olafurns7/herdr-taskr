@@ -546,13 +546,15 @@ fn since_filter(since: &str) -> Result<(i64, i64)> {
     if since.bytes().all(|b| b.is_ascii_digit()) {
         let cursor = since
             .parse()
-            .map_err(|_| usage("--since: cursor out of range"))?;
+            .map_err(|_| usage("--since: event id out of range"))?;
         return Ok((cursor, i64::MAX));
     }
     let ns = taskr_core::goflag::parse_duration(since)
         .ok()
-        .filter(|ns| *ns >= 0)
-        .ok_or_else(|| usage("--since takes a cursor (digits) or a duration such as 30m"))?;
+        .filter(|ns| *ns > 0)
+        .ok_or_else(|| {
+            usage("--since must be the header's cursor= (an event id) or a Go duration such as 30m or 2h")
+        })?;
     Ok((-1, ns / 1_000_000))
 }
 /// One `frame()` at width 120, untagged; NEEDS YOU and ATTENTION always print in full.
@@ -566,18 +568,23 @@ fn brief(mut v: Value, since: &str) -> Result<String> {
             .max()
             .unwrap_or(0)
     );
-    v["campaigns"]
-        .as_array_mut()
-        .unwrap()
-        .retain(|c| n(c, "activity_id") > cursor && n(c, "activity_age_ms") <= max_age);
+    let campaigns = v["campaigns"].as_array_mut().unwrap();
+    let before = campaigns.len();
+    campaigns.retain(|c| n(c, "activity_id") > cursor && n(c, "activity_age_ms") <= max_age);
+    v["unchanged"] = json!(before - v["campaigns"].as_array().unwrap().len());
     Ok(render::frame(&v, 120, usize::MAX, 0, true).join("\n") + "\n")
 }
 pub fn run(f: &FlagSet) -> Result<()> {
-    if f.get_bool("brief") && (f.json() || f.get_bool("watch")) {
-        return Err(usage("--brief is prose: no --json or --watch"));
+    if f.get_bool("brief") && f.get_bool("watch") {
+        return Err(usage("give --brief or --watch, not both"));
+    }
+    if f.get_bool("brief") && f.json() {
+        return Err(usage(
+            "--brief prints plain text; drop --json and unset TASKR_FORMAT=json",
+        ));
     }
     if f.was_set("since") && !f.get_bool("brief") {
-        return Err(usage("--since requires --brief"));
+        return Err(usage("--since needs --brief"));
     }
     if f.get_bool("brief") {
         since_filter(f.get_string("since"))?;
@@ -726,6 +733,14 @@ fn watch(every: std::time::Duration, mut fetch: impl FnMut() -> Result<Value>) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn campaign_activity_id_follows_its_age() {
+        let c = json!({"activity_id":7,"activity_age_ms":5,"name":"x"});
+        assert_eq!(
+            go_json(&c),
+            r#"{"name":"x","activity_age_ms":5,"activity_id":7}"#
+        );
+    }
     #[test]
     fn owner_context_boundaries() {
         assert_eq!(

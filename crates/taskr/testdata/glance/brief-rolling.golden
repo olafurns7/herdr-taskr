@@ -1,7 +1,7 @@
-taskr · 17:30 · cursor=69850 · ✓ no owner action
-────────────────────────────────────────
-● #11    o0  docs-site          3/5    2m   S4 merged
-● #12    o0  checkout-redesign  2/2    14m  M1 review ok
-○ #13    o0  billing-fix        0/1    28m
-○ #14    o0  release-train      0/2    2h   tag v0.9.3
+taskr · 17:30Z · cursor=69850 · ✓ no owner action
+
+● docs-site          root=11  3/5 working  2m   S4 merged
+● checkout-redesign  root=12  2/2 working  14m  M1 review ok
+○ billing-fix        root=13  0/1 working  30m
+○ release-train      root=14  0/2 working  2h   tag v0.9.3
 · 13 quiet
