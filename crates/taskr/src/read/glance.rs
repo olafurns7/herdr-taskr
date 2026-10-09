@@ -102,6 +102,7 @@ fn go_json(v: &Value) -> String {
             "parked_active",
             "park_age_ms",
             "activity_age_ms",
+            "activity_id",
         ]
     } else if map.contains_key("ask_id") {
         &[
@@ -416,6 +417,9 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
     }
     for r in roots.values_mut() {
         r.v["activity_age_ms"] = json!(elapsed(&r.activity));
+        if r.activity_id > 0 {
+            r.v["activity_id"] = json!(r.activity_id);
+        }
         r.active = r.active
             || !r.activity.is_empty() && n(&r.v, "activity_age_ms") < 43_200_000
             || s(&r.v, "pane_id").is_empty() && n(&r.v["lanes"], "open") > 0;
@@ -533,7 +537,51 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
         json!({"server_host":taskr_core::store::local_machine(),"caller_host":taskr_core::store::caller_machine().unwrap_or_default(),"now":q::now(),"verdict":verdict,"needs_you":needs,"attention":attention,"campaigns":campaigns,"quiet":{"root_ids":quiet_ids,"count":quiet_names.len(),"names":quiet_names},"owner_notes_pending":owner_ids.len(),"owner_note_root_ids":owner_ids}),
     )
 }
+/// `--since`: all digits is a cursor (campaigns with a newer `activity_id`), else a Go
+/// duration (campaigns active within it). Returns (cursor, max activity age in ms).
+fn since_filter(since: &str) -> Result<(i64, i64)> {
+    if since.is_empty() {
+        return Ok((-1, i64::MAX));
+    }
+    if since.bytes().all(|b| b.is_ascii_digit()) {
+        let cursor = since
+            .parse()
+            .map_err(|_| usage("--since: cursor out of range"))?;
+        return Ok((cursor, i64::MAX));
+    }
+    let ns = taskr_core::goflag::parse_duration(since)
+        .ok()
+        .filter(|ns| *ns >= 0)
+        .ok_or_else(|| usage("--since takes a cursor (digits) or a duration such as 30m"))?;
+    Ok((-1, ns / 1_000_000))
+}
+/// One `frame()` at width 120, untagged; NEEDS YOU and ATTENTION always print in full.
+fn brief(mut v: Value, since: &str) -> Result<String> {
+    let (cursor, max_age) = since_filter(since)?;
+    let campaigns = v["campaigns"].as_array().unwrap();
+    v["cursor"] = json!(
+        campaigns
+            .iter()
+            .map(|c| n(c, "activity_id"))
+            .max()
+            .unwrap_or(0)
+    );
+    v["campaigns"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|c| n(c, "activity_id") > cursor && n(c, "activity_age_ms") <= max_age);
+    Ok(render::frame(&v, 120, usize::MAX, 0, true).join("\n") + "\n")
+}
 pub fn run(f: &FlagSet) -> Result<()> {
+    if f.get_bool("brief") && (f.json() || f.get_bool("watch")) {
+        return Err(usage("--brief is prose: no --json or --watch"));
+    }
+    if f.was_set("since") && !f.get_bool("brief") {
+        return Err(usage("--since requires --brief"));
+    }
+    if f.get_bool("brief") {
+        since_filter(f.get_string("since"))?;
+    }
     let every = f.get_int("every");
     if !(1_000_000_000..=300_000_000_000).contains(&every)
         || f.was_set("every") && !f.get_bool("watch")
@@ -578,6 +626,10 @@ pub fn run(f: &FlagSet) -> Result<()> {
         }
         e
     })?;
+    if f.get_bool("brief") {
+        print!("{}", brief(v, f.get_string("since"))?);
+        return Ok(());
+    }
     println!("{}{}", if f.json() { "" } else { "j1 " }, go_json(&v));
     Ok(())
 }
@@ -640,6 +692,7 @@ fn watch(every: std::time::Duration, mut fetch: impl FnMut() -> Result<Value>) -
                     width,
                     height.saturating_sub(lines.len()),
                     fetched_at.elapsed().as_millis().min(i64::MAX as u128) as i64,
+                    false,
                 ));
             }
             if tty {

@@ -112,11 +112,14 @@ fn flags(cmd: &str, json: bool) -> FlagSet {
                 );
         }
         "glance" => {
-            f.bool("watch", false, "live terminal view").duration(
-                "every",
-                5_000_000_000,
-                "refresh interval (1s to 5m)",
-            );
+            f.bool("watch", false, "live terminal view")
+                .duration("every", 5_000_000_000, "refresh interval (1s to 5m)")
+                .bool("brief", false, "one plain-text frame for a hub summary")
+                .string(
+                    "since",
+                    "",
+                    "with --brief: a cursor (campaigns active after it) or a duration such as 30m",
+                );
         }
         _ => {}
     }

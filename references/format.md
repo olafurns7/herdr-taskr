@@ -29,6 +29,7 @@ x1 3 timeout [interrupted|unreachable]
 x1 EXIT JSON         # error + all partial-write/transport fields
 j1 JSON              # reads, version, daemon
 ```
+`glance --brief` is the exception: untagged prose, one `--watch`-style frame; it refuses `--json` and `--watch` (exit 2).
 Compact wait timeout prints `w1` then `x1 3 timeout` and exits0; the frame's 3 is not the process exit code. Order: sk1, w1, x1. `owed`: open children whose newest prompt has no later done/fail; `due`: armed receipt deadlines addressed to the waiter. Interruption prints `x1 3 timeout interrupted` without `w1` and exits3. Legacy JSON wait timeout exits3 with `{"timeout":true,"as":ID,"owed":N,"due":K}`; interruption has `interrupted:true` and no counts.
 
 Exits: 0 success or compact wait timeout; 2 usage; 3 interruption or legacy JSON wait timeout; 4 DB; 5 transport (server unreachable, Herdr delivery, `--confirm` no_receipt); 6 rejection (stale launch, closed task, launch on a root task, host mismatch, wait `--as` other than TASKR_TASK, second answer, request key reused with other arguments).

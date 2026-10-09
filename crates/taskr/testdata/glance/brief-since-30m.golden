@@ -1,0 +1,16 @@
+taskr · 17:30 · cursor=69850 · 2 need you
+────────────────────────────────────────
+» checkout-redesign  12m  BLOCKING  → wDemoA:p1  lane failed
+  Merge #104 now or wait for M3?
+» billing-fix  1h
+  approve prod deploy of #103
+────────────────────────────────────────
+! settings-form  lead blocked 4m
+  lint gate exit 1
+⌛ lead-docs  idle · 3 results 31h
+  reports ready to review
+────────────────────────────────────────
+● #11    o0  docs-site          3/5    2m   S4 merged
+● #12    o1  checkout-redesign  2/2    14m  M1 review ok
+○ #13    o1  billing-fix        0/1    28m
+· 13 quiet
