@@ -78,6 +78,23 @@ frame is marked stale and keeps the last data.
 
 `c` on the glance lists every campaign, closed ones included.
 
+## Slotr
+
+`s` on the glance or a campaign shows slotr's pools, as `taskr slotr` reads
+them on the hub; `s` again closes it. The top lines are the machine: free
+memory, PSI, load and the last stop. Then one block per pool: slots in use,
+whether one more run of the pool's default cost would fit, the reserve and
+what holders are expected to use; the holders (time held, lease left,
+memory used of the cost, and where each runs); and the queue in order (wait
+reason and time waiting). `◆` marks a priority run. Amber is a wait on memory,
+pressure or recovery; red is a holder slotr is stopping.
+
+The view reads slotr every three seconds while it is open, and not at all
+while it is closed. `Enter` and `y` work the row's pane, and `l` opens the
+row's campaign. When slotr cannot be read, a line says why and the last good
+pools stay, dimmed. Flock callers waiting on the old heavy lock do not show
+until slotr's heavy pool lands.
+
 ## Keys
 
 `?` shows this list in the view; it is the same table the code uses.
@@ -95,6 +112,7 @@ frame is marked stale and keeps the last data.
 | `h`, `esc` | Back, close; from the detail pane, back to the list |
 | `/` | Filter rows by name; search in a document |
 | `c` | All campaigns, closed too (glance) |
+| `s` | Slotr's holders and queue; `s` again closes |
 | `a` | Answer the selected ask |
 | `p` | Park or unpark a campaign (asks first) |
 | `o` | Read the report or document |

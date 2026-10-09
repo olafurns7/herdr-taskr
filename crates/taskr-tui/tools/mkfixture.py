@@ -292,6 +292,42 @@ P1-1, P1-2 and P1-3. The P2s are wording edits. The P3s can ride along.
 """
 doc = {"id": 9560, "kind": "report", "name": "", "lane": "arch-plan-counter2", "version": 1, "body": DOC}
 
+# `taskr slotr --json`: slotr status (schema 1) plus what taskr adds (available, host, now,
+# root_id/root_name). Invented runs, campaigns and panes; no kind or priority (H1 adds them).
+def holder(run, campaign, task, pane, purpose, cost, anon, admitted, lease, state="running", root=None, warned=None, stopping=None):
+    row = {"run": run, "campaign": campaign, "task": task, "pane": pane, "purpose": purpose, "cost_mib": cost,
+           "anon_mib": anon, "admitted_at": admitted, "since": admitted, "lease_expires_at": lease, "warned_at": warned,
+           "stopping_at": stopping, "state": state, "notify": "", "slot": 0, "cpu_usage_usec": 1200000}
+    if root:
+        row["root_id"], row["root_name"] = root
+    return row
+def waiter(position, campaign, task, pane, purpose, cost, since, reason, root=None):
+    row = {"position": position, "campaign": campaign, "task": task, "pane": pane, "purpose": purpose,
+           "cost_mib": cost, "since": since, "wait_reason": reason, "stop_claimed_by": None}
+    if root:
+        row["root_id"], row["root_name"] = root
+    return row
+TUI = (4120, "tui-frames")
+slotr = {
+    "schema_version": 1, "available": True, "host": "", "now": "2026-03-14T14:16:10.000Z", "events_path": "",
+    "stats": {"available_mib": 12697.6, "total_mib": 31952.0, "psi_full_avg10": 0.42, "psi_full_avg60": 1.18, "load1": 7.9, "cores": 16},
+    "last_stop": {"run": "slotr-runtime-77", "reason": "stop_psi_full_avg10", "at": "2026-03-14T14:02:31.000Z"},
+    "pools": {
+        "heavy": {"slots": 2, "budget": {"reserve_mib": 3072, "outstanding_mib": 4096.0, "projected_free_mib": 2457.6},
+                  "holders": [holder("slotr-heavy-41", "tui-frames", "4131", "wF2:p3", "cargo test --workspace", 4096, 3311.5,
+                                     "2026-03-14T14:09:40.000Z", "2026-03-14T15:39:40.000Z", root=TUI)],
+                  "queue": [waiter(1, "search-index", "", "w3:p2", "vitest run", 3072, "2026-03-14T14:15:02.000Z", "memory_budget")]},
+        "runtime": {"slots": 3, "budget": {"reserve_mib": 3072, "outstanding_mib": 9216.0, "projected_free_mib": -1740.8},
+                    "holders": [holder("slotr-runtime-90", "tui-frames", "4134", "wF2:p5", "dev stack for frames", 6144, 5420.0,
+                                       "2026-03-14T13:31:10.000Z", "2026-03-14T15:01:10.000Z", root=TUI),
+                                holder("slotr-runtime-93", "billing-export", "4177", "w7:p1", "exporter preview", 3072, 2890.2,
+                                       "2026-03-14T12:40:00.000Z", "2026-03-14T14:10:00.000Z", state="stopping", root=(4171, "billing-export"),
+                                       warned="2026-03-14T14:05:00.000Z", stopping="2026-03-14T14:15:40.000Z")],
+                    "queue": [waiter(1, "auth-rotation", "4290", "w5:p2", "token service", 4096, "2026-03-14T14:12:30.000Z", "memory_budget", (4288, "auth-rotation")),
+                              waiter(2, "scratch", "", "", "one-off notebook", 2048, "2026-03-14T14:14:55.000Z", "fifo")]},
+    },
+}
+
 args = sys.argv[1:]
 live = "--live" in args
 if live:
@@ -310,6 +346,6 @@ if live:
             l["summary"] = "\u274c two rules left \U0001f468\u200d\U0001f469\u200d\U0001f467 \u5b8c\u4e86"
 name = "fixture-live.json" if live else "fixture.json"
 out = args[0] if args else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", name)
-text = json.dumps({"glance": glance, "campaign": campaign, "roots": roots, "doc": doc, "long_ask": long_ask}, indent=1)
+text = json.dumps({"glance": glance, "campaign": campaign, "roots": roots, "doc": doc, "long_ask": long_ask, "slotr": slotr}, indent=1)
 assert live or text.isascii(), "the fixture stays ASCII"
 open(out, "w").write(text + "\n")

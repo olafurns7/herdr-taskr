@@ -314,6 +314,15 @@ pub fn spawn(
     (rx, wake, subscription)
 }
 
+/// Whether a read that started at `started` shows the spinner by `now`, and its frame.
+pub fn spinner(started: Option<Instant>, now: Instant) -> (bool, usize) {
+    let running = started
+        .map(|s| now.saturating_duration_since(s))
+        .filter(|d| *d > SPINNER_AFTER);
+    let tick = running.map_or(0, |d| (d.as_millis() / SPINNER_FRAME.as_millis()) as usize);
+    (running.is_some(), tick)
+}
+
 /// Turns the fetch thread's updates into the view's state: the snapshot, its age, the
 /// spinner, and the stale and no-data states.
 pub struct Live {
@@ -379,13 +388,7 @@ impl Live {
                 }
             }
         }
-        let running = self
-            .started
-            .map(|s| now.saturating_duration_since(s))
-            .filter(|d| *d > SPINNER_AFTER);
-        app.fetch.in_flight = running.is_some();
-        app.fetch.tick =
-            running.map_or(0, |d| (d.as_millis() / SPINNER_FRAME.as_millis()) as usize);
+        (app.fetch.in_flight, app.fetch.tick) = spinner(self.started, now);
         app.fetch.age_ms = self
             .fetched
             .map_or(0, |f| now.saturating_duration_since(f).as_millis() as i64);

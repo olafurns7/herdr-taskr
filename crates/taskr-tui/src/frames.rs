@@ -116,6 +116,40 @@ fn docs_pane(app: &mut App) {
     app.scroll = 6;
 }
 
+fn slotr(app: &mut App) {
+    app.screen = Screen::Slotr;
+    app.slotr = Fetch {
+        loaded: true,
+        age_ms: 2000,
+        ..Fetch::default()
+    };
+}
+
+fn slotr_priority(app: &mut App) {
+    // H1's fields: a priority waiter at the head of the runtime queue, and kinds.
+    slotr(app);
+    let runtime = app
+        .data
+        .slotr
+        .pools
+        .get_mut("runtime")
+        .expect("a runtime pool");
+    runtime.queue[0].priority = true.into();
+    runtime.queue[0].kind = Some("service".into());
+    let heavy = app.data.slotr.pools.get_mut("heavy").expect("a heavy pool");
+    heavy.holders[0].kind = Some("test".into());
+    heavy.queue[0].kind = Some("test".into());
+    app.row = 3;
+}
+
+fn slotr_unavailable(app: &mut App) {
+    // The last good pools, dimmed under the reason.
+    slotr(app);
+    app.slotr.error = Some(
+        "slotr: no systemd user bus here; run it in a terminal with a systemd user session".into(),
+    );
+}
+
 pub fn all() -> Vec<Spec> {
     let spec = |screen: &str, width, height, variant: &str, setup: fn(&mut App)| Spec {
         name: format!("{screen}-{width}x{height}{variant}"),
@@ -160,6 +194,13 @@ pub fn all() -> Vec<Spec> {
         spec("all", 120, 40, "", |app| app.screen = Screen::AllCampaigns),
         spec("pager", 46, 30, "", |app| app.screen = Screen::Pager),
         spec("pager", 120, 40, "", |app| app.screen = Screen::Pager),
+        spec("slotr", 80, 24, "", slotr),
+        spec("slotr", 120, 40, "", slotr),
+        spec("slotr", 120, 40, "-priority", slotr_priority),
+        spec("slotr", 80, 24, "-unavailable", slotr_unavailable),
+        spec("slotr", 80, 24, "-loading", |app| {
+            app.screen = Screen::Slotr;
+        }),
     ]
 }
 

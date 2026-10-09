@@ -433,6 +433,7 @@ pub(crate) fn help(f: &mut Frame, app: &App) {
     let (view, name) = match app.under() {
         Screen::Campaign => (keys::CAMPAIGN, "campaign"),
         Screen::Pager => (keys::PAGER, "pager"),
+        Screen::Slotr => (keys::SLOTR, "slotr"),
         _ => (keys::GLANCE, "glance"),
     };
     let marks = |mut lines: Vec<Line<'static>>| {

@@ -22,7 +22,7 @@ use ratatui::crossterm::{
     execute, terminal,
 };
 use taskr_tui::{
-    App, actions, client, frames,
+    App, Screen, actions, client, frames,
     input::{self, Effect},
     model::Data,
     theme,
@@ -37,6 +37,8 @@ NO_COLOR turns colour off. TASKR_BIN names the taskr binary to read from.";
 
 /// How long the loop sleeps between looks at the fetch thread; also the spinner's clock.
 const TICK: Duration = Duration::from_millis(100);
+/// Between slotr reads while its view is on top. None run while it is not.
+const SLOTR_EVERY: Duration = Duration::from_secs(3);
 
 struct Options {
     theme: Option<String>,
@@ -163,6 +165,9 @@ fn main() -> ExitCode {
         let mut face = String::new();
         let mut dirty = true;
         let mut shown = None;
+        // The slotr view's read: due at once when it opens (None), then every 3 s.
+        let (mut slotr_due, mut slotr_started, mut slotr_at) =
+            (None::<Instant>, None::<Instant>, None::<Instant>);
         loop {
             if live.poll(&mut app, Instant::now()) {
                 dirty = true;
@@ -177,12 +182,35 @@ fn main() -> ExitCode {
                     let _ = wake.send(());
                 }
                 input::done(&mut app, &job, result);
+                if job == actions::Job::Slotr {
+                    let now = Instant::now();
+                    (slotr_started, slotr_due) = (None, Some(now + SLOTR_EVERY));
+                    if app.slotr.error.is_none() {
+                        slotr_at = Some(now);
+                    }
+                }
                 dirty = true;
             }
+            let now = Instant::now();
+            if app.screen != Screen::Slotr {
+                slotr_due = None;
+            } else if slotr_started.is_none() && slotr_due.is_none_or(|d| now >= d) {
+                if options.demo {
+                    input::demo(&mut app, actions::Job::Slotr);
+                    (slotr_due, slotr_at) = (Some(now + SLOTR_EVERY), Some(now));
+                } else {
+                    slotr_started = Some(now);
+                    start(actions::Job::Slotr);
+                }
+                dirty = true;
+            }
+            app.slotr.age_ms = slotr_at.map_or(0, |at| now.duration_since(at).as_millis() as i64);
+            (app.slotr.in_flight, app.slotr.tick) = client::spinner(slotr_started, now);
             // Draw on a change only: an idle pane costs a poll, not a frame.
-            if dirty || app.fetch.face() != face {
+            let faces = app.fetch.face() + &app.slotr.face();
+            if dirty || faces != face {
                 taskr_tui::frame(&mut terminal, &app, &mut shown)?;
-                (face, dirty) = (app.fetch.face(), false);
+                (face, dirty) = (faces, false);
             }
             if !event::poll(TICK)? {
                 continue;
@@ -200,7 +228,10 @@ fn main() -> ExitCode {
             match effect {
                 Effect::None => {}
                 Effect::Quit => return Ok(()),
-                Effect::Refresh => drop(wake.send(())),
+                Effect::Refresh => {
+                    let _ = wake.send(());
+                    slotr_due = None;
+                }
                 Effect::Redraw => shown = None,
                 Effect::Copy(text) => {
                     let mut out = io::stdout();

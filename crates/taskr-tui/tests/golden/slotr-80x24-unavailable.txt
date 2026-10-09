@@ -1,0 +1,24 @@
+ taskr ❯ slotr                                2s ago   ● 2 need you  3 to check
+ ! slotr unavailable: slotr: no systemd user bus here; run it in a terminal wit…
+ memory 12.4G free of 31.2G · psi 0.4 / 1.2 · load 7.9/16
+ last stop 13m ago · stop_psi_full_avg10 · slotr-runtime-77
+
+ HEAVY ─────────────────────────────────────────────────── 1/2 slots · 1 queued
+ room for one more · 2.4G spare · reserve 3.0G · outstanding 4.0G
+▌● tui-frames cargo test --workspace              held 6m · lease 1h · 3.2G/4.0G
+▌   ↳ task 4131 · pane wF2:p3
+  queue
+ ○  1 search-index vitest run                            memory_budget 1m · 3.0G
+
+ RUNTIME ───────────────────────────────────────────────── 2/3 slots · 2 queued
+ no room for one more · 1.7G short · reserve 3.0G · outstanding 9.0G
+ ● tui-frames dev stack for frames              held 45m · lease 44m · 5.3G/6.0G
+    ↳ task 4134 · pane wF2:p5
+ ● billing-export exporter preview     stopping held 1h · lease over · 2.8G/3.0G
+    ↳ task 4177 · pane w7:p1
+  queue
+ ○  1 auth-rotation token service                        memory_budget 3m · 4.0G
+ ○  2 scratch one-off notebook                                    fifo 1m · 2.0G
+
+
+ ⏎ go   l open   y copy   r refresh   s back   ? help

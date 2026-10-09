@@ -1,5 +1,5 @@
  taskr ❯ help          2s ago   ● 2 need you
- KEYS · glance ────────────────────── 1-27/41
+ KEYS · glance ────────────────────── 1-27/42
  Move
   j k           down, up (arrows too)
   g G           first, last row
@@ -17,6 +17,7 @@
   h             back, close (esc too)
   /             filter rows by name
   c             all campaigns, closed too
+  s             slotr holders and queue
   click         select; double-click is ⏎
   ⏎ moves every client attached to that Herdr
   server.
@@ -26,5 +27,4 @@
   p             park or unpark (confirms)
   o             read the report or doc
   y             copy the jump command
-  r             refresh now
  j k scroll   h close

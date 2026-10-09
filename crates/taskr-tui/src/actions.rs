@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     client,
-    model::{Campaign, DocRow},
+    model::{Campaign, DocRow, Slotr},
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,6 +29,8 @@ pub enum Job {
     Campaign { root: i64, name: String, open: bool },
     /// `taskr doc get ID`: the text of a document the campaign read listed.
     Doc { row: DocRow },
+    /// `taskr --json slotr`: slotr's pools, read on the hub.
+    Slotr,
 }
 
 /// What a finished job hands back.
@@ -39,6 +41,7 @@ pub enum Done {
     Note(String),
     Campaign(Box<Campaign>),
     Doc(String),
+    Slotr(Box<Slotr>),
 }
 
 impl Job {
@@ -53,12 +56,13 @@ impl Job {
             Job::Park { name, .. } => format!("unpark {name}"),
             Job::Campaign { name, .. } => format!("read {name}"),
             Job::Doc { row } => format!("read {} {}", row.kind, row.id),
+            Job::Slotr => "read slotr".into(),
         }
     }
 
     /// A read changes nothing; everything else writes or moves the owner's screen.
     pub fn reads(&self) -> bool {
-        matches!(self, Job::Campaign { .. } | Job::Doc { .. })
+        matches!(self, Job::Campaign { .. } | Job::Doc { .. } | Job::Slotr)
     }
 
     /// The taskr arguments, for the jobs taskr runs. Values follow `--`, so a text that
@@ -92,6 +96,7 @@ impl Job {
             }
             Job::Campaign { root, .. } => args(&["--json", "campaign", &root.to_string(), "--all"]),
             Job::Doc { row } => args(&["doc", "get", &row.id.to_string()]),
+            Job::Slotr => args(&["--json", "slotr"]),
         }
     }
 
@@ -128,6 +133,11 @@ impl Job {
                 let campaign = serde_json::from_slice(&out.text()?)
                     .map_err(|e| format!("unreadable campaign: {e}"))?;
                 Ok(Done::Campaign(Box::new(campaign)))
+            }
+            Job::Slotr => {
+                let slotr = serde_json::from_slice(&out.text()?)
+                    .map_err(|e| format!("unreadable slotr read: {e}"))?;
+                Ok(Done::Slotr(Box::new(slotr)))
             }
             Job::Doc { .. } => Ok(Done::Doc(
                 String::from_utf8_lossy(&out.text()?).into_owned(),

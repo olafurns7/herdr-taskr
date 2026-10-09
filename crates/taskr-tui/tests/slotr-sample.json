@@ -1,0 +1,34 @@
+{
+ "available": true,
+ "host": "",
+ "now": "2026-03-14T14:16:10.000Z",
+ "schema_version": 1,
+ "events_path": "/home/demo/.local/state/slotr/events.jsonl",
+ "last_stop": {"at": "2026-03-14T14:02:31.002Z", "reason": "stop_psi_full_avg10", "run": "slotr-runtime-77"},
+ "pools": {
+  "runtime": {
+   "budget": {"outstanding_mib": 6144.0, "projected_free_mib": -1740.8, "reserve_mib": 3072},
+   "holders": [{
+    "admit_seq": 12, "admitted_at": "2026-03-14T13:31:10.894Z", "anon_mib": 5420.25, "campaign": "demo-campaign",
+    "cost_mib": 6144, "cpu_sample_at": "2026-03-14T14:16:09.000Z", "cpu_usage_usec": 98765432, "cwd": "/tmp/demo",
+    "enqueue_seq": 30, "idle_since": null, "lease_expires_at": "2026-03-14T15:01:10.894Z", "lease_seconds": 5400.0,
+    "notify": "pane", "pane": "wDemo:p1", "pool": "runtime", "port_base": 41000, "port_end": 41009,
+    "purpose": "dev stack", "run": "slotr-runtime-90", "seen_at": "2026-03-14T14:16:09.500Z",
+    "since": "2026-03-14T13:30:58.533Z", "slot": 0, "started": true, "state": "running", "stop_claimed_by": null,
+    "stopping_at": null, "task": "2", "warned_at": null, "warned_for": null, "warned_waiters": [],
+    "root_id": 1, "root_name": "demo-campaign"
+   }],
+   "queue": [
+    {"campaign": "other-campaign", "cost_mib": 4096, "cwd": "/tmp/other", "enqueue_seq": 31, "lease_seconds": 5400.0,
+     "pane": "wDemo:p4", "pool": "runtime", "position": 1, "purpose": "token service", "seen_at": "2026-03-14T14:16:09.400Z",
+     "since": "2026-03-14T14:12:30.497Z", "stop_claimed_by": null, "task": "7", "wait_reason": "memory_budget"},
+    {"campaign": "scratch", "cost_mib": 2048, "cwd": "/tmp/scratch", "enqueue_seq": 32, "lease_seconds": 5400.0,
+     "pane": "", "pool": "runtime", "position": 2, "purpose": "notebook", "seen_at": "2026-03-14T14:16:09.400Z",
+     "since": "2026-03-14T14:14:55.000Z", "stop_claimed_by": null, "task": "", "wait_reason": "fifo",
+     "legacy_holder_pid": null}
+   ],
+   "slots": 2
+  }
+ },
+ "stats": {"available_mib": 12697.6, "cores": 16, "load1": 7.9, "psi_full_avg10": 0.42, "psi_full_avg60": 1.18, "total_mib": 31952.0}
+}
