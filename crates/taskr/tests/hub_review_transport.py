@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """R2: WAL reads, response write timeout, bounded drain and wait reaping."""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools/contract'))
+import golden
 import argparse
 import http.client
 import json
-from pathlib import Path
 import select
 import signal
 import socket
@@ -28,7 +31,7 @@ if __name__ == '__main__':
     parser.add_argument('--go', required=True, type=Path)
     parser.add_argument('--rust', required=True, type=Path)
     parser.add_argument('--out', required=True, type=Path)
-    args = parser.parse_args()
+    args = golden.parse(parser, __file__)
     with tempfile.TemporaryDirectory(prefix='taskr-hub-transport-review-') as tmp:
         cell = RustHub(args.go.resolve(), args.rust.resolve(), tmp)
         try:
@@ -83,3 +86,5 @@ if __name__ == '__main__':
             print(json.dumps(result))
         finally:
             cell.close()
+
+    golden.finish()

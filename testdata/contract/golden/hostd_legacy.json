@@ -1,0 +1,4 @@
+{
+"observations":[
+{"label":"legacy empty observe response","value":{"observed":0,"ok":true,"owner_ask_tokens":{},"owner_asks":null,"watch":[],"workspace_tokens":{}},"provenance":"Go oracle"}
+]}

@@ -1,0 +1,4 @@
+{
+"observations":[
+{"label":["--json","--request-key","net-cell-0001","new","transport-root","--role","orchestrator"],"value":[0,"{\"name\":\"transport-root\",\"ok\":true,\"status\":\"open\",\"task_id\":1}\n","taskr: no goal recorded for root 1; run `taskr doc set 1 goal --file PATH`\ntaskr: lead has no pane; run `taskr adopt 1 --pane <id>` as your first act\n"],"provenance":"Rust hub / Go client"}
+]}

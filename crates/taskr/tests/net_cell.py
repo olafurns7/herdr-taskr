@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Real Go hub / Rust client contract cell; synthetic HOME, DB and tailnet only."""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools/contract'))
+import golden
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 import fcntl
 import hashlib
+import http.client
 import json
 import os
-from pathlib import Path
 import select
 import shutil
 import signal
@@ -36,8 +40,9 @@ esac
 '''
 
 class Cell:
-    def __init__(self, go, rust, tmp):
-        self.go, self.rust, self.tmp = go, rust, Path(tmp)
+    def __init__(self, go, rust, tmp, legacy=False, provenance="Go hub / Go client"):
+        self.provenance = provenance
+        self.go, self.rust, self.tmp = go, rust, Path(tmp).resolve()
         self.hub_home = self.tmp/'hub'
         self.client_home = self.tmp/'client'
         self.db = self.tmp/'hub.db'
@@ -55,29 +60,58 @@ class Cell:
         self.client_env = {**self.env,'NET_ID':'host-a','HOME':str(self.client_home)}
         self.log = open(self.tmp/'hub.log','wb')
         self.hub = subprocess.Popen([str(go),'daemon','--stay'],env=self.hub_env,stdout=self.log,stderr=self.log)
-        deadline = time.monotonic()+15
-        while time.monotonic()<deadline:
-            if self.hub.poll() is not None:
-                raise AssertionError((self.tmp/'hub.log').read_text())
-            try:
-                with sqlite3.connect(self.db) as db:
-                    row=db.execute("select value from meta where key='dashboard_url'").fetchone()
-                if row:
-                    port=row[0].split(':')[-1].strip('/')
-                    url=f'http://[::1]:{port}'
-                    with socket.create_connection(('::1',int(port)), timeout=.2):
-                        self.url=url
-                        break
-            except (sqlite3.Error,OSError):
-                pass
-            select.select([],[],[],.02)
-        else:
-            raise AssertionError('Go hub did not bind synthetic tailnet')
-        self.server_file=self.client_home/'.local/state/taskr/server.url'
-        self.server_file.write_text(self.url+'\n')
-        self.seq=0
-        self.results=[]
+        try:
+            deadline = time.monotonic()+15
+            while time.monotonic()<deadline:
+                if self.hub.poll() is not None:
+                    raise AssertionError((self.tmp/'hub.log').read_text())
+                try:
+                    with sqlite3.connect(self.db) as db:
+                        row=db.execute("select value from meta where key='dashboard_url'").fetchone()
+                    if row:
+                        port=row[0].split(':')[-1].strip('/')
+                        url=f'http://[::1]:{port}'
+                        with socket.create_connection(('::1',int(port)), timeout=.2):
+                            self.url=url
+                            if golden.session: golden.session.ports.add(int(port))
+                            break
+                except (sqlite3.Error,OSError):
+                    pass
+                select.select([],[],[],.02)
+            else:
+                raise AssertionError('Go hub did not bind synthetic tailnet')
+            self.server_file=self.client_home/'.local/state/taskr/server.url'
+            self.server_file.write_text(self.url+'\n')
+            self.seq=0
+            self.results=[]
+            self.legacy_proxy = None
+            if legacy and golden.session:
+                argv = ['--json', '_host', 'observe', '--agents', '[]']
+                def legacy_response():
+                    client = http.client.HTTPConnection('::1', int(self.url.rsplit(':', 1)[1]), timeout=15)
+                    try:
+                        client.request('POST', '/api/rpc', json.dumps({'argv': argv, 'cwd': str(self.tmp), 'request_key': 'golden-legacy-probe'}), {'Content-Type': 'application/json', 'X-Taskr-RPC': '1'})
+                        response = client.getresponse()
+                        assert response.status == 200
+                        envelope = json.loads(response.read())
+                        assert envelope['exit'] == 0, envelope
+                        return json.loads(envelope['stdout'])
+                    finally:
+                        client.close()
+                response = legacy_response()
+                if not golden.session.recording or golden.session.oracle_is_rust:
+                    recorded = golden.session.expected[len(golden.session.observations)]['value']
+                    self.legacy_proxy = golden.LegacyProxy(self.url, recorded.keys())
+                    self.url = self.legacy_proxy.url
+                    self.server_file.write_text(self.url+'\n')
+                    response = legacy_response()
+                golden.observe('legacy empty observe response', response)
+        except BaseException:
+            self.close()
+            raise
     def close(self):
+        if getattr(self, 'legacy_proxy', None):
+            self.legacy_proxy.close()
         if self.hub.poll() is None:
             self.hub.terminate()
             try: self.hub.wait(timeout=10)
@@ -97,6 +131,10 @@ class Cell:
         a=self.want(self.go,args,code,env)
         b=self.want(self.rust,args,code,env)
         assert (a.stdout,a.stderr)==(b.stdout,b.stderr),{'args':args,'go':[a.stdout.decode(),a.stderr.decode()],'rust':[b.stdout.decode(),b.stderr.decode()]}
+        reference = b if golden.session and self.rust == golden.session.oracle else a
+        observation = (args, (reference.returncode, reference.stdout, reference.stderr), self.provenance)
+        if getattr(self, "defer_observations", False): self.pending_observations.append(observation)
+        else: golden.observe(*observation)
         self.results.append({'args':args,'pass':True})
         return a
     def count(self,sql,params=()):
@@ -116,6 +154,7 @@ class InterruptProxy:
         self.listener=socket.socket(socket.AF_INET6)
         self.listener.bind(('::1',0));self.listener.listen();self.listener.settimeout(15)
         self.url='http://[::1]:'+str(self.listener.getsockname()[1])
+        if golden.session: golden.session.ports.add(self.listener.getsockname()[1])
         self.thread=threading.Thread(target=self.run);self.thread.start()
     def run(self):
         try:
@@ -149,6 +188,7 @@ class DropProxy:
         self.listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
         self.listener.bind(('::1',0));self.listener.listen();self.listener.settimeout(.2)
         self.url='http://[::1]:'+str(self.listener.getsockname()[1])
+        if golden.session: golden.session.ports.add(self.listener.getsockname()[1])
         self.keys=[];self.stop=False;self.error=None;self.first_done=threading.Event()
         self.thread=threading.Thread(target=self.run)
         self.thread.start()
@@ -200,6 +240,7 @@ def run(cell):
                 with conn:
                     conn.settimeout(5);received.append(conn.recv(1))
         thread=threading.Thread(target=probe);thread.start()
+        if golden.session: golden.session.ports.add(listener.getsockname()[1])
         cell.server_file.write_text(f'http://[::1]:{listener.getsockname()[1]}\n')
         try:
             cell.compare(['--json','--request-key',cell.key(),'status'],5,{'NET_DENY_HUB':refusal,'TASKR_CONTRACT_RETRY_MS':'0'})
@@ -251,19 +292,28 @@ def run(cell):
         cell.server_file.write_text('http://[::1]:1\n')
         cell.want(cell.rust,['--request-key',cell.key(),'note','before hook','--as',str(root)])
         cell.server_file.write_text(cell.url+'\n')
-        for queued,delay in ((True,.10),(False,.20)):
-            fcntl.flock(lock_file,fcntl.LOCK_EX)
+        for queued in (True,False):
+            if sys.platform == 'linux': fcntl.flock(lock_file,fcntl.LOCK_EX)
+            elif queued: cell.server_file.write_text('http://[::1]:1\n')
             p=subprocess.Popen([str(cell.rust),'hook','codex','SessionStart'],cwd=cell.tmp,env=hook_env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
             p.stdin.write(payload);p.stdin.close();p.stdin=None
-            select.select([],[],[],delay)
+            if sys.platform == 'linux' and queued:
+                # The hook worker sleeps only after observing the held queue lock.
+                from daemon_cell import eventually
+                eventually(lambda: any(path.read_text().strip() == 'hrtimer_nanosleep'
+                                      for path in Path(f'/proc/{p.pid}/task').glob('*/wchan')), timeout=2)
+            elif sys.platform == 'linux':
+                p.wait(timeout=2)
             fcntl.flock(lock_file,fcntl.LOCK_UN)
             out,err=p.communicate(timeout=2)
             assert (p.returncode,out,err)==(0,b'',b''),(p.returncode,out,err)
-            assert len(list(queue_dir.glob('*.json')))==(2 if queued else 0),(queued,delay,list(queue_dir.glob('*.json')))
+            cell.server_file.write_text(cell.url+'\n')
+            assert len(list(queue_dir.glob('*.json')))==(2 if queued else 0),(queued,list(queue_dir.glob('*.json')))
             if queued: assert cell.obj(cell.rust,['spool','send'])['sent']==2
     finally:
         fcntl.flock(lock_file,fcntl.LOCK_UN);lock_file.close()
-    cell.results.append({'raw_hook_cross_spool':True,'queue_lock_and_direct_fallback':True,'pass':True})
+    if sys.platform != 'linux': print('SKIP hook queue-lock readiness: Linux /proc proof; queued/direct delivery asserted')
+    cell.results.append({'raw_hook_cross_spool':True,'queue_lock_and_direct_fallback':sys.platform == 'linux','queued_and_direct_delivery':True,'pass':True})
     # Fresh reads under a reused key must see new ledger state, not a cached reply.
     fresh=['--json','--request-key','net-fresh-read-01','log',str(root)]
     first=cell.want(cell.rust,fresh).stdout
@@ -331,9 +381,9 @@ def run(cell):
                 cell.server_file.write_text(cell.url+'\n');proxy.close()
     # Go queues -> Rust sends; Rust queues -> Go sends. A replay of a committed
     # queue head models interruption after commit and before local deletion.
-    for queue_bin,send_bin in ((cell.go,cell.rust),(cell.rust,cell.go)):
+    for index,(queue_bin,send_bin) in enumerate(((cell.go,cell.rust),(cell.rust,cell.go))):
         for committed in (False,True):
-            key=cell.key();text=f'spool-{queue_bin.name}-{committed}-{key}'
+            key=cell.key();text=f'spool-{index}-{committed}-{key}'
             argv=['--json','--request-key',key,'note',text,'--as',str(root)]
             if committed: cell.want(queue_bin,argv)
             cell.server_file.write_text('http://[::1]:1\n')
@@ -341,6 +391,12 @@ def run(cell):
                 p=cell.want(queue_bin,argv)
                 assert json.loads(p.stdout)=={'queued':True,'request_key':key}
             finally: cell.server_file.write_text(cell.url+'\n')
+            if index == 0 and not committed:
+                queued_path, = queue_dir.glob('*.json')
+                golden.observe('Go queued spool record', json.loads(queued_path.read_text()))
+                if golden.session and not golden.session.recording:
+                    frozen = golden.replay('Go queued spool record', {'<tmp>': golden.TEMP_PATH.match(str(cell.tmp))[0], '<time>': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')})
+                    queued_path.write_text(json.dumps(frozen)+'\n')
             p=cell.want(send_bin,['--json','spool','send'])
             assert json.loads(p.stdout)=={'ok':True,'queued':0,'refused':0,'sent':1},p.stdout
             assert cell.count("select count(*) from events where kind='note' and summary=?",(text,))==1
@@ -412,6 +468,7 @@ def isolated_uploads(go, rust):
                 outcomes.append(result)
             finally:
                 cell.close()
+    golden.observe('isolated document uploads', outcomes[0])
     assert outcomes[0] == outcomes[1], {'Go uploader': outcomes[0], 'Rust uploader': outcomes[1]}
     return {'args': ['isolated document upload: ready/done, text/empty/binary/UTF8/size/missing/directory, doc set/backfill'], 'pass': True}
 
@@ -460,11 +517,11 @@ def main():
     ap.add_argument('--go',type=Path)
     ap.add_argument('--rust',type=Path,default=ROOT/'target/release/taskr')
     ap.add_argument('--out',type=Path)
-    args=ap.parse_args()
+    args=golden.parse(ap, __file__)
     with tempfile.TemporaryDirectory(prefix='taskr-net-cell-') as tmp:
         go=args.go
         if go is None:
-            go=Path(tmp)/'taskr-go'
+            go=Path(tmp).resolve()/'taskr-go'
             subprocess.run(['go','build','-tags','taskr_contract','-o',str(go),'.'],cwd=ROOT,check=True)
         cell=Cell(go.resolve(),args.rust.resolve(),tmp)
         try:
@@ -476,4 +533,6 @@ def main():
             print(json.dumps(result,ensure_ascii=False))
         finally: cell.close()
 
-if __name__=='__main__': main()
+if __name__=='__main__':
+    main()
+    golden.finish()

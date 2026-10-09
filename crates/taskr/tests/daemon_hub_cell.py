@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Rust hub daemon + Go/Rust verified clients, all synthetic identities/sockets."""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools/contract'))
+import golden
 import argparse
 import json
 import tempfile
-from pathlib import Path
 from daemon_cell import Herdr
 from net_cell import Cell
 
@@ -12,7 +15,7 @@ def run(go,rust,out):
     results=[]
     with tempfile.TemporaryDirectory(prefix='taskr-rhub-') as tmp:
         # Cell's first binary runs the hub; its second is used only by compare().
-        cell=Cell(rust,go,tmp)
+        cell=Cell(rust,go,tmp,provenance="Rust hub / Go client")
         fake=Herdr(cell.client_home)
         cell.client_env.update(HERDR_SOCKET_PATH=str(fake.path),PATH=str(cell.client_home/'bin')+':'+cell.env['PATH'])
         try:
@@ -36,6 +39,7 @@ def run(go,rust,out):
             a=subprocess.run([str(go),'--json','daemon','--status'],env=cell.hub_env,capture_output=True,timeout=15)
             b=subprocess.run([str(rust),'--json','daemon','--status'],env=cell.hub_env,capture_output=True,timeout=15)
             assert (a.returncode,a.stdout,a.stderr)==(b.returncode,b.stdout,b.stderr),(a.stdout,b.stdout,a.stderr,b.stderr)
+            golden.observe('hub status', (a.returncode,a.stdout,a.stderr), 'Rust hub / Go status client')
             results.append('hub-mode status bytes against Go')
         finally:
             fake.close();cell.close()
@@ -45,4 +49,6 @@ def run(go,rust,out):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--go',type=Path,required=True);p.add_argument('--rust',type=Path,required=True);p.add_argument('--out',type=Path,required=True)
-    a=p.parse_args();run(a.go.resolve(),a.rust.resolve(),a.out)
+    a=golden.parse(p, __file__);run(a.go.resolve(),a.rust.resolve(),a.out)
+
+    golden.finish()

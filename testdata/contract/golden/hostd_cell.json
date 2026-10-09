@@ -1,0 +1,5 @@
+{
+"observations":[
+{"label":"Go owner token commands","value":[["notification","show","taskr: decision needed","--body","synthetic owner question","--sound","request"],["workspace","report-metadata","wLane","--source","taskr","--token","taskr_campaign=campaign","--token","taskr_parent=wRoot"],["pane","report-metadata","wLane:p1","--source","taskr","--token","taskr_owner_ask=1"]],"provenance":"Go oracle"},
+{"label":"legacy empty observe response","value":{"observed":0,"ok":true,"owner_ask_tokens":{},"owner_asks":null,"watch":[],"workspace_tokens":{}},"provenance":"Go oracle"}
+]}

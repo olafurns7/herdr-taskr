@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Check Go/Rust HTTP deadlines using only synthetic hub fixtures."""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools/contract'))
+import golden
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import http.client
 import json
-from pathlib import Path
 import select
 import socket
 import sqlite3
@@ -77,20 +80,27 @@ if __name__ == '__main__':
     parser.add_argument('--go', required=True, type=Path)
     parser.add_argument('--rust', required=True, type=Path)
     parser.add_argument('--out', required=True, type=Path)
-    args = parser.parse_args()
+    args = golden.parse(parser, __file__)
     with tempfile.TemporaryDirectory(prefix='taskr-hub-http-') as tmp:
         cells = []
         try:
             for name, cls in [('Go', Cell), ('Rust', RustHub)]:
-                place = Path(tmp) / name
+                place = Path(tmp).resolve() / name
                 place.mkdir()
                 cells.append(cls(args.go.resolve(), args.rust.resolve(), place))
+            for cell in cells:
+                cell.defer_observations = True
+                cell.pending_observations = []
             with ThreadPoolExecutor(max_workers=10) as pool:
                 checks = [pool.submit(check, cell, kind) for cell in cells for kind in ('headers', 'body', 'oversized', 'idle')]
                 checks.extend(pool.submit(disconnected_write, cell) for cell in cells)
                 result = {'pass': len(checks), 'checks': [future.result() for future in checks]}
+            for cell in cells:
+                for observation in cell.pending_observations: golden.observe(*observation)
             args.out.write_text(json.dumps(result, indent=2) + '\n')
             print(json.dumps(result))
         finally:
             for cell in cells:
                 cell.close()
+
+    golden.finish()

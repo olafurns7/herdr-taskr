@@ -1,0 +1,8 @@
+{
+"observations":[
+{"label":"first","value":{"new_pid":"<pid>","ok":true,"restarted":false,"socket":"<tmp>/h.sock","started_at":"<time>","version":"dev"},"provenance":"production Go"},
+{"label":"second","value":{"new_pid":"<pid>","ok":true,"old_pid":"<pid>","old_version":"dev","restarted":true,"socket":"<tmp>/h.sock","started_at":"<time>","version":"dev"},"provenance":"production Go"},
+{"label":"replacement","value":{"new_pid":"<pid>","ok":true,"old_pid":"<pid>","old_version":"dev","restarted":true,"socket":"<tmp>/h.sock","started_at":"<time>","version":"dev"},"provenance":"production Go"},
+{"label":"swapped","value":{"new_pid":"<pid>","ok":true,"old_pid":"<pid>","old_version":"dev","restarted":true,"socket":"<tmp>/h.sock","started_at":"<time>","started_detached":false,"supervised":true,"version":"dev"},"provenance":"production Go"},
+{"label":"fallback","value":{"new_pid":"<pid>","ok":true,"old_pid":"<pid>","old_version":"dev","restarted":true,"socket":"<tmp>/h.sock","started_at":"<time>","started_detached":true,"version":"dev"},"provenance":"production Go"}
+]}
