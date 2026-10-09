@@ -8,6 +8,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Clear, Padding, Paragraph},
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::{
     App, Screen, ask, glance,
@@ -86,6 +87,10 @@ fn where_from(app: &App, a: &Need, pane: bool) -> Span<'static> {
 /// Step 1: the ask, its options as rows, "write your own answer", and the editable text.
 /// `budget` caps the ask's own text so the options always stay on screen. A structured
 /// ask's descriptions share what is left, an equal number of lines each, or none.
+///
+/// The answer's row, the chosen option and the hints below always show: the options get
+/// what is left, first with their labels wrapped, then one cut line each, then a window
+/// with `↑ n more` and `↓ n more`; the ask's own text gets the rest, possibly nothing.
 fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>> {
     let t = &app.theme;
     let parsed = ask::parse(a);
@@ -102,15 +107,51 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
         .map(|o| {
             let mut body = wrap(&o.text, width.saturating_sub(lead));
             if o.recommended
-                && body.last().is_some_and(|l| {
-                    l.chars().count() + tag.chars().count() + 2 > width.saturating_sub(lead)
-                })
+                && body
+                    .last()
+                    .is_some_and(|l| l.width() + tag.width() + 2 > width.saturating_sub(lead))
             {
                 body.push(String::new());
             }
             body
         })
         .collect();
+    // Around the options: the gap above them, "write your own answer", a blank, the rule
+    // and one row of the answer.
+    let around = 5;
+    let n = labels.len();
+    let short = labels.iter().map(Vec::len).sum::<usize>() + around > budget;
+    let labels: Vec<Vec<String>> = if short {
+        parsed
+            .options
+            .iter()
+            .map(|o| vec![o.text.clone()])
+            .collect()
+    } else {
+        labels
+    };
+    // The window on the options keeps the chosen one; "write your own answer" keeps the last.
+    let (first, shown) = if short && n > 0 && n + around > budget {
+        let shown = budget.saturating_sub(around + 2).clamp(1, n);
+        let first = app
+            .choice
+            .min(n - 1)
+            .saturating_sub(shown - 1)
+            .min(n - shown);
+        (first, shown)
+    } else {
+        (0, n)
+    };
+    let more = |count: usize, arrow: &str| {
+        (count > 0).then(|| Line::from(sp(format!("   {arrow} {count} more"), t.dim)))
+    };
+    let (above, below) = (more(first, "↑"), more(n - first - shown, "↓"));
+    let option_rows = labels[first..first + shown]
+        .iter()
+        .map(Vec::len)
+        .sum::<usize>()
+        + above.iter().len()
+        + below.iter().len();
 
     let own = parsed.options.len();
     let mut tail = vec![Line::from(vec![
@@ -132,7 +173,7 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
     }
     // The answer keeps its tail and the cursor in view; `…` marks the text above the window.
     let keep = budget
-        .saturating_sub(labels.iter().map(Vec::len).sum::<usize>() + tail.len() + 1 + 2)
+        .saturating_sub(option_rows + tail.len() + 1 + 2)
         .max(1);
     if text.len() > keep {
         text.drain(..text.len() - keep);
@@ -141,16 +182,22 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
     tail.extend(text);
 
     // Two lines stay for the ask's own text: one of it, and where the window is.
-    let fixed = labels.iter().map(Vec::len).sum::<usize>() + tail.len() + 1 + 2;
-    let described = parsed
-        .options
+    let fixed = option_rows + tail.len() + 1 + 2;
+    let described = parsed.options[first..first + shown]
         .iter()
         .filter(|o| !o.description.is_empty())
         .count();
     let each = (budget.saturating_sub(fixed) / described.max(1)).min(3);
 
-    let mut rows: Vec<Line> = vec![];
-    for ((i, o), body) in parsed.options.iter().enumerate().zip(labels) {
+    let mut rows: Vec<Line> = above.into_iter().collect();
+    for ((i, o), body) in parsed
+        .options
+        .iter()
+        .enumerate()
+        .zip(labels)
+        .skip(first)
+        .take(shown)
+    {
         let on = i == app.choice;
         let n = body.len();
         let mut lines = vec![];
@@ -172,6 +219,17 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
                 },
                 t.accent,
             ));
+            if short {
+                // One cut line: the label gives way to the tag.
+                line.push(sp(text, t.text));
+                let right = if o.recommended {
+                    vec![sp(format!("  {tag}"), t.ok)]
+                } else {
+                    vec![]
+                };
+                lines.push(Line::from(ui::spread(line, right, width)));
+                continue;
+            }
             if o.recommended && j + 1 == n {
                 let gap = if text.is_empty() { "" } else { "  " };
                 line.extend([sp(text, t.text), sp(format!("{gap}{tag}"), t.ok)]);
@@ -192,6 +250,7 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
                 .map(|l| if on { l.style(t.selected()) } else { l }),
         );
     }
+    rows.extend(below);
     rows.extend(tail);
 
     let mut context = wrap(&parsed.context, width);
@@ -649,7 +708,10 @@ pub(crate) fn help(f: &mut Frame, app: &App) {
 mod tests {
     use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 
-    use crate::{App, draw, frames};
+    use crate::{
+        App, draw, frames,
+        model::{Need, QuestionOption},
+    };
 
     fn render(app: &App, width: u16, height: u16) -> Buffer {
         let mut t = Terminal::new(TestBackend::new(width, height)).expect("a test backend");
@@ -734,6 +796,161 @@ mod tests {
             cell.patch(app.theme.cursor()),
             "the cursor follows the tail"
         );
+    }
+
+    /// A structured ask with `labels`, the first `recommended`, each described by
+    /// `description`, its text as Q1 writes it.
+    fn asking(labels: &[String], recommended: bool, description: &str, multi: bool) -> Need {
+        let mut ask = frames::structured_asks()[2].clone();
+        let question = ask.question.as_mut().expect("a question");
+        question.multi_select = multi;
+        question.options = labels
+            .iter()
+            .enumerate()
+            .map(|(i, label)| QuestionOption {
+                label: label.clone(),
+                description: description.into(),
+                recommended: recommended && i == 0,
+            })
+            .collect();
+        let tail = labels
+            .iter()
+            .zip('A'..)
+            .map(|(l, c)| format!("({c}) {l}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        ask.text = format!("Which locales ship in the first release? {tail}");
+        ask
+    }
+
+    /// The answer row, the cursor (after `END` when the note has it), the chosen option and
+    /// the complete hints are on screen; a visible recommended option shows its whole tag.
+    fn holds(app: &App, width: u16, height: u16, end: bool, case: &str) {
+        let buf = render(app, width, height);
+        let text = frames::text(&buf);
+        let lines: Vec<&str> = text.lines().collect();
+        let ask = app.ask.as_ref().expect("an ask");
+        let q = ask.question.as_ref().expect("a question");
+        let answer = lines
+            .iter()
+            .position(|l| l.contains(" answer "))
+            .unwrap_or_else(|| panic!("{case}: no answer row\n{text}"));
+        let cursor = (0..height)
+            .flat_map(|y| (0..width).map(move |x| (x, y)))
+            .find(|&p| buf[p].style().bg == Some(app.theme.text))
+            .unwrap_or_else(|| panic!("{case}: no cursor\n{text}"));
+        assert!(
+            cursor.1 as usize >= answer,
+            "{case}: cursor above the answer\n{text}"
+        );
+        if end {
+            let before: String = (cursor.0.saturating_sub(3)..cursor.0)
+                .map(|x| buf[(x, cursor.1)].symbol())
+                .collect();
+            assert_eq!(
+                before, "END",
+                "{case}: the tail is not before the cursor\n{text}"
+            );
+        }
+        let option = |i: usize| {
+            let key = char::from(b'A' + i as u8);
+            let pick = if q.multi_select { "[x] " } else { "" };
+            let row = format!("{pick}{key}  ");
+            lines
+                .iter()
+                .position(|l| l.contains(&format!("❯ {row}")) || l.contains(&format!("   {row}")))
+        };
+        let focused = option(app.choice).unwrap_or_else(|| panic!("{case}: focus hidden\n{text}"));
+        assert!(lines[focused].contains('❯'), "{case}: focus mark\n{text}");
+        let hints: &[&str] = if q.multi_select {
+            &["space pick", "tab ", "⏎ review", "esc cancel"]
+        } else {
+            &["j k choose", "tab ", "⏎ review", "esc cancel"]
+        };
+        let foot = lines
+            .iter()
+            .rev()
+            .find(|l| l.contains("esc"))
+            .copied()
+            .unwrap_or("");
+        for hint in hints {
+            assert!(foot.contains(hint), "{case}: hint {hint:?} cut\n{text}");
+        }
+        if q.options[0].recommended && option(0).is_some() {
+            assert!(
+                text.contains("★ recommended"),
+                "{case}: the tag is cut\n{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn wide_labels_keep_the_answer_visible() {
+        // The reviewer's case: four 58-character CJK labels, the first recommended, all
+        // picked, at 46x20.
+        let labels: Vec<String> = (0..4)
+            .map(|i| format!("{i}{}", "界 ".repeat(29)).trim_end().to_string())
+            .collect();
+        let mut app = App::new(frames::fixture());
+        app.answer(asking(&labels, true, "", true));
+        for i in 0..4 {
+            app.choose(i);
+            app.toggle();
+        }
+        app.edit(|note| *note = "END".into());
+        holds(&app, 46, 20, true, "wide labels");
+    }
+
+    #[test]
+    fn every_valid_question_keeps_the_answer_the_choice_and_the_hints() {
+        let ascii: Vec<String> = (0..4)
+            .map(|i| format!("{i}{}", " label".repeat(10))[..60].to_string())
+            .collect();
+        let cjk: Vec<String> = (0..4)
+            .map(|i| format!("{i}{}", "界 ".repeat(29)).trim_end().to_string())
+            .collect();
+        let short: Vec<String> = (0..4).map(|i| format!("Option {i}")).collect();
+        let long = "lorem ipsum ".repeat(42)[..500].to_string();
+        let mut cases = 0;
+        for (width, height) in [(46, 20), (46, 30), (70, 30), (120, 40)] {
+            for (name, labels) in [("ascii", &ascii), ("cjk", &cjk), ("short", &short)] {
+                for count in [2, 4] {
+                    for recommended in [false, true] {
+                        for description in ["", long.as_str()] {
+                            for multi in [false, true] {
+                                for note in [false, true] {
+                                    let mut app = App::new(frames::fixture());
+                                    let ask =
+                                        asking(&labels[..count], recommended, description, multi);
+                                    app.answer(ask);
+                                    if multi {
+                                        for i in 0..count {
+                                            app.choose(i);
+                                            app.toggle();
+                                        }
+                                    }
+                                    app.choose(count - 1);
+                                    if note {
+                                        app.edit(|n| {
+                                            *n = format!("{}END", "note ".repeat(80))[3..]
+                                                .to_string()
+                                        });
+                                    }
+                                    let case = format!(
+                                        "{width}x{height} {name} {count} rec={recommended} \
+                                         desc={} multi={multi} note={note}",
+                                        description.len()
+                                    );
+                                    holds(&app, width, height, note, &case);
+                                    cases += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(cases, 384);
     }
 
     #[test]

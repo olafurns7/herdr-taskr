@@ -158,6 +158,9 @@ Most keys only read. Three do more:
   `Enter` reviews the set, sent as `A: OAuth; C: SSO`. `Enter` with nothing
   picked does nothing and says so. An answer longer than its field shows its
   end and the cursor, with `…` before it.
+  On a small screen the options give way first: descriptions shorten or go,
+  then each label takes one cut line, then the list shows a window around the
+  chosen option with `↑ n more` and `↓ n more`.
 - **`p`** parks a campaign (`taskr set ROOT glance.state=parked`) or unparks
   it. A parked campaign stays dim; its owner asks stay red.
 
