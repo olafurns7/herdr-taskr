@@ -1,0 +1,30 @@
+ taskr                              2s ago   ● 5 need you  3 to check
+ 3 notes still carry OWNER items
+╭ Answer ask 61802 · docs-refresh ───────────────────────────────────╮
+│                                                                    │
+│  Translations landed for three of the four locales. Locales:       │
+│  Which locales ship in the first docs release?                     │
+│                                                                    │
+│     [ ] A  English                                                 │
+│            The source text; always complete.                       │
+│     [x] B  German                                                  │
+│            Reviewed by the partner team last week.                 │
+│   ❯ [x] C  Japanese                                                │
+│            Machine draft; 40 pages are still unreviewed.           │
+│     [ ] D  Portuguese                                              │
+│            Half translated; the glossary is not settled yet.       │
+│     …  write your own answer                                       │
+│                                                                    │
+│  ────────────────────────────────────────────────────────────────  │
+│   answer  B: German; C: Japanese                                   │
+│                                                                    │
+│   space pick    tab note    ⏎ review    esc cancel                 │
+│                                                                    │
+│                                                                    │
+│                                                                    │
+│                                                                    │
+│                                                                    │
+│                                                                    │
+╰────────────────────────────────────────────────────────────────────╯
+ +6 more · c shows all
+ ⏎ go   a answer   l open   ? help

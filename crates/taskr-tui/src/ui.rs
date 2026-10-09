@@ -58,10 +58,17 @@ pub(crate) fn wrap(text: &str, width: usize) -> Vec<String> {
             if !line.is_empty() && line.width() + 1 + word.width() > width {
                 out.push(std::mem::take(&mut line));
             }
+            // A word wider than the line breaks by columns, at least one character a line.
             while word.width() > width {
-                let head: String = word.chars().take(width).collect();
-                word = word.chars().skip(width).collect();
-                out.push(head);
+                let mut cut = 0;
+                for (i, ch) in word.char_indices() {
+                    if i > 0 && word[..i + ch.len_utf8()].width() > width {
+                        break;
+                    }
+                    cut = i + ch.len_utf8();
+                }
+                out.push(word[..cut].to_string());
+                word = word[cut..].to_string();
             }
             if !line.is_empty() {
                 line.push(' ');
@@ -484,9 +491,11 @@ pub(crate) fn ascii(buf: &mut ratatui::buffer::Buffer) {
     for cell in &mut buf.content {
         let plain = match cell.symbol() {
             s if s.is_ascii() => continue,
-            "●" | "◐" | "◓" | "◑" | "◒" | "◆" => "*",
-            "○" => "o",
+            "●" | "◐" | "◓" | "◑" | "◒" | "◆" | "★" => "*",
+            "○" | "◇" => "o",
             "▲" => "^",
+            "↑" => "^",
+            "↓" => "v",
             "•" | "·" | "░" | "…" | "▂" | "▃" => ".",
             "×" | "✗" | "⊘" => "x",
             "✓" => "v",

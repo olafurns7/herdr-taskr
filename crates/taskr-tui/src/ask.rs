@@ -1,10 +1,15 @@
-//! Finds the options in an ask's text: `(A) ...; (B) ...`, as leads write them today.
-//! A heuristic over free text, so the dialog always offers "write your own answer" too.
+//! An ask's options: a structured ask's own (`taskr ask --question`), or else those found
+//! in its text, `(A) ...; (B) ...`, as leads write them today. The text is a heuristic, so
+//! the dialog always offers "write your own answer" too.
 
-#[derive(Debug, PartialEq)]
+use crate::model::Need;
+
+#[derive(Debug, Default, PartialEq)]
 pub(crate) struct Opt {
     pub key: char,
     pub text: String,
+    /// A structured option's description; empty for one parsed from text.
+    pub description: String,
     pub recommended: bool,
 }
 
@@ -13,9 +18,69 @@ pub(crate) struct Parsed {
     /// The ask without its option list: what comes before it, then what comes after.
     pub context: String,
     pub options: Vec<Opt>,
+    /// The options came from the ask's question, not from its text.
+    pub structured: bool,
+    /// More than one option can be picked.
+    pub multi: bool,
 }
 
-pub(crate) fn parse(text: &str) -> Parsed {
+/// The ask's options: its question's when it has one, the text's otherwise.
+pub(crate) fn parse(a: &Need) -> Parsed {
+    let Some(q) = &a.question else {
+        return parse_text(&a.text);
+    };
+    // Q1's summary is `[context ][header: ]question (A) label; (B) label`: drop that known
+    // tail, never `(A)` found in the prose.
+    let tail = q
+        .options
+        .iter()
+        .zip('A'..)
+        .map(|(o, key)| format!("({key}) {}", o.label))
+        .collect::<Vec<_>>()
+        .join("; ");
+    let context = a.text.strip_suffix(tail.as_str()).unwrap_or(&a.text);
+    Parsed {
+        context: context.trim().to_string(),
+        options: q
+            .options
+            .iter()
+            .zip('A'..)
+            .map(|(o, key)| Opt {
+                key,
+                text: o.label.clone(),
+                description: o.description.clone(),
+                recommended: o.recommended,
+            })
+            .collect(),
+        structured: true,
+        multi: q.multi_select,
+    }
+}
+
+/// The ask's mark on its row: ◆ structured, ◇ options parsed from its text, none without.
+pub(crate) fn mark(a: &Need) -> &'static str {
+    match parse(a) {
+        p if p.structured => "◆",
+        p if !p.options.is_empty() => "◇",
+        _ => " ",
+    }
+}
+
+/// The answer as sent: `A: label`, picks joined as `A: OAuth; C: SSO`, then ` — note`.
+pub(crate) fn answer(options: &[Opt], picked: &[usize], note: &str) -> String {
+    let mut out = picked
+        .iter()
+        .filter_map(|&i| options.get(i))
+        .map(|o| format!("{}: {}", o.key, o.text))
+        .collect::<Vec<_>>()
+        .join("; ");
+    if !note.trim().is_empty() {
+        out = format!("{out} — {}", note.trim_start());
+    }
+    out
+}
+
+pub(crate) fn parse_text(text: &str) -> Parsed {
     // `(A)`, `(B)`, ... in order. A later `(B)` in prose ("otherwise I take (B)") is not an option.
     let mut marks = vec![];
     let mut want = b'A';
@@ -30,6 +95,8 @@ pub(crate) fn parse(text: &str) -> Parsed {
         return Parsed {
             context: text.trim().to_string(),
             options: vec![],
+            structured: false,
+            multi: false,
         };
     }
     let last = marks[marks.len() - 1];
@@ -47,6 +114,7 @@ pub(crate) fn parse(text: &str) -> Parsed {
                     .trim()
                     .trim_end_matches([';', '.', ',', ' '])
                     .to_string(),
+                description: String::new(),
                 recommended,
             }
         })
@@ -55,6 +123,8 @@ pub(crate) fn parse(text: &str) -> Parsed {
     Parsed {
         context: context.trim().to_string(),
         options,
+        structured: false,
+        multi: false,
     }
 }
 
@@ -64,7 +134,7 @@ mod tests {
 
     #[test]
     fn options_in_a_lead_ask() {
-        let p = parse(
+        let p = parse_text(
             "PR #212 is ready (close warns). (A) merge and release now [recommended]; (B) merge, hold the release.",
         );
         assert_eq!(p.context, "PR #212 is ready (close warns).");
@@ -74,12 +144,13 @@ mod tests {
                 Opt {
                     key: 'A',
                     text: "merge and release now".into(),
-                    recommended: true
+                    recommended: true,
+                    ..Opt::default()
                 },
                 Opt {
                     key: 'B',
                     text: "merge, hold the release".into(),
-                    recommended: false
+                    ..Opt::default()
                 },
             ]
         );
@@ -87,7 +158,7 @@ mod tests {
 
     #[test]
     fn prose_after_the_options_stays_in_the_context() {
-        let p = parse(
+        let p = parse_text(
             "Stopped.\nQuestion: (A) merge four (#1, #2); (B) wait.\nNo answer in 15 minutes: I take (B).",
         );
         assert_eq!(p.options.len(), 2);
@@ -108,10 +179,81 @@ mod tests {
             "é(A)ü(B)ö",
             "(B) first (A) second",
         ] {
-            let p = parse(text);
+            let p = parse_text(text);
             assert!(p.options.len() != 1, "{text}");
         }
-        assert!(parse("Which host (A) or the other?").options.is_empty());
-        assert_eq!(parse("é(A)ü(B)ö").options[1].text, "ö");
+        assert!(
+            parse_text("Which host (A) or the other?")
+                .options
+                .is_empty()
+        );
+        assert_eq!(parse_text("é(A)ü(B)ö").options[1].text, "ö");
+    }
+
+    fn structured(multi: bool) -> Need {
+        let question = serde_json::json!({
+            "header": "Auth", "question": "Which sign-in?", "multiSelect": multi,
+            "options": [
+                {"label": "OAuth", "description": "Hosted login.", "recommended": true},
+                {"label": "Keys"},
+                {"label": "SSO", "description": "Through the directory."},
+            ],
+        });
+        Need {
+            text: "Rollout is next. Auth: Which sign-in? (A) OAuth; (B) Keys; (C) SSO".into(),
+            question: serde_json::from_value(question).ok(),
+            ..Need::default()
+        }
+    }
+
+    #[test]
+    fn a_question_gives_the_options_and_skips_the_text() {
+        let p = parse(&structured(true));
+        assert!(p.structured && p.multi);
+        assert_eq!(p.context, "Rollout is next. Auth: Which sign-in?");
+        assert_eq!(p.options.len(), 3);
+        assert_eq!(p.options[0].description, "Hosted login.");
+        assert!(p.options[0].recommended && !p.options[2].recommended);
+        assert_eq!((p.options[2].key, p.options[2].text.as_str()), ('C', "SSO"));
+        // A text-only ask is parsed as before.
+        let plain = Need {
+            text: "Go? (A) yes [recommended]; (B) no".into(),
+            ..Need::default()
+        };
+        assert_eq!(parse(&plain), parse_text(&plain.text));
+        assert_eq!(
+            [
+                mark(&structured(false)),
+                mark(&plain),
+                mark(&Need::default())
+            ],
+            ["◆", "◇", " "]
+        );
+    }
+
+    #[test]
+    fn markers_in_a_question_stay_in_its_context() {
+        let mut a = structured(false);
+        a.text = "Saw (A) and (B) earlier. Auth: Compare (A) old and (B) new? (A) OAuth; (B) Keys; (C) SSO"
+            .into();
+        let p = parse(&a);
+        assert_eq!(
+            p.context,
+            "Saw (A) and (B) earlier. Auth: Compare (A) old and (B) new?"
+        );
+        assert_eq!(p.options.len(), 3);
+        assert_eq!(p.options[0].text, "OAuth");
+    }
+
+    #[test]
+    fn the_answer_text_is_canonical() {
+        let p = parse(&structured(true));
+        assert_eq!(answer(&p.options, &[0], ""), "A: OAuth");
+        assert_eq!(answer(&p.options, &[0, 2], ""), "A: OAuth; C: SSO");
+        assert_eq!(
+            answer(&p.options, &[1], "rotate them monthly"),
+            "B: Keys — rotate them monthly"
+        );
+        assert_eq!(answer(&p.options, &[0, 2], "  "), "A: OAuth; C: SSO");
     }
 }

@@ -1,0 +1,30 @@
+ taskr                              2s ago   ● 5 need you  3 to check
+ 3 notes still carry OWNER items
+╭ Answer ask 61790 · auth-rotation ──────────────────────────────────╮
+│                                                                    │
+│  Tokens: Which signing scheme should the rotated service tokens    │
+│  use?                                                              │
+│                                                                    │
+│   ❯ A  Ed25519  ★ recommended                                      │
+│        Short keys and fast checks; every client library we ship    │
+│        supports it already.                                        │
+│     B  RSA-2048                                                    │
+│        Matches today's tokens, so no client changes, but           │
+│        rotation takes four times as long.                          │
+│     C  HMAC-SHA256                                                 │
+│        Simplest to run, but every verifier then holds the          │
+│        signing secret.                                             │
+│     …  write your own answer                                       │
+│                                                                    │
+│  ────────────────────────────────────────────────────────────────  │
+│   answer  A: Ed25519                                               │
+│                                                                    │
+│   j k choose    tab note    ⏎ review    esc cancel                 │
+│                                                                    │
+│                                                                    │
+│                                                                    │
+│                                                                    │
+│                                                                    │
+╰────────────────────────────────────────────────────────────────────╯
+ +6 more · c shows all
+ ⏎ go   a answer   l open   ? help

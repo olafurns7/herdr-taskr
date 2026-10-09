@@ -1,0 +1,30 @@
+ taskr ❯ answer        2s ago   ● 5 need you
+ ask 61802 · docs-refresh
+ not blocking · waiting · 4m · atlas w28:p1
+
+ Translations landed for three of the four
+ locales. Locales: Which locales ship in the
+ first docs release?
+
+    [ ] A  English
+           The source text; always complete.
+    [x] B  German
+           Reviewed by the partner team last
+           week.
+  ❯ [x] C  Japanese
+           Machine draft; 40 pages are still
+           unreviewed.
+    [ ] D  Portuguese
+           Half translated; the glossary is
+           not settled yet.
+    …  write your own answer
+
+ ────────────────────────────────────────────
+  answer  B: German; C: Japanese
+
+
+
+
+
+
+ space pick   tab note   ⏎ review   esc cancel

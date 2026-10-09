@@ -129,6 +129,11 @@ pub(crate) const KEYS: &[Key] = &[
 pub(crate) const DETAIL_NOTE: &str = "shift-tab goes back. In the wide view, with the detail \
     focused, j k g G ctrl-d ctrl-u PgDn PgUp scroll it; h or esc returns to the list.";
 
+/// The answer dialog's own keys; the help says so under "Act".
+pub(crate) const ANSWER_NOTE: &str = "Answering: j k choose, tab types (a note after a \
+    structured ask's option), ⏎ reviews, y sends. A multi-select ask: space picks, ⏎ reviews \
+    the set.";
+
 /// Enter moves more than this pane (counter-review P2-1); the help says so under "Go".
 pub(crate) const GO_NOTE: &str = "⏎ moves every client attached to that Herdr server.";
 

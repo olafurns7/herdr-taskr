@@ -124,6 +124,7 @@ fn main() -> ExitCode {
     let pace = client::Pace::default();
     let (updates, wake, events) = if options.demo {
         app.data = frames::fixture();
+        frames::with_structured(&mut app);
         app.fetch.loaded = true;
         // No fetch thread: the receiver stays empty and wakes go nowhere.
         (mpsc::channel().1, mpsc::channel().0, None)

@@ -8,6 +8,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Clear, Padding, Paragraph},
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::{
     App, Screen, ask, glance,
@@ -84,58 +85,140 @@ fn where_from(app: &App, a: &Need, pane: bool) -> Span<'static> {
 }
 
 /// Step 1: the ask, its options as rows, "write your own answer", and the editable text.
-/// `budget` caps the ask's own text so the options always stay on screen.
+/// `budget` caps the ask's own text so the options always stay on screen. A structured
+/// ask's descriptions share what is left, an equal number of lines each, or none.
+///
+/// The answer's row, the chosen option and the hints below always show: the options get
+/// what is left, first with their labels wrapped, then one cut line each, then a window
+/// with `↑ n more` and `↓ n more`; the ask's own text gets the rest, possibly nothing.
+/// When the rows are short the spacing gives way first, then the scroll marks (folded
+/// onto one row when that fits), then the context; a size that cannot hold the focused
+/// option, the answer and the hints draws an explicit too-small body instead.
 fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>> {
     let t = &app.theme;
-    let parsed = ask::parse(&a.text);
-    let mut rows: Vec<Line> = vec![];
-    for (i, o) in parsed.options.iter().enumerate() {
-        let on = i == app.choice;
-        let mut body = wrap(&o.text, width.saturating_sub(7));
-        let mut tag = o.recommended;
-        if tag
-            && body
-                .last()
-                .is_some_and(|l| l.chars().count() + 13 > width.saturating_sub(7))
-        {
-            body.push(String::new());
-        }
-        let n = body.len();
-        for (j, text) in body.into_iter().enumerate() {
-            let mut line = vec![
-                sp(if on && j == 0 { " ❯ " } else { "   " }, t.accent),
-                bold(
-                    if j == 0 {
-                        format!("{}  ", o.key)
-                    } else {
-                        "   ".into()
-                    },
-                    t.accent,
-                ),
-                sp(text, t.text),
-            ];
-            if tag && j + 1 == n {
-                line.push(sp(
-                    if line[2].content.is_empty() {
-                        "recommended"
-                    } else {
-                        "  recommended"
-                    },
-                    t.ok,
-                ));
-                tag = false;
+    let parsed = ask::parse(a);
+    // ` ❯ `, `[x] ` when several can be picked, `A  `, and a column to spare.
+    let lead = if parsed.multi { 11 } else { 7 };
+    let tag = if parsed.structured {
+        "★ recommended"
+    } else {
+        "recommended"
+    };
+    let labels: Vec<Vec<String>> = parsed
+        .options
+        .iter()
+        .map(|o| {
+            let mut body = wrap(&o.text, width.saturating_sub(lead));
+            if o.recommended
+                && body
+                    .last()
+                    .is_some_and(|l| l.width() + tag.width() + 2 > width.saturating_sub(lead))
+            {
+                body.push(String::new());
             }
-            let line = Line::from(ui::spread(line, vec![], width));
-            rows.push(if on { line.style(t.selected()) } else { line });
+            body
+        })
+        .collect();
+    // Around the options: the gap above them, "write your own answer", a blank, the rule
+    // and one row of the answer.
+    let around = 5;
+    let n = labels.len();
+    let short = labels.iter().map(Vec::len).sum::<usize>() + around > budget;
+    let labels: Vec<Vec<String>> = if short {
+        parsed
+            .options
+            .iter()
+            .map(|o| vec![o.text.clone()])
+            .collect()
+    } else {
+        labels
+    };
+    // The window on the options keeps the chosen one; "write your own answer" keeps the
+    // last. What must always show is the focused option, the answer row with its cursor
+    // and the hints (the caller draws those): when the rows are short, the spacing gives
+    // way first — the gap above the options, then the blank above the rule — then the
+    // scroll marks, folded onto one row when that fits, then the context. A size that
+    // still cannot hold the essentials draws an explicit too-small body instead of a
+    // dialog that hides its answer.
+    let tail_min = 3; // the own-answer row, the rule, the answer with its cursor
+    let mut spacing = 2; // the blank rows: above the options, then above the rule
+    let (mut first, mut shown) = (0, n);
+    let mut folded = false;
+    let mut mark_rows = 0;
+    let mut too_small = false;
+    if short && n > 0 {
+        while spacing > 0 && budget < tail_min + spacing + n {
+            spacing -= 1;
+        }
+        if budget < tail_min + spacing + n {
+            spacing = 0;
+            let (a, b) = (n - 1, n - 1);
+            folded = format!("   ↑ {a} more · ↓ {b} more").width() <= width;
+            mark_rows = if folded { 1 } else { 2 };
+            loop {
+                match budget.checked_sub(tail_min + mark_rows) {
+                    Some(room) if room >= 1 => {
+                        shown = room.min(n);
+                        break;
+                    }
+                    _ if mark_rows == 0 => {
+                        too_small = true;
+                        break;
+                    }
+                    _ => mark_rows = 0,
+                }
+            }
+            first = app
+                .choice
+                .min(n - 1)
+                .saturating_sub(shown - 1)
+                .min(n - shown);
+        }
+    } else if short {
+        // No options: the tail alone, the spacing giving way until it fits.
+        while spacing > 0 && budget < tail_min + spacing {
+            spacing -= 1;
+        }
+        too_small = budget < tail_min;
+    }
+    if too_small {
+        app.seen.borrow_mut().page = (0, 0);
+        return vec![Line::from(sp("window too small: resize to answer", t.sub))];
+    }
+    let gap_above = usize::from(spacing >= 2);
+    let more = |count: usize, arrow: &str| {
+        (count > 0).then(|| Line::from(sp(format!("   {arrow} {count} more"), t.dim)))
+    };
+    let (mut above, mut below): (Vec<Line<'static>>, Vec<Line<'static>>) = (vec![], vec![]);
+    if shown < n && mark_rows > 0 {
+        let (hidden_above, hidden_below) = (first, n - first - shown);
+        if folded && hidden_above > 0 && hidden_below > 0 {
+            above.push(Line::from(sp(
+                format!("   ↑ {hidden_above} more · ↓ {hidden_below} more"),
+                t.dim,
+            )));
+        } else {
+            above.extend(more(hidden_above, "↑"));
+            below.extend(more(hidden_below, "↓"));
         }
     }
+    let option_rows = labels[first..first + shown]
+        .iter()
+        .map(Vec::len)
+        .sum::<usize>()
+        + above.len()
+        + below.len();
+
     let own = parsed.options.len();
-    rows.push(Line::from(vec![
+    let mut tail = vec![Line::from(vec![
         sp(if app.choice >= own { " ❯ " } else { "   " }, t.accent),
         bold("…  ", t.accent),
         sp("write your own answer", t.sub),
-    ]));
-    rows.extend([Line::raw(""), Line::from(sp("─".repeat(width), t.rule))]);
+    ])];
+    if spacing >= 1 {
+        tail.push(Line::raw(""));
+    }
+    tail.push(Line::from(sp("─".repeat(width), t.rule)));
     // Choosing an option fills the field with what it meant, so the ledger records it.
     let mut text = field(
         " answer  ",
@@ -147,10 +230,93 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
     if let Some(last) = text.last_mut() {
         last.spans.push(Span::styled(" ", t.cursor()));
     }
-    rows.extend(text);
+    // The answer keeps its tail and the cursor in view; `…` marks the text above the window.
+    let keep = budget
+        .saturating_sub(option_rows + tail.len() + gap_above + 2)
+        .max(1);
+    if text.len() > keep {
+        text.drain(..text.len() - keep);
+        text[0].spans[0] = Span::styled(" answer …", Style::new().fg(t.dim));
+    }
+    tail.extend(text);
 
-    let context = wrap(&parsed.context, width);
-    let room = budget.saturating_sub(rows.len() + 1).max(1);
+    // Two lines stay for the ask's own text: one of it, and where the window is.
+    let fixed = option_rows + tail.len() + gap_above + 2;
+    let described = parsed.options[first..first + shown]
+        .iter()
+        .filter(|o| !o.description.is_empty())
+        .count();
+    let each = (budget.saturating_sub(fixed) / described.max(1)).min(3);
+
+    let mut rows: Vec<Line> = above.into_iter().collect();
+    for ((i, o), body) in parsed
+        .options
+        .iter()
+        .enumerate()
+        .zip(labels)
+        .skip(first)
+        .take(shown)
+    {
+        let on = i == app.choice;
+        let n = body.len();
+        let mut lines = vec![];
+        for (j, text) in body.into_iter().enumerate() {
+            let mut line = vec![sp(if on && j == 0 { " ❯ " } else { "   " }, t.accent)];
+            if parsed.multi {
+                let mark = match (j, app.picked.contains(&i)) {
+                    (0, true) => "[x] ",
+                    (0, false) => "[ ] ",
+                    _ => "    ",
+                };
+                line.push(bold(mark, t.accent));
+            }
+            line.push(bold(
+                if j == 0 {
+                    format!("{}  ", o.key)
+                } else {
+                    "   ".into()
+                },
+                t.accent,
+            ));
+            if short {
+                // One cut line: the label gives way to the tag.
+                line.push(sp(text, t.text));
+                let right = if o.recommended {
+                    vec![sp(format!("  {tag}"), t.ok)]
+                } else {
+                    vec![]
+                };
+                lines.push(Line::from(ui::spread(line, right, width)));
+                continue;
+            }
+            if o.recommended && j + 1 == n {
+                let gap = if text.is_empty() { "" } else { "  " };
+                line.extend([sp(text, t.text), sp(format!("{gap}{tag}"), t.ok)]);
+            } else {
+                line.push(sp(text, t.text));
+            }
+            lines.push(Line::from(ui::spread(line, vec![], width)));
+        }
+        if !o.description.is_empty() {
+            for l in ui::wrap_max(&o.description, width.saturating_sub(lead), each) {
+                let line = vec![sp(" ".repeat(lead - 1), t.dim), sp(l, t.dim)];
+                lines.push(Line::from(ui::spread(line, vec![], width)));
+            }
+        }
+        rows.extend(
+            lines
+                .into_iter()
+                .map(|l| if on { l.style(t.selected()) } else { l }),
+        );
+    }
+    rows.extend(below);
+    rows.extend(tail);
+
+    let mut context = wrap(&parsed.context, width);
+    // The answer's row and its cursor are always reserved, so when the rows run past
+    // the budget the context gives way first: its window's last line and the position
+    // indicator share one row, or the context drops to zero rows.
+    let room = budget.saturating_sub(rows.len() + gap_above);
     let total = context.len();
     let mut out: Vec<Line> = if total <= room {
         app.seen.borrow_mut().page = (0, 0);
@@ -158,9 +324,9 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
             .into_iter()
             .map(|l| Line::from(sp(l, t.text)))
             .collect()
-    } else {
+    } else if room >= 2 {
         // A window on the text, and under it where the window is.
-        let shown = room.saturating_sub(1).max(1);
+        let shown = room - 1;
         app.seen.borrow_mut().page = (shown, total);
         let first = app.scroll.min(total - shown);
         let mut out: Vec<Line> = context
@@ -176,8 +342,29 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
         );
         out.push(Line::from(sp(at, t.dim)));
         out
+    } else if room == 1 {
+        // One row for the window: its first line and where it is share it.
+        app.seen.borrow_mut().page = (1, total);
+        let first = app.scroll.min(total - 1);
+        let at = format!(
+            "… {}-{}/{total} · ctrl-d ctrl-u scroll",
+            first + 1,
+            first + 1
+        );
+        let line = context.remove(first);
+        vec![Line::from(ui::spread(
+            vec![sp(line, t.text)],
+            vec![sp(at, t.dim)],
+            width,
+        ))]
+    } else {
+        // No room at all: the context waits behind ctrl-d.
+        app.seen.borrow_mut().page = (0, total);
+        vec![]
     };
-    out.push(Line::raw(""));
+    if spacing >= 2 {
+        out.push(Line::raw(""));
+    }
     out.extend(rows);
     out
 }
@@ -259,26 +446,60 @@ pub(crate) fn answer(f: &mut Frame, app: &App) {
         return glance::draw(f, app);
     };
     let confirming = app.screen == Screen::Confirm;
+    let parsed = ask::parse(a);
+    let tab = |long| match (parsed.structured, long) {
+        (true, true) => "add a note",
+        (true, false) => "note",
+        (false, true) => "edit the text",
+        (false, false) => "edit",
+    };
+    let (long, short) = if parsed.multi {
+        (
+            vec![
+                ("j k", "choose"),
+                ("space", "pick"),
+                ("tab", tab(true)),
+                ("⏎", "review"),
+                ("esc", "cancel"),
+            ],
+            vec![
+                ("space", "pick"),
+                ("tab", tab(false)),
+                ("⏎", "review"),
+                ("esc", "cancel"),
+            ],
+        )
+    } else {
+        (
+            vec![
+                ("j k", "choose"),
+                ("tab", tab(true)),
+                ("⏎", "review before sending"),
+                ("esc", "cancel"),
+            ],
+            vec![
+                ("j k", "choose"),
+                ("tab", tab(false)),
+                ("⏎", "review"),
+                ("esc", "cancel"),
+            ],
+        )
+    };
+    // A structured ask's long hints must fit the dialog's inside (its trailing gap aside);
+    // a plain ask keeps the hints it has always had.
+    let inside = f.area().width.min(80).saturating_sub(6) as usize;
+    let fits =
+        f.area().width >= 60 && (!parsed.structured || keys_line(t, &long).width() <= inside + 3);
     let hints: &[(&str, &str)] = if confirming {
         &[
             ("y", "send"),
             ("e", "edit"),
             ("esc", "cancel, nothing is sent"),
         ]
-    } else if f.area().width < 60 {
-        &[
-            ("j k", "choose"),
-            ("tab", "edit"),
-            ("⏎", "review"),
-            ("esc", "cancel"),
-        ]
+    } else if fits {
+        &long
     } else {
-        &[
-            ("j k", "choose"),
-            ("tab", "edit the text"),
-            ("⏎", "review before sending"),
-            ("esc", "cancel"),
-        ]
+        &short
     };
     let title = format!("ask {} · {}", a.ask_id, a.campaign);
 
@@ -294,7 +515,14 @@ pub(crate) fn answer(f: &mut Frame, app: &App) {
             f,
             t,
             80,
-            if confirming { 16 } else { 20 },
+            // A structured ask's descriptions take more room.
+            if confirming {
+                16
+            } else if parsed.structured {
+                26
+            } else {
+                20
+            },
             &format!("Answer {title}"),
         );
         let (w, h) = (inner.width as usize, inner.height as usize);
@@ -397,6 +625,14 @@ fn legend(t: &Theme) -> Vec<Line<'static>> {
             ("↗", t.remote, "another"),
         ]),
         row(&[("•", t.dim, "changed since you looked")]),
+        row(&[
+            ("◆", t.accent, "structured ask"),
+            ("◇", t.accent, "options from its text"),
+        ]),
+        row(&[
+            ("★", t.ok, "recommended"),
+            ("HUB", t.remote, "the hub's dialog"),
+        ]),
     ]
 }
 
@@ -436,6 +672,7 @@ fn group(t: &Theme, name: &str, view: u8, width: usize) -> Vec<Line<'static>> {
     let note = match name {
         "Go" => Some(keys::GO_NOTE),
         "Move" if view == keys::GLANCE => Some(keys::DETAIL_NOTE),
+        "Act" if view & (keys::GLANCE | keys::CAMPAIGN) != 0 => Some(keys::ANSWER_NOTE),
         _ => None,
     };
     if let Some(note) = note {
@@ -474,7 +711,7 @@ pub(crate) fn help(f: &mut Frame, app: &App) {
         glance::draw(f, &background);
         // Nothing under a dialog can be clicked or scrolled.
         *app.seen.borrow_mut() = crate::Seen::default();
-        let inner = modal(f, t, 100, 24, &format!("Keys · {name}"));
+        let inner = modal(f, t, 100, 30, &format!("Keys · {name}"));
         let [a, b] = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
             .areas(inner);
         let column = |names: &[&str]| {
@@ -526,4 +763,355 @@ pub(crate) fn help(f: &mut Frame, app: &App) {
         Paragraph::new(lines.into_iter().skip(first).take(h).collect::<Vec<_>>()),
         body,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
+
+    use crate::{
+        App, draw, frames,
+        model::{Need, QuestionOption},
+    };
+
+    fn render(app: &App, width: u16, height: u16) -> Buffer {
+        let mut t = Terminal::new(TestBackend::new(width, height)).expect("a test backend");
+        t.draw(|f| draw(f, app)).expect("a frame");
+        t.backend().buffer().clone()
+    }
+
+    #[test]
+    fn a_long_answer_keeps_its_tail_and_the_cursor_in_view() {
+        // Four 60-character labels, all picked, and a long note, at 46x20.
+        let mut app = App::new(frames::fixture());
+        let mut ask = frames::structured_asks()[2].clone();
+        let options = &mut ask.question.as_mut().expect("a question").options;
+        for (i, o) in options.iter_mut().enumerate() {
+            o.label = format!("{i}{}", " label".repeat(10))[..60].to_string();
+        }
+        app.answer(ask);
+        for i in 0..4 {
+            app.choose(i);
+            app.toggle();
+        }
+        app.edit(|note| *note = format!("{}END", "note ".repeat(80)));
+        let buf = render(&app, 46, 20);
+        let text = frames::text(&buf);
+        assert!(text.contains(" answer …"), "{text}");
+        assert!(text.contains("❯ [x] D  3 label"), "{text}");
+        assert!(text.contains("esc cancel"), "{text}");
+        let (y, line) = text
+            .lines()
+            .enumerate()
+            .find(|(_, l)| l.ends_with("END"))
+            .unwrap_or_else(|| panic!("the answer's tail is on screen:\n{text}"));
+        let x = line.chars().count() as u16;
+        let cell = buf[(x, y as u16)].style();
+        assert_eq!(
+            cell,
+            cell.patch(app.theme.cursor()),
+            "the cursor follows the tail"
+        );
+    }
+
+    #[test]
+    fn a_recommended_label_still_leaves_the_answer_on_screen() {
+        // The same four 60-character labels at 46x20, with the first one recommended and
+        // a wrapped question: the context gives way, the answer and its cursor stay.
+        let mut app = App::new(frames::fixture());
+        let mut ask = frames::structured_asks()[2].clone();
+        let question = ask.question.as_mut().expect("a question");
+        for (i, o) in question.options.iter_mut().enumerate() {
+            o.label = format!("{i}{}", " label".repeat(10))[..60].to_string();
+            o.recommended = i == 0;
+        }
+        ask.text = format!(
+            "Translations landed for three of the four locales. Which locales ship in the first release? {}",
+            question
+                .options
+                .iter()
+                .zip('A'..)
+                .map(|(o, c)| format!("({c}) {}", o.label))
+                .collect::<Vec<_>>()
+                .join("; ")
+        );
+        app.answer(ask);
+        for i in 0..4 {
+            app.choose(i);
+            app.toggle();
+        }
+        app.edit(|note| *note = format!("{}END", "note ".repeat(80)));
+        let buf = render(&app, 46, 20);
+        let text = frames::text(&buf);
+        assert!(text.contains(" answer …"), "{text}");
+        assert!(text.contains("esc cancel"), "{text}");
+        let (y, line) = text
+            .lines()
+            .enumerate()
+            .find(|(_, l)| l.ends_with("END"))
+            .unwrap_or_else(|| panic!("the answer's tail is on screen:\n{text}"));
+        let x = line.chars().count() as u16;
+        let cell = buf[(x, y as u16)].style();
+        assert_eq!(
+            cell,
+            cell.patch(app.theme.cursor()),
+            "the cursor follows the tail"
+        );
+    }
+
+    /// A structured ask with `labels`, the first `recommended`, each described by
+    /// `description`, its text as Q1 writes it.
+    fn asking(labels: &[String], recommended: bool, description: &str, multi: bool) -> Need {
+        let mut ask = frames::structured_asks()[2].clone();
+        let question = ask.question.as_mut().expect("a question");
+        question.multi_select = multi;
+        question.options = labels
+            .iter()
+            .enumerate()
+            .map(|(i, label)| QuestionOption {
+                label: label.clone(),
+                description: description.into(),
+                recommended: recommended && i == 0,
+            })
+            .collect();
+        let tail = labels
+            .iter()
+            .zip('A'..)
+            .map(|(l, c)| format!("({c}) {l}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        ask.text = format!("Which locales ship in the first release? {tail}");
+        ask
+    }
+
+    /// The answer row, the cursor (after `END` when the note has it), the chosen option and
+    /// the complete hints are on screen; a visible recommended option shows its whole tag.
+    fn holds(app: &App, width: u16, height: u16, end: bool, case: &str) {
+        let buf = render(app, width, height);
+        let text = frames::text(&buf);
+        if text.contains("window too small") {
+            // The explicit too-small body (clipped at 30 columns): never a dialog that
+            // hides its answer.
+            assert!(
+                !text.contains(" answer "),
+                "{case}: the too-small body still pretends\n{text}"
+            );
+            return;
+        }
+        let lines: Vec<&str> = text.lines().collect();
+        let ask = app.ask.as_ref().expect("an ask");
+        let q = ask.question.as_ref().expect("a question");
+        let answer = lines
+            .iter()
+            .position(|l| l.contains(" answer "))
+            .unwrap_or_else(|| panic!("{case}: no answer row\n{text}"));
+        let cursor = (0..height)
+            .flat_map(|y| (0..width).map(move |x| (x, y)))
+            .find(|&p| buf[p].style().bg == Some(app.theme.text))
+            .unwrap_or_else(|| panic!("{case}: no cursor\n{text}"));
+        assert!(
+            cursor.1 as usize >= answer,
+            "{case}: cursor above the answer\n{text}"
+        );
+        if end {
+            let before: String = (cursor.0.saturating_sub(3)..cursor.0)
+                .map(|x| buf[(x, cursor.1)].symbol())
+                .collect();
+            assert_eq!(
+                before, "END",
+                "{case}: the tail is not before the cursor\n{text}"
+            );
+        }
+        let option = |i: usize| {
+            let key = char::from(b'A' + i as u8);
+            let pick = if q.multi_select { "[x] " } else { "" };
+            let row = format!("{pick}{key}  ");
+            lines
+                .iter()
+                .position(|l| l.contains(&format!("❯ {row}")) || l.contains(&format!("   {row}")))
+        };
+        let focused = option(app.choice).unwrap_or_else(|| panic!("{case}: focus hidden\n{text}"));
+        assert!(lines[focused].contains('❯'), "{case}: focus mark\n{text}");
+        let hints: &[&str] = if q.multi_select {
+            &["space pick", "tab ", "⏎ review", "esc cancel"]
+        } else {
+            &["j k choose", "tab ", "⏎ review", "esc cancel"]
+        };
+        let foot = lines
+            .iter()
+            .rev()
+            .find(|l| l.contains("esc"))
+            .copied()
+            .unwrap_or("");
+        for hint in hints {
+            // Under 46 columns the footer cannot hold every hint; it keeps esc.
+            if width >= 46 {
+                assert!(foot.contains(hint), "{case}: hint {hint:?} cut\n{text}");
+            }
+        }
+        if q.options[0].recommended && option(0).is_some() {
+            assert!(
+                text.contains("★ recommended"),
+                "{case}: the tag is cut\n{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn wide_labels_keep_the_answer_visible() {
+        // The reviewer's case: four 58-character CJK labels, the first recommended, all
+        // picked, at 46x20.
+        let labels: Vec<String> = (0..4)
+            .map(|i| format!("{i}{}", "界 ".repeat(29)).trim_end().to_string())
+            .collect();
+        let mut app = App::new(frames::fixture());
+        app.answer(asking(&labels, true, "", true));
+        for i in 0..4 {
+            app.choose(i);
+            app.toggle();
+        }
+        app.edit(|note| *note = "END".into());
+        holds(&app, 46, 20, true, "wide labels");
+    }
+
+    #[test]
+    fn every_valid_question_keeps_the_answer_the_choice_and_the_hints() {
+        let ascii: Vec<String> = (0..4)
+            .map(|i| format!("{i}{}", " label".repeat(10))[..60].to_string())
+            .collect();
+        let cjk: Vec<String> = (0..4)
+            .map(|i| format!("{i}{}", "界 ".repeat(29)).trim_end().to_string())
+            .collect();
+        let short: Vec<String> = (0..4).map(|i| format!("Option {i}")).collect();
+        let long = "lorem ipsum ".repeat(42)[..500].to_string();
+        let mut cases = 0;
+        for (width, height) in [
+            (46, 12),
+            (40, 10),
+            (30, 8),
+            (46, 20),
+            (46, 30),
+            (70, 30),
+            (120, 40),
+        ] {
+            for (name, labels) in [("ascii", &ascii), ("cjk", &cjk), ("short", &short)] {
+                for count in [2, 4] {
+                    for recommended in [false, true] {
+                        for description in ["", long.as_str()] {
+                            for multi in [false, true] {
+                                for note in [false, true] {
+                                    for focus in [count - 1, count / 2] {
+                                        let mut app = App::new(frames::fixture());
+                                        let ask = asking(
+                                            &labels[..count],
+                                            recommended,
+                                            description,
+                                            multi,
+                                        );
+                                        app.answer(ask);
+                                        if multi {
+                                            for i in 0..count {
+                                                app.choose(i);
+                                                app.toggle();
+                                            }
+                                        }
+                                        app.choose(focus);
+                                        if note {
+                                            app.edit(|n| {
+                                                *n = format!("{}END", "note ".repeat(80))[3..]
+                                                    .to_string()
+                                            });
+                                        }
+                                        let case = format!(
+                                            "{width}x{height} {name} {count} rec={recommended} \
+                                             desc={} multi={multi} note={note} focus={focus}",
+                                            description.len()
+                                        );
+                                        holds(&app, width, height, note, &case);
+                                        cases += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(cases, 1344);
+    }
+
+    /// A plain ask whose text lists `count` `(A)`-style options, as a long heuristic
+    /// list does.
+    fn plain(count: usize) -> Need {
+        let mut ask = frames::structured_asks()[2].clone();
+        ask.question = None;
+        ask.text = (0..count)
+            .map(|i| format!("({}) Option {i}", char::from(b'A' + i as u8)))
+            .collect::<Vec<_>>()
+            .join("; ");
+        ask
+    }
+
+    #[test]
+    fn a_window_keeps_both_marks_the_choice_and_the_answer() {
+        // Twelve plain options with the focus in the middle: both scroll marks show, and
+        // the focused option, the answer row with its cursor and the hints stay too.
+        for (width, height, up, down) in [
+            (46, 12, "↑ 4 more", "↓ 5 more"),
+            (40, 10, "↑ 6 more", "↓ 5 more"),
+        ] {
+            let mut app = App::new(frames::fixture());
+            app.answer(plain(12));
+            app.choose(6);
+            let buf = render(&app, width, height);
+            let text = frames::text(&buf);
+            println!("MIDDLE-OPTION {width}x{height}\n{text}");
+            assert!(
+                text.contains(up) && text.contains(down),
+                "{width}x{height}: a scroll mark is lost\n{text}"
+            );
+            assert!(
+                text.contains("❯ G  Option 6"),
+                "{width}x{height}: focus lost\n{text}"
+            );
+            // The cursor is drawn only on the answer's row: if it is on screen, the
+            // answer row with it is.
+            let cursor = (0..height)
+                .flat_map(|y| (0..width).map(move |x| (x, y)))
+                .find(|&p| buf[p].style().bg == Some(app.theme.text))
+                .unwrap_or_else(|| panic!("{width}x{height}: the cursor is clipped\n{text}"));
+            let row = text.lines().nth(cursor.1 as usize).unwrap_or("");
+            assert!(
+                row.contains(" answer ") && row.contains("Option 6"),
+                "{width}x{height}: the cursor left the answer\n{text}"
+            );
+            assert!(text.contains("esc cancel"), "{width}x{height}:\n{text}");
+        }
+    }
+
+    #[test]
+    fn a_windowed_ask_has_ascii_marks() {
+        // The window's arrows have ASCII stand-ins: ↑ as ^ and ↓ as v.
+        let mut app = App::new(frames::fixture());
+        app.answer(plain(12));
+        app.choose(6);
+        let text = frames::text(&render(&app, 46, 12));
+        assert!(text.contains("↑ 4 more · ↓ 5 more"), "{text}");
+        app.ascii = true;
+        let text = frames::text(&render(&app, 46, 12));
+        assert!(text.is_ascii(), "{text}");
+        assert!(text.contains("^ 4 more . v 5 more"), "{text}");
+    }
+
+    #[test]
+    fn every_hint_shows_in_full() {
+        for (width, height) in [(46, 20), (46, 30), (70, 30), (120, 40)] {
+            for ask in 0..3 {
+                let mut app = App::new(frames::fixture());
+                app.answer(frames::structured_asks()[ask].clone());
+                let text = frames::text(&render(&app, width, height));
+                assert!(text.contains("esc cancel"), "{width}x{height}:\n{text}");
+            }
+        }
+    }
 }

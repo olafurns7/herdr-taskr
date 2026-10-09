@@ -1,8 +1,14 @@
- taskr      2s ago   ● 2 need you  3 to check
+ taskr      2s ago   ● 5 need you  3 to check
  3 notes still carry OWNER items
- NEEDS YOU ──────────────────────────────── 2
-▌? ◇ tui-frames           BLOCKING      ⏎  41s
-▌  Frames follow-up is ready: PR #212 (orpha…
+ NEEDS YOU ──────────────────────────────── 5
+ ? ◆ fleet-hub            BLOCKING HUB  ⏎  25s
+   Release: Cut the v3.2 release today, or w…
+▌? ◆ auth-rotation        BLOCKING      ⏎   2m
+▌  Tokens: Which signing scheme should the r…
+ ? ◆ docs-refresh                       ⏎   4m
+   Translations landed for three of the four…
+ ? ◇ tui-frames           BLOCKING      ⏎  41s
+   Frames follow-up is ready: PR #212 (orpha…
  ? ◇ ios-widgets                 laptop ↗   6m
    WIDGET BATCH: 19 of 23 merged (14:02-14:0…
  TO CHECK ───────────────────────────────── 3
@@ -14,17 +20,11 @@
    host stale: no heartbeat for 12 m
  CAMPAIGNS ─────────────────────────────── 10
  ◐ search-index      ●       ▁▁▁▁▁█▃       19s
-   Research complete: reports/ranking-option…
  ◐ auth-rotation     ●       ▁▁▁▄▄▁█       29s
-   Implementation slice: key rollover job, f…
  ○ billing-export    ●       ▁▂▁▁▄█▁       33s
-•○ docs-refresh      ●       ▁▁▁▁▁█▂        2m
+ ○ docs-refresh      ●       ▁▁▁▁▁█▂        2m
  ○ checkout-flow     ●●      ▁▂▁▃█▄█        3m
  ◐ ios-widgets       —       ▁▁█▄█▄ laptop  7m
  ◐ tui-frames        ●●●●○○  ▁▂▄▁▂██        8m
- · infra-layout      —       ▂▂▁█▁▃▃       12m
- ◐ model-evals       ●●●●●●+ ███▁██▁       14m
- ○ api-pagination    ●       ▁▁▁█▄▁▁       54m
- ‖ legacy-importer                  parked  3h
- · 2 quiet
+ +6 more · c shows all
  ⏎ go   a answer   l open   ? help

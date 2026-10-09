@@ -193,12 +193,17 @@ fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Op
         hits.resize(out.len(), None);
         if plan.asks.contains(&i) {
             let on = app.row == index;
+            // ◆ a structured ask, ◇ options found in its text; HUB: the hub's own dialog.
             let mut left = vec![
                 bold("? ", t.need),
-                bold(pad(&a.campaign, 20.min(body.saturating_sub(22))), t.text),
+                bold(format!("{} ", ask::mark(a)), t.accent),
+                bold(pad(&a.campaign, 20.min(body.saturating_sub(24))), t.text),
             ];
             if a.blocking {
                 left.push(bold(" BLOCKING", t.need));
+            }
+            if a.dialog {
+                left.push(bold(" HUB", t.remote));
             }
             let right = vec![
                 Span::raw(" "),
@@ -675,10 +680,16 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
                 sp(" · ", t.dim),
                 at(&a.host, &a.pane_id),
             ];
+            // A structured ask's options are listed under its text, so the text drops them.
+            let text = if a.question.is_some() {
+                ask::parse(a).context
+            } else {
+                a.text.clone()
+            };
             (
                 format!("ask {} · {}", a.ask_id, a.campaign),
                 vec![Line::from(head)],
-                a.text.clone(),
+                text,
             )
         }
         Selected::Check(a) => {
@@ -720,16 +731,35 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
             .into_iter()
             .map(|l| Line::from(sp(l, t.text))),
     );
-    let options = ask::parse(&text).options;
-    if !options.is_empty() {
-        lines.extend([Line::raw(""), Line::from(bold("Options", t.sub))]);
+    let parsed = match selected(app) {
+        Selected::Ask(a) => ask::parse(a),
+        _ => ask::parse_text(&text),
+    };
+    if !parsed.options.is_empty() {
+        let head = if parsed.multi {
+            "Options · pick any"
+        } else {
+            "Options"
+        };
+        lines.extend([Line::raw(""), Line::from(bold(head, t.sub))]);
     }
-    for o in options {
+    for o in parsed.options {
         let mut line = vec![bold(format!(" {} ", o.key), t.accent), sp(o.text, t.text)];
         if o.recommended {
-            line.push(sp("  recommended", t.ok));
+            let tag = if parsed.structured {
+                "  ★ recommended"
+            } else {
+                "  recommended"
+            };
+            line.push(sp(tag, t.ok));
         }
         lines.push(Line::from(ui::fit(line, width)));
+        lines.extend(
+            wrap(&o.description, width.saturating_sub(4))
+                .into_iter()
+                .filter(|l| !l.is_empty())
+                .map(|l| Line::from(sp(format!("    {l}"), t.dim))),
+        );
     }
     // Longer than its box, it scrolls when focused and says where it is, as the campaign
     // view's panes do.

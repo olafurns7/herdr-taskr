@@ -92,6 +92,48 @@ long_ask = {"kind": "owner_ask", "campaign": "infra-layout", "root_id": 4031, "h
             "age_ms": 3 * M + 12 * S, "since": at("14:12:58"), "ask_id": 61812, "blocking": True,
             "asker": "infra-layout", "asker_task_id": 4031, "asker_waiting": True, "text": STEPS_ASK}
 
+
+
+def structured(campaign, root_id, pane, age, ask_id, blocking, question, context="", dialog=False):
+    # As `taskr ask --question` stores it (Q1): the summary is `[context ][header: ]question
+    # (A) label; (B) label`, and `question` and `dialog` ride along.
+    labels = "; ".join("(%s) %s" % (chr(65 + i), o["label"]) for i, o in enumerate(question["options"]))
+    text = (context + " " if context else "") + question["header"] + ": " + question["question"] + " " + labels
+    ask = {"kind": "owner_ask", "campaign": campaign, "root_id": root_id, "host": "", "pane_id": pane, "age_ms": age,
+           "since": at("14:16:10"), "ask_id": ask_id, "blocking": blocking, "asker": campaign, "asker_task_id": root_id,
+           "asker_waiting": True, "text": text, "question": question}
+    if dialog:
+        ask["dialog"] = True
+    return ask
+
+
+# Kept out of the glance, as the long ask is: the frames and `--demo` put them in front.
+structured_asks = [
+    structured("fleet-hub", 3001, "w1:p1", 25 * S, 61811, True, dialog=True, question={
+        "header": "Release", "question": "Cut the v3.2 release today, or wait for the cache fix?", "multiSelect": False,
+        "options": [
+            {"label": "Cut today", "description": "Ships the 14 merged changes now; the cache fix follows in v3.2.1."},
+            {"label": "Wait for the fix", "description": "One release with everything, likely tomorrow afternoon."},
+        ]}),
+    structured("auth-rotation", 4288, "w20:p1", 2 * M + 5 * S, 61790, True, question={
+        "header": "Tokens", "question": "Which signing scheme should the rotated service tokens use?", "multiSelect": False,
+        "options": [
+            {"label": "Ed25519", "recommended": True,
+             "description": "Short keys and fast checks; every client library we ship supports it already."},
+            {"label": "RSA-2048", "description": "Matches today's tokens, so no client changes, but rotation takes four times as long."},
+            {"label": "HMAC-SHA256", "description": "Simplest to run, but every verifier then holds the signing secret."},
+        ]}),
+    structured("docs-refresh", 4296, "w28:p1", 4 * M + 40 * S, 61802, False,
+               context="Translations landed for three of the four locales.", question={
+        "header": "Locales", "question": "Which locales ship in the first docs release?", "multiSelect": True,
+        "options": [
+            {"label": "English", "description": "The source text; always complete."},
+            {"label": "German", "description": "Reviewed by the partner team last week."},
+            {"label": "Japanese", "description": "Machine draft; 40 pages are still unreviewed."},
+            {"label": "Portuguese", "description": "Half translated; the glossary is not settled yet."},
+        ]}),
+]
+
 glance = {
     "now": at("14:16:10"), "verdict": "needs_you", "owner_notes_pending": 3, "server_host": "atlas", "caller_host": "",
     "needs_you": [
@@ -346,6 +388,7 @@ if live:
             l["summary"] = "\u274c two rules left \U0001f468\u200d\U0001f469\u200d\U0001f467 \u5b8c\u4e86"
 name = "fixture-live.json" if live else "fixture.json"
 out = args[0] if args else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", name)
-text = json.dumps({"glance": glance, "campaign": campaign, "roots": roots, "doc": doc, "long_ask": long_ask, "slotr": slotr}, indent=1)
+text = json.dumps({"glance": glance, "campaign": campaign, "roots": roots, "doc": doc, "long_ask": long_ask,
+                   "structured_asks": structured_asks, "slotr": slotr}, indent=1)
 assert live or text.isascii(), "the fixture stays ASCII"
 open(out, "w").write(text + "\n")

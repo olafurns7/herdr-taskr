@@ -356,7 +356,7 @@ pub fn paste(app: &mut App, text: &str) {
         app.filter.push_str(line.trim());
         reset(app);
     } else if app.screen == Screen::Answer && app.editing {
-        app.text.push_str(&line);
+        app.edit(|text| text.push_str(&line));
     }
 }
 
@@ -537,25 +537,31 @@ fn answer(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
         KeyCode::PageUp => return scroll(app, -2 * half),
         _ => {}
     }
-    let options = app
-        .ask
-        .as_ref()
-        .map_or(0, |a| ask::parse(&a.text).options.len());
+    let (options, multi) = app.ask.as_ref().map_or((0, false), |a| {
+        let p = ask::parse(a);
+        (p.options.len(), p.multi)
+    });
+    // In a multi-select ask, space picks the option under the cursor and Enter sends the set.
+    let on_option = multi && app.choice < options;
     match code {
         KeyCode::Esc => {
             app.close();
             return say(app, "cancelled, nothing was sent");
+        }
+        KeyCode::Enter if on_option && app.picked.is_empty() => {
+            return say(app, "pick at least one: space picks an option");
         }
         KeyCode::Enter if app.text.trim().is_empty() => return say(app, "write an answer first"),
         KeyCode::Enter => app.screen = Screen::Confirm,
         KeyCode::Tab | KeyCode::BackTab => app.editing = !app.editing,
         KeyCode::Down => app.choose((app.choice + 1).min(options)),
         KeyCode::Up => app.choose(app.choice.saturating_sub(1)),
-        KeyCode::Backspace if app.editing => {
-            app.text.pop();
-        }
+        KeyCode::Backspace if app.editing => app.edit(|text| {
+            text.pop();
+        }),
         // ponytail: the cursor stays at the end of the text; no editing mid-line.
-        KeyCode::Char(c) if app.editing => app.text.push(c),
+        KeyCode::Char(c) if app.editing => app.edit(|text| text.push(c)),
+        KeyCode::Char(' ') if on_option => app.toggle(),
         KeyCode::Char('j') => app.choose((app.choice + 1).min(options)),
         KeyCode::Char('k') => app.choose(app.choice.saturating_sub(1)),
         KeyCode::Char('q') => {
@@ -1652,6 +1658,94 @@ mod tests {
             p.status(),
             "! read demo-checkout failed: unknown command campaign"
         );
+    }
+
+    /// The fixture with its structured asks in front: the hub's dialog ask, a
+    /// single-select, a multi-select.
+    fn structured(width: u16, height: u16) -> Pane {
+        let mut p = Pane::new(width, height);
+        frames::with_structured(&mut p.app);
+        p
+    }
+
+    #[test]
+    fn a_structured_ask_answers_with_its_label_and_a_note() {
+        let mut p = structured(46, 30);
+        p.keys("ja");
+        assert_eq!(p.app.screen, Screen::Answer);
+        assert_eq!(p.app.text, "A: Ed25519");
+        // Space picks nothing in a single-select ask.
+        p.keys("j ");
+        assert_eq!(p.app.text, "B: RSA-2048");
+        // Tab types a note after the option; moving keeps it.
+        p.keys("\tkeep the old keys a weekk");
+        p.code(KeyCode::Backspace);
+        assert_eq!(p.app.text, "B: RSA-2048 — keep the old keys a week");
+        p.code(KeyCode::Down);
+        assert_eq!(p.app.text, "C: HMAC-SHA256 — keep the old keys a week");
+        // Esc sends nothing, and the next dialog starts clean.
+        assert_eq!(p.keys("\x1b"), Effect::None);
+        assert_eq!(p.app.screen, Screen::Glance);
+        assert_eq!(p.status(), "cancelled, nothing was sent");
+        p.keys("a");
+        assert_eq!(p.app.text, "A: Ed25519");
+    }
+
+    #[test]
+    fn a_multi_select_ask_sends_the_picked_set() {
+        let mut p = structured(120, 40);
+        let ask = p.app.data.glance.needs_you[2].clone();
+        p.keys("jja");
+        assert_eq!(p.app.screen, Screen::Answer);
+        assert_eq!(p.app.text, "");
+        // Nothing picked: Enter does nothing and says so.
+        assert_eq!(p.keys("\n"), Effect::None);
+        assert_eq!(p.app.screen, Screen::Answer);
+        assert!(p.status().contains("pick at least one"), "{}", p.status());
+        // Space picks English, German and Portuguese, then drops English.
+        p.keys(" j jj kkk ");
+        assert_eq!(p.app.picked, [1, 3]);
+        assert_eq!(p.app.text, "B: German; D: Portuguese");
+        assert!(p.text().contains("[x] B  German"));
+        p.keys("\tglossary first");
+        assert_eq!(p.app.text, "B: German; D: Portuguese — glossary first");
+        p.keys("\n");
+        assert_eq!(p.app.screen, Screen::Confirm);
+        assert_eq!(
+            p.keys("y"),
+            Effect::Run(Job::Answer {
+                ask_id: ask.ask_id,
+                text: "B: German; D: Portuguese — glossary first".into(),
+                prompt: false
+            })
+        );
+    }
+
+    #[test]
+    fn a_structured_ask_answered_elsewhere_is_not_retargeted() {
+        let mut p = structured(120, 40);
+        let ask = p.app.data.glance.needs_you[2].clone();
+        p.keys("jja \n");
+        assert_eq!(p.app.screen, Screen::Confirm);
+        // The refresh no longer lists it: it was answered elsewhere.
+        let mut next = p.app.data.glance.clone();
+        next.needs_you.retain(|a| a.ask_id != ask.ask_id);
+        p.app.snapshot(next);
+        let Effect::Run(job) = p.keys("y") else {
+            panic!("an answer")
+        };
+        assert_eq!(
+            job,
+            Job::Answer {
+                ask_id: ask.ask_id,
+                text: "A: English".into(),
+                prompt: false
+            }
+        );
+        // taskr refuses the second answer, and the view says so.
+        let refused = format!("ask {} is already answered by event 61900", ask.ask_id);
+        done(&mut p.app, &job, Err(refused));
+        assert!(p.status().contains("already answered"), "{}", p.status());
     }
 
     #[test]

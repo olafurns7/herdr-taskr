@@ -1,0 +1,20 @@
+ taskr ❯ answer        2s ago   ● 5 need you
+ ask 61802 · docs-refresh
+ not blocking · waiting · 4m · atlas w28:p1
+
+ Translations landed for three of the four
+ … 1-1/3 · ctrl-d ctrl-u scroll
+
+    [ ] A  English
+           The source text; always complete.
+    [x] B  German
+           Reviewed by the partner team las…
+  ❯ [x] C  Japanese
+           Machine draft; 40 pages are stil…
+    [ ] D  Portuguese
+           Half translated; the glossary is…
+    …  write your own answer
+
+ ────────────────────────────────────────────
+  answer  B: German; C: Japanese
+ space pick   tab note   ⏎ review   esc cancel

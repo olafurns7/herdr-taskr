@@ -1,0 +1,40 @@
+ taskr ❯ glance                                                           hub atlas · 2s ago   ● 5 need you  3 to check
+ 3 notes still carry OWNER items
+╭ Glance ──────────────────────────────────────────────────╮╭ ask 61802 · docs-refresh ────────────────────────────────╮
+│ NEEDS YOU ──────────────────────────────────────────── 5 ││ not blocking · asker waiting · 4m ago · atlas w28:p1     │
+│ ? ◆ fleet-hub            BLOCKING HUB              ⏎  25s││                                                          │
+│   Release: Cut the v3.2 release today, or wait for the … ││ Translations landed for three of the four locales.       │
+│ ? ◆ auth-rotation        BLOCKING                  ⏎   2m││ Locales: Which locales ship in the first docs release?   │
+│   Tokens: Which si╭ Answer ask 61802 · docs-refresh ─────────────────────────────────────────────╮                   │
+│▌? ◆ docs-refresh  │                                                                              │                   │
+│▌  Translations lan│  Translations landed for three of the four locales. Locales: Which locales   │                   │
+│ ? ◇ tui-frames    │  ship in the first docs release?                                             │                   │
+│   Frames follow-up│                                                                              │                   │
+│ ? ◇ ios-widgets   │     [ ] A  English                                                           │week.              │
+│   WIDGET BATCH: 19│            The source text; always complete.                                 │                   │
+│ TO CHECK ─────────│     [x] B  German                                                            │unreviewed.        │
+│ ! map-tiles-polish│            Reviewed by the partner team last week.                           │                   │
+│   lead unregistere│   ❯ [x] C  Japanese                                                          │ot settled yet.    │
+│ ! infra-layout    │            Machine draft; 40 pages are still unreviewed.                     │                   │
+│   lead idle with 3│     [ ] D  Portuguese                                                        │                   │
+│ ! host build-mini │            Half translated; the glossary is not settled yet.                 │                   │
+│   host stale: no h│     …  write your own answer                                                 │                   │
+│ CAMPAIGNS ────────│                                                                              │                   │
+│ ◐ search-index    │  ──────────────────────────────────────────────────────────────────────────  │                   │
+│   Research complet│   answer  B: German; C: Japanese                                             │                   │
+│ ◐ auth-rotation   │                                                                              │                   │
+│   Implementation s│   j k choose    space pick    tab add a note    ⏎ review    esc cancel       │                   │
+│ ○ billing-export  │                                                                              │                   │
+│   FYI 61448 from s│                                                                              │                   │
+│ ○ docs-refresh    │                                                                              │                   │
+│   Hub FYI: keep th│                                                                              │───────────────────╯
+│ ○ checkout-flow   │                                                                              │───────────────────╮
+│ ◐ ios-widgets     │                                                                              │      ██           │
+│ ◐ tui-frames      ╰──────────────────────────────────────────────────────────────────────────────╯      ██           │
+│ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃        12m││                                             ██▆▆         │
+│ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁        14m││                                                          │
+│ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁        54m││ lead ○ idle   lanes ●                                    │
+│ ‖ legacy-importer                              parked  3h││ last Hub FYI: keep the page map machine-readable for the │
+│ · 2 quiet                                                ││ future link checker                                      │
+╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
+ ⏎ go to lead   a answer   l open   / filter   y copy   s slotr   ? help   q quit

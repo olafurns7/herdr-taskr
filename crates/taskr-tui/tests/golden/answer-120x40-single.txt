@@ -1,0 +1,40 @@
+ taskr ❯ glance                                                           hub atlas · 2s ago   ● 5 need you  3 to check
+ 3 notes still carry OWNER items
+╭ Glance ──────────────────────────────────────────────────╮╭ ask 61790 · auth-rotation ───────────────────────────────╮
+│ NEEDS YOU ──────────────────────────────────────────── 5 ││ BLOCKING · asker waiting · 2m ago · atlas w20:p1         │
+│ ? ◆ fleet-hub            BLOCKING HUB              ⏎  25s││                                                          │
+│   Release: Cut the v3.2 release today, or wait for the … ││ Tokens: Which signing scheme should the rotated service  │
+│▌? ◆ auth-rotation        BLOCKING                  ⏎   2m││ tokens use?                                              │
+│▌  Tokens: Which si╭ Answer ask 61790 · auth-rotation ────────────────────────────────────────────╮                   │
+│ ? ◆ docs-refresh  │                                                                              │                   │
+│   Translations lan│  Tokens: Which signing scheme should the rotated service tokens use?         │                   │
+│ ? ◇ tui-frames    │                                                                              │client library we  │
+│   Frames follow-up│   ❯ A  Ed25519  ★ recommended                                                │                   │
+│ ? ◇ ios-widgets   │        Short keys and fast checks; every client library we ship supports     │                   │
+│   WIDGET BATCH: 19│        it already.                                                           │nt changes, but    │
+│ TO CHECK ─────────│     B  RSA-2048                                                              │                   │
+│ ! map-tiles-polish│        Matches today's tokens, so no client changes, but rotation takes      │                   │
+│   lead unregistere│        four times as long.                                                   │r then holds the   │
+│ ! infra-layout    │     C  HMAC-SHA256                                                           │                   │
+│   lead idle with 3│        Simplest to run, but every verifier then holds the signing secret.    │                   │
+│ ! host build-mini │     …  write your own answer                                                 │                   │
+│   host stale: no h│                                                                              │                   │
+│ CAMPAIGNS ────────│  ──────────────────────────────────────────────────────────────────────────  │                   │
+│ ◐ search-index    │   answer  A: Ed25519                                                         │                   │
+│   Research complet│                                                                              │                   │
+│ ◐ auth-rotation   │   j k choose    tab add a note    ⏎ review before sending    esc cancel      │                   │
+│   Implementation s│                                                                              │                   │
+│ ○ billing-export  │                                                                              │                   │
+│   FYI 61448 from s│                                                                              │                   │
+│ ○ docs-refresh    │                                                                              │                   │
+│   Hub FYI: keep th│                                                                              │───────────────────╯
+│ ○ checkout-flow   │                                                                              │───────────────────╮
+│ ◐ ios-widgets     │                                                                              │        ██         │
+│ ◐ tui-frames      ╰──────────────────────────────────────────────────────────────────────────────╯  ▄▄▂▂  ██         │
+│ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃        12m││                                         ████  ██         │
+│ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁        14m││                                                          │
+│ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁        54m││ lead ◐ working   lanes ●                                 │
+│ ‖ legacy-importer                              parked  3h││ last Implementation slice: key rollover job, fake-clock  │
+│ · 2 quiet                                                ││ tests, installer and operator docs                       │
+╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
+ ⏎ go to lead   a answer   l open   / filter   y copy   s slotr   ? help   q quit

@@ -137,6 +137,10 @@ pub struct App {
     pub ask: Option<model::Need>,
     /// The chosen option in the answer dialog.
     pub choice: usize,
+    /// The options picked in a multi-select ask, in option order.
+    pub picked: Vec<usize>,
+    /// A structured ask's note, sent after the picked options as ` — note`.
+    pub note: String,
     /// The answer as it will be sent.
     pub text: String,
     /// Typing goes to the answer field.
@@ -185,6 +189,8 @@ impl App {
             lane: 0,
             ask: None,
             choice: 0,
+            picked: vec![],
+            note: String::new(),
             text: String::new(),
             editing: false,
             sent: vec![],
@@ -313,19 +319,53 @@ impl App {
     pub fn answer(&mut self, ask: model::Need) {
         self.go(Screen::Answer);
         self.ask = Some(ask);
+        (self.picked, self.note) = (vec![], String::new());
         self.choose(0);
     }
 
     pub(crate) fn choose(&mut self, choice: usize) {
         let Some(ask) = &self.ask else { return };
-        let options = ask::parse(&ask.text).options;
-        self.choice = choice.min(options.len());
+        let p = ask::parse(ask);
+        self.choice = choice.min(p.options.len());
+        self.editing = self.choice == p.options.len();
         // Choosing an option fills the field with what it meant, so the ledger records it.
-        self.text = options
-            .get(self.choice)
-            .map(|o| format!("{}: {}", o.key, o.text))
-            .unwrap_or_default();
-        self.editing = self.choice == options.len();
+        // A multi-select ask's field is the picked set, wherever the cursor is.
+        self.text = if self.editing {
+            String::new()
+        } else if p.multi {
+            ask::answer(&p.options, &self.picked, &self.note)
+        } else {
+            ask::answer(&p.options, &[self.choice], &self.note)
+        };
+    }
+
+    /// Picks or drops the option under the cursor of a multi-select ask.
+    pub(crate) fn toggle(&mut self) {
+        match self.picked.binary_search(&self.choice) {
+            Ok(i) => {
+                self.picked.remove(i);
+            }
+            Err(i) => self.picked.insert(i, self.choice),
+        }
+        self.choose(self.choice);
+    }
+
+    /// Changes what the owner types: a structured ask's note while an option is chosen,
+    /// the answer itself otherwise.
+    pub(crate) fn edit(&mut self, change: impl FnOnce(&mut String)) {
+        let structured = self.ask.as_ref().is_some_and(|a| a.question.is_some());
+        let on_option = self
+            .ask
+            .as_ref()
+            .is_some_and(|a| self.choice < ask::parse(a).options.len());
+        if structured && on_option {
+            change(&mut self.note);
+            let editing = self.editing;
+            self.choose(self.choice);
+            self.editing = editing;
+        } else {
+            change(&mut self.text);
+        }
     }
 
     /// Opens `screen` over the current one.
