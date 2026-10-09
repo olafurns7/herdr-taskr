@@ -518,12 +518,24 @@ pub fn route(mut json_mode: bool, raw_args: &[String]) -> Option<ExitCode> {
         let cwd_text = cwd.to_string_lossy();
         let mut cargs = cargs.to_vec();
         let out = paths(cmd, &mut cargs, &cwd)?;
-        let argv: Vec<_> = lead
-            .iter()
-            .cloned()
-            .chain(std::iter::once(cmd.to_string()))
-            .chain(cargs.clone())
-            .collect();
+        // tmp asks the hub only for the root; the dir is made here, on the caller's host.
+        let tmp = if cmd == "tmp" {
+            match crate::tmp::parse(json_mode, &cargs) {
+                Ok(a) => Some(a),
+                Err(code) => return Ok(code),
+            }
+        } else {
+            None
+        };
+        let argv: Vec<_> = match &tmp {
+            Some(a) => vec!["--json".into(), "tmp".into(), a.task.to_string()],
+            None => lead
+                .iter()
+                .cloned()
+                .chain(std::iter::once(cmd.to_string()))
+                .chain(cargs.clone())
+                .collect(),
+        };
         let retry = format!(
             "taskr --request-key {key} {}",
             shell_join(
@@ -615,9 +627,28 @@ pub fn route(mut json_mode: bool, raw_args: &[String]) -> Option<ExitCode> {
                 return Err(e);
             }
         };
+        let code = exit(rep["exit"].as_i64().unwrap());
+        if let Some(a) = tmp {
+            let v: Value =
+                serde_json::from_str(rep["stdout"].as_str().unwrap()).unwrap_or_default();
+            return Ok(match v["root_id"].as_i64() {
+                Some(root) if code == ExitCode::Ok => crate::tmp::finish(&a, root),
+                _ => crate::cli::error(
+                    a.json,
+                    cmd,
+                    v["error"]
+                        .as_str()
+                        .unwrap_or("the hub did not name the task's root"),
+                    if code == ExitCode::Ok {
+                        ExitCode::Transport
+                    } else {
+                        code
+                    },
+                ),
+            });
+        }
         print!("{}", rep["stdout"].as_str().unwrap());
         eprint!("{}", rep["stderr"].as_str().unwrap());
-        let code = exit(rep["exit"].as_i64().unwrap());
         if code == ExitCode::Ok {
             if let Some(out) = out {
                 if let Err(e) = std::fs::write(&out, rep["stdout"].as_str().unwrap()) {

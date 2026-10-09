@@ -86,6 +86,7 @@ pub(super) fn stored(argv: &[String]) -> bool {
                 | "glance"
                 | "campaign"
                 | "slotr"
+                | "tmp"
         )
         && !(name == "doc"
             && args
@@ -184,6 +185,14 @@ pub(super) fn check_args(argv: &[String]) -> Result<(), String> {
                 taskr_core::goflag::quote(value)
             ));
         }
+    }
+    if name == "tmp"
+        && args
+            .iter()
+            .take_while(|s| s.as_str() != "--")
+            .any(|s| s.starts_with('-') && s.trim_start_matches('-').starts_with("mkdir"))
+    {
+        return Err("tmp --mkdir creates the dir on the caller's host; the client does it".into());
     }
     if name == "handover" && flag(args, "out").is_some() {
         return Err("handover --out writes on the caller's host; the client writes it".into());
@@ -406,5 +415,11 @@ mod tests {
         );
         assert!(check_args(&argv(&["note", "--", "--role", "x", "--role", "y"])).is_ok());
         assert!(check_args(&argv(&["ready", "done", "--report=relative"])).is_err());
+        // tmp is a read the hub answers; it never makes a caller's dir.
+        assert!(!stored(&argv(&["--json", "tmp", "7"])));
+        assert!(check_args(&argv(&["--json", "tmp", "7"])).is_ok());
+        for mkdir in ["--mkdir", "-mkdir", "--mkdir=true"] {
+            assert!(check_args(&argv(&["tmp", "7", mkdir])).is_err());
+        }
     }
 }

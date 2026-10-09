@@ -291,7 +291,14 @@ pub fn emit(cmd: &str, json_mode: bool, v: &Value) {
         ),
         "launch" => {
             let mut m = json!({});
-            for k in ["launch_id", "replaced_launch_id", "status", "was_planned"] {
+            for k in [
+                "launch_id",
+                "replaced_launch_id",
+                "status",
+                "was_planned",
+                "root_id",
+                "tmpdir",
+            ] {
                 if v.get(k).is_some() {
                     m[k] = v[k].clone();
                 }
@@ -640,7 +647,15 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
                 orch::valid_name(f.get_string("agent"), "--agent")?;
             }
             orch::validate_location(f)?;
-            orch::launch(&mut open()?, id, f)
+            let mut db = open()?;
+            let mut v = orch::launch(&mut db, id, f)?;
+            // The contract golden pins the --json object: the tmp dir is compact-only.
+            if !f.json() {
+                let root = store::root(&db, id)?;
+                v["root_id"] = json!(root);
+                v["tmpdir"] = json!(crate::tmp::lane(root, id).to_string_lossy());
+            }
+            Ok(v)
         }
         "start" => worker::start(&mut open()?),
         "got" => {

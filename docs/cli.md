@@ -88,6 +88,7 @@ It also keeps the campaign's plan in the ledger:
 | `set ID KEY=VALUE` | Store a reference such as a branch or a PR number. `pr=31` or `pr=owner/repo#31` links a PR, which the hub follows when `watch.json` enables it ([PR events](daemon.md#pr-events)); `pr=` unlinks. A task holds at most 20 references; the poller's `pr.state` and `pr.ci` do not count toward them. |
 | `after TARGET --as ROOT [--on KINDS] [--keep]` | Subscribe the root to another tree's lane or a PR. TARGET is a task id (`--on` from `done`, `ready`, `closed`, `fail`; default `done,closed`) or `pr:owner/repo#N` (`pr:N` uses `watch.json`'s default repo; `--on` any PR sub; default `merged`). A match puts an `after` event (code `af`) in the root's inbox with data `target`, `on` and `source_event_id`; a filtered `wait` always returns it. It fires once unless `--keep`, which repeats until the root closes. Closing the root cancels its subscriptions. A PR target fires only for a PR some task links with `pr=`; the hub keeps polling it while the subscription is unfired, even after that task closes. Prints `af1 SUB_ID`. |
 | `after --list --as ROOT`, `after --cancel SUB_ID` | List the root's subscriptions (one `j1` row each, with `fired_at`), or cancel one (`af1 SUB_ID cancelled`). |
+| `tmp ID [--mkdir]` | Print lane ID's own tmp dir, `<base>/<root-id>/<task-id>` (a root's own dir is `<base>/<root-id>/<root-id>`). `--mkdir` creates the base, campaign and lane dirs with mode 0700. See [Lane tmp dirs](#lane-tmp-dirs). |
 | `handover --as ROOT`, `adopt ROOT` | Write a Markdown handover; let a new agent take the campaign over. |
 | `note "OWNER: ..." --owner --as ROOT` | Leave a note for you. |
 | `ask [TEXT] --owner --question JSON [--dialog] [--blocking] --as ROOT` | A structured owner ask: one AskUserQuestion-shaped object (`question`, 2-4 `options` with `label`, optional `description` and one `recommended`, optional `header` and `multiSelect`; `preview` is dropped; at most 4 KiB). The summary is built from it as `[header: ]question (A) label; (B) label`, with TEXT as context before it. `--dialog` marks a question relayed from the hub's dialog. Answers stay plain text. |
@@ -131,6 +132,30 @@ On a client host, the reports `got`, `ready`, `done`, `fail`, `decide`,
 reached: they are queued and sent later, not lost. See
 [troubleshooting.md](troubleshooting.md#a-command-printed-qd1).
 
+## Lane tmp dirs
+
+Each lane gets a tmp dir of its own, named from integer ids only:
+
+```text
+<base>/<root-id>/              the campaign dir
+<base>/<root-id>/<task-id>/    a lane's dir (the root's own: <base>/<root-id>/<root-id>/)
+```
+
+The base is `$TASKR_TMP_BASE`, else `/tmp/taskr-<uid>`. `taskr tmp ID` prints the
+lane dir: the bare path, or `{"root_id","task_id","tmpdir"}` with `--json`.
+Without `--mkdir` it touches nothing. With `--mkdir` it creates each missing dir
+with mode 0700 and checks every one with lstat; it exits 1 when the base is
+relative or any of the three is a symlink, not a directory, owned by another
+user, or group- or world-writable. An unknown task exits 6.
+
+The directory work is always on the host that runs the command. On a client
+host, taskr asks the hub only for the task's root (a read, not stored) and makes
+the dir locally; the hub refuses a forwarded `tmp --mkdir`.
+
+The compact `taskr launch` line (`l1`) adds `root_id` and `tmpdir`, the lane path
+as computed on the host that runs the launch (the hub, for a client); it is
+informational and creates nothing. The `--json` launch object is unchanged.
+
 ## Environment
 
 | Variable | Used for |
@@ -138,3 +163,4 @@ reached: they are queued and sent later, not lost. See
 | `TASKR_TASK`, `TASKR_LAUNCH` | Which lane a worker is. Set by its parent; never replace them. |
 | `TASKR_DB` | Use this ledger file, locally, even on a client host. Useful for experiments. |
 | `TASKR_FORMAT=json` | JSON output. |
+| `TASKR_TMP_BASE` | The base of the lane tmp dirs (default `/tmp/taskr-<uid>`). An absolute path; see [Lane tmp dirs](#lane-tmp-dirs). |
