@@ -13,6 +13,9 @@ at a glance what needs you.
 - **Across machines:** one host keeps the ledger (the taskr hub); the others
   send their commands to it over Tailscale.
 
+The Rust hub daemon can check in with idle leads when started with
+`TASKR_CHECKIN=1`; it is off by default. See [the daemon guide](docs/daemon.md).
+
 Skip taskr if you run one agent at a time or do not use Herdr.
 
 <picture>

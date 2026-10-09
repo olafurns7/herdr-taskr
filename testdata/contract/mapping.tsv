@@ -570,3 +570,4 @@ TestWatchAgesAndAttentionKinds		glance_watch_test.go	read:glance	c	todo		cmd:gla
 TestWithTxPanicReleasesWriterLock		db_test.go	write:new	c	todo		cmd:new		
 TestWorkerWaitMakesNoHerdrCalls		receipts_test.go	write:wait	b	todo		cmd:wait		
 -		crates/taskr/src/hub/events.rs	read:hub-events	rust	rust-unit	cargo:taskr:hub::events::tests::one_watcher_and_cap_across_loopback_and_tailnet_hubs	rpc:/api/events		
+-	root-next-milestone	crates/taskr/tests/checkin_cell.py	read:glance	rust	shell	cell:checkin_cell	cmd:glance	intentional divergence T2: root next is a glance milestone alongside root notes; lane next remains bookkeeping and does not replace the campaign milestone	pending

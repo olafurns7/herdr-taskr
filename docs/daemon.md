@@ -10,6 +10,36 @@ The Herdr plugin starts it; you do not run it by hand. It does two jobs:
    over one HTTP route, `/api/rpc`. It serves no web page: you read the ledger
    with [`taskr-tui`](tui.md) and the [CLI](cli.md).
 
+## Optional check-ins
+
+`TASKR_CHECKIN=1` enables the Rust hub's check-in sweep, read once at daemon
+start; unset or any other value leaves it off. `TASKR_FROZEN_NOW` fixes the
+clock only in contract test builds; production builds ignore it.
+
+The sweep nudges idle or done local leads to process lane results after 30
+minutes (R1), or to say why with a root note, park, or close after 90 minutes
+without a lane event or ordinary prompt (R2). R2 allows only closed, planned,
+done or failed lanes; an open lane blocks it even when its agent is idle.
+It also requires no open owner ask. Root replies and check-in prompts do
+not restart the silence timer. A parked, waiting, working or blocked lead is
+never prompted. Nudges identify themselves as automatic check-ins, not
+owner instructions, and do not grant authority to park or close. Delivery
+does not wait for activity or require a receipt: one nudge per pass and
+anchor, with at least 60 minutes between a root's nudges.
+
+The latest R1 nudge gets one owner notification after 60 minutes if its
+anchor is still unacknowledged, even when newer results keep arriving. An
+unchanged R2 anchor gets one notification after 60 minutes unless the lead
+has replied with a root note or `next`. Remote leads get the notification at
+the rule threshold, with no prompt, only when their host heartbeat is fresh
+(younger than 30 seconds), with at least 60 minutes between a remote root's
+escalation claims across both rules. R1 notification ages count from the
+oldest unprocessed result.
+The same switch also enables one notification for a non-blocking owner ask
+open at least four hours on an asker that is not closed, including asks on
+client hosts. Blocking owner asks always notify immediately. Check-ins never answer asks or change task
+status.
+
 ## Three kinds of host
 
 | Kind | Set up by | What it does |

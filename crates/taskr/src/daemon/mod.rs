@@ -1,4 +1,5 @@
 //! Resident event bridge. All state and sockets come from the selected HOME/ledger.
+mod checkin;
 mod hub;
 mod identity;
 #[cfg(any(target_os = "macos", test))]
@@ -30,6 +31,7 @@ use taskr_core::{
     goflag::FlagSet,
     store::{self, Error, Result},
 };
+pub(crate) const LEAD_IDLE_SIGNALS: &str = "select e.id,e.recipient_task_id,e.created_at from events e where (e.kind in ('ready','done','fail') or (e.kind='prompt_outcome' and json_extract(e.data,'$.outcome')='no_receipt' and e.launch_id is (select current_launch_id from tasks where id=e.task_id)) or (e.kind='herdr' and (json_extract(e.data,'$.quota')='limit' or (json_extract(e.data,'$.reason')='stall' and e.launch_id is (select current_launch_id from tasks where id=e.task_id)))))";
 const VERSION: &str = match option_env!("TASKR_VERSION") {
     Some(s) => s,
     None => "dev",
@@ -331,6 +333,7 @@ fn run(
     let sock = herdr::socket();
     let mut state = State {
         tokens: tokens::Tokens::default(),
+        checkin: checkin::enabled(),
         watch: Vec::new(),
         raw: client.map(String::from),
         sock: sock.clone(),
@@ -539,6 +542,7 @@ fn find_bin(name: &str) -> Option<PathBuf> {
         })
 }
 struct State {
+    checkin: bool,
     tokens: tokens::Tokens,
     watch: Vec<String>,
     raw: Option<String>,
@@ -581,6 +585,12 @@ impl State {
                     .line(&format!("owner asks query failed: {}", e.message));
                 0
             });
+            if self.checkin
+                && error.is_none()
+                && let Err(e) = checkin::sweep(db, &self.sock, &self.log)
+            {
+                self.log.line(&format!("check-in failed: {}", e.message));
+            }
             let _ = self.tokens.panes(db, &self.sock, &self.log);
             if connected {
                 let _ = set_meta(db, "daemon_heartbeat", &store::now());
