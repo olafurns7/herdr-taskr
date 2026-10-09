@@ -91,6 +91,9 @@ fn where_from(app: &App, a: &Need, pane: bool) -> Span<'static> {
 /// The answer's row, the chosen option and the hints below always show: the options get
 /// what is left, first with their labels wrapped, then one cut line each, then a window
 /// with `↑ n more` and `↓ n more`; the ask's own text gets the rest, possibly nothing.
+/// When the rows are short the spacing gives way first, then the scroll marks (folded
+/// onto one row when that fits), then the context; a size that cannot hold the focused
+/// option, the answer and the hints draws an explicit too-small body instead.
 fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>> {
     let t = &app.theme;
     let parsed = ask::parse(a);
@@ -130,28 +133,81 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
     } else {
         labels
     };
-    // The window on the options keeps the chosen one; "write your own answer" keeps the last.
-    let (first, shown) = if short && n > 0 && n + around > budget {
-        let shown = budget.saturating_sub(around + 2).clamp(1, n);
-        let first = app
-            .choice
-            .min(n - 1)
-            .saturating_sub(shown - 1)
-            .min(n - shown);
-        (first, shown)
-    } else {
-        (0, n)
-    };
+    // The window on the options keeps the chosen one; "write your own answer" keeps the
+    // last. What must always show is the focused option, the answer row with its cursor
+    // and the hints (the caller draws those): when the rows are short, the spacing gives
+    // way first — the gap above the options, then the blank above the rule — then the
+    // scroll marks, folded onto one row when that fits, then the context. A size that
+    // still cannot hold the essentials draws an explicit too-small body instead of a
+    // dialog that hides its answer.
+    let tail_min = 3; // the own-answer row, the rule, the answer with its cursor
+    let mut spacing = 2; // the blank rows: above the options, then above the rule
+    let (mut first, mut shown) = (0, n);
+    let mut folded = false;
+    let mut mark_rows = 0;
+    let mut too_small = false;
+    if short && n > 0 {
+        while spacing > 0 && budget < tail_min + spacing + n {
+            spacing -= 1;
+        }
+        if budget < tail_min + spacing + n {
+            spacing = 0;
+            let (a, b) = (n - 1, n - 1);
+            folded = format!("   ↑ {a} more · ↓ {b} more").width() <= width;
+            mark_rows = if folded { 1 } else { 2 };
+            loop {
+                match budget.checked_sub(tail_min + mark_rows) {
+                    Some(room) if room >= 1 => {
+                        shown = room.min(n);
+                        break;
+                    }
+                    _ if mark_rows == 0 => {
+                        too_small = true;
+                        break;
+                    }
+                    _ => mark_rows = 0,
+                }
+            }
+            first = app
+                .choice
+                .min(n - 1)
+                .saturating_sub(shown - 1)
+                .min(n - shown);
+        }
+    } else if short {
+        // No options: the tail alone, the spacing giving way until it fits.
+        while spacing > 0 && budget < tail_min + spacing {
+            spacing -= 1;
+        }
+        too_small = budget < tail_min;
+    }
+    if too_small {
+        app.seen.borrow_mut().page = (0, 0);
+        return vec![Line::from(sp("window too small: resize to answer", t.sub))];
+    }
+    let gap_above = usize::from(spacing >= 2);
     let more = |count: usize, arrow: &str| {
         (count > 0).then(|| Line::from(sp(format!("   {arrow} {count} more"), t.dim)))
     };
-    let (above, below) = (more(first, "↑"), more(n - first - shown, "↓"));
+    let (mut above, mut below): (Vec<Line<'static>>, Vec<Line<'static>>) = (vec![], vec![]);
+    if shown < n && mark_rows > 0 {
+        let (hidden_above, hidden_below) = (first, n - first - shown);
+        if folded && hidden_above > 0 && hidden_below > 0 {
+            above.push(Line::from(sp(
+                format!("   ↑ {hidden_above} more · ↓ {hidden_below} more"),
+                t.dim,
+            )));
+        } else {
+            above.extend(more(hidden_above, "↑"));
+            below.extend(more(hidden_below, "↓"));
+        }
+    }
     let option_rows = labels[first..first + shown]
         .iter()
         .map(Vec::len)
         .sum::<usize>()
-        + above.iter().len()
-        + below.iter().len();
+        + above.len()
+        + below.len();
 
     let own = parsed.options.len();
     let mut tail = vec![Line::from(vec![
@@ -159,7 +215,10 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
         bold("…  ", t.accent),
         sp("write your own answer", t.sub),
     ])];
-    tail.extend([Line::raw(""), Line::from(sp("─".repeat(width), t.rule))]);
+    if spacing >= 1 {
+        tail.push(Line::raw(""));
+    }
+    tail.push(Line::from(sp("─".repeat(width), t.rule)));
     // Choosing an option fills the field with what it meant, so the ledger records it.
     let mut text = field(
         " answer  ",
@@ -173,7 +232,7 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
     }
     // The answer keeps its tail and the cursor in view; `…` marks the text above the window.
     let keep = budget
-        .saturating_sub(option_rows + tail.len() + 1 + 2)
+        .saturating_sub(option_rows + tail.len() + gap_above + 2)
         .max(1);
     if text.len() > keep {
         text.drain(..text.len() - keep);
@@ -182,7 +241,7 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
     tail.extend(text);
 
     // Two lines stay for the ask's own text: one of it, and where the window is.
-    let fixed = option_rows + tail.len() + 1 + 2;
+    let fixed = option_rows + tail.len() + gap_above + 2;
     let described = parsed.options[first..first + shown]
         .iter()
         .filter(|o| !o.description.is_empty())
@@ -257,7 +316,7 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
     // The answer's row and its cursor are always reserved, so when the rows run past
     // the budget the context gives way first: its window's last line and the position
     // indicator share one row, or the context drops to zero rows.
-    let room = budget.saturating_sub(rows.len() + 1);
+    let room = budget.saturating_sub(rows.len() + gap_above);
     let total = context.len();
     let mut out: Vec<Line> = if total <= room {
         app.seen.borrow_mut().page = (0, 0);
@@ -303,7 +362,9 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
         app.seen.borrow_mut().page = (0, total);
         vec![]
     };
-    out.push(Line::raw(""));
+    if spacing >= 2 {
+        out.push(Line::raw(""));
+    }
     out.extend(rows);
     out
 }
@@ -828,6 +889,15 @@ mod tests {
     fn holds(app: &App, width: u16, height: u16, end: bool, case: &str) {
         let buf = render(app, width, height);
         let text = frames::text(&buf);
+        if text.contains("window too small") {
+            // The explicit too-small body (clipped at 30 columns): never a dialog that
+            // hides its answer.
+            assert!(
+                !text.contains(" answer "),
+                "{case}: the too-small body still pretends\n{text}"
+            );
+            return;
+        }
         let lines: Vec<&str> = text.lines().collect();
         let ask = app.ask.as_ref().expect("an ask");
         let q = ask.question.as_ref().expect("a question");
@@ -874,7 +944,10 @@ mod tests {
             .copied()
             .unwrap_or("");
         for hint in hints {
-            assert!(foot.contains(hint), "{case}: hint {hint:?} cut\n{text}");
+            // Under 46 columns the footer cannot hold every hint; it keeps esc.
+            if width >= 46 {
+                assert!(foot.contains(hint), "{case}: hint {hint:?} cut\n{text}");
+            }
         }
         if q.options[0].recommended && option(0).is_some() {
             assert!(
@@ -912,37 +985,51 @@ mod tests {
         let short: Vec<String> = (0..4).map(|i| format!("Option {i}")).collect();
         let long = "lorem ipsum ".repeat(42)[..500].to_string();
         let mut cases = 0;
-        for (width, height) in [(46, 20), (46, 30), (70, 30), (120, 40)] {
+        for (width, height) in [
+            (46, 12),
+            (40, 10),
+            (30, 8),
+            (46, 20),
+            (46, 30),
+            (70, 30),
+            (120, 40),
+        ] {
             for (name, labels) in [("ascii", &ascii), ("cjk", &cjk), ("short", &short)] {
                 for count in [2, 4] {
                     for recommended in [false, true] {
                         for description in ["", long.as_str()] {
                             for multi in [false, true] {
                                 for note in [false, true] {
-                                    let mut app = App::new(frames::fixture());
-                                    let ask =
-                                        asking(&labels[..count], recommended, description, multi);
-                                    app.answer(ask);
-                                    if multi {
-                                        for i in 0..count {
-                                            app.choose(i);
-                                            app.toggle();
+                                    for focus in [count - 1, count / 2] {
+                                        let mut app = App::new(frames::fixture());
+                                        let ask = asking(
+                                            &labels[..count],
+                                            recommended,
+                                            description,
+                                            multi,
+                                        );
+                                        app.answer(ask);
+                                        if multi {
+                                            for i in 0..count {
+                                                app.choose(i);
+                                                app.toggle();
+                                            }
                                         }
+                                        app.choose(focus);
+                                        if note {
+                                            app.edit(|n| {
+                                                *n = format!("{}END", "note ".repeat(80))[3..]
+                                                    .to_string()
+                                            });
+                                        }
+                                        let case = format!(
+                                            "{width}x{height} {name} {count} rec={recommended} \
+                                             desc={} multi={multi} note={note} focus={focus}",
+                                            description.len()
+                                        );
+                                        holds(&app, width, height, note, &case);
+                                        cases += 1;
                                     }
-                                    app.choose(count - 1);
-                                    if note {
-                                        app.edit(|n| {
-                                            *n = format!("{}END", "note ".repeat(80))[3..]
-                                                .to_string()
-                                        });
-                                    }
-                                    let case = format!(
-                                        "{width}x{height} {name} {count} rec={recommended} \
-                                         desc={} multi={multi} note={note}",
-                                        description.len()
-                                    );
-                                    holds(&app, width, height, note, &case);
-                                    cases += 1;
                                 }
                             }
                         }
@@ -950,7 +1037,70 @@ mod tests {
                 }
             }
         }
-        assert_eq!(cases, 384);
+        assert_eq!(cases, 1344);
+    }
+
+    /// A plain ask whose text lists `count` `(A)`-style options, as a long heuristic
+    /// list does.
+    fn plain(count: usize) -> Need {
+        let mut ask = frames::structured_asks()[2].clone();
+        ask.question = None;
+        ask.text = (0..count)
+            .map(|i| format!("({}) Option {i}", char::from(b'A' + i as u8)))
+            .collect::<Vec<_>>()
+            .join("; ");
+        ask
+    }
+
+    #[test]
+    fn a_window_keeps_both_marks_the_choice_and_the_answer() {
+        // Twelve plain options with the focus in the middle: both scroll marks show, and
+        // the focused option, the answer row with its cursor and the hints stay too.
+        for (width, height, up, down) in [
+            (46, 12, "↑ 4 more", "↓ 5 more"),
+            (40, 10, "↑ 6 more", "↓ 5 more"),
+        ] {
+            let mut app = App::new(frames::fixture());
+            app.answer(plain(12));
+            app.choose(6);
+            let buf = render(&app, width, height);
+            let text = frames::text(&buf);
+            println!("MIDDLE-OPTION {width}x{height}\n{text}");
+            assert!(
+                text.contains(up) && text.contains(down),
+                "{width}x{height}: a scroll mark is lost\n{text}"
+            );
+            assert!(
+                text.contains("❯ G  Option 6"),
+                "{width}x{height}: focus lost\n{text}"
+            );
+            // The cursor is drawn only on the answer's row: if it is on screen, the
+            // answer row with it is.
+            let cursor = (0..height)
+                .flat_map(|y| (0..width).map(move |x| (x, y)))
+                .find(|&p| buf[p].style().bg == Some(app.theme.text))
+                .unwrap_or_else(|| panic!("{width}x{height}: the cursor is clipped\n{text}"));
+            let row = text.lines().nth(cursor.1 as usize).unwrap_or("");
+            assert!(
+                row.contains(" answer ") && row.contains("Option 6"),
+                "{width}x{height}: the cursor left the answer\n{text}"
+            );
+            assert!(text.contains("esc cancel"), "{width}x{height}:\n{text}");
+        }
+    }
+
+    #[test]
+    fn a_windowed_ask_has_ascii_marks() {
+        // The window's arrows have ASCII stand-ins: ↑ as ^ and ↓ as v.
+        let mut app = App::new(frames::fixture());
+        app.answer(plain(12));
+        app.choose(6);
+        let text = frames::text(&render(&app, 46, 12));
+        assert!(text.contains("↑ 4 more · ↓ 5 more"), "{text}");
+        app.ascii = true;
+        let text = frames::text(&render(&app, 46, 12));
+        assert!(text.is_ascii(), "{text}");
+        assert!(text.contains("^ 4 more . v 5 more"), "{text}");
     }
 
     #[test]
