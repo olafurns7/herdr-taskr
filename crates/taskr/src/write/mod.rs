@@ -432,10 +432,14 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
 }
 fn open() -> Result<db::Connection> {
     let path = db::path().map_err(store::usage)?;
-    db::open(&path).map_err(|message| Error {
+    let db = db::open(&path).map_err(|message| Error {
         code: ExitCode::Database,
         message,
-    })
+    })?;
+    if store::rpc_context().is_none() {
+        db.busy_timeout(std::time::Duration::from_secs(30))?;
+    }
+    Ok(db)
 }
 fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
     let p = &f.positional;

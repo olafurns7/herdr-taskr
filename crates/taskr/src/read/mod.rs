@@ -37,10 +37,14 @@ fn reject(text: impl Into<String>) -> Error {
 }
 fn open() -> Result<Connection> {
     let p = db::path().map_err(usage)?;
-    db::open(&p).map_err(|text| Error {
+    let db = db::open(&p).map_err(|text| Error {
         code: ExitCode::Database,
         text,
-    })
+    })?;
+    if taskr_core::store::rpc_context().is_none() {
+        db.busy_timeout(std::time::Duration::from_secs(30))?;
+    }
+    Ok(db)
 }
 fn id(s: &str, what: &str) -> Result<i64> {
     s.parse::<i64>().ok().filter(|n| *n > 0).ok_or_else(|| {

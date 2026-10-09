@@ -136,6 +136,8 @@ fn read(path: &Path) -> Result<Value> {
         || r["request"]["request_key"] != key
         || parsed_time(r["queued_at"].as_str().unwrap_or("")).is_none()
         || (!stuck.is_empty() && parsed_time(stuck).is_none())
+        || r.get("busy_since")
+            .is_some_and(|v| v.as_str().and_then(parsed_time).is_none())
         || (stuck.is_empty()
             && (r["stuck_reason"].as_str().is_some_and(|s| !s.is_empty())
                 || r["stuck_shown"] == true))
@@ -340,6 +342,17 @@ fn http_stuck(e: &Error) -> bool {
         .into_iter()
         .any(|s| e.message.starts_with(&format!("server answered {s}:")))
 }
+fn busy(dir: &Path, p: &Path, keep: bool) -> Result<Value> {
+    let _lock = lock(dir, "lock", false)?;
+    let mut r = read(p)?;
+    if keep && r.get("busy_since").is_none() {
+        r["busy_since"] = json!(timestamp());
+        atomic(p, &r)?;
+    } else if !keep && r.as_object_mut().unwrap().remove("busy_since").is_some() {
+        atomic(p, &r)?;
+    }
+    Ok(r)
+}
 fn transient(e: &Error) -> bool {
     e.kind == "transport"
         || http_stuck(e)
@@ -353,6 +366,35 @@ pub fn send(dir: &Path, raw: &str) -> Result<usize> {
     let mut sent = 0;
     send_count(dir, raw, &mut sent)?;
     Ok(sent)
+}
+#[derive(Debug, PartialEq)]
+enum Outcome {
+    Keep,
+    Unknown,
+    Refuse,
+    Remove,
+    Delivered,
+}
+fn outcome(argv: &[String], rep: &Value) -> Outcome {
+    if taskr_core::db::busy_reply(rep["exit"].as_i64().unwrap_or(-1), &reply_error(rep)) {
+        Outcome::Keep
+    } else if rep["exit"] == 5
+        && rep["stdout"]
+            .as_str()
+            .unwrap_or("")
+            .contains("outcome unknown (still running")
+    {
+        Outcome::Unknown
+    } else if command(argv).0 == "_hook"
+        && rep["exit"] == 0
+        && rep["stdout"].as_str().unwrap_or("").trim() == "expired"
+    {
+        Outcome::Remove
+    } else if rep["exit"] != 0 {
+        Outcome::Refuse
+    } else {
+        Outcome::Delivered
+    }
 }
 fn send_count(dir: &Path, raw: &str, sent: &mut usize) -> Result<()> {
     if files(&root(dir).join("queue"))?.is_empty() {
@@ -398,55 +440,69 @@ fn send_count(dir: &Path, raw: &str, sent: &mut usize) -> Result<()> {
                 refuse(dir, &p, r, e.code as i64, &e.message)?;
             }
             Ok(rep) => {
-                if rep["exit"] == 5
-                    && rep["stdout"]
-                        .as_str()
-                        .unwrap_or("")
-                        .contains("outcome unknown (still running")
-                {
-                    let r = stuck(dir, &p, UNKNOWN)?;
-                    if super::now() - parsed_time(r["stuck_since"].as_str().unwrap()).unwrap()
-                        < time::Duration::minutes(10)
-                    {
-                        return Ok(());
-                    }
-                    refuse(dir, &p, r, 5, UNKNOWN)?;
-                } else if command(&argv).0 == "_hook"
-                    && rep["exit"] == 0
-                    && rep["stdout"].as_str().unwrap_or("").trim() == "expired"
-                {
-                    remove(dir, &p)?;
-                } else if rep["exit"] != 0 {
-                    refuse(
-                        dir,
-                        &p,
-                        r,
-                        rep["exit"].as_i64().unwrap(),
-                        &reply_error(&rep),
-                    )?;
-                } else {
-                    match super::doc::uploads(
-                        &cl,
-                        &rep,
-                        req["cwd"].as_str().unwrap_or(""),
-                        &req["env"],
-                        r.get("document"),
-                    ) {
-                        Ok(()) => {
-                            remove(dir, &p)?;
-                            *sent += 1;
-                        }
-                        Err(e)
-                            if e.message.starts_with("document upload refused:")
-                                || !transient(&e) =>
+                let outcome = outcome(&argv, &rep);
+                let r = busy(dir, &p, outcome == Outcome::Keep)?;
+                match outcome {
+                    Outcome::Keep => {
+                        if super::now() - parsed_time(r["busy_since"].as_str().unwrap()).unwrap()
+                            < time::Duration::minutes(10)
                         {
-                            remove(dir, &p)?;
+                            log(dir, "spool head waiting: hub database is locked");
+                            return Ok(());
                         }
-                        Err(e) => {
-                            if http_stuck(&e) {
-                                stuck(dir, &p, &e.message)?;
+                        refuse(
+                            dir,
+                            &p,
+                            r,
+                            rep["exit"].as_i64().unwrap(),
+                            &reply_error(&rep),
+                        )?;
+                    }
+                    Outcome::Unknown => {
+                        let r = stuck(dir, &p, UNKNOWN)?;
+                        if super::now() - parsed_time(r["stuck_since"].as_str().unwrap()).unwrap()
+                            < time::Duration::minutes(10)
+                        {
+                            return Ok(());
+                        }
+                        refuse(dir, &p, r, 5, UNKNOWN)?;
+                    }
+                    Outcome::Remove => {
+                        remove(dir, &p)?;
+                    }
+                    Outcome::Refuse => {
+                        refuse(
+                            dir,
+                            &p,
+                            r,
+                            rep["exit"].as_i64().unwrap(),
+                            &reply_error(&rep),
+                        )?;
+                    }
+                    Outcome::Delivered => {
+                        match super::doc::uploads(
+                            &cl,
+                            &rep,
+                            req["cwd"].as_str().unwrap_or(""),
+                            &req["env"],
+                            r.get("document"),
+                        ) {
+                            Ok(()) => {
+                                remove(dir, &p)?;
+                                *sent += 1;
                             }
-                            return Err(e);
+                            Err(e)
+                                if e.message.starts_with("document upload refused:")
+                                    || !transient(&e) =>
+                            {
+                                remove(dir, &p)?;
+                            }
+                            Err(e) => {
+                                if http_stuck(&e) {
+                                    stuck(dir, &p, &e.message)?;
+                                }
+                                return Err(e);
+                            }
                         }
                     }
                 }
@@ -822,6 +878,51 @@ pub fn notify(dir: &Path, sock: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reply_outcomes_keep_only_busy_database_errors() {
+        let argv = ["note", "progress"].map(String::from);
+        for stdout in [
+            "x1 4 {\"err\":\"database is locked (5) (SQLITE_BUSY)\",\"k\":\"database\"}\n",
+            "{\"error\":\"database is locked (517)\",\"kind\":\"database\"}\n",
+        ] {
+            assert_eq!(
+                outcome(&argv, &json!({"exit":4,"stdout":stdout})),
+                Outcome::Keep
+            );
+        }
+        assert_eq!(
+            outcome(
+                &argv,
+                &json!({"exit":4,"stdout":"x1 4 {\"err\":\"database table is locked (6)\"}\n"})
+            ),
+            Outcome::Refuse
+        );
+        assert_eq!(
+            outcome(
+                &argv,
+                &json!({"exit":4,"stdout":"{\"error\":\"disk I/O error (10)\"}\n"})
+            ),
+            Outcome::Refuse
+        );
+        assert_eq!(
+            outcome(
+                &argv,
+                &json!({"exit":5,"stdout":"outcome unknown (still running)"})
+            ),
+            Outcome::Unknown
+        );
+        assert_eq!(
+            outcome(
+                &["--json", "_hook"].map(String::from),
+                &json!({"exit":0,"stdout":"expired\n"})
+            ),
+            Outcome::Remove
+        );
+        assert_eq!(
+            outcome(&argv, &json!({"exit":0,"stdout":"ok\n"})),
+            Outcome::Delivered
+        );
+    }
     #[test]
     fn malformed_argv_head_is_quarantined_and_next_record_survives() {
         let dir = std::env::temp_dir().join(format!(

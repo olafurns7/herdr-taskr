@@ -452,6 +452,7 @@ async fn stored(hub: Arc<Hub>, machine: String, req: RpcRequest) -> RpcReply {
     let key = req.request_key.clone();
     let hash = taskr_core::request_hash(Some(&req.argv), req.document.as_ref()).expect("hash");
     let claim_machine = machine.clone();
+    let rerun_busy = crate::net::spoolable(&req.argv);
     let claim = tokio::task::spawn_blocking(move || -> store::Result<Option<RpcReply>> {
         let mut db = db::open_migrated(&db_hub.cfg.db_path).map_err(|message| store::Error { code: taskr_core::ExitCode::Database, message })?;
         store::transaction(&mut db, |tx| {
@@ -460,7 +461,10 @@ async fn stored(hub: Arc<Hub>, machine: String, req: RpcRequest) -> RpcReply {
             if let Some((host, sha, state, exit, stdout, stderr, upload)) = old {
                 if host != claim_machine || sha != hash { return Err(store::reject(format!("request key {key} belongs to another command"))); }
                 if state != "done" { return Err(store::Error { code: taskr_core::ExitCode::Transport, message: format!("request {key}: outcome unknown (still running, or the server stopped during it); inspect `taskr log` before any resend") }); }
-                return Ok(Some(RpcReply { exit, stdout, stderr, upload: upload.map(|s| serde_json::from_str(&s)).transpose()?.flatten() }));
+                if !(rerun_busy && db::busy_reply(exit.into(), &crate::net::reply_error(&json!({"exit":exit,"stdout":stdout,"stderr":stderr})))) {
+                    return Ok(Some(RpcReply { exit, stdout, stderr, upload: upload.map(|s| serde_json::from_str(&s)).transpose()?.flatten() }));
+                }
+                tx.execute("delete from requests where key=?", [&key])?;
             }
             tx.execute("insert into requests(key,machine,argv_sha,state,created_at) values(?,?,?,'running',?)", db::params![key, claim_machine, hash, store::stamp((db_hub.cfg.clock)())])?;
             Ok(None)
@@ -496,10 +500,20 @@ async fn stored(hub: Arc<Hub>, machine: String, req: RpcRequest) -> RpcReply {
     }
     let exited = matches!(&result, Execution::Exited(_));
     let rep = result.into_reply();
+    let exited = exited
+        && !(crate::net::spoolable(&req.argv)
+            && db::busy_reply(
+                rep.exit.into(),
+                &crate::net::reply_error(
+                    &json!({"exit":rep.exit,"stdout":rep.stdout,"stderr":rep.stderr}),
+                ),
+            ));
     let upload = serde_json::to_string(&rep.upload).expect("upload");
     let (exit, stdout, stderr) = (rep.exit, rep.stdout.clone(), rep.stderr.clone());
     let _ = tokio::task::spawn_blocking(move || -> Result<(), String> {
         let db = db::open_migrated(&hub.cfg.db_path)?;
+        db.busy_timeout(Duration::from_secs(30))
+            .map_err(|e| db::error_text(&e))?;
         if exited {
             db.execute(
                 "update requests set state='done',exit=?,stdout=?,stderr=?,upload=? where key=?",

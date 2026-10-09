@@ -134,7 +134,7 @@ fn watch_requested(args: &[String]) -> bool {
             n == "watch" && v.is_none_or(|v| taskr_core::goflag::parse_bool(v) == Some(true))
         })
 }
-fn spoolable(argv: &[String]) -> bool {
+pub(crate) fn spoolable(argv: &[String]) -> bool {
     matches!(
         command(argv).0,
         "got" | "ready" | "done" | "fail" | "decide" | "next" | "note" | "close" | "_hook"
@@ -339,7 +339,7 @@ fn shell_join(args: &[String]) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
-fn reply_error(rep: &Value) -> String {
+pub(crate) fn reply_error(rep: &Value) -> String {
     let line = rep["stdout"]
         .as_str()
         .unwrap_or("")

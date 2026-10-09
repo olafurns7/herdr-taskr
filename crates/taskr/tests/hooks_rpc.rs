@@ -59,17 +59,14 @@ mod rpc {
         headers.extend(body);
         (headers, value)
     }
-    #[test]
-    fn client_rpc_normalized_fields_and_host_check() {
-        let h = Harness::new();
-        h.script("tailscale", include_str!("hook/tailscale.sh"));
-        let hub_env = vec![
+    fn start_hub(h: &Harness) -> (Hub, u16) {
+        let env = vec![
             ("NET_ID".into(), "hub".into()),
             ("TASKR_CONTRACT_TAILNET".into(), "1".into()),
             ("TASKR_CONTRACT_ORACLE".into(), "1".into()),
         ];
         let mut hub = Hub(h
-            .command(&hub_env)
+            .command(&env)
             .arg("--contract-hub")
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -84,7 +81,353 @@ mod rpc {
         });
         let url = recv.recv_timeout(Duration::from_secs(15)).unwrap();
         assert!(url.starts_with("http://[::1]:"));
-        let port: u16 = url.trim().rsplit_once(':').unwrap().1.parse().unwrap();
+        let port = url.trim().rsplit_once(':').unwrap().1.parse().unwrap();
+        (hub, port)
+    }
+    fn post(port: u16, req: &Value) -> Value {
+        let body = req.to_string();
+        let mut stream = TcpStream::connect((std::net::Ipv6Addr::LOCALHOST, port)).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(40)))
+            .unwrap();
+        write!(stream, "POST /api/rpc HTTP/1.1\r\nHost: [::1]:{port}\r\nX-Taskr-RPC: 1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+        let mut reply = String::new();
+        stream.read_to_string(&mut reply).unwrap();
+        serde_json::from_str(reply.split_once("\r\n\r\n").unwrap().1).unwrap()
+    }
+    #[test]
+    fn busy_child_exit_is_not_stored_and_same_key_runs_again() {
+        let h = Harness::new();
+        h.script("tailscale", include_str!("hook/tailscale.sh"));
+        let root = h.ok(&[], &["new", "busy-root", "--role", "orchestrator"])["task_id"]
+            .as_i64()
+            .unwrap();
+        h.conn()
+            .execute("update tasks set machine='host-a' where id=?", [root])
+            .unwrap();
+        let (_hub, port) = start_hub(&h);
+        let req = json!({"argv":["--json","note","busy-child","--as",root.to_string()],"cwd":h.home,"request_key":"busy-child-request"});
+        let first_req = req.clone();
+        let (send, recv) = std::sync::mpsc::channel();
+        let first = std::thread::spawn(move || send.send(post(port, &first_req)).unwrap());
+        let blocker = h.conn();
+        blocker.busy_timeout(Duration::ZERO).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let claimed: bool = blocker.query_row("select exists(select 1 from requests where key='busy-child-request' and state='running')", [], |r| r.get(0)).unwrap();
+            if claimed && blocker.execute_batch("begin immediate").is_ok() {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "request was never claimed"
+            );
+            std::thread::yield_now();
+        }
+        assert_eq!(h.count("select count(*) from events where kind='note' and summary='busy-child' and task_id=?", root), 0);
+        // Hold beyond both former 5 s waits; result storage must survive the child busy exit.
+        assert!(matches!(
+            recv.recv_timeout(Duration::from_secs(12)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        blocker.execute_batch("rollback").unwrap();
+        let busy = recv.recv_timeout(Duration::from_secs(15)).unwrap();
+        first.join().unwrap();
+        assert_eq!(busy["exit"], 4, "{busy}");
+        assert!(
+            busy["stdout"]
+                .as_str()
+                .unwrap()
+                .contains("database is locked")
+        );
+        assert_eq!(
+            h.conn()
+                .query_row(
+                    "select count(*) from requests where key=?",
+                    [req["request_key"].as_str().unwrap()],
+                    |r| r.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
+        let delivered = post(port, &req);
+        assert_eq!(delivered["exit"], 0, "{delivered}");
+        assert_eq!(post(port, &req), delivered);
+        assert_eq!(h.count("select count(*) from events where kind='note' and summary='busy-child' and task_id=?", root), 1);
+    }
+    #[test]
+    fn busy_prompt_same_key_replays_without_second_delivery() {
+        let h = Harness::new();
+        h.script("tailscale", include_str!("hook/tailscale.sh"));
+        // Pause the fake delivery so the blocker can hold the outcome transaction.
+        h.script("herdr", "#!/bin/sh\ncase \"$1 $2\" in\n'agent prompt') echo delivered >> \"$HOME/deliveries\"; sleep 2; echo '{\"result\":{}}' ;;\n'agent list') cat \"$HOME/agents.json\" ;;\n'workspace list') echo '{\"result\":{\"workspaces\":[]}}' ;;\n'pane list') echo '{\"result\":{\"panes\":[]}}' ;;\n'agent read') exit 1 ;;\n*) echo '{\"result\":{}}' ;;\nesac\n");
+        let (worker, _launch, _env) = h.lane("claude", "implementer");
+        let (_hub, port) = start_hub(&h);
+        let req = json!({"argv":["prompt",worker.to_string(),"--text","work","--receipt-timeout","0"],"cwd":h.home,"request_key":"busy-prompt-request"});
+        let first_req = req.clone();
+        let (send, recv) = std::sync::mpsc::channel();
+        let first = std::thread::spawn(move || send.send(post(port, &first_req)).unwrap());
+        let blocker = h.conn();
+        blocker.busy_timeout(Duration::ZERO).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let begun: bool = blocker
+                .query_row(
+                    "select exists(select 1 from events where kind='prompt' and task_id=?)",
+                    [worker],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            if begun && blocker.execute_batch("begin immediate").is_ok() {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "prompt never began");
+            std::thread::yield_now();
+        }
+        assert!(matches!(
+            recv.recv_timeout(Duration::from_secs(14)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        blocker.execute_batch("rollback").unwrap();
+        let busy = recv.recv_timeout(Duration::from_secs(30)).unwrap();
+        first.join().unwrap();
+        assert_eq!(busy["exit"], 4, "{busy}");
+        assert!(
+            busy["stdout"]
+                .as_str()
+                .unwrap()
+                .contains("database is locked")
+        );
+        let deliveries = || {
+            fs::read_to_string(h.home.join("deliveries"))
+                .unwrap_or_default()
+                .lines()
+                .count()
+        };
+        let prompts = || {
+            h.count(
+                "select count(*) from events where kind='prompt' and task_id=?",
+                worker,
+            )
+        };
+        assert_eq!(deliveries(), 1);
+        assert_eq!(prompts(), 1);
+        assert_eq!(h.conn().query_row("select count(*) from requests where key='busy-prompt-request' and state='done' and exit=4", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(post(port, &req), busy);
+        assert_eq!(
+            deliveries(),
+            1,
+            "the same request key delivered the prompt twice"
+        );
+        assert_eq!(prompts(), 1);
+    }
+    #[test]
+    fn stored_busy_reply_delivers_spool_head_and_next_record_on_first_pass() {
+        let h = Harness::new();
+        h.script("tailscale", include_str!("hook/tailscale.sh"));
+        let root = h.ok(&[], &["new", "old-hub-root", "--role", "orchestrator"])["task_id"]
+            .as_i64()
+            .unwrap();
+        h.conn()
+            .execute("update tasks set machine='host-a' where id=?", [root])
+            .unwrap();
+        let state = h.home.join("client/.local/state/taskr");
+        fs::create_dir_all(&state).unwrap();
+        let dead = TcpListener::bind("[::1]:0").unwrap();
+        let dead_port = dead.local_addr().unwrap().port();
+        drop(dead);
+        fs::write(
+            state.join("server.url"),
+            format!("http://[::1]:{dead_port}\n"),
+        )
+        .unwrap();
+        let client = client_env(&h, &[]);
+        for text in ["probe-head", "probe-behind"] {
+            assert_eq!(
+                h.ok(&client, &["note", text, "--as", &root.to_string()])["queued"],
+                true
+            );
+        }
+        let mut files: Vec<_> = fs::read_dir(state.join("spool/queue"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        files.sort();
+        let head: Value = serde_json::from_slice(&fs::read(&files[0]).unwrap()).unwrap();
+        let argv: Vec<String> = serde_json::from_value(head["request"]["argv"].clone()).unwrap();
+        assert!(argv.iter().any(|a| a == "probe-head"), "{argv:?}");
+        let key = head["request_key"].as_str().unwrap().to_string();
+        let sha = taskr_core::request_hash(Some(&argv), None).unwrap();
+        // What Go's rpcStored and the v0.17.0 Rust hub store for a busy child exit.
+        let busy = if argv[0] == "--json" {
+            "{\"error\":\"database is locked (5) (SQLITE_BUSY)\",\"kind\":\"database\"}\n"
+        } else {
+            "x1 4 {\"err\":\"database is locked (5) (SQLITE_BUSY)\",\"k\":\"database\"}\n"
+        };
+        h.conn()
+            .execute(
+                "insert into requests(key,machine,argv_sha,state,exit,stdout,stderr,created_at) values(?,'host-a',?,'done',4,?,'',?)",
+                params![key, sha, busy, taskr_core::store::now()],
+            )
+            .unwrap();
+        let (_hub, port) = start_hub(&h);
+        fs::write(state.join("server.url"), format!("http://[::1]:{port}\n")).unwrap();
+        let note = |s: &str| {
+            h.count(
+                &format!(
+                    "select count(*) from events where kind='note' and summary='{s}' and task_id=?"
+                ),
+                root,
+            )
+        };
+        let queued = |ls: &Value| ls["queued"].as_array().unwrap().len();
+        let refused = |ls: &Value| ls["refused"].as_array().unwrap().len();
+        h.ok(&client, &["spool", "send"]);
+        let ls = h.ok(&client, &["spool", "ls"]);
+        assert_eq!((queued(&ls), refused(&ls)), (0, 0), "{ls}");
+        assert_eq!((note("probe-head"), note("probe-behind")), (1, 1));
+        h.ok(&client, &["spool", "send"]);
+        assert_eq!((note("probe-head"), note("probe-behind")), (1, 1));
+    }
+    #[test]
+    fn spool_busy_timeout_refuses_head_and_non_busy_reply_resets_timer() {
+        let h = Harness::new();
+        h.script("tailscale", include_str!("hook/tailscale.sh"));
+        let state = h.home.join("client/.local/state/taskr");
+        fs::create_dir_all(&state).unwrap();
+        let listener = TcpListener::bind("[::1]:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        fs::write(state.join("server.url"), format!("http://[::1]:{port}\n")).unwrap();
+        let client = client_env(&h, &[]);
+        for text in ["busy-head", "behind-head"] {
+            assert_eq!(h.ok(&client, &["note", text, "--as", "1"])["queued"], true);
+        }
+        let mut files: Vec<_> = fs::read_dir(state.join("spool/queue"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        files.sort();
+        let head = &files[0];
+        let read_head = || -> Value { serde_json::from_slice(&fs::read(head).unwrap()).unwrap() };
+        let listener = TcpListener::bind("[::1]:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        fs::write(state.join("server.url"), format!("http://[::1]:{port}\n")).unwrap();
+        let busy = json!({"exit":4,"stdout":"x1 4 {\"err\":\"database is locked (5) (SQLITE_BUSY)\",\"k\":\"database\"}\n","stderr":""});
+        let proxy = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            for reply in [
+                busy.clone(),
+                busy.clone(),
+                json!({"exit":5,"stdout":"outcome unknown (still running)","stderr":""}),
+                busy.clone(),
+                busy,
+                json!({"exit":0,"stdout":"{\"ok\":true}\n","stderr":""}),
+            ] {
+                let (mut stream, _) = listener.accept().unwrap();
+                requests.push(read_request(&mut stream).1);
+                let body = reply.to_string();
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            }
+            requests
+        });
+        h.ok(&client, &["spool", "send"]);
+        let first = read_head()["busy_since"].as_str().unwrap().to_owned();
+        h.ok(&client, &["spool", "send"]);
+        assert_eq!(read_head()["busy_since"], first);
+        // An UNKNOWN reply keeps the record, so the reset is observable on disk.
+        h.ok(&client, &["spool", "send"]);
+        assert!(read_head().get("busy_since").is_none());
+        h.ok(&client, &["spool", "send"]);
+        let mut record = read_head();
+        let since = time::OffsetDateTime::parse(
+            record["busy_since"].as_str().unwrap(),
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap();
+        // Age the persisted timestamp instead of waiting ten minutes.
+        record["busy_since"] = json!(
+            (since - time::Duration::minutes(10))
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap()
+        );
+        fs::write(head, record.to_string()).unwrap();
+        h.ok(&client, &["spool", "send"]);
+        let ls = h.ok(&client, &["spool", "ls"]);
+        assert!(ls["queued"].as_array().unwrap().is_empty(), "{ls}");
+        assert_eq!(ls["refused"].as_array().unwrap().len(), 1, "{ls}");
+        let refused: Value = serde_json::from_slice(
+            &fs::read(state.join("spool/refused").join(head.file_name().unwrap())).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(refused["exit"], 4);
+        assert!(refused["error"].as_str().unwrap().contains("SQLITE_BUSY"));
+        let requests = proxy.join().unwrap();
+        for request in &requests[1..5] {
+            assert_eq!(request["request_key"], requests[0]["request_key"]);
+        }
+        assert_ne!(requests[4]["request_key"], requests[5]["request_key"]);
+    }
+    #[test]
+    fn spool_retries_busy_reply_then_delivers_and_refuses_other_database_error() {
+        let h = Harness::new();
+        h.script("tailscale", include_str!("hook/tailscale.sh"));
+        let state = h.home.join("client/.local/state/taskr");
+        fs::create_dir_all(&state).unwrap();
+        // A closed scratch listener forces both foreground records into the spool.
+        let listener = TcpListener::bind("[::1]:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        fs::write(state.join("server.url"), format!("http://[::1]:{port}\n")).unwrap();
+        let client = client_env(&h, &[]);
+        for text in ["busy-first", "other-error"] {
+            assert_eq!(h.ok(&client, &["note", text, "--as", "1"])["queued"], true);
+        }
+        let listener = TcpListener::bind("[::1]:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        fs::write(state.join("server.url"), format!("http://[::1]:{port}\n")).unwrap();
+        let proxy = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            for reply in [
+                json!({"exit":4,"stdout":"x1 4 {\"err\":\"database is locked (5) (SQLITE_BUSY)\",\"k\":\"database\"}\n","stderr":""}),
+                json!({"exit":0,"stdout":"{\"ok\":true}\n","stderr":""}),
+                json!({"exit":4,"stdout":"{\"error\":\"disk I/O error (10)\",\"kind\":\"database\"}\n","stderr":""}),
+            ] {
+                let (mut stream, _) = listener.accept().unwrap();
+                requests.push(read_request(&mut stream).1);
+                let body = reply.to_string();
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            }
+            requests
+        });
+        h.ok(&client, &["spool", "send"]);
+        let held = h.ok(&client, &["spool", "ls"]);
+        assert_eq!(held["queued"].as_array().unwrap().len(), 2);
+        assert!(held["refused"].as_array().unwrap().is_empty());
+        let queue = state.join("spool/queue");
+        for entry in fs::read_dir(queue).unwrap() {
+            let record: Value =
+                serde_json::from_slice(&fs::read(entry.unwrap().path()).unwrap()).unwrap();
+            assert!(record.get("stuck_since").is_none());
+        }
+        assert!(
+            fs::read_to_string(state.join("daemon.log"))
+                .unwrap()
+                .contains("hub database is locked")
+        );
+        h.ok(&client, &["spool", "send"]);
+        let delivered = h.ok(&client, &["spool", "ls"]);
+        assert!(delivered["queued"].as_array().unwrap().is_empty());
+        assert_eq!(delivered["refused"].as_array().unwrap().len(), 1);
+        let requests = proxy.join().unwrap();
+        assert_eq!(requests[0]["request_key"], requests[1]["request_key"]);
+        assert_ne!(requests[1]["request_key"], requests[2]["request_key"]);
+    }
+    #[test]
+    fn client_rpc_normalized_fields_and_host_check() {
+        let h = Harness::new();
+        h.script("tailscale", include_str!("hook/tailscale.sh"));
+        let (_hub, port) = start_hub(&h);
         let listener = TcpListener::bind("[::1]:0").unwrap();
         let proxy_port = listener.local_addr().unwrap().port();
         fs::create_dir_all(h.home.join("client/.local/state/taskr")).unwrap();

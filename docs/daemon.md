@@ -105,6 +105,10 @@ When the hub cannot be reached, the report commands (`got`, `ready`, `done`,
 `~/.local/state/taskr/spool/` and sent when it returns. Other commands exit 5
 with a line that says how to retry. `taskr spool ls` shows the queue.
 
+Queued reports also stay queued when the hub replies `database is locked`.
+The next send pass retries the same request key. Other database errors are
+refused. `_hook` records remain best-effort: a busy hook can be dropped.
+
 ## Status and restart
 
 ```sh
