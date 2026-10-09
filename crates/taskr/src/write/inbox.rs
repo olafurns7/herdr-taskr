@@ -249,7 +249,16 @@ pub fn wait(f: &FlagSet) -> Result<Value> {
             if left.is_zero() {
                 break;
             }
-            std::thread::sleep(left.min(poll_interval()));
+            // Go returns on a signal at once; nap so a hub-served wait whose
+            // client left clears its marker without waiting out the poll.
+            let poll = Instant::now() + left.min(poll_interval());
+            while !interrupted.load(Ordering::Relaxed) {
+                let nap = poll.saturating_duration_since(Instant::now());
+                if nap.is_zero() {
+                    break;
+                }
+                std::thread::sleep(nap.min(Duration::from_millis(20)));
+            }
         }
         let (owed, due) = ledger::counts(&db, as_id)?;
         Ok(json!({"timeout":true,"as":as_id,"owed":owed,"due":due}))
