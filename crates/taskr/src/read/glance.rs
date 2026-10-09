@@ -87,6 +87,7 @@ fn go_json(v: &Value) -> String {
     } else if map.contains_key("root_ids") {
         &["root_ids", "count", "names"]
     } else if map.contains_key("activity_age_ms") {
+        // activity_id stays in the snapshot for --brief but is not printed (Go parity).
         &[
             "spark",
             "id",
@@ -102,7 +103,6 @@ fn go_json(v: &Value) -> String {
             "parked_active",
             "park_age_ms",
             "activity_age_ms",
-            "activity_id",
         ]
     } else if map.contains_key("ask_id") {
         &[
@@ -734,12 +734,9 @@ fn watch(every: std::time::Duration, mut fetch: impl FnMut() -> Result<Value>) -
 mod tests {
     use super::*;
     #[test]
-    fn campaign_activity_id_follows_its_age() {
+    fn glance_json_omits_activity_id() {
         let c = json!({"activity_id":7,"activity_age_ms":5,"name":"x"});
-        assert_eq!(
-            go_json(&c),
-            r#"{"name":"x","activity_age_ms":5,"activity_id":7}"#
-        );
+        assert_eq!(go_json(&c), r#"{"name":"x","activity_age_ms":5}"#);
     }
     #[test]
     fn owner_context_boundaries() {
