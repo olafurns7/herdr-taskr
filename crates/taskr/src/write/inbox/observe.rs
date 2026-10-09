@@ -17,16 +17,24 @@ fn fresh(at: &str, seconds: i64) -> bool {
         taskr_core::frozen_now().expect("clock") - at < store::millis(seconds * 1000)
     })
 }
+// Reads freshness first and takes the write lock only to claim; the
+// transaction re-checks so two waiters never both claim.
 fn claim(db: &mut db::Connection, as_id: i64, key: Option<&str>) -> Result<bool> {
-    store::transaction(db, |tx| {
-        let last = if let Some(key) = key {
-            get_meta(tx, key)?
+    let stale = |db: &db::Connection| -> Result<bool> {
+        let last: Option<String> = if let Some(key) = key {
+            get_meta(db, key)?
         } else {
-            tx.query_row("select last_poll_at from tasks where id=?", [as_id], |r| {
+            db.query_row("select last_poll_at from tasks where id=?", [as_id], |r| {
                 r.get(0)
             })?
         };
-        if last.is_some_and(|s| fresh(&s, 15)) {
+        Ok(!last.is_some_and(|s| fresh(&s, 15)))
+    };
+    if !stale(db)? {
+        return Ok(false);
+    }
+    store::transaction(db, |tx| {
+        if !stale(tx)? {
             return Ok(false);
         }
         if let Some(key) = key {

@@ -158,7 +158,16 @@ pub fn counts(db: &Connection, as_id: i64) -> Result<(i64, i64)> {
     let due=db.query_row("select count(*) from meta where key>='receipt_due:' and key<'receipt_due;' and json_valid(value) and json_extract(value,'$.recipient')=?",[as_id],|r|r.get(0))?;
     Ok((owed, due))
 }
+/// Like Go's expireReceiptsNow: the write lock only when a deadline is pending.
 pub fn expire(db: &mut Connection) -> Result<()> {
+    let pending: bool = db.query_row(
+        "select exists(select 1 from meta where key>='receipt_due:' and key<'receipt_due;')",
+        [],
+        |r| r.get(0),
+    )?;
+    if !pending {
+        return Ok(());
+    }
     transaction(db, |tx| {
         let mut stmt = tx.prepare(
             "select key,value from meta where key>='receipt_due:' and key<'receipt_due;'",
