@@ -484,6 +484,7 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
         out.extend([
             hint("/", None),
             hint("y", None),
+            hint("s", None),
             hint("?", None),
             hint("q", None),
         ]);

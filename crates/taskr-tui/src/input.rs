@@ -180,7 +180,11 @@ fn view(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
             app.close();
         }
         KeyCode::Char('?') => app.go(Screen::Help),
-        KeyCode::Char('s') if app.screen == Screen::Slotr => {
+        // From a campaign opened out of slotr, `s` goes back rather than stacking another.
+        KeyCode::Char('s')
+            if app.screen == Screen::Slotr
+                || (app.screen == Screen::Campaign && app.under() == Screen::Slotr) =>
+        {
             app.close();
         }
         KeyCode::Char('s') if matches!(app.screen, Screen::Glance | Screen::Campaign) => {
@@ -601,8 +605,16 @@ pub fn done(app: &mut App, job: &Job, result: Result<Done, String>) {
         let s = &mut app.slotr;
         match result {
             Ok(Done::Slotr(slotr)) if slotr.available => {
+                // The cursor follows its run, from the queue into a slot too.
+                let was = slotr::rows(&app.data.slotr)
+                    .get(app.row)
+                    .map(|r| r.enqueue_seq);
                 app.data.slotr = *slotr;
                 (s.loaded, s.error) = (true, None);
+                let rows = slotr::rows(&app.data.slotr);
+                app.row = was
+                    .and_then(|seq| rows.iter().position(|r| r.enqueue_seq == seq))
+                    .unwrap_or(app.row.min(rows.len().saturating_sub(1)));
             }
             Ok(Done::Slotr(slotr)) if !slotr.error.is_empty() => s.error = Some(slotr.error),
             Ok(_) => s.error = Some("slotr unavailable".into()),
@@ -1735,13 +1747,38 @@ mod tests {
         p.keys("kk");
         p.keys("l");
         assert_eq!(p.app.screen, Screen::Campaign);
-        // s from the campaign, and s again closes back to it.
+        // s from that campaign goes back to slotr, so l and s loops do not stack.
+        p.keys("s");
+        assert_eq!((p.app.screen, p.app.back.len()), (Screen::Slotr, 1));
+        p.keys("ls");
+        assert_eq!((p.app.screen, p.app.back.len()), (Screen::Slotr, 1));
+        // From a campaign opened on the glance, s opens slotr and s again closes back to it.
+        p.keys("h");
+        p.app.go(Screen::Campaign);
         p.keys("s");
         assert_eq!(p.app.screen, Screen::Slotr);
         p.keys("s");
         assert_eq!(p.app.screen, Screen::Campaign);
-        p.keys("hhh");
+        p.keys("h");
         assert_eq!(p.app.screen, Screen::Glance);
+    }
+
+    #[test]
+    fn the_slotr_cursor_follows_its_run_across_reads() {
+        let mut p = Pane::new(80, 24);
+        p.keys("s");
+        demo(&mut p.app, Job::Slotr);
+        p.click_on("auth-rotation");
+        assert_eq!(p.app.row, 4);
+        // A runtime holder above the cursor ends; the next read keeps the cursor on its run.
+        let mut next = p.app.data.slotr.clone();
+        next.pools.get_mut("runtime").unwrap().holders.remove(0);
+        done(&mut p.app, &Job::Slotr, Ok(Done::Slotr(Box::new(next))));
+        assert_eq!(p.app.row, 3);
+        assert_eq!(
+            slotr::rows(&p.app.data.slotr)[p.app.row].campaign,
+            "auth-rotation"
+        );
     }
 
     #[test]
@@ -1771,7 +1808,7 @@ mod tests {
         done(&mut p.app, &Job::Slotr, Ok(Done::Slotr(Box::new(gone))));
         assert_eq!(p.app.slotr.error.as_deref(), Some(error.as_str()));
         assert!(p.app.fetch.error.is_none() && p.app.status.is_none());
-        assert!(p.text().contains("slotr unavailable: slotr: no systemd"));
+        assert!(p.text().contains(" ! slotr: no systemd"));
         // The last good pools stay, and come back with the next good read.
         demo(&mut p.app, Job::Slotr);
         done(
@@ -1783,5 +1820,9 @@ mod tests {
         assert!(p.text().contains("HEAVY"));
         demo(&mut p.app, Job::Slotr);
         assert!(p.app.slotr.error.is_none());
+        // An older taskr on either end does not know the command.
+        let old = "taskr: unknown command slotr".to_string();
+        done(&mut p.app, &Job::Slotr, Err(old));
+        assert!(p.text().contains("older than taskr slotr: update both"));
     }
 }

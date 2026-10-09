@@ -21,4 +21,4 @@
 
 
 
- ⏎ go   l open   y copy   r refresh   s back   ? help
+ r refresh   s back   ? help

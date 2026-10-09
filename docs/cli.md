@@ -104,7 +104,7 @@ These are safe to run yourself; they change nothing.
 | `taskr notes --owner` | Notes left for you in the last 48 hours. |
 | `taskr doc ls ID`, `taskr doc get DOC_ID` | Captured briefs, reports, goals and plans. |
 | `taskr search QUERY` | Documents, decisions, asks, answers and notes. |
-| `taskr slotr` | slotr's pools, holders and queue as the hub sees them, as JSON with the campaign root of each row's task; `{"available":false,"error":...}` when slotr cannot be read. Takes no arguments. |
+| `taskr slotr` | slotr's pools, holders and queue as the hub sees them, as JSON with the campaign root of each row's task; `{"available":false,"error":...}` when slotr cannot be read. It adds `available`, `host` and `now`, and exits 0 either way. Takes no arguments. |
 | `taskr daemon --status` | The daemon on this host. See [daemon.md](daemon.md). |
 
 To answer an owner ask without the TUI: `taskr answer ASK_ID "your answer"`.

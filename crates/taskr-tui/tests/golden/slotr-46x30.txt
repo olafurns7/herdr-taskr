@@ -1,0 +1,30 @@
+ taskr ❯ slotr         2s ago   ● 2 need you
+ memory 9.0G free of 31.2G · reserve 3.0G · h…
+ psi 10s 0.4 · 60s 1.2 · load 7.9 on 16 cores
+ last stop 13m ago · slotr-runtime-77 · stop_…
+
+ HEAVY ───────────────── 1/2 slots · 1 queued
+ one more fits · 358M spare
+▌● tui-frames     cargo test --workspace
+▌   held 6m · 1h left · 3.2G/4.0G
+▌   ↳ task 4131 · pane wF2:p3 · run slotr-hea…
+  queue
+ ○  1 search-index   vitest run
+       legacy_lock pid 48211 for 1m · 3.0G
+
+ RUNTIME ─────────────── 2/3 slots · 2 queued
+ one more would not fit · 3.2G short
+ ● tui-frames     dev stack for frames
+    held 45m · 44m left · 5.3G/6.0G
+    ↳ task 4134 · pane wF2:p5 · run slotr-run…
+ ● billing-export exporter preview
+    stopping · held 1h · lease over · 2.8G/3.…
+    ↳ task 4177 · pane w7:p1 · run slotr-runt…
+  queue
+ ○  1 auth-rotation  token service
+       memory_budget for 3m · 6.0G
+ ○  2 scratch        one-off notebook
+       fifo for 1m · 2.0G
+
+
+ ⏎ go   l open   s back   ? help

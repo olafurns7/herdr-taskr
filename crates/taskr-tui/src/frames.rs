@@ -197,7 +197,15 @@ pub fn all() -> Vec<Spec> {
         spec("slotr", 80, 24, "", slotr),
         spec("slotr", 120, 40, "", slotr),
         spec("slotr", 120, 40, "-priority", slotr_priority),
+        spec("slotr", 46, 30, "", slotr),
         spec("slotr", 80, 24, "-unavailable", slotr_unavailable),
+        spec("slotr", 80, 24, "-unavailable-first", |app| {
+            // The first read failed: no pools, no spinner, the reason.
+            app.screen = Screen::Slotr;
+            app.slotr.error = Some(
+                "slotr: no systemd user bus here; run it in a terminal with a user session".into(),
+            );
+        }),
         spec("slotr", 80, 24, "-loading", |app| {
             app.screen = Screen::Slotr;
         }),

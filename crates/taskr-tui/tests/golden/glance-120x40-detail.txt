@@ -37,4 +37,4 @@
 │ ‖ legacy-importer                              parked  3h││ last cache-audit lead root=4040 pane=w41:p1: campaign    │
 │ · 2 quiet                                                ││ complete, docs PR merged                                 │
 ╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
- j k scroll   h list   ⏎ go to lead   a answer   l open   / filter   y copy   ? help   q quit
+ j k scroll   h list   ⏎ go to lead   a answer   l open   / filter   y copy   s slotr   ? help   q quit

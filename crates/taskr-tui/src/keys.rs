@@ -73,8 +73,9 @@ pub(crate) const KEYS: &[Key] = &[
         "s",
         "slotr",
         "slotr holders and queue",
-        GLANCE | CAMPAIGN | SLOTR,
+        GLANCE | CAMPAIGN,
     ),
+    key("Go", "s", "back", "close slotr (h, esc too)", SLOTR),
     key(
         "Go",
         "click",

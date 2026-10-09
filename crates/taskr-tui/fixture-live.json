@@ -1854,7 +1854,7 @@
   "now": "2026-03-14T14:16:10.000Z",
   "events_path": "",
   "stats": {
-   "available_mib": 12697.6,
+   "available_mib": 9216,
    "total_mib": 31952.0,
    "psi_full_avg10": 0.42,
    "psi_full_avg60": 1.18,
@@ -1871,11 +1871,12 @@
     "slots": 2,
     "budget": {
      "reserve_mib": 3072,
-     "outstanding_mib": 4096.0,
-     "projected_free_mib": 2457.6
+     "outstanding_mib": 1690.3,
+     "projected_free_mib": 3429.7
     },
     "holders": [
      {
+      "enqueue_seq": 41,
       "run": "slotr-heavy-41",
       "campaign": "tui-frames",
       "task": "4131",
@@ -1889,7 +1890,7 @@
       "warned_at": null,
       "stopping_at": null,
       "state": "running",
-      "notify": "",
+      "notify": "configured",
       "slot": 0,
       "cpu_usage_usec": 1200000,
       "root_id": 4120,
@@ -1898,6 +1899,7 @@
     ],
     "queue": [
      {
+      "enqueue_seq": 47,
       "position": 1,
       "campaign": "search-index",
       "task": "",
@@ -1905,7 +1907,8 @@
       "purpose": "vitest run",
       "cost_mib": 3072,
       "since": "2026-03-14T14:15:02.000Z",
-      "wait_reason": "memory_budget",
+      "wait_reason": "legacy_lock",
+      "legacy_holder_pid": 48211,
       "stop_claimed_by": null
      }
     ]
@@ -1914,11 +1917,12 @@
     "slots": 3,
     "budget": {
      "reserve_mib": 3072,
-     "outstanding_mib": 9216.0,
-     "projected_free_mib": -1740.8
+     "outstanding_mib": 1690.3,
+     "projected_free_mib": -154.3
     },
     "holders": [
      {
+      "enqueue_seq": 90,
       "run": "slotr-runtime-90",
       "campaign": "tui-frames",
       "task": "4134",
@@ -1932,13 +1936,14 @@
       "warned_at": null,
       "stopping_at": null,
       "state": "running",
-      "notify": "",
+      "notify": "configured",
       "slot": 0,
       "cpu_usage_usec": 1200000,
       "root_id": 4120,
       "root_name": "tui-frames"
      },
      {
+      "enqueue_seq": 93,
       "run": "slotr-runtime-93",
       "campaign": "billing-export",
       "task": "4177",
@@ -1952,7 +1957,7 @@
       "warned_at": "2026-03-14T14:05:00.000Z",
       "stopping_at": "2026-03-14T14:15:40.000Z",
       "state": "stopping",
-      "notify": "",
+      "notify": "configured",
       "slot": 0,
       "cpu_usage_usec": 1200000,
       "root_id": 4171,
@@ -1961,19 +1966,22 @@
     ],
     "queue": [
      {
+      "enqueue_seq": 95,
       "position": 1,
       "campaign": "auth-rotation",
       "task": "4290",
       "pane": "w5:p2",
       "purpose": "token service",
-      "cost_mib": 4096,
+      "cost_mib": 6144,
       "since": "2026-03-14T14:12:30.000Z",
       "wait_reason": "memory_budget",
+      "legacy_holder_pid": null,
       "stop_claimed_by": null,
       "root_id": 4288,
       "root_name": "auth-rotation"
      },
      {
+      "enqueue_seq": 96,
       "position": 2,
       "campaign": "scratch",
       "task": "",
@@ -1982,6 +1990,7 @@
       "cost_mib": 2048,
       "since": "2026-03-14T14:14:55.000Z",
       "wait_reason": "fifo",
+      "legacy_holder_pid": null,
       "stop_claimed_by": null
      }
     ]

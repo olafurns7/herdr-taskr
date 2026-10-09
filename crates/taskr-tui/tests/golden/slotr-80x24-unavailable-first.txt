@@ -1,0 +1,24 @@
+ taskr ❯ slotr                                0s ago   ● 2 need you  3 to check
+ ! slotr: no systemd user bus here; run it in a terminal with a user session
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ r refresh   s back   ? help

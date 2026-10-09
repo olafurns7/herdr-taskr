@@ -345,20 +345,22 @@ pub struct Pool {
 pub struct Budget {
     pub reserve_mib: f64,
     pub outstanding_mib: f64,
-    /// What would be left after one more run of the pool's default cost: negative when
-    /// it would not fit.
-    pub projected_free_mib: f64,
+    /// What would be left after one more run of the pool's default cost, before the
+    /// reserve: one more fits when this is at least `reserve_mib`. Null when slotr cannot
+    /// read free memory.
+    pub projected_free_mib: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
+/// Each figure is null when slotr cannot read it (a kernel without PSI, say).
 pub struct SlotrStats {
-    pub available_mib: f64,
-    pub total_mib: f64,
-    pub psi_full_avg10: f64,
-    pub psi_full_avg60: f64,
-    pub load1: f64,
-    pub cores: u32,
+    pub available_mib: Option<f64>,
+    pub total_mib: Option<f64>,
+    pub psi_full_avg10: Option<f64>,
+    pub psi_full_avg60: Option<f64>,
+    pub load1: Option<f64>,
+    pub cores: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -378,7 +380,6 @@ pub struct SlotRow {
     pub task: String,
     pub pane: String,
     pub purpose: String,
-    pub notify: String,
     pub kind: Option<String>,
     /// H1's flag; any truthy value marks the row.
     pub priority: serde_json::Value,
@@ -393,6 +394,10 @@ pub struct SlotRow {
     pub state: String,
     pub position: u32,
     pub wait_reason: String,
+    /// Who holds the old heavy flock, on a `legacy_lock` wait.
+    pub legacy_holder_pid: Option<i64>,
+    /// The run's place in line; it keeps it when admitted, so the cursor can follow it.
+    pub enqueue_seq: u64,
     pub root_id: i64,
     pub root_name: String,
 }
@@ -434,7 +439,8 @@ mod tests {
             (Some(5420.25), None, false)
         );
         assert!(h.stopping_at.is_none() && !h.stopping());
-        assert_eq!(pool.budget.projected_free_mib, -1740.8);
+        assert_eq!(pool.budget.projected_free_mib, Some(-1740.8));
+        assert_eq!((h.enqueue_seq, s.stats.cores), (30, Some(16.0)));
         let q: Vec<_> = pool
             .queue
             .iter()
@@ -451,7 +457,14 @@ mod tests {
         h1["pools"]["runtime"]["holders"][0]["priority"] = false.into();
         h1["schema_version"] = 2.into();
         h1["future"] = serde_json::json!({"x": 1});
+        // A figure slotr cannot read is null, not a failed read.
+        h1["stats"]["psi_full_avg10"] = serde_json::Value::Null;
+        h1["pools"]["runtime"]["budget"]["projected_free_mib"] = serde_json::Value::Null;
         let s: Slotr = serde_json::from_value(h1).unwrap();
+        assert!(
+            s.stats.psi_full_avg10.is_none()
+                && s.pools["runtime"].budget.projected_free_mib.is_none()
+        );
         let q = &s.pools["runtime"].queue[0];
         assert_eq!((q.kind.as_deref(), q.priority()), (Some("build"), true));
         assert!(!s.pools["runtime"].holders[0].priority());
