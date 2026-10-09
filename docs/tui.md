@@ -156,7 +156,8 @@ Most keys only read. Three do more:
   after the option, sent as `B: label — note`. When a structured ask allows
   several options, `space` picks or drops the one under the cursor and
   `Enter` reviews the set, sent as `A: OAuth; C: SSO`. `Enter` with nothing
-  picked does nothing and says so.
+  picked does nothing and says so. An answer longer than its field shows its
+  end and the cursor, with `…` before it.
 - **`p`** parks a campaign (`taskr set ROOT glance.state=parked`) or unparks
   it. A parked campaign stays dim; its owner asks stay red.
 

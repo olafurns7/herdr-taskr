@@ -26,10 +26,22 @@ pub(crate) struct Parsed {
 
 /// The ask's options: its question's when it has one, the text's otherwise.
 pub(crate) fn parse(a: &Need) -> Parsed {
-    let mut p = parse_text(&a.text);
-    if let Some(q) = &a.question {
-        // The summary ends in the options' labels (Q1); the heuristic still strips them.
-        p.options = q
+    let Some(q) = &a.question else {
+        return parse_text(&a.text);
+    };
+    // Q1's summary is `[context ][header: ]question (A) label; (B) label`: drop that known
+    // tail, never `(A)` found in the prose.
+    let tail = q
+        .options
+        .iter()
+        .zip('A'..)
+        .map(|(o, key)| format!("({key}) {}", o.label))
+        .collect::<Vec<_>>()
+        .join("; ");
+    let context = a.text.strip_suffix(tail.as_str()).unwrap_or(&a.text);
+    Parsed {
+        context: context.trim().to_string(),
+        options: q
             .options
             .iter()
             .zip('A'..)
@@ -39,10 +51,10 @@ pub(crate) fn parse(a: &Need) -> Parsed {
                 description: o.description.clone(),
                 recommended: o.recommended,
             })
-            .collect();
-        (p.structured, p.multi) = (true, q.multi_select);
+            .collect(),
+        structured: true,
+        multi: q.multi_select,
     }
-    p
 }
 
 /// The ask's mark on its row: ◆ structured, ◇ options parsed from its text, none without.
@@ -217,6 +229,20 @@ mod tests {
             ],
             ["◆", "◇", " "]
         );
+    }
+
+    #[test]
+    fn markers_in_a_question_stay_in_its_context() {
+        let mut a = structured(false);
+        a.text = "Saw (A) and (B) earlier. Auth: Compare (A) old and (B) new? (A) OAuth; (B) Keys; (C) SSO"
+            .into();
+        let p = parse(&a);
+        assert_eq!(
+            p.context,
+            "Saw (A) and (B) earlier. Auth: Compare (A) old and (B) new?"
+        );
+        assert_eq!(p.options.len(), 3);
+        assert_eq!(p.options[0].text, "OAuth");
     }
 
     #[test]

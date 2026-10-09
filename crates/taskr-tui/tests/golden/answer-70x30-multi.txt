@@ -18,7 +18,7 @@
 │  ────────────────────────────────────────────────────────────────  │
 │   answer  B: German; C: Japanese                                   │
 │                                                                    │
-│   j k choose    space pick    tab add a note    ⏎ review    esc c  │
+│   space pick    tab note    ⏎ review    esc cancel                 │
 │                                                                    │
 │                                                                    │
 │                                                                    │

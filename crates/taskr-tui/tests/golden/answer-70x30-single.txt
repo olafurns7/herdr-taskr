@@ -19,7 +19,7 @@
 │  ────────────────────────────────────────────────────────────────  │
 │   answer  A: Ed25519                                               │
 │                                                                    │
-│   j k choose    tab add a note    ⏎ review before sending    esc   │
+│   j k choose    tab note    ⏎ review    esc cancel                 │
 │                                                                    │
 │                                                                    │
 │                                                                    │

@@ -130,6 +130,14 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
     if let Some(last) = text.last_mut() {
         last.spans.push(Span::styled(" ", t.cursor()));
     }
+    // The answer keeps its tail and the cursor in view; `…` marks the text above the window.
+    let keep = budget
+        .saturating_sub(labels.iter().map(Vec::len).sum::<usize>() + tail.len() + 1 + 2)
+        .max(1);
+    if text.len() > keep {
+        text.drain(..text.len() - keep);
+        text[0].spans[0] = Span::styled(" answer …", Style::new().fg(t.dim));
+    }
     tail.extend(text);
 
     // Two lines stay for the ask's own text: one of it, and where the window is.
@@ -297,48 +305,59 @@ pub(crate) fn answer(f: &mut Frame, app: &App) {
     };
     let confirming = app.screen == Screen::Confirm;
     let parsed = ask::parse(a);
+    let tab = |long| match (parsed.structured, long) {
+        (true, true) => "add a note",
+        (true, false) => "note",
+        (false, true) => "edit the text",
+        (false, false) => "edit",
+    };
+    let (long, short) = if parsed.multi {
+        (
+            vec![
+                ("j k", "choose"),
+                ("space", "pick"),
+                ("tab", tab(true)),
+                ("⏎", "review"),
+                ("esc", "cancel"),
+            ],
+            vec![
+                ("space", "pick"),
+                ("tab", tab(false)),
+                ("⏎", "review"),
+                ("esc", "cancel"),
+            ],
+        )
+    } else {
+        (
+            vec![
+                ("j k", "choose"),
+                ("tab", tab(true)),
+                ("⏎", "review before sending"),
+                ("esc", "cancel"),
+            ],
+            vec![
+                ("j k", "choose"),
+                ("tab", tab(false)),
+                ("⏎", "review"),
+                ("esc", "cancel"),
+            ],
+        )
+    };
+    // A structured ask's long hints must fit the dialog's inside (its trailing gap aside);
+    // a plain ask keeps the hints it has always had.
+    let inside = f.area().width.min(80).saturating_sub(6) as usize;
+    let fits =
+        f.area().width >= 60 && (!parsed.structured || keys_line(t, &long).width() <= inside + 3);
     let hints: &[(&str, &str)] = if confirming {
         &[
             ("y", "send"),
             ("e", "edit"),
             ("esc", "cancel, nothing is sent"),
         ]
-    } else if parsed.multi && f.area().width < 60 {
-        &[
-            ("space", "pick"),
-            ("tab", "note"),
-            ("⏎", "review"),
-            ("esc", "cancel"),
-        ]
-    } else if parsed.multi {
-        &[
-            ("j k", "choose"),
-            ("space", "pick"),
-            ("tab", "add a note"),
-            ("⏎", "review"),
-            ("esc", "cancel"),
-        ]
-    } else if f.area().width < 60 {
-        &[
-            ("j k", "choose"),
-            ("tab", if parsed.structured { "note" } else { "edit" }),
-            ("⏎", "review"),
-            ("esc", "cancel"),
-        ]
+    } else if fits {
+        &long
     } else {
-        &[
-            ("j k", "choose"),
-            (
-                "tab",
-                if parsed.structured {
-                    "add a note"
-                } else {
-                    "edit the text"
-                },
-            ),
-            ("⏎", "review before sending"),
-            ("esc", "cancel"),
-        ]
+        &short
     };
     let title = format!("ask {} · {}", a.ask_id, a.campaign);
 
@@ -602,4 +621,63 @@ pub(crate) fn help(f: &mut Frame, app: &App) {
         Paragraph::new(lines.into_iter().skip(first).take(h).collect::<Vec<_>>()),
         body,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
+
+    use crate::{App, draw, frames};
+
+    fn render(app: &App, width: u16, height: u16) -> Buffer {
+        let mut t = Terminal::new(TestBackend::new(width, height)).expect("a test backend");
+        t.draw(|f| draw(f, app)).expect("a frame");
+        t.backend().buffer().clone()
+    }
+
+    #[test]
+    fn a_long_answer_keeps_its_tail_and_the_cursor_in_view() {
+        // Four 60-character labels, all picked, and a long note, at 46x20.
+        let mut app = App::new(frames::fixture());
+        let mut ask = frames::structured_asks()[2].clone();
+        let options = &mut ask.question.as_mut().expect("a question").options;
+        for (i, o) in options.iter_mut().enumerate() {
+            o.label = format!("{i}{}", " label".repeat(10))[..60].to_string();
+        }
+        app.answer(ask);
+        for i in 0..4 {
+            app.choose(i);
+            app.toggle();
+        }
+        app.edit(|note| *note = format!("{}END", "note ".repeat(80)));
+        let buf = render(&app, 46, 20);
+        let text = frames::text(&buf);
+        assert!(text.contains(" answer …"), "{text}");
+        assert!(text.contains("❯ [x] D  3 label"), "{text}");
+        assert!(text.contains("esc cancel"), "{text}");
+        let (y, line) = text
+            .lines()
+            .enumerate()
+            .find(|(_, l)| l.ends_with("END"))
+            .unwrap_or_else(|| panic!("the answer's tail is on screen:\n{text}"));
+        let x = line.chars().count() as u16;
+        let cell = buf[(x, y as u16)].style();
+        assert_eq!(
+            cell,
+            cell.patch(app.theme.cursor()),
+            "the cursor follows the tail"
+        );
+    }
+
+    #[test]
+    fn every_hint_shows_in_full() {
+        for (width, height) in [(46, 20), (46, 30), (70, 30), (120, 40)] {
+            for ask in 0..3 {
+                let mut app = App::new(frames::fixture());
+                app.answer(frames::structured_asks()[ask].clone());
+                let text = frames::text(&render(&app, width, height));
+                assert!(text.contains("esc cancel"), "{width}x{height}:\n{text}");
+            }
+        }
+    }
 }
