@@ -96,6 +96,7 @@ These are safe to run yourself; they change nothing.
 | Command | Shows |
 | --- | --- |
 | `taskr glance` | The owner snapshot `taskr-tui` draws, as one line of JSON. `--watch` is a plain live view for a narrow pane. |
+| `taskr glance --brief [--since EVENT\|30m]` | The glance once, as plain text for the hub: owner asks with their ask and root ids, things to check, then one row per active campaign. `--since` takes the header's `cursor=` (or a duration) and hides campaigns with nothing new; asks and checks always show. |
 | `taskr status [--tree ID] [--all]` | Tasks and their states. |
 | `taskr asks --owner --open` | Questions waiting for you. |
 | `taskr campaign ROOT [--all]` | One campaign: goal, plan, lanes, asks, decisions, documents, PR refs and a page of the log. |

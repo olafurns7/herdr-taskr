@@ -26,6 +26,11 @@ fn clean(text: &str) -> String {
             }
         } else if c.is_control() {
             out.push(' ');
+        } else if matches!(c, '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+            && c != '\u{200d}'
+        {
+            // Zero-width and bidi controls: invisible, and they can reorder what follows.
+            // The zero-width joiner stays: emoji sequences such as 👩‍💻 need it.
         } else {
             out.push(c);
         }
@@ -72,7 +77,10 @@ fn age(ms: i64) -> String {
         format!("{}d", ms / 86_400_000)
     }
 }
-pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64) -> Vec<String> {
+/// `brief` is the hub's text: ids on every row, names padded to the longest and never cut,
+/// quotes clipped to 60, blank lines between blocks; `--watch` passes false and stays
+/// byte-identical.
+pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64, brief: bool) -> Vec<String> {
     if w == 0 || h == 0 {
         return vec![];
     }
@@ -83,6 +91,13 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64) -> Vec<String> {
     let campaigns = v["campaigns"].as_array().unwrap();
     let right = match s(v, "verdict") {
         "rolling" => "✓ no owner action".into(),
+        "needs_you" if brief => {
+            format!(
+                "{} owner ask{}",
+                needs.len(),
+                if needs.len() == 1 { "" } else { "s" }
+            )
+        }
         "needs_you" => format!("{} need you", needs.len()),
         "attention" | "unknown" => format!("{} to check", attention.len()),
         _ => "? unknown".into(),
@@ -98,15 +113,26 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64) -> Vec<String> {
         full.clear();
     }
     let right = truncate(&right, w);
-    let header = format!(
-        "{full}{}{right}",
-        " ".repeat(w - width(&full) - width(&right))
-    );
+    let header = if brief {
+        format!("taskr · {time}Z · cursor={} · {right}", n(v, "cursor"))
+    } else {
+        format!(
+            "{full}{}{right}",
+            " ".repeat(w - width(&full) - width(&right))
+        )
+    };
     let rule = "─".repeat(w);
+    // Lines that carry an id are never cut in brief: the hub passes the ids back.
+    let cut = |s: String| if brief { s } else { truncate(&s, w) };
     let mut groups: [Vec<Vec<String>>; 3] = std::array::from_fn(|_| vec![]);
     for need in needs {
+        let ids = if brief {
+            format!("  root={} ask={}", n(need, "root_id"), n(need, "ask_id"))
+        } else {
+            String::new()
+        };
         let mut first = format!(
-            "» {}  {}",
+            "» {}{ids}  {}",
             clean(s(need, "campaign")),
             age(n(need, "age_ms") + age_ms)
         );
@@ -124,10 +150,7 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64) -> Vec<String> {
         {
             first.push_str(&format!("  {}", clean(also)));
         }
-        groups[0].push(vec![
-            truncate(&first, w),
-            truncate(&format!("  {}", clean(text)), w),
-        ]);
+        groups[0].push(vec![cut(first), truncate(&format!("  {}", clean(text)), w)]);
     }
     for a in attention {
         let (sym, mut word) = match s(a, "kind") {
@@ -160,22 +183,52 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64) -> Vec<String> {
             name = clean(s(a, "recipient"));
             word = format!("idle · {} results", n(a, "count"));
         }
-        let name = truncate(
-            &name,
-            width(&name)
-                .min(8)
-                .max(w.saturating_sub(width(&format!("{sym}   {word}{when}")))),
-        );
+        let first = if brief {
+            let mut first = format!("{sym} {name}  ");
+            if n(a, "root_id") > 0 {
+                first.push_str(&format!("root={}  ", n(a, "root_id")));
+            }
+            first.push_str(&format!("{word}{when}"));
+            if !s(a, "pane_id").is_empty() {
+                first.push_str(&format!("  → {}", clean(s(a, "pane_id"))));
+            }
+            first
+        } else {
+            let name = truncate(
+                &name,
+                width(&name)
+                    .min(8)
+                    .max(w.saturating_sub(width(&format!("{sym}   {word}{when}")))),
+            );
+            truncate(&format!("{sym} {name}  {word}{when}"), w)
+        };
         let text = match s(a, "kind") {
             "lead_unregistered_silent" => "lead silent with open lanes",
             "parked_active" => "new activity; re-park to hold again",
             _ => s(a, "text"),
         };
-        groups[1].push(vec![
-            truncate(&format!("{sym} {name}  {word}{when}"), w),
-            truncate(&format!("  {}", clean(text)), w),
-        ]);
+        groups[1].push(vec![first, truncate(&format!("  {}", clean(text)), w)]);
     }
+    let quote = |t: &str| {
+        if brief {
+            clip(&clean(&line(t)), 60)
+        } else {
+            clean(t)
+        }
+    };
+    let fill = |s: String, n: usize| format!("{s}{}", " ".repeat(n.saturating_sub(width(&s))));
+    let root = |c: &Value| format!("root={}", n(c, "id"));
+    let lanes = |c: &Value| {
+        let l = &c["lanes"];
+        format!("{}/{} working", n(l, "working"), n(l, "open"))
+    };
+    let widest =
+        |f: &dyn Fn(&Value) -> String| campaigns.iter().map(|c| width(&f(c))).max().unwrap_or(0);
+    let widths = [
+        widest(&|c| clean(s(c, "name"))),
+        widest(&root),
+        widest(&lanes),
+    ];
     for c in campaigns {
         let mut sym = if n(&c["lanes"], "working") > 0 {
             "●"
@@ -187,7 +240,7 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64) -> Vec<String> {
         if !c["owner_note"].is_null() {
             let note = &c["owner_note"];
             let text = owner_value(s(note, "text")).unwrap_or_else(|| s(note, "text").into());
-            detail = format!("  {} · {}", age(n(note, "age_ms") + age_ms), clean(&text));
+            detail = format!("  {} · {}", age(n(note, "age_ms") + age_ms), quote(&text));
         }
         if c["parked"] == true {
             sym = "·";
@@ -202,7 +255,7 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64) -> Vec<String> {
             }
         } else if matches!(s(c, "lead"), "waiting" | "unregistered") {
             if detail.is_empty() && !text.is_empty() {
-                detail = format!("  {}", clean(&text));
+                detail = format!("  {}", quote(&text));
             }
             text = if c["lead"] == "waiting" {
                 "lead waiting"
@@ -211,43 +264,78 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64) -> Vec<String> {
             }
             .into();
         }
-        let mut row = vec![truncate(
-            &format!(
-                "{sym} {} {} {} {}",
-                pad(s(c, "name"), 18),
-                pad(
-                    &format!("{}/{}", n(&c["lanes"], "working"), n(&c["lanes"], "open")),
-                    6
+        let ago = age(n(c, "activity_age_ms") + age_ms);
+        let mut row = vec![if brief {
+            format!(
+                "{sym} {}  {}  {}  {} {}",
+                fill(clean(s(c, "name")), widths[0]),
+                fill(root(c), widths[1]),
+                fill(lanes(c), widths[2]),
+                fill(ago, 4),
+                quote(&text)
+            )
+        } else {
+            truncate(
+                &format!(
+                    "{sym} {} {} {} {}",
+                    pad(s(c, "name"), 18),
+                    pad(
+                        &format!("{}/{}", n(&c["lanes"], "working"), n(&c["lanes"], "open")),
+                        6
+                    ),
+                    pad(&ago, 4),
+                    quote(&text)
                 ),
-                pad(&age(n(c, "activity_age_ms") + age_ms), 4),
-                clean(&text)
-            ),
-            w,
-        )];
+                w,
+            )
+        }];
         if !detail.is_empty() {
             row.push(truncate(&detail, w));
         }
         groups[2].push(row);
     }
-    let quiet = if n(&v["quiet"], "count") > 0 {
-        truncate(&format!("· {} quiet", n(&v["quiet"], "count")), w)
-    } else {
-        String::new()
-    };
+    // `unchanged` is set only by brief's `--since`: active campaigns it hid.
+    let quiet = [
+        ("unchanged", n(v, "unchanged")),
+        ("quiet", n(&v["quiet"], "count")),
+    ]
+    .iter()
+    .filter(|(_, count)| *count > 0)
+    .map(|(word, count)| format!(" · {count} {word}"))
+    .collect::<String>();
+    let quiet = truncate(quiet.strip_prefix(' ').unwrap_or_default(), w);
+    let pending = (n(v, "owner_notes_pending") > 0).then(|| {
+        let word = if n(v, "owner_notes_pending") == 1 {
+            "note still carries"
+        } else {
+            "notes still carry"
+        };
+        truncate(
+            &format!("{} {word} OWNER items", n(v, "owner_notes_pending")),
+            w,
+        )
+    });
+    if brief {
+        let mut out: Vec<String> = [header].into_iter().chain(pending).collect();
+        for (g, items) in groups.iter().enumerate() {
+            let mut block: Vec<String> = items.iter().flatten().cloned().collect();
+            if g == 2 && !quiet.is_empty() {
+                block.push(quiet.clone());
+            }
+            if !block.is_empty() {
+                out.push(String::new());
+                out.extend(block);
+            }
+        }
+        for row in &mut out {
+            row.truncate(row.trim_end_matches(' ').len());
+        }
+        return out;
+    }
     let mut keep = [groups[0].len(), groups[1].len(), groups[2].len()];
     let compose = |keep: [usize; 3]| {
         let mut out = vec![header.clone(), rule.clone()];
-        if n(v, "owner_notes_pending") > 0 {
-            let word = if n(v, "owner_notes_pending") == 1 {
-                "note still carries"
-            } else {
-                "notes still carry"
-            };
-            out.push(truncate(
-                &format!("{} {word} OWNER items", n(v, "owner_notes_pending")),
-                w,
-            ));
-        }
+        out.extend(pending.clone());
         for (g, items) in groups.iter().enumerate() {
             for item in &items[..keep[g]] {
                 out.extend(item.clone());
@@ -326,10 +414,10 @@ mod parity_tests {
     use super::*;
     fn busy() -> Value {
         json!({"now":"2026-10-07T17:30:00.000Z","verdict":"needs_you","needs_you":[
-            {"kind":"owner_ask","campaign":"checkout-redesign","age_ms":720000,"blocking":true,"also":["lane failed"],"pane_id":"wDemoA:p1","text":"Merge #104 now or wait for M3?"},
-            {"kind":"owner_ask","campaign":"billing-fix","age_ms":3600000,"text":"approve prod deploy of #103"}],
+            {"kind":"owner_ask","campaign":"checkout-redesign","root_id":12,"age_ms":720000,"blocking":true,"also":["lane failed"],"pane_id":"wDemoA:p1","text":"Merge #104 now or wait for M3?"},
+            {"kind":"owner_ask","campaign":"billing-fix","root_id":13,"age_ms":3600000,"text":"approve prod deploy of #103"}],
             "attention":[{"kind":"lead_blocked","campaign":"settings-form","lane":"impl-tabs","since":"2026-10-07T17:26:00.000Z","age_ms":240000,"text":"lint gate exit 1"},{"kind":"lead_idle_results","recipient":"lead-docs","count":3,"since":"2026-10-06T10:30:00.000Z","age_ms":111600000,"text":"reports ready to review"}],
-            "campaigns":[{"name":"docs-site","activity_age_ms":120000,"lanes":{"working":3,"open":5},"last":{"age_ms":120000,"text":"S4 merged"}},{"name":"checkout-redesign","activity_age_ms":840000,"lanes":{"working":2,"open":2},"last":{"age_ms":840000,"text":"M1 review ok"}},{"name":"billing-fix","lanes":{"working":0,"open":1},"activity_age_ms":1680000}],
+            "campaigns":[{"id":11,"name":"docs-site","activity_age_ms":120000,"activity_id":69850,"lanes":{"working":3,"open":5},"last":{"age_ms":120000,"text":"S4 merged"}},{"id":12,"name":"checkout-redesign","activity_age_ms":840000,"activity_id":69840,"lanes":{"working":2,"open":2},"last":{"age_ms":840000,"text":"M1 review ok"}},{"id":13,"name":"billing-fix","lanes":{"working":0,"open":1},"activity_age_ms":1680000,"activity_id":69790}],
             "quiet":{"count":13}})
     }
     #[test]
@@ -390,7 +478,11 @@ mod parity_tests {
                 include_str!("../../../../../testdata/glance/rolling-46.golden"),
             ),
         ] {
-            assert_eq!(frame(&v, w, h, 2000).join("\n") + "\n", want, "{w}x{h}");
+            assert_eq!(
+                frame(&v, w, h, 2000, false).join("\n") + "\n",
+                want,
+                "{w}x{h}"
+            );
         }
         let hostile = "\x1b[31mRED\x1b[0m\x1b]8;;https://evil.test\x1b\\link\x1b]8;;\x1b\\\t\n\r\x07 世界 👩‍💻 👋🏽";
         assert_eq!(clean(hostile), "REDlink     世界 👩‍💻 👋🏽");
@@ -399,13 +491,99 @@ mod parity_tests {
         v["needs_you"][0]["text"] = json!(hostile);
         for w in 0..=120 {
             for h in [0, 1, 2, 4, 8, 24] {
-                let rows = frame(&v, w, h, 0);
+                let rows = frame(&v, w, h, 0, false);
                 assert!(rows.len() <= h);
                 for row in rows {
                     assert!(width(&row) <= w, "{row:?}");
                     assert!(!row.contains('\x1b'));
                 }
             }
+        }
+    }
+    /// `busy()` plus ask and root ids, a lead pane, billing-fix exactly 30m old (the
+    /// `--since 30m` boundary) and a fourth campaign whose last text has two lines.
+    fn brief_fixture() -> Value {
+        let mut v = busy();
+        v["needs_you"][0]["ask_id"] = json!(70100);
+        v["needs_you"][1]["ask_id"] = json!(70101);
+        v["attention"][0]["root_id"] = json!(15);
+        v["attention"][0]["pane_id"] = json!("wDemoC:p1");
+        v["attention"][1]["root_id"] = json!(16);
+        v["campaigns"][2]["activity_age_ms"] = json!(1_800_000);
+        v["campaigns"].as_array_mut().unwrap().push(json!({"id":14,"name":"release-train","activity_age_ms":7200000,"activity_id":69700,"lanes":{"working":0,"open":2},"last":{"age_ms":7200000,"text":"tag v0.9.3\nsecond line is not quoted"}}));
+        v
+    }
+    #[test]
+    fn brief_goldens() {
+        let mut rolling = brief_fixture();
+        rolling["verdict"] = json!("rolling");
+        rolling["needs_you"] = json!([]);
+        rolling["attention"] = json!([]);
+        let empty = json!({"now":"2026-10-07T17:30:00.000Z","verdict":"rolling","needs_you":[],"attention":[],"campaigns":[],"quiet":{"count":0}});
+        for (v, since, want) in [
+            (brief_fixture(), "", "brief-busy"),
+            (rolling, "", "brief-rolling"),
+            // 69790 is billing-fix's own activity id: equal to the cursor is not newer.
+            (brief_fixture(), "69790", "brief-since-cursor"),
+            (brief_fixture(), "30m", "brief-since-30m"),
+            (empty, "", "brief-empty"),
+        ] {
+            let path = format!(
+                "{}/testdata/glance/{want}.golden",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let got = brief(v, since).unwrap();
+            if std::env::var_os("TASKR_UPDATE_GOLDEN").is_some() {
+                std::fs::write(&path, &got).unwrap();
+            }
+            assert_eq!(got, std::fs::read_to_string(&path).unwrap(), "{path}");
+        }
+        for bad in ["-5m", "0s", "soon", "99999999999999999999", "5"] {
+            assert_eq!(
+                since_filter(bad).err().map(|e| e.code),
+                (bad != "5").then_some(ExitCode::Usage),
+                "{bad}"
+            );
+        }
+    }
+    /// 2 KB is the owner's target for typical ASCII text, not a guarantee: names, Unicode
+    /// quotes and owner-note lines can exceed it.
+    #[test]
+    fn brief_15_campaigns_under_2k() {
+        let quote = "x".repeat(60);
+        let campaigns: Vec<Value> = (0..15)
+            .map(|i| json!({"id":100_000+i,"name":format!("campaign-with-a-long-name-{i}"),"activity_age_ms":3_540_000,"activity_id":999_990+i,"lanes":{"working":10,"open":10},"last":{"text":quote}}))
+            .collect();
+        let v = json!({"now":"2026-10-07T17:30:00.000Z","verdict":"rolling","needs_you":[],"attention":[],"campaigns":campaigns,"quiet":{"count":99}});
+        let out = brief(v, "").unwrap();
+        assert_eq!(out.lines().count(), 18, "{out}");
+        assert!(out.len() < 2048, "{} bytes:\n{out}", out.len());
+        assert!(
+            out.contains("  root=100000  ") && out.contains("  root=100001  "),
+            "{out}"
+        );
+    }
+    #[test]
+    fn brief_clips_overlong_quote() {
+        let v = json!({"now":"2026-10-07T17:30:00.000Z","verdict":"rolling","needs_you":[],"attention":[],"campaigns":[{"id":14,"name":"overlong-quote","activity_age_ms":7_200_000,"activity_id":69700,"lanes":{"working":1,"open":2},"last":{"age_ms":7_200_000,"text":"x".repeat(200)}}],"quiet":{"count":0}});
+        let out = brief(v, "").unwrap();
+        assert!(
+            out.contains(&format!("{}\u{2026}", "x".repeat(59))),
+            "{out}"
+        );
+        assert!(!out.contains(&"x".repeat(60)), "{out}");
+    }
+    #[test]
+    fn brief_strips_control_zero_width_and_bidi() {
+        let mut v = busy();
+        v["campaigns"][0]["last"]["text"] =
+            json!("\u{202e}evil\u{200b}\u{2066}x\u{2069}\u{200f}\x1b[31m red\x07\u{85}end");
+        let out = brief(v, "").unwrap();
+        assert!(out.contains("evilx red  end"), "{out}");
+        for c in [
+            '\u{202e}', '\u{200b}', '\u{2066}', '\u{2069}', '\u{200f}', '\x1b', '\x07', '\u{85}',
+        ] {
+            assert!(!out.contains(c), "{c:?}");
         }
     }
 }

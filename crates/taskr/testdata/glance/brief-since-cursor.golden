@@ -1,0 +1,15 @@
+taskr · 17:30Z · cursor=69850 · 2 owner asks
+
+» checkout-redesign  root=12 ask=70100  12m  BLOCKING  → wDemoA:p1  lane failed
+  Merge #104 now or wait for M3?
+» billing-fix  root=13 ask=70101  1h
+  approve prod deploy of #103
+
+! settings-form  root=15  lead blocked 4m  → wDemoC:p1
+  lint gate exit 1
+⌛ lead-docs  root=16  idle · 3 results 31h
+  reports ready to review
+
+● docs-site          root=11  3/5 working  2m   S4 merged
+● checkout-redesign  root=12  2/2 working  14m  M1 review ok
+· 2 unchanged · 13 quiet
