@@ -4,6 +4,7 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde_json::{Value, json};
 use std::{path::PathBuf, sync::OnceLock};
 
+pub mod after;
 pub mod documents;
 pub mod handover;
 pub mod hook;
@@ -170,7 +171,9 @@ pub struct Event<'a> {
 pub fn event(db: &Connection, e: Event<'_>) -> Result<i64> {
     let data = e.data.as_ref().map(compact_json).transpose()?;
     db.execute("insert into events(task_id,recipient_task_id,launch_id,kind,summary,data,related_event_id,event_key,created_at) values(?,?,?,?,?,?,?,?,?)", params![e.task,e.to,e.launch,e.kind,null(e.summary),data,e.related,null(e.key),now()])?;
-    Ok(db.last_insert_rowid())
+    let id = db.last_insert_rowid();
+    after::fire(db, id, &e)?;
+    Ok(id)
 }
 pub fn local_machine() -> String {
     let h = std::fs::read_to_string("/proc/sys/kernel/hostname")

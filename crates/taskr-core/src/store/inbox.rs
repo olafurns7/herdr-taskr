@@ -52,11 +52,13 @@ pub fn load_event(db: &Connection, eid: i64) -> Result<Value> {
     }
     Ok(out)
 }
+/// Passes any --for/--from filter: an `after` the waiter subscribed to, and Herdr alarms.
 pub fn bypass(ev: &Value) -> bool {
-    ev["kind"] == "herdr"
-        && (ev["data"]["reason"] == "model_capacity"
-            || ev["data"]["reason"] == "stall"
-            || ev["data"].get("quota").is_some())
+    ev["kind"] == "after"
+        || ev["kind"] == "herdr"
+            && (ev["data"]["reason"] == "model_capacity"
+                || ev["data"]["reason"] == "stall"
+                || ev["data"].get("quota").is_some())
 }
 fn coalesce(
     tx: &Connection,

@@ -290,6 +290,7 @@ pub fn close(db: &mut Connection, id: i64, outcome: &str) -> Result<Value> {
             .query_map(params![id, id, t.parent.is_none()], |r| r.get::<_, i64>(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         delete_receipts(tx, id)?;
+        after::cancel_waiter(tx, id)?;
         let mut data = json!({"from_status":t.status});
         if !outcome.is_empty() {
             data["outcome"] = json!(outcome);

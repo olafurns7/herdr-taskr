@@ -4,9 +4,21 @@ use std::path::Path;
 pub const SCHEMA: &str = include_str!("../../../schema.sql");
 pub const SEARCH_TRIGGER: &str = include_str!("search-trigger.sql");
 pub const SEARCH_REBUILD: &str = include_str!("search-rebuild.sql");
-pub const SCHEMA_VERSION: i64 = 1;
+/// Rust-only tables (v2: `taskr after`); schema.sql stays the frozen Go schema.
+pub const SUBSCRIPTIONS: &str = "create table if not exists subscriptions (
+  id             integer primary key,
+  waiter_task_id integer not null references tasks(id),
+  target         text not null,
+  kinds          text not null,
+  keep           integer not null default 0,
+  created_at     text not null,
+  fired_at       text
+);
+create index if not exists subscriptions_open on subscriptions(target) where fired_at is null;
+";
+pub const SCHEMA_VERSION: i64 = 2;
 #[cfg(test)]
-const SCHEMA_HASH: &str = "91a9ce5e1bd5d98c1568a5445d9a4b35fd532b079e4713a80fe411ad6a874324";
+const SCHEMA_HASH: &str = "1a248ec37a3a377fac87702a248b3ac120c23b50d686e0da9c9fb5553e4b54eb";
 
 pub fn open(path: &Path) -> rusqlite::Result<Connection> {
     let mut db = connect(path, rusqlite::OpenFlags::default())?;
@@ -37,6 +49,7 @@ fn search_intact(db: &Connection) -> rusqlite::Result<bool> {
 pub fn migrate(db: &mut Connection) -> rusqlite::Result<()> {
     let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
     tx.execute_batch(SCHEMA)?;
+    tx.execute_batch(SUBSCRIPTIONS)?;
     for (table, column, kind) in [
         ("tasks", "waiting_until", "text"),
         ("launches", "workspace_id", "text"),
@@ -162,6 +175,48 @@ mod tests {
             db.execute_batch("rollback").unwrap();
             drop(reader);
         }
+        drop(db);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn v1_ledger_migrates_to_v2_once_and_idempotently() {
+        let root = std::env::temp_dir().join(format!("taskr-schema-v1-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("ledger.db");
+        // A v1 ledger as v0.17.x left it: the schema, the search index, user_version 1.
+        let db = Connection::open(&path).unwrap();
+        db.execute_batch(SCHEMA).unwrap();
+        db.execute_batch(SEARCH_REBUILD).unwrap();
+        db.pragma_update(None, "user_version", 1).unwrap();
+        db.execute("insert into tasks(name,role,created_at,updated_at) values('kept','orchestrator','t','t')", []).unwrap();
+        drop(db);
+        let shape = |db: &Connection| {
+            db.query_row(
+                "select (select user_version from pragma_user_version), (select count(*) from tasks), (select count(*) from subscriptions), (select sql from sqlite_master where name='subscriptions_open')",
+                [],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, String>(3)?)),
+            )
+            .unwrap()
+        };
+        let want = (
+            2,
+            1,
+            0,
+            "CREATE INDEX subscriptions_open on subscriptions(target) where fired_at is null"
+                .to_string(),
+        );
+        // A hub child of a daemon not yet restarted (open_migrated) migrates it once.
+        let db = crate::db::open_migrated(&path).unwrap();
+        assert_eq!(shape(&db), want);
+        drop(db);
+        let mut db = open(&path).unwrap();
+        migrate(&mut db).unwrap();
+        assert_eq!(shape(&db), want);
+        assert_eq!(
+            db.query_row("pragma integrity_check", [], |r| r.get::<_, String>(0))
+                .unwrap(),
+            "ok"
+        );
         drop(db);
         std::fs::remove_dir_all(root).unwrap();
     }

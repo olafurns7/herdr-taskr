@@ -285,6 +285,30 @@ def run(binary):
         assert after['campaigns'][0]['activity_age_ms'] == before['campaigns'][0]['activity_age_ms']
     case('nudge and outcome do not activate parked glance', parked_activity)
 
+    def r2_pr_subscription_after(c):
+        # Root 3's --keep --on thread_opened subscription to the PR linked to lane 2
+        # fires an `after` row shaped exactly as store::event writes it (the poller
+        # runs only in the resident loop; the Rust tests pin the fired row). The
+        # notification is poller noise: it must not postpone root 1's R2 reminder.
+        c.root()
+        c.sql("insert into tasks(id,parent_id,name,role,status,created_at,updated_at) values(2,1,'lane','implementer','done','2026-10-08T00:00:00.000Z','2026-10-08T00:00:00.000Z')", ())
+        c.sql("insert into tasks(id,name,role,status,pane_id,lead_status,lead_present,lead_observed_at,created_at,updated_at) values(3,'campaign-3','orchestrator','open','w3:p0','idle',1,'2026-10-08T00:00:00.000Z','2026-10-08T00:00:00.000Z','2026-10-08T00:00:00.000Z')", ())
+        c.sql("insert into subscriptions(waiter_task_id,target,kinds,keep,created_at) values(3,'pr:o/r#1','thread_opened',1,'2026-10-08T00:00:00.000Z')", ())
+        c.event(2, 'after', recipient=3, data={'target': 'pr:o/r#1', 'on': 'thread_opened', 'source_event_id': 1}, at='2026-10-08T00:30:00.000Z')
+        c.clock('01:31:00'); c.run()
+        assert [n for n in c.nudges() if n[1] == 1 and n[2] == 'R2'], c.nudges()
+
+    def r2_task_after_is_activity(c):
+        # Control: an after row with a task target is real activity and holds R2.
+        c.root()
+        c.sql("insert into tasks(id,parent_id,name,role,status,created_at,updated_at) values(2,1,'lane','implementer','done','2026-10-08T00:00:00.000Z','2026-10-08T00:00:00.000Z')", ())
+        c.sql("insert into tasks(id,name,role,status,pane_id,lead_status,lead_present,lead_observed_at,created_at,updated_at) values(3,'campaign-3','orchestrator','open','w3:p0','idle',1,'2026-10-08T00:00:00.000Z','2026-10-08T00:00:00.000Z','2026-10-08T00:00:00.000Z')", ())
+        c.event(2, 'after', recipient=3, data={'target': '2', 'on': 'done', 'source_event_id': 1}, at='2026-10-08T00:30:00.000Z')
+        c.clock('01:31:00'); c.run()
+        assert not [n for n in c.nudges() if n[1] == 1 and n[2] == 'R2'], c.nudges()
+    case('R2 ignores a pr subscription after; a task after is activity', r2_pr_subscription_after)
+    case('R2 task-target after stays activity', r2_task_after_is_activity)
+
     def off(c):
         c.root(); c.signal(); c.clock('05:00:00')
         c.env.pop('TASKR_CHECKIN'); c.run()

@@ -91,6 +91,10 @@ pub(super) fn stored(argv: &[String]) -> bool {
             && args
                 .first()
                 .is_some_and(|s| matches!(s.as_str(), "get" | "ls" | "backfill")))
+        && !(name == "after"
+            && args.iter().take_while(|s| s.as_str() != "--").any(|s| {
+                s.starts_with('-') && matches!(s.trim_start_matches('-'), "list" | "list=true")
+            }))
         && !wants_help(args)
 }
 
@@ -383,10 +387,13 @@ mod tests {
             vec!["doc", "backfill"],
             vec!["note", "--help"],
             vec!["_host", "observe"],
+            vec!["after", "--list", "--as", "1"],
         ] {
             assert!(!stored(&argv(&args)));
         }
         assert!(stored(&argv(&["note", "--", "--help"])));
+        assert!(stored(&argv(&["after", "7", "--as", "1"])));
+        assert!(stored(&argv(&["after", "--cancel", "3"])));
         assert_eq!(
             check_args(&argv(&["new", "x", "--role", "gate", "--role=gate"])),
             Err("repeated RPC flag --role".into())

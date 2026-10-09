@@ -854,6 +854,94 @@ mod tests {
         event(&db, 2, "pr", r#"{"pr":"o/r#1","sub":"merged"}"#);
         assert_ne!(activity(&db), before);
     }
+    /// The real firing path: `store::event` inserts the source row and fires any
+    /// matching subscription's `after` notification in the same transaction.
+    fn fired(db: &Connection, task: i64, kind: &str, data: Value) {
+        taskr_core::store::event(
+            db,
+            taskr_core::store::Event {
+                task,
+                kind,
+                data: Some(data),
+                ..taskr_core::store::Event::default()
+            },
+        )
+        .unwrap();
+    }
+    /// A `--keep` subscription held by waiter `waiter` (the fixture runs the frozen
+    /// Go schema; `after` needs the Rust v2 subscription table on top).
+    fn with_subs() -> Connection {
+        let db = fixture();
+        db.execute_batch(taskr_core::schema::SUBSCRIPTIONS).unwrap();
+        db
+    }
+    fn subscription(db: &Connection, waiter: i64, target: &str, kinds: &str) {
+        db.execute(
+            "insert into subscriptions(waiter_task_id,target,kinds,keep,created_at) values(?,?,?,1,?)",
+            params![waiter, target, kinds, q::now()],
+        )
+        .unwrap();
+    }
+    fn after_rows(db: &Connection) -> Vec<(String, String)> {
+        let mut stmt = db
+            .prepare(
+                "select json_extract(data,'$.target'),json_extract(data,'$.on') from events where kind='after' order by id",
+            )
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap()
+    }
+    /// A pr subscription's generated notification is poller noise: root 3's
+    /// `--keep --on thread_opened` subscription to the PR linked to lane 2 must
+    /// leave parked root 1 parked, not parked-active.
+    #[test]
+    fn pr_subscription_after_is_park_noise() {
+        let db = with_subs();
+        event(&db, 2, "note", "{}");
+        event(&db, 2, "ref", r#"{"key":"pr","value":"o/r#1"}"#);
+        event(&db, 1, "ref", r#"{"key":"glance.state","value":"parked"}"#);
+        subscription(&db, 3, "pr:o/r#1", "thread_opened");
+        // The poll's excluded `pr` row fires the notification to root 3.
+        fired(&db, 2, "pr", json!({"pr": "o/r#1", "sub": "thread_opened"}));
+        assert_eq!(
+            after_rows(&db),
+            [("pr:o/r#1".into(), "thread_opened".into())]
+        );
+        let fired_at: Option<String> = db
+            .query_row("select fired_at from subscriptions where id=1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(fired_at, None, "--keep is not consumed");
+        assert!(
+            !parked_active(&db),
+            "subscription notification reactivated unrelated source tree"
+        );
+    }
+    /// Control: a material PR sub (`merged`) stays activity.
+    #[test]
+    fn pr_merged_after_is_activity() {
+        let db = with_subs();
+        event(&db, 2, "note", "{}");
+        event(&db, 1, "ref", r#"{"key":"glance.state","value":"parked"}"#);
+        subscription(&db, 3, "pr:o/r#1", "merged");
+        fired(&db, 2, "pr", json!({"pr": "o/r#1", "sub": "merged"}));
+        assert_eq!(after_rows(&db), [("pr:o/r#1".into(), "merged".into())]);
+        assert!(parked_active(&db), "a material PR sub is activity");
+    }
+    /// Control: an `after` event with a task target stays activity.
+    #[test]
+    fn task_after_is_activity() {
+        let db = with_subs();
+        event(&db, 2, "note", "{}");
+        event(&db, 1, "ref", r#"{"key":"glance.state","value":"parked"}"#);
+        subscription(&db, 3, "2", "done");
+        fired(&db, 2, "done", json!({}));
+        assert_eq!(after_rows(&db), [("2".into(), "done".into())]);
+        assert!(parked_active(&db), "a task-target after is activity");
+    }
     #[test]
     fn withdrawn_ask_leaves_needs_you() {
         let db = fixture();

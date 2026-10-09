@@ -22,6 +22,17 @@ pub fn flags(cmd: &str, json: bool) -> FlagSet {
         "next" => {
             f.bool("clear", false, "clear the lane's next step");
         }
+        "after" => {
+            f.int("as", 0, "the root orchestrator's own task id")
+                .string(
+                    "on",
+                    "",
+                    "kinds, comma-separated: for a task done, ready, closed, fail (default done,closed); for pr: any pr sub (default merged)",
+                )
+                .bool("keep", false, "fire on every match until the waiter closes (default: once)")
+                .bool("list", false, "list the --as root's subscriptions")
+                .int("cancel", 0, "cancel this subscription id");
+        }
         "decide" => {
             f.int("as", 0, "the root orchestrator's own task id").int(
                 "revoke",
@@ -311,6 +322,22 @@ pub fn emit(cmd: &str, json_mode: bool, v: &Value) {
             println!("dc1 {}", compact_json(&out).expect("JSON"));
         }
         "set" => println!("rf1 {}", compact_json(&v["event_ids"]).expect("JSON")),
+        "after" => match v["subscriptions"].as_array() {
+            Some(rows) => {
+                for r in rows {
+                    println!("j1 {}", compact_json(r).expect("JSON"));
+                }
+            }
+            None => println!(
+                "af1 {}{}",
+                v["subscription_id"],
+                if v["cancelled"] == true {
+                    " cancelled"
+                } else {
+                    ""
+                }
+            ),
+        },
         "prompt" | "answer" => {
             let mut m = json!({});
             for (k, v) in v.as_object().expect("object") {
@@ -386,6 +413,7 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
         "adopt",
         "next",
         "decide",
+        "after",
     ]
     .contains(&cmd)
     {
@@ -394,7 +422,7 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
     let mut f = flags(cmd, json_mode);
     let (min, max) = match cmd {
         "start" | "wait" | "handover" | "doc backfill" => (0, 0),
-        "decide" => (0, 1),
+        "decide" | "after" => (0, 1),
         "next" => (1, 2),
         "done" => (0, 1),
         "answer" | "doc set" => (2, 2),
@@ -493,6 +521,69 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
                 return Err(store::usage("--revoke must be a positive event id"));
             }
             store::plan::decide(&mut open()?, id, text, revoke)
+        }
+        "after" => {
+            if f.was_set("cancel") {
+                if f.get_int("cancel") <= 0 {
+                    return Err(store::usage("--cancel must be a positive subscription id"));
+                }
+                if !p.is_empty() || ["as", "on", "keep", "list"].iter().any(|k| f.was_set(k)) {
+                    return Err(store::usage("after --cancel ID takes nothing else"));
+                }
+                return store::after::cancel(&mut open()?, f.get_int("cancel"));
+            }
+            let as_id = f.get_int("as");
+            if as_id <= 0 {
+                return Err(store::usage("after needs --as ROOT_TASK_ID"));
+            }
+            if f.get_bool("list") {
+                if !p.is_empty() || f.was_set("on") || f.was_set("keep") {
+                    return Err(store::usage("after --list takes only --as"));
+                }
+                return store::after::list(&open()?, as_id);
+            }
+            let Some(target) = p.first() else {
+                return Err(store::usage(
+                    "after needs TARGET: a task id, pr:N or pr:owner/repo#N",
+                ));
+            };
+            let (target, allowed, default) = if let Some(pr) = target.strip_prefix("pr:") {
+                (
+                    crate::daemon::github::target(pr)?,
+                    store::after::PR_SUBS,
+                    "merged",
+                )
+            } else if let Ok(id) = store::id(target, "TARGET") {
+                (id.to_string(), store::after::TASK_KINDS, "done,closed")
+            } else {
+                return Err(store::usage(format!(
+                    "after: TARGET is a task id, pr:N or pr:owner/repo#N, got {target:?}"
+                )));
+            };
+            let on = if f.was_set("on") {
+                f.get_string("on")
+            } else {
+                default
+            };
+            let mut kinds: Vec<&str> = vec![];
+            for k in on.split(',') {
+                if !allowed.contains(&k) {
+                    return Err(store::usage(format!(
+                        "--on: {k:?} is not one of {}",
+                        allowed.join(", ")
+                    )));
+                }
+                if !kinds.contains(&k) {
+                    kinds.push(k);
+                }
+            }
+            store::after::add(
+                &mut open()?,
+                as_id,
+                &target,
+                &kinds.join(","),
+                f.get_bool("keep"),
+            )
         }
         "doc rm" => {
             let id = store::id(&p[0], "document id")?;

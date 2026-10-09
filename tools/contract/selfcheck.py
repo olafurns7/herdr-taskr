@@ -28,6 +28,15 @@ with tempfile.TemporaryDirectory(prefix='taskr-contract-check-') as scratch:
     with sqlite3.connect(copy) as db:
         db.execute("update search_fts set body='changed' where rowid=1")
     assert contract.logical(copy) != before
+    # An empty Rust-only table (schema 2) is invisible; a row in it is not.
+    with sqlite3.connect(copy) as db:
+        db.execute('create table subscriptions(id integer primary key, target text, fired_at text)')
+        db.execute('create index subscriptions_open on subscriptions(target) where fired_at is null')
+    empty = contract.logical(copy)
+    assert 'subscriptions' not in empty['tables'] and not any('subscriptions' in row[2] for row in empty['schema'])
+    with sqlite3.connect(copy) as db:
+        db.execute("insert into subscriptions(target) values ('7')")
+    assert 'subscriptions' in contract.logical(copy)['tables']
     binary = Path('/usr/bin/python3').resolve()
     golden.session = golden.Session('selfcheck', True, directory, binary, binary)
     assert golden.normalize(str(directory / 'copy.db')) == '<tmp>/copy.db'

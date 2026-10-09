@@ -42,6 +42,7 @@ pub fn code(kind: &str) -> &str {
         "launch" => "l",
         "closed" => "c",
         "pr" => "pu",
+        "after" => "af",
         other => other,
     }
 }

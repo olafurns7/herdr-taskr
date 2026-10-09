@@ -37,9 +37,18 @@ pub fn open(path: &Path) -> Result<Connection, String> {
     crate::schema::open(path).map_err(|e| error_text(&e))
 }
 /// The daemon already migrated this ledger; RPC reads must not take a write lock.
+/// A new binary under a daemon not yet restarted migrates an older ledger once.
 pub fn open_migrated(path: &Path) -> Result<Connection, String> {
-    crate::schema::connect(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
-        .map_err(|e| error_text(&e))
+    let db = crate::schema::connect(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
+        .map_err(|e| error_text(&e))?;
+    let version: i64 = db
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .map_err(|e| error_text(&e))?;
+    if version < crate::schema::SCHEMA_VERSION {
+        drop(db);
+        return crate::schema::open(path).map_err(|e| error_text(&e));
+    }
+    Ok(db)
 }
 pub fn busy_reply(exit: i64, error: &str) -> bool {
     exit == 4 && error.starts_with("database is locked")

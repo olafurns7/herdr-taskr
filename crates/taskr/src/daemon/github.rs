@@ -13,8 +13,10 @@ const TIMEOUT: Duration = Duration::from_secs(20);
 const MINUTE: Duration = Duration::from_secs(60);
 const CAP: Duration = Duration::from_secs(15 * 60);
 /// SQL predicate for poller bookkeeping that is not campaign activity: `pr` events
-/// other than sub `merged`, and the refs the poller writes.
-pub(crate) const PR_NOISE: &str = "((e.kind='pr' and coalesce(json_extract(e.data,'$.sub'),'')!='merged') or (e.kind='ref' and coalesce(json_extract(e.data,'$.source'),'')='github'))";
+/// other than sub `merged`, their generated `after` notifications (a `pr:` target
+/// whose sub is not material; `merged` stays activity, as does a task target), and
+/// the refs the poller writes.
+pub(crate) const PR_NOISE: &str = "((e.kind='pr' and coalesce(json_extract(e.data,'$.sub'),'')!='merged') or (e.kind='after' and coalesce(json_extract(e.data,'$.target'),'') like 'pr:%' and coalesce(json_extract(e.data,'$.on'),'')!='merged') or (e.kind='ref' and coalesce(json_extract(e.data,'$.source'),'')='github'))";
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct Pr {
@@ -58,6 +60,21 @@ pub(super) fn parse(value: &str, default: &str) -> Option<Pr> {
         number,
     })
 }
+/// An `after pr:` target as stored: `pr:owner/repo#N`. `N` and `#N` need the
+/// hub's default repo in watch.json.
+pub(crate) fn target(value: &str) -> Result<String> {
+    let default = state_dir()
+        .ok()
+        .and_then(|dir| config(&dir))
+        .unwrap_or_default();
+    parse(value, &default)
+        .map(|pr| format!("pr:{}", pr.key()))
+        .ok_or_else(|| {
+            store::usage(format!(
+                "after: pr:{value} is not a PR; use pr:owner/repo#N, or pr:N with default_repo in watch.json"
+            ))
+        })
+}
 /// `~/.local/state/taskr/watch.json` with `"github": {"enabled": true}`; returns the
 /// default repo ("" when unset, so only `owner/repo#N` links are polled).
 pub(super) fn config(dir: &Path) -> Option<String> {
@@ -69,17 +86,35 @@ pub(super) struct Link {
     task: i64,
     pr: Pr,
 }
-/// Open tasks whose latest `pr` ref parses.
+/// Tasks whose latest `pr` ref parses: open tasks, and closed ones whose PR an
+/// unfired `after pr:` subscription of an open waiter still targets.
 fn links(db: &db::Connection, default: &str) -> Result<Vec<Link>> {
-    let mut stmt = db.prepare("select t.id,json_extract(e.data,'$.value') from tasks t join events e on e.id=(select max(x.id) from events x where x.task_id=t.id and x.kind='ref' and json_extract(x.data,'$.key')='pr') where t.status!='closed' order by t.id")?;
+    let subs = db
+        .prepare("select distinct substr(s.target,4) from subscriptions s join tasks w on w.id=s.waiter_task_id where s.fired_at is null and s.target like 'pr:%' and w.status!='closed'")?
+        .query_map([], |r| r.get::<_, String>(0))?
+        .collect::<std::result::Result<std::collections::HashSet<_>, _>>()?;
+    let open = if subs.is_empty() {
+        "t.status!='closed'"
+    } else {
+        "1"
+    };
+    let mut stmt = db.prepare(&format!("select t.id,t.status='closed',json_extract(e.data,'$.value') from tasks t join events e on e.id=(select max(x.id) from events x where x.task_id=t.id and x.kind='ref' and json_extract(x.data,'$.key')='pr') where {open} order by t.id"))?;
     let rows = stmt
         .query_map([], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, Option<String>>(1)?))
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, bool>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows
         .into_iter()
-        .filter_map(|(task, v)| parse(&v?, default).map(|pr| Link { task, pr }))
+        .filter_map(|(task, closed, v)| {
+            parse(&v?, default)
+                .filter(|pr| !closed || subs.contains(&pr.key()))
+                .map(|pr| Link { task, pr })
+        })
         .collect())
 }
 /// Last-seen state per PR in meta `pr_state:<repo>#<n>`; checks are keyed on the head.
