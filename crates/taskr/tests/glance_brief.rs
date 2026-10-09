@@ -73,6 +73,12 @@ fn brief_usage_errors() {
         "{text}"
     );
     assert!(text.contains(&format!("  root={root} ask=")), "{text}");
+    assert!(
+        text.lines().any(|l| {
+            (l.starts_with('●') || l.starts_with('○')) && l.contains(&format!("root={root}"))
+        }),
+        "{text}"
+    );
 }
 
 #[cfg(feature = "contract")]

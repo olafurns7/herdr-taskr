@@ -564,6 +564,16 @@ mod parity_tests {
         );
     }
     #[test]
+    fn brief_clips_overlong_quote() {
+        let v = json!({"now":"2026-10-07T17:30:00.000Z","verdict":"rolling","needs_you":[],"attention":[],"campaigns":[{"id":14,"name":"overlong-quote","activity_age_ms":7_200_000,"activity_id":69700,"lanes":{"working":1,"open":2},"last":{"age_ms":7_200_000,"text":"x".repeat(200)}}],"quiet":{"count":0}});
+        let out = brief(v, "").unwrap();
+        assert!(
+            out.contains(&format!("{}\u{2026}", "x".repeat(59))),
+            "{out}"
+        );
+        assert!(!out.contains(&"x".repeat(60)), "{out}");
+    }
+    #[test]
     fn brief_strips_control_zero_width_and_bidi() {
         let mut v = busy();
         v["campaigns"][0]["last"]["text"] =
