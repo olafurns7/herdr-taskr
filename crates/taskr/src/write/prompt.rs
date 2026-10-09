@@ -478,7 +478,7 @@ pub(crate) fn finish(
         if left.is_zero() {
             break;
         }
-        std::thread::sleep(left.min(Duration::from_millis(50)));
+        std::thread::sleep(left.min(super::inbox::poll_interval()));
     }
     out["ok"] = json!(false);
     out["receipt"] = json!(false);

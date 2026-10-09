@@ -6,7 +6,18 @@ use std::sync::{
 use std::time::{Duration, Instant};
 use taskr_core::store::inbox as ledger;
 pub(crate) mod observe;
+#[cfg(test)]
+mod tests;
 pub use ledger::ack;
+/// Go's dbPollInterval: 1 s. Go's test binary polls every 50 ms, and so does
+/// the contract oracle here (TASKR_CONTRACT_ORACLE=1 in a contract build).
+pub(super) fn poll_interval() -> Duration {
+    #[cfg(feature = "contract")]
+    if std::env::var("TASKR_CONTRACT_ORACLE").is_ok_and(|s| s == "1") {
+        return Duration::from_millis(50);
+    }
+    Duration::from_secs(1)
+}
 pub fn code(kind: &str) -> &str {
     match kind {
         "got" => "g",
@@ -238,7 +249,7 @@ pub fn wait(f: &FlagSet) -> Result<Value> {
             if left.is_zero() {
                 break;
             }
-            std::thread::sleep(left.min(Duration::from_millis(50)));
+            std::thread::sleep(left.min(poll_interval()));
         }
         let (owed, due) = ledger::counts(&db, as_id)?;
         Ok(json!({"timeout":true,"as":as_id,"owed":owed,"due":due}))
