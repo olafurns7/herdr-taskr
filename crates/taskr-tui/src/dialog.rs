@@ -194,8 +194,11 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
     }
     rows.extend(tail);
 
-    let context = wrap(&parsed.context, width);
-    let room = budget.saturating_sub(rows.len() + 1).max(1);
+    let mut context = wrap(&parsed.context, width);
+    // The answer's row and its cursor are always reserved, so when the rows run past
+    // the budget the context gives way first: its window's last line and the position
+    // indicator share one row, or the context drops to zero rows.
+    let room = budget.saturating_sub(rows.len() + 1);
     let total = context.len();
     let mut out: Vec<Line> = if total <= room {
         app.seen.borrow_mut().page = (0, 0);
@@ -203,9 +206,9 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
             .into_iter()
             .map(|l| Line::from(sp(l, t.text)))
             .collect()
-    } else {
+    } else if room >= 2 {
         // A window on the text, and under it where the window is.
-        let shown = room.saturating_sub(1).max(1);
+        let shown = room - 1;
         app.seen.borrow_mut().page = (shown, total);
         let first = app.scroll.min(total - shown);
         let mut out: Vec<Line> = context
@@ -221,6 +224,25 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
         );
         out.push(Line::from(sp(at, t.dim)));
         out
+    } else if room == 1 {
+        // One row for the window: its first line and where it is share it.
+        app.seen.borrow_mut().page = (1, total);
+        let first = app.scroll.min(total - 1);
+        let at = format!(
+            "… {}-{}/{total} · ctrl-d ctrl-u scroll",
+            first + 1,
+            first + 1
+        );
+        let line = context.remove(first);
+        vec![Line::from(ui::spread(
+            vec![sp(line, t.text)],
+            vec![sp(at, t.dim)],
+            width,
+        ))]
+    } else {
+        // No room at all: the context waits behind ctrl-d.
+        app.seen.borrow_mut().page = (0, total);
+        vec![]
     };
     out.push(Line::raw(""));
     out.extend(rows);
@@ -654,6 +676,51 @@ mod tests {
         let text = frames::text(&buf);
         assert!(text.contains(" answer …"), "{text}");
         assert!(text.contains("❯ [x] D  3 label"), "{text}");
+        assert!(text.contains("esc cancel"), "{text}");
+        let (y, line) = text
+            .lines()
+            .enumerate()
+            .find(|(_, l)| l.ends_with("END"))
+            .unwrap_or_else(|| panic!("the answer's tail is on screen:\n{text}"));
+        let x = line.chars().count() as u16;
+        let cell = buf[(x, y as u16)].style();
+        assert_eq!(
+            cell,
+            cell.patch(app.theme.cursor()),
+            "the cursor follows the tail"
+        );
+    }
+
+    #[test]
+    fn a_recommended_label_still_leaves_the_answer_on_screen() {
+        // The same four 60-character labels at 46x20, with the first one recommended and
+        // a wrapped question: the context gives way, the answer and its cursor stay.
+        let mut app = App::new(frames::fixture());
+        let mut ask = frames::structured_asks()[2].clone();
+        let question = ask.question.as_mut().expect("a question");
+        for (i, o) in question.options.iter_mut().enumerate() {
+            o.label = format!("{i}{}", " label".repeat(10))[..60].to_string();
+            o.recommended = i == 0;
+        }
+        ask.text = format!(
+            "Translations landed for three of the four locales. Which locales ship in the first release? {}",
+            question
+                .options
+                .iter()
+                .zip('A'..)
+                .map(|(o, c)| format!("({c}) {}", o.label))
+                .collect::<Vec<_>>()
+                .join("; ")
+        );
+        app.answer(ask);
+        for i in 0..4 {
+            app.choose(i);
+            app.toggle();
+        }
+        app.edit(|note| *note = format!("{}END", "note ".repeat(80)));
+        let buf = render(&app, 46, 20);
+        let text = frames::text(&buf);
+        assert!(text.contains(" answer …"), "{text}");
         assert!(text.contains("esc cancel"), "{text}");
         let (y, line) = text
             .lines()
