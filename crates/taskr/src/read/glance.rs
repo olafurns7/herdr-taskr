@@ -266,7 +266,7 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
         if let Some(a) = one(
             db,
             &format!(
-                "{TREES}select e.id,e.created_at from tree join events e on e.task_id=tree.id where tree.root=? order by e.id desc limit 1"
+                "{TREES}select e.id,e.created_at from tree join events e on e.task_id=tree.id where tree.root=? and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not (e.kind='prompt_outcome' and exists(select 1 from events p where p.id=e.related_event_id and json_extract(p.data,'$.nudge') is not null)) order by e.id desc limit 1"
             ),
             vec![rid.into()],
         )? {
@@ -276,7 +276,7 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
         if let Some(ms) = one(
             db,
             &format!(
-                "{TREES}select e.id,e.kind,coalesce(e.summary,'') as summary,e.created_at,coalesce(json_extract(e.data,'$.key'),'') as key,coalesce(json_extract(e.data,'$.value'),'') as value,coalesce(json_extract(e.data,'$.owner'),0) as owner from tree join tasks t on t.id=tree.id join events e on e.task_id=t.id where tree.root=? and (e.kind in ('ready','done','fail','handover','adopt','decision') or (e.kind='note' and t.parent_id is null) or (e.kind='ref' and json_extract(e.data,'$.key') in ('pr','release','tag','merged') and coalesce(json_extract(e.data,'$.value'),'')!='')) order by e.id desc limit 1"
+                "{TREES}select e.id,e.kind,coalesce(e.summary,'') as summary,e.created_at,coalesce(json_extract(e.data,'$.key'),'') as key,coalesce(json_extract(e.data,'$.value'),'') as value,coalesce(json_extract(e.data,'$.owner'),0) as owner from tree join tasks t on t.id=tree.id join events e on e.task_id=t.id where tree.root=? and (e.kind in ('ready','done','fail','handover','adopt','decision') or (e.kind in ('note','next') and t.parent_id is null) or (e.kind='ref' and json_extract(e.data,'$.key') in ('pr','release','tag','merged') and coalesce(json_extract(e.data,'$.value'),'')!='')) order by e.id desc limit 1"
             ),
             vec![rid.into()],
         )? {
@@ -302,7 +302,7 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
             r.activity_id = one(
                 db,
                 &format!(
-                    "{TREES}select max(e.id) as id from tree join events e on e.task_id=tree.id where tree.root=? and (e.task_id!=tree.root or e.kind='prompt')"
+                    "{TREES}select max(e.id) as id from tree join events e on e.task_id=tree.id where tree.root=? and (e.task_id!=tree.root or e.kind='prompt') and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null)"
                 ),
                 vec![rid.into()],
             )?
@@ -384,7 +384,8 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
     for b in rows(
         db,
         &format!(
-            "{TREES},signals as materialized (select e.id,e.recipient_task_id,e.created_at from events e where e.created_at<? and (e.kind in ('ready','done','fail') or (e.kind='prompt_outcome' and json_extract(e.data,'$.outcome')='no_receipt' and e.launch_id is (select current_launch_id from tasks where id=e.task_id)) or (e.kind='herdr' and (json_extract(e.data,'$.quota')='limit' or (json_extract(e.data,'$.reason')='stall' and e.launch_id is (select current_launch_id from tasks where id=e.task_id)))))),backlog as (select r.id as recipient,count(*) as count,min(e.created_at) as since,max(e.id) as newest from signals e join tasks r on r.id=e.recipient_task_id join tree on tree.id=r.id where r.parent_id is null and r.status!='closed' and e.id>r.acked_event_id group by r.id) select b.recipient,b.count,b.since,sender.name||' '||e.kind||': '||coalesce(e.summary,'') as text from backlog b join events e on e.id=b.newest join tasks sender on sender.id=e.task_id order by b.recipient"
+            "{TREES},signals as materialized ({signals} and e.created_at<?),backlog as (select r.id as recipient,count(*) as count,min(e.created_at) as since,max(e.id) as newest from signals e join tasks r on r.id=e.recipient_task_id join tree on tree.id=r.id where r.parent_id is null and r.status!='closed' and e.id>r.acked_event_id group by r.id) select b.recipient,b.count,b.since,sender.name||' '||e.kind||': '||coalesce(e.summary,'') as text from backlog b join events e on e.id=b.newest join tasks sender on sender.id=e.task_id order by b.recipient",
+            signals = crate::daemon::LEAD_IDLE_SIGNALS
         ),
         vec![cutoff.into()],
     )? {

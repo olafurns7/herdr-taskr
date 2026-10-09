@@ -564,7 +564,7 @@ async fn run(hub: &Hub, machine: &str, req: &RpcRequest) -> Execution {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .kill_on_drop(true);
-            for key in ["PATH", "HERDR_SOCKET_PATH"] {
+            for key in ["PATH", "HERDR_SOCKET_PATH", "TASKR_CHECKIN"] {
                 if let Some(value) = std::env::var_os(key) {
                     cmd.env(key, value);
                 }

@@ -33,8 +33,8 @@ fn task_token(status: &str, waiting: bool, asks: i64) -> &str {
         "open"
     }
 }
-fn run(sock: &str, args: &[&str]) -> Result<()> {
-    let out = herdr::command(sock, args, Duration::from_secs(10)).map_err(transport)?;
+pub(super) fn run(sock: &str, args: &[&str], timeout: Duration) -> Result<()> {
+    let out = herdr::command(sock, args, timeout).map_err(transport)?;
     if out.code != Some(0) {
         return Err(transport(format!("exit status {}", out.code.unwrap_or(-1))));
     }
@@ -191,6 +191,7 @@ impl Tokens {
                     "--token",
                     &format!("taskr_round={}", t.round),
                 ],
+                Duration::from_secs(10),
             ) {
                 log.line(&format!("token write for task {id} failed: {}", e.message));
                 continue;
@@ -258,7 +259,11 @@ impl Tokens {
                     args.extend(["--clear-token".into(), key.into()]);
                 }
             }
-            if let Err(e) = run(sock, &args.iter().map(String::as_str).collect::<Vec<_>>()) {
+            if let Err(e) = run(
+                sock,
+                &args.iter().map(String::as_str).collect::<Vec<_>>(),
+                Duration::from_secs(10),
+            ) {
                 log.line(&format!(
                     "workspace token write for {workspace} failed: {}",
                     e.message
@@ -313,7 +318,7 @@ impl Tokens {
             };
             let mut args = vec!["pane", "report-metadata", &pane, "--source", "taskr"];
             args.extend(extra.iter().map(String::as_str));
-            if let Err(e) = run(sock, &args) {
+            if let Err(e) = run(sock, &args, Duration::from_secs(10)) {
                 log.line(&format!(
                     "owner ask token write for {pane} failed: {}",
                     e.message
@@ -335,11 +340,16 @@ pub(super) fn notify(db: &db::Connection, sock: &str, log: &Log) -> Result<usize
     Ok(notify_claimed(claim(db, None)?, sock, log).0)
 }
 pub(super) fn claim(db: &db::Connection, host: Option<&str>) -> Result<Vec<(i64, String)>> {
-    let mut stmt=db.prepare("select e.id,coalesce(e.summary,'') from events e join tasks t on t.id=e.task_id where e.kind='ask' and e.answered_by is null and json_extract(e.data,'$.owner')=1 and t.machine is ? and json_extract(e.data,'$.blocking')=1 and not exists(select 1 from meta m where m.key='notified:'||e.id) order by e.id")?;
+    let mut stmt=db.prepare("select e.id,coalesce(e.summary,'') from events e join tasks t on t.id=e.task_id where e.kind='ask' and e.answered_by is null and json_extract(e.data,'$.owner')=1 and t.machine is ? and (json_extract(e.data,'$.blocking')=1 or (? and e.created_at<=? and t.status!='closed')) and not exists(select 1 from meta m where m.key='notified:'||e.id) order by e.id")?;
     let rows = stmt
-        .query_map([host], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
-        })?
+        .query_map(
+            params![
+                host,
+                checkin::enabled(),
+                store::stamp(taskr_core::frozen_now().expect("clock") - time::Duration::hours(4))
+            ],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
+        )?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     drop(stmt);
     let mut claimed = Vec::new();
@@ -374,6 +384,7 @@ pub(super) fn notify_claimed(
                 "--sound",
                 "request",
             ],
+            Duration::from_secs(10),
         ) {
             log.line(&format!("notify ask {id} failed: {}", e.message));
             if first_error.is_none() {
