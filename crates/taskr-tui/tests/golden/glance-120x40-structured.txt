@@ -1,0 +1,40 @@
+ taskr ❯ glance                                                           hub atlas · 2s ago   ● 5 need you  3 to check
+ 3 notes still carry OWNER items
+╭ Glance ──────────────────────────────────────────────────╮╭ ask 61790 · auth-rotation ───────────────────────────────╮
+│ NEEDS YOU ──────────────────────────────────────────── 5 ││ BLOCKING · asker waiting · 2m ago · atlas w20:p1         │
+│ ? ◆ fleet-hub            BLOCKING HUB              ⏎  25s││                                                          │
+│   Release: Cut the v3.2 release today, or wait for the … ││ Tokens: Which signing scheme should the rotated service  │
+│▌? ◆ auth-rotation        BLOCKING                  ⏎   2m││ tokens use?                                              │
+│▌  Tokens: Which signing scheme should the rotated servi… ││                                                          │
+│ ? ◆ docs-refresh                                   ⏎   4m││ Options                                                  │
+│   Translations landed for three of the four locales. Lo… ││  A Ed25519  ★ recommended                                │
+│ ? ◇ tui-frames           BLOCKING                  ⏎  41s││     Short keys and fast checks; every client library we  │
+│   Frames follow-up is ready: PR #212 (orphaned asks hid… ││     ship supports it already.                            │
+│ ? ◇ ios-widgets                             laptop ↗   6m││  B RSA-2048                                              │
+│   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash).… ││     Matches today's tokens, so no client changes, but    │
+│ TO CHECK ───────────────────────────────────────────── 3 ││     rotation takes four times as long.                   │
+│ ! map-tiles-polish                            laptop   2h││  C HMAC-SHA256                                           │
+│   lead unregistered and silent                           ││     Simplest to run, but every verifier then holds the   │
+│ ! infra-layout                                         2h││     signing secret.                                      │
+│   lead idle with 3 results                               ││                                                          │
+│ ! host build-mini                               mini  12m││                                                          │
+│   host stale: no heartbeat for 12 m                      ││                                                          │
+│ CAMPAIGNS ─────────────────────────────────────────── 10 ││                                                          │
+│ ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃        19s││                                                          │
+│   Research complete: reports/ranking-options.md compare… ││                                                          │
+│ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█        29s││                                                          │
+│   Implementation slice: key rollover job, fake-clock te… ││                                                          │
+│ ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁        33s││                                                          │
+│   FYI 61448 from search-index (root 4310): the tokenize… ││                                                          │
+│ ○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂         2m││                                                          │
+│   Hub FYI: keep the page map machine-readable for the f… │╰──────────────────────────────────────────────────────────╯
+│ ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█         3m│╭ auth-rotation · last 4 h ────────────────────────────────╮
+│ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁  laptop  7m││                                               ██         │
+│ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆         8m││                                         ▄▄▂▂  ██         │
+│ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃        12m││                                         ████  ██         │
+│ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁        14m││                                                          │
+│ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁        54m││ lead ◐ working   lanes ●                                 │
+│ ‖ legacy-importer                              parked  3h││ last Implementation slice: key rollover job, fake-clock  │
+│ · 2 quiet                                                ││ tests, installer and operator docs                       │
+╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
+ ⏎ go to lead   a answer   l open   / filter   y copy   s slotr   ? help   q quit

@@ -57,6 +57,29 @@ pub struct Need {
     pub asker_task_id: i64,
     pub asker_waiting: bool,
     pub also: Vec<String>,
+    /// A structured ask's question (`taskr ask --question`); absent on a plain ask.
+    pub question: Option<Question>,
+    /// The hub relayed this ask from its own question dialog (`taskr ask --dialog`).
+    pub dialog: bool,
+}
+
+/// One AskUserQuestion-shaped question, as `taskr ask --question` stores it.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Question {
+    pub header: String,
+    pub question: String,
+    #[serde(rename = "multiSelect")]
+    pub multi_select: bool,
+    pub options: Vec<QuestionOption>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct QuestionOption {
+    pub label: String,
+    pub description: String,
+    pub recommended: bool,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

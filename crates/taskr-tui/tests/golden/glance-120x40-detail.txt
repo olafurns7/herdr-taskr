@@ -2,11 +2,11 @@
  3 notes still carry OWNER items
 ╭ Glance ──────────────────────────────────────────────────╮╭ ask 61812 · infra-layout · 9-34/34 ──────────────────────╮
 │ NEEDS YOU ──────────────────────────────────────────── 3 ││ 3. Build the server, the client and the daemon for both  │
-│ ? tui-frames           BLOCKING                    ⏎  41s││ architectures.                                           │
+│ ? ◇ tui-frames           BLOCKING                  ⏎  41s││ architectures.                                           │
 │   Frames follow-up is ready: PR #212 (orphaned asks hid… ││ 4. Run the full suite on the build host with the slow    │
-│ ? ios-widgets                               laptop ↗   6m││ tests switched on.                                       │
+│ ? ◇ ios-widgets                             laptop ↗   6m││ tests switched on.                                       │
 │   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash).… ││ 5. Install the candidate on the staging host and replay  │
-│▌? infra-layout         BLOCKING                    ⏎   3m││ one day of traffic.                                      │
+│▌? ◇ infra-layout         BLOCKING                  ⏎   3m││ one day of traffic.                                      │
 │▌  Release runbook for v2.5, ready to run once you pick … ││ 6. Compare the replay's error rate and latency with the  │
 │ TO CHECK ───────────────────────────────────────────── 3 ││ last release.                                            │
 │ ! map-tiles-polish                            laptop   2h││ 7. Write the changelog from the merged pull requests     │

@@ -1847,6 +1847,112 @@
   "asker_waiting": true,
   "text": "Release runbook for v2.5, ready to run once you pick the window. Each step waits for the one before:\n1. Freeze the release branch and post the freeze note in the team channel.\n2. Tag the release candidate from the head of the release branch.\n3. Build the server, the client and the daemon for both architectures.\n4. Run the full suite on the build host with the slow tests switched on.\n5. Install the candidate on the staging host and replay one day of traffic.\n6. Compare the replay's error rate and latency with the last release.\n7. Write the changelog from the merged pull requests since v2.4.\n8. Publish the candidate to the beta channel and wait one hour for crash reports.\n9. Promote the candidate to stable if the beta channel stays quiet.\n10. Update the install docs and the upgrade notes for the new flags.\n11. Unfreeze the release branch and merge it back into main.\n12. Close the release milestone and archive the runbook with the timings.\nWhen: (A) tonight after 22:00 [recommended]; (B) tomorrow morning."
  },
+ "structured_asks": [
+  {
+   "kind": "owner_ask",
+   "campaign": "fleet-hub",
+   "root_id": 3001,
+   "host": "",
+   "pane_id": "w1:p1",
+   "age_ms": 25000,
+   "since": "2026-03-14T14:16:10.000Z",
+   "ask_id": 61811,
+   "blocking": true,
+   "asker": "fleet-hub",
+   "asker_task_id": 3001,
+   "asker_waiting": true,
+   "text": "Release: Cut the v3.2 release today, or wait for the cache fix? (A) Cut today; (B) Wait for the fix",
+   "question": {
+    "header": "Release",
+    "question": "Cut the v3.2 release today, or wait for the cache fix?",
+    "multiSelect": false,
+    "options": [
+     {
+      "label": "Cut today",
+      "description": "Ships the 14 merged changes now; the cache fix follows in v3.2.1."
+     },
+     {
+      "label": "Wait for the fix",
+      "description": "One release with everything, likely tomorrow afternoon."
+     }
+    ]
+   },
+   "dialog": true
+  },
+  {
+   "kind": "owner_ask",
+   "campaign": "auth-rotation",
+   "root_id": 4288,
+   "host": "",
+   "pane_id": "w20:p1",
+   "age_ms": 125000,
+   "since": "2026-03-14T14:16:10.000Z",
+   "ask_id": 61790,
+   "blocking": true,
+   "asker": "auth-rotation",
+   "asker_task_id": 4288,
+   "asker_waiting": true,
+   "text": "Tokens: Which signing scheme should the rotated service tokens use? (A) Ed25519; (B) RSA-2048; (C) HMAC-SHA256",
+   "question": {
+    "header": "Tokens",
+    "question": "Which signing scheme should the rotated service tokens use?",
+    "multiSelect": false,
+    "options": [
+     {
+      "label": "Ed25519",
+      "recommended": true,
+      "description": "Short keys and fast checks; every client library we ship supports it already."
+     },
+     {
+      "label": "RSA-2048",
+      "description": "Matches today's tokens, so no client changes, but rotation takes four times as long."
+     },
+     {
+      "label": "HMAC-SHA256",
+      "description": "Simplest to run, but every verifier then holds the signing secret."
+     }
+    ]
+   }
+  },
+  {
+   "kind": "owner_ask",
+   "campaign": "docs-refresh",
+   "root_id": 4296,
+   "host": "",
+   "pane_id": "w28:p1",
+   "age_ms": 280000,
+   "since": "2026-03-14T14:16:10.000Z",
+   "ask_id": 61802,
+   "blocking": false,
+   "asker": "docs-refresh",
+   "asker_task_id": 4296,
+   "asker_waiting": true,
+   "text": "Translations landed for three of the four locales. Locales: Which locales ship in the first docs release? (A) English; (B) German; (C) Japanese; (D) Portuguese",
+   "question": {
+    "header": "Locales",
+    "question": "Which locales ship in the first docs release?",
+    "multiSelect": true,
+    "options": [
+     {
+      "label": "English",
+      "description": "The source text; always complete."
+     },
+     {
+      "label": "German",
+      "description": "Reviewed by the partner team last week."
+     },
+     {
+      "label": "Japanese",
+      "description": "Machine draft; 40 pages are still unreviewed."
+     },
+     {
+      "label": "Portuguese",
+      "description": "Half translated; the glossary is not settled yet."
+     }
+    ]
+   }
+  }
+ ],
  "slotr": {
   "schema_version": 1,
   "available": true,

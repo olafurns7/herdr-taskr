@@ -1,0 +1,20 @@
+ taskr ❯ answer        2s ago   ● 5 need you
+ ask 61790 · auth-rotation
+ BLOCKING · waiting · 2m · atlas w20:p1
+
+ Tokens: Which signing scheme should the
+ rotated service tokens use?
+
+  ❯ A  Ed25519  ★ recommended
+       Short keys and fast checks; every …
+    B  RSA-2048
+       Matches today's tokens, so no client…
+    C  HMAC-SHA256
+       Simplest to run, but every verifier …
+    …  write your own answer
+
+ ────────────────────────────────────────────
+  answer  A: Ed25519
+
+
+ j k choose   tab note   ⏎ review   esc cancel

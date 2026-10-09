@@ -43,6 +43,10 @@ The first screen has three sections, top to bottom:
 
 - **Needs you:** open owner asks. Red always means an open owner ask and
   nothing else. `BLOCKING` marks an ask whose work has stopped for your answer.
+  `HUB` marks a question the hub relayed from its own dialog
+  (`taskr ask --dialog`). `◆` marks a structured ask (`taskr ask --question`),
+  whose options carry descriptions and a recommendation; `◇` marks an ask
+  whose options were found in its text.
 - **To check:** things that may need a look but are not questions: a lead
   that went silent, a lead sitting on finished results, a host whose daemon
   stopped reporting. These are amber.
@@ -143,8 +147,16 @@ Most keys only read. Three do more:
   attached to that Herdr server.
 - **`a`** records your answer with `taskr answer`. If the ask lists options
   like `(A) ...; (B) ...`, the dialog offers them, and you can always write
-  your own. When the asker is no longer waiting, the answer is also sent to
-  its pane as a prompt.
+  your own. A structured ask's options come from its question, with each
+  description under its label and `★` on the recommended one. `j` `k`
+  choose, `tab` types, `Enter` reviews the answer and `y` sends it. When the
+  asker is no longer waiting, the answer is also sent to its pane as a prompt.
+
+  The answer is sent as `B: label`. On a structured ask, `tab` types a note
+  after the option, sent as `B: label — note`. When a structured ask allows
+  several options, `space` picks or drops the one under the cursor and
+  `Enter` reviews the set, sent as `A: OAuth; C: SSO`. `Enter` with nothing
+  picked does nothing and says so.
 - **`p`** parks a campaign (`taskr set ROOT glance.state=parked`) or unparks
   it. A parked campaign stays dim; its owner asks stay red.
 
@@ -163,5 +175,8 @@ Most keys only read. Three do more:
 | `✓` `⊘` `✗` | Closed: done, abandoned, rejected |
 | `⏎` `↗` | The pane is on this machine; on another |
 | `•` | Changed since you last looked |
+| `◆` `◇` | A structured ask; options found in an ask's text |
+| `★` | The recommended option of a structured ask |
+| `HUB` | The hub relayed this ask from its own dialog |
 
 `--ascii` replaces these with plain characters.

@@ -484,8 +484,8 @@ pub(crate) fn ascii(buf: &mut ratatui::buffer::Buffer) {
     for cell in &mut buf.content {
         let plain = match cell.symbol() {
             s if s.is_ascii() => continue,
-            "●" | "◐" | "◓" | "◑" | "◒" | "◆" => "*",
-            "○" => "o",
+            "●" | "◐" | "◓" | "◑" | "◒" | "◆" | "★" => "*",
+            "○" | "◇" => "o",
             "▲" => "^",
             "•" | "·" | "░" | "…" | "▂" | "▃" => ".",
             "×" | "✗" | "⊘" => "x",

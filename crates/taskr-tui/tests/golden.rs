@@ -6,8 +6,8 @@ use std::{collections::BTreeSet, env, fs, path::PathBuf};
 use taskr_tui::frames;
 
 /// The spec's glyph set (plan §3, Glyphs), plus `…` and `—`, which §3 itself prescribes
-/// for the free-text option and for "no open lanes".
-const GLYPHS: &str = "●○◐◓◑◒•·×✓✗‖▌❯↗⏎─│╭╮╰╯▁▂▃▄▅▆▇█░⊘◆▲↳‹…—";
+/// for the free-text option and for "no open lanes", and Q2's `◇` and `★` for asks.
+const GLYPHS: &str = "●○◐◓◑◒•·×✓✗‖▌❯↗⏎─│╭╮╰╯▁▂▃▄▅▆▇█░⊘◆◇★▲↳‹…—";
 
 fn golden() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden")

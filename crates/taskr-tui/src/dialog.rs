@@ -84,58 +84,41 @@ fn where_from(app: &App, a: &Need, pane: bool) -> Span<'static> {
 }
 
 /// Step 1: the ask, its options as rows, "write your own answer", and the editable text.
-/// `budget` caps the ask's own text so the options always stay on screen.
+/// `budget` caps the ask's own text so the options always stay on screen. A structured
+/// ask's descriptions share what is left, an equal number of lines each, or none.
 fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>> {
     let t = &app.theme;
-    let parsed = ask::parse(&a.text);
-    let mut rows: Vec<Line> = vec![];
-    for (i, o) in parsed.options.iter().enumerate() {
-        let on = i == app.choice;
-        let mut body = wrap(&o.text, width.saturating_sub(7));
-        let mut tag = o.recommended;
-        if tag
-            && body
-                .last()
-                .is_some_and(|l| l.chars().count() + 13 > width.saturating_sub(7))
-        {
-            body.push(String::new());
-        }
-        let n = body.len();
-        for (j, text) in body.into_iter().enumerate() {
-            let mut line = vec![
-                sp(if on && j == 0 { " ❯ " } else { "   " }, t.accent),
-                bold(
-                    if j == 0 {
-                        format!("{}  ", o.key)
-                    } else {
-                        "   ".into()
-                    },
-                    t.accent,
-                ),
-                sp(text, t.text),
-            ];
-            if tag && j + 1 == n {
-                line.push(sp(
-                    if line[2].content.is_empty() {
-                        "recommended"
-                    } else {
-                        "  recommended"
-                    },
-                    t.ok,
-                ));
-                tag = false;
+    let parsed = ask::parse(a);
+    // ` ❯ `, `[x] ` when several can be picked, `A  `, and a column to spare.
+    let lead = if parsed.multi { 11 } else { 7 };
+    let tag = if parsed.structured {
+        "★ recommended"
+    } else {
+        "recommended"
+    };
+    let labels: Vec<Vec<String>> = parsed
+        .options
+        .iter()
+        .map(|o| {
+            let mut body = wrap(&o.text, width.saturating_sub(lead));
+            if o.recommended
+                && body.last().is_some_and(|l| {
+                    l.chars().count() + tag.chars().count() + 2 > width.saturating_sub(lead)
+                })
+            {
+                body.push(String::new());
             }
-            let line = Line::from(ui::spread(line, vec![], width));
-            rows.push(if on { line.style(t.selected()) } else { line });
-        }
-    }
+            body
+        })
+        .collect();
+
     let own = parsed.options.len();
-    rows.push(Line::from(vec![
+    let mut tail = vec![Line::from(vec![
         sp(if app.choice >= own { " ❯ " } else { "   " }, t.accent),
         bold("…  ", t.accent),
         sp("write your own answer", t.sub),
-    ]));
-    rows.extend([Line::raw(""), Line::from(sp("─".repeat(width), t.rule))]);
+    ])];
+    tail.extend([Line::raw(""), Line::from(sp("─".repeat(width), t.rule))]);
     // Choosing an option fills the field with what it meant, so the ledger records it.
     let mut text = field(
         " answer  ",
@@ -147,7 +130,61 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
     if let Some(last) = text.last_mut() {
         last.spans.push(Span::styled(" ", t.cursor()));
     }
-    rows.extend(text);
+    tail.extend(text);
+
+    // Two lines stay for the ask's own text: one of it, and where the window is.
+    let fixed = labels.iter().map(Vec::len).sum::<usize>() + tail.len() + 1 + 2;
+    let described = parsed
+        .options
+        .iter()
+        .filter(|o| !o.description.is_empty())
+        .count();
+    let each = (budget.saturating_sub(fixed) / described.max(1)).min(3);
+
+    let mut rows: Vec<Line> = vec![];
+    for ((i, o), body) in parsed.options.iter().enumerate().zip(labels) {
+        let on = i == app.choice;
+        let n = body.len();
+        let mut lines = vec![];
+        for (j, text) in body.into_iter().enumerate() {
+            let mut line = vec![sp(if on && j == 0 { " ❯ " } else { "   " }, t.accent)];
+            if parsed.multi {
+                let mark = match (j, app.picked.contains(&i)) {
+                    (0, true) => "[x] ",
+                    (0, false) => "[ ] ",
+                    _ => "    ",
+                };
+                line.push(bold(mark, t.accent));
+            }
+            line.push(bold(
+                if j == 0 {
+                    format!("{}  ", o.key)
+                } else {
+                    "   ".into()
+                },
+                t.accent,
+            ));
+            if o.recommended && j + 1 == n {
+                let gap = if text.is_empty() { "" } else { "  " };
+                line.extend([sp(text, t.text), sp(format!("{gap}{tag}"), t.ok)]);
+            } else {
+                line.push(sp(text, t.text));
+            }
+            lines.push(Line::from(ui::spread(line, vec![], width)));
+        }
+        if !o.description.is_empty() {
+            for l in ui::wrap_max(&o.description, width.saturating_sub(lead), each) {
+                let line = vec![sp(" ".repeat(lead - 1), t.dim), sp(l, t.dim)];
+                lines.push(Line::from(ui::spread(line, vec![], width)));
+            }
+        }
+        rows.extend(
+            lines
+                .into_iter()
+                .map(|l| if on { l.style(t.selected()) } else { l }),
+        );
+    }
+    rows.extend(tail);
 
     let context = wrap(&parsed.context, width);
     let room = budget.saturating_sub(rows.len() + 1).max(1);
@@ -259,23 +296,46 @@ pub(crate) fn answer(f: &mut Frame, app: &App) {
         return glance::draw(f, app);
     };
     let confirming = app.screen == Screen::Confirm;
+    let parsed = ask::parse(a);
     let hints: &[(&str, &str)] = if confirming {
         &[
             ("y", "send"),
             ("e", "edit"),
             ("esc", "cancel, nothing is sent"),
         ]
+    } else if parsed.multi && f.area().width < 60 {
+        &[
+            ("space", "pick"),
+            ("tab", "note"),
+            ("⏎", "review"),
+            ("esc", "cancel"),
+        ]
+    } else if parsed.multi {
+        &[
+            ("j k", "choose"),
+            ("space", "pick"),
+            ("tab", "add a note"),
+            ("⏎", "review"),
+            ("esc", "cancel"),
+        ]
     } else if f.area().width < 60 {
         &[
             ("j k", "choose"),
-            ("tab", "edit"),
+            ("tab", if parsed.structured { "note" } else { "edit" }),
             ("⏎", "review"),
             ("esc", "cancel"),
         ]
     } else {
         &[
             ("j k", "choose"),
-            ("tab", "edit the text"),
+            (
+                "tab",
+                if parsed.structured {
+                    "add a note"
+                } else {
+                    "edit the text"
+                },
+            ),
             ("⏎", "review before sending"),
             ("esc", "cancel"),
         ]
@@ -294,7 +354,14 @@ pub(crate) fn answer(f: &mut Frame, app: &App) {
             f,
             t,
             80,
-            if confirming { 16 } else { 20 },
+            // A structured ask's descriptions take more room.
+            if confirming {
+                16
+            } else if parsed.structured {
+                26
+            } else {
+                20
+            },
             &format!("Answer {title}"),
         );
         let (w, h) = (inner.width as usize, inner.height as usize);
@@ -397,6 +464,14 @@ fn legend(t: &Theme) -> Vec<Line<'static>> {
             ("↗", t.remote, "another"),
         ]),
         row(&[("•", t.dim, "changed since you looked")]),
+        row(&[
+            ("◆", t.accent, "structured ask"),
+            ("◇", t.accent, "options from its text"),
+        ]),
+        row(&[
+            ("★", t.ok, "recommended"),
+            ("HUB", t.remote, "the hub's dialog"),
+        ]),
     ]
 }
 
@@ -436,6 +511,7 @@ fn group(t: &Theme, name: &str, view: u8, width: usize) -> Vec<Line<'static>> {
     let note = match name {
         "Go" => Some(keys::GO_NOTE),
         "Move" if view == keys::GLANCE => Some(keys::DETAIL_NOTE),
+        "Act" if view & (keys::GLANCE | keys::CAMPAIGN) != 0 => Some(keys::ANSWER_NOTE),
         _ => None,
     };
     if let Some(note) = note {
@@ -474,7 +550,7 @@ pub(crate) fn help(f: &mut Frame, app: &App) {
         glance::draw(f, &background);
         // Nothing under a dialog can be clicked or scrolled.
         *app.seen.borrow_mut() = crate::Seen::default();
-        let inner = modal(f, t, 100, 24, &format!("Keys · {name}"));
+        let inner = modal(f, t, 100, 30, &format!("Keys · {name}"));
         let [a, b] = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
             .areas(inner);
         let column = |names: &[&str]| {

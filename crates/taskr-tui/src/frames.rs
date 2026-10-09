@@ -38,6 +38,45 @@ pub fn long_ask() -> crate::model::Need {
     serde_json::from_value(fixture["long_ask"].clone()).expect("the long ask decodes")
 }
 
+/// The fixture's structured asks (Q1's `question` and `dialog`): the hub's own dialog ask,
+/// a single-select with a recommended option, and a multi-select. Kept out of the glance
+/// too; `with_structured` and `--demo` put them in front of the other asks.
+pub fn structured_asks() -> Vec<crate::model::Need> {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../fixture.json")).expect("the fixture decodes");
+    serde_json::from_value(fixture["structured_asks"].clone()).expect("the structured asks decode")
+}
+
+/// The structured asks in front of the fixture's own.
+pub fn with_structured(app: &mut App) {
+    let mut asks = structured_asks();
+    asks.append(&mut app.data.glance.needs_you);
+    app.data.glance.needs_you = asks;
+}
+
+fn structured(app: &mut App) {
+    // The single-select selected, so the wide frames show its options in the detail pane.
+    with_structured(app);
+    app.row = 1;
+}
+
+fn answer_single(app: &mut App) {
+    with_structured(app);
+    app.row = 1;
+    app.answer(app.data.glance.needs_you[1].clone());
+}
+
+fn answer_multi(app: &mut App) {
+    // German and Japanese picked, the cursor on Japanese.
+    with_structured(app);
+    app.row = 2;
+    app.answer(app.data.glance.needs_you[2].clone());
+    for choice in [1, 2] {
+        app.choose(choice);
+        app.toggle();
+    }
+}
+
 fn detail(app: &mut App) {
     // The long ask selected, the detail focused and scrolled to its end (`tab` past the
     // last section, then `G`; the draw stops at the last line).
@@ -184,6 +223,18 @@ pub fn all() -> Vec<Spec> {
         spec("campaign", 120, 40, "", campaign),
         spec("campaign", 46, 30, "-light", campaign),
         spec("campaign", 120, 40, "-light", campaign),
+        spec("glance", 46, 30, "-structured", structured),
+        spec("glance", 70, 30, "-structured", structured),
+        spec("glance", 120, 40, "-structured", structured),
+        spec("glance", 46, 20, "-structured", structured),
+        spec("answer", 46, 30, "-single", answer_single),
+        spec("answer", 70, 30, "-single", answer_single),
+        spec("answer", 120, 40, "-single", answer_single),
+        spec("answer", 46, 20, "-single", answer_single),
+        spec("answer", 46, 30, "-multi", answer_multi),
+        spec("answer", 70, 30, "-multi", answer_multi),
+        spec("answer", 120, 40, "-multi", answer_multi),
+        spec("answer", 46, 20, "-multi", answer_multi),
         spec("answer", 46, 30, "", answer_long),
         spec("answer", 120, 40, "", answer),
         spec("confirm", 46, 30, "", confirm_long),

@@ -1,5 +1,5 @@
  taskr ❯ help          2s ago   ● 2 need you
- KEYS · glance ────────────────────── 1-27/42
+ KEYS · glance ────────────────────── 1-27/48
  Move
   j k           down, up (arrows too)
   g G           first, last row

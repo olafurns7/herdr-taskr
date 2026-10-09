@@ -2,9 +2,9 @@
  3 notes still carry OWNER items
 ╭ Glance ──────────────────────────────────────────────────╮╭ ask 61767 · tui-frames ──────────────────────────────────╮
 │ NEEDS YOU ──────────────────────────────────────────── 2 ││ BLOCKING · asker waiting · 41s ago · atlas w31:p1        │
-│▌? tui-frames           BLOCKING                    ⏎  41s││                                                          │
+│▌? ◇ tui-frames           BLOCKING                  ⏎  41s││                                                          │
 │▌  Frames follow-up is ready: PR #212 (orphaned asks hid… ││ Frames follow-up is ready: PR #212 (orphaned asks        │
-│ ? ios-widgets                               laptop ↗   6m││ hidden, close warns). (A) merge #212 and release v2.4.1  │
+│ ? ◇ ios-widgets                             laptop ↗   6m││ hidden, close warns). (A) merge #212 and release v2.4.1  │
 │   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash).… ││ now [recommended]; (B) merge, hold the release for the   │
 │ TO CHECK ───────────────────────────────────────────── 3 ││ next change.                                             │
 │ ! map-tiles-polish                            laptop   2h││                                                          │
