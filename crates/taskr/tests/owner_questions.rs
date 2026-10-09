@@ -254,4 +254,50 @@ fn client_ask_stores_the_same_data_on_the_hub() {
         ),
         1
     );
+
+    // The byte limit is enforced on bytes, not characters: 4096 fits either
+    // way, 4097 ASCII and 4098 Unicode bytes are rejected, and rejected calls
+    // store no event.
+    for (kind, n, expected) in [
+        ("ascii", 4096usize, 0),
+        ("ascii", 4097, 2),
+        ("unicode", 4096, 0),
+        ("unicode", 4098, 2),
+    ] {
+        let base = json!({"question":"", "options":[{"label":"A"},{"label":"B"}]}).to_string();
+        let fill = n - base.len();
+        let body = if kind == "unicode" {
+            "é".repeat(fill / 2) + &"x".repeat(fill % 2)
+        } else {
+            "x".repeat(fill)
+        };
+        let raw = json!({"question":body,"options":[{"label":"A"},{"label":"B"}]}).to_string();
+        assert_eq!(raw.len(), n);
+        let before = h.count(
+            "select count(*) from events where kind='ask' and task_id=?",
+            root,
+        );
+        let out = h.output(
+            &client,
+            &["ask", "--owner", "--question", &raw, "--as", &r],
+            b"",
+        );
+        assert_eq!(out.status.code(), Some(expected), "{kind} {n}: {out:?}");
+        assert_eq!(
+            h.count(
+                "select count(*) from events where kind='ask' and task_id=?",
+                root
+            ),
+            before + i64::from(expected == 0)
+        );
+    }
+
+    // A 500-character multibyte description is within the description limit.
+    let raw = json!({"question":"q","options":[{"label":"A","description":"é".repeat(500)},{"label":"B"}]}).to_string();
+    let out = h.output(
+        &client,
+        &["ask", "--owner", "--question", &raw, "--as", &r],
+        b"",
+    );
+    assert!(out.status.success(), "{out:?}");
 }
