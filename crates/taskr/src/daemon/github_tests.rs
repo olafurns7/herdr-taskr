@@ -597,3 +597,29 @@ fn cached_refs_recheck_the_link_under_the_lock() {
     assert_eq!(f.latest_ref(3, "pr").as_deref(), Some("32"));
     assert_eq!(f.latest_ref(3, "pr.state").as_deref(), Some("open"));
 }
+
+#[test]
+fn an_unfired_subscription_keeps_a_closed_tasks_pr_polled() {
+    let mut f = fixture("after");
+    f.link(2, "31");
+    f.db.execute("update tasks set status='closed' where id=2", [])
+        .unwrap();
+    let subscribe = |f: &Fixture, waiter: i64| {
+        f.db.execute("insert into subscriptions(waiter_task_id,target,kinds,keep,created_at) values(?,'pr:demo-org/demo#31','dirty',0,?)", params![waiter, store::now()]).unwrap();
+    };
+    // A closed task's PR is not polled, nor for a closed waiter (root 4).
+    subscribe(&f, 4);
+    f.reply(&data(&[pr(HEAD, "DIRTY", &[], 0)]), 0);
+    f.poll();
+    assert_eq!(f.calls(), 0);
+    // Root 3's unfired subscription keeps it polled; the event fires it once.
+    subscribe(&f, 3);
+    f.poll();
+    assert_eq!(f.calls(), 1);
+    assert_eq!(f.events(), [(2, Some(1), "dirty".into())]);
+    let fired: (i64, String, String) = f.db.query_row("select recipient_task_id,json_extract(data,'$.target'),json_extract(data,'$.on') from events where kind='after'", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+    assert_eq!(fired, (3, "pr:demo-org/demo#31".into(), "dirty".into()));
+    // Fired and the task closed: polling stops, though the PR is still open.
+    f.poll();
+    assert_eq!(f.calls(), 1);
+}

@@ -206,17 +206,19 @@ pub(super) fn sweep(db: &mut db::Connection, sock: &str, log: &Log) -> Result<()
         } else {
             "delivery_unknown"
         };
-        store::event(
-            db,
-            store::Event {
-                task: root.id,
-                kind: "prompt_outcome",
-                summary: outcome,
-                data: Some(json!({"outcome":outcome})),
-                related: Some(attempt),
-                ..Default::default()
-            },
-        )?;
+        store::transaction(db, |tx| {
+            store::event(
+                tx,
+                store::Event {
+                    task: root.id,
+                    kind: "prompt_outcome",
+                    summary: outcome,
+                    data: Some(json!({"outcome":outcome})),
+                    related: Some(attempt),
+                    ..Default::default()
+                },
+            )
+        })?;
         if let Err(e) = result {
             log.line(&e.message);
         }

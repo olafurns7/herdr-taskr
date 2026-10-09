@@ -59,8 +59,9 @@ with `pr=`. Without `default_repo`, only `owner/repo#N` links are followed.
   PRs, rotating through the rest; past 20 PRs the interval stretches to 60 s
   per 20. `gh` runs in a worker thread with a 20-second deadline; the result is
   applied in one short ledger transaction, never across the network call.
-- **What is followed:** PRs whose linked task is not closed, until they merge
-  or close. A task linked later to a merged or closed PR gets its refs from
+- **What is followed:** PRs whose linked task is not closed, or that an
+  unfired `taskr after pr:` subscription of an open root targets, until they
+  merge or close. A task linked later to a merged or closed PR gets its refs from
   the cached state, with no query and no event.
 - **Events:** kind `pr` (compact code `pu`), on change only, to the linked
   task's lead (a linked root gets its own); a closed lead's inbox is skipped.
@@ -89,6 +90,9 @@ with `pr=`. Without `default_repo`, only `owner/repo#N` links are followed.
 
 The last-seen state of each PR lives in the ledger's `meta` table as
 `pr_state:owner/repo#N`. Wait for these events with `taskr wait --for pr`.
+A root in another tree can follow a PR with `taskr after pr:owner/repo#N --as ROOT`
+([cli.md](cli.md)); while that subscription is unfired, the PR stays polled
+even after its linked task closes.
 
 ## Three kinds of host
 

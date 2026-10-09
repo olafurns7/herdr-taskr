@@ -114,6 +114,24 @@ shares the ledger, identity record and spool with the Rust build. On a host:
 2. swap it in for the installed `taskr`;
 3. run `taskr daemon --restart`.
 
+### Release notes: ledger schema 2
+
+The release with `taskr after` raises the ledger schema to 2: one new table,
+`subscriptions`, and its index. No existing table changes.
+
+- **Restart the daemon on install.** On the hub (or a host with its own
+  ledger), run `taskr daemon --restart` right after swapping the binary. The
+  restarted daemon migrates the ledger once. Until then, the first hub child
+  that the new binary serves migrates it instead, and the old daemon's own
+  writes fire no subscriptions.
+- **The migration** runs in one transaction, creates
+  `subscriptions(id, waiter_task_id, target, kinds, keep, created_at, fired_at)`
+  and `subscriptions_open on subscriptions(target) where fired_at is null`
+  if they are missing, and sets `user_version` to 2. Running it again changes
+  nothing.
+- **Rollback** stays safe: an older binary opens a schema-2 ledger without
+  migrating and never reads the new table.
+
 ## tools/release-rust.sh
 
 ```sh
