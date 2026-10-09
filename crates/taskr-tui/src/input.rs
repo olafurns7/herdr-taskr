@@ -605,16 +605,39 @@ pub fn done(app: &mut App, job: &Job, result: Result<Done, String>) {
         let s = &mut app.slotr;
         match result {
             Ok(Done::Slotr(slotr)) if slotr.available => {
-                // The cursor follows its run, from the queue into a slot too.
-                let was = slotr::rows(&app.data.slotr)
-                    .get(app.row)
-                    .map(|r| r.enqueue_seq);
+                // The cursor the slotr view owns: its own row when the view is on
+                // top, else the nearest saved row of a slotr screen under an
+                // overlay. The cursor follows its run, from the queue into a
+                // slot too; no slotr screen anywhere, no cursor moves.
+                let own = app.screen == Screen::Slotr;
+                let saved = if own {
+                    None
+                } else {
+                    app.back
+                        .iter_mut()
+                        .rev()
+                        .find(|b| b.screen == Screen::Slotr)
+                };
+                let was = if own {
+                    Some(app.row)
+                } else {
+                    saved.as_ref().map(|b| b.row)
+                };
+                let seq = was
+                    .and_then(|row| slotr::rows(&app.data.slotr).get(row).map(|r| r.enqueue_seq));
                 app.data.slotr = *slotr;
                 (s.loaded, s.error) = (true, None);
-                let rows = slotr::rows(&app.data.slotr);
-                app.row = was
-                    .and_then(|seq| rows.iter().position(|r| r.enqueue_seq == seq))
-                    .unwrap_or(app.row.min(rows.len().saturating_sub(1)));
+                if let Some(row) = was {
+                    let rows = slotr::rows(&app.data.slotr);
+                    let at = seq
+                        .and_then(|seq| rows.iter().position(|r| r.enqueue_seq == seq))
+                        .unwrap_or(row.min(rows.len().saturating_sub(1)));
+                    if own {
+                        app.row = at;
+                    } else if let Some(back) = saved {
+                        back.row = at;
+                    }
+                }
             }
             Ok(Done::Slotr(slotr)) if !slotr.error.is_empty() => s.error = Some(slotr.error),
             Ok(_) => s.error = Some("slotr unavailable".into()),
