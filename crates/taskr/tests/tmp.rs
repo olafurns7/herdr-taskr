@@ -111,10 +111,24 @@ fn mkdir_refuses_unsafe_paths() {
     let real = h.home.join("real");
     fs::create_dir(&real).unwrap();
     fs::set_permissions(&real, fs::Permissions::from_mode(0o700)).unwrap();
-    // The base is a symlink, even to a good dir.
+    // The base is a symlink, even to a good dir, in every spelling: bare, trailing slash
+    // and a terminal dot (components() drops both, so the link stays the final component).
     let link = h.home.join("link");
     symlink(&real, &link).unwrap();
     refused(&h, &link, lane, "is a symlink");
+    refused(
+        &h,
+        Path::new(&format!("{}/", link.display())),
+        lane,
+        "is a symlink",
+    );
+    refused(
+        &h,
+        Path::new(&format!("{}/.", link.display())),
+        lane,
+        "is a symlink",
+    );
+    assert!(!real.join(root.to_string()).exists());
     // A campaign component is a symlink: nothing is made through it.
     let base = h.home.join("tb");
     fs::create_dir(&base).unwrap();
@@ -138,6 +152,8 @@ fn mkdir_refuses_unsafe_paths() {
     let file = h.home.join("file");
     fs::write(&file, "x").unwrap();
     refused(&h, &file, lane, "is not a directory");
+    // A '..' component in the base.
+    refused(&h, &real.join("x/.."), lane, "'..'");
     // A relative base.
     refused(&h, Path::new("rel/base"), lane, "absolute path");
     let (code, out) = run(&h, &base_env(Path::new("rel")), &["--json", "tmp", "1"]);

@@ -5,7 +5,7 @@ use serde_json::json;
 use std::{
     fs,
     os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 use taskr_core::{ExitCode, compact_json, goflag::FlagSet};
 
@@ -15,11 +15,13 @@ pub struct Args {
     pub json: bool,
 }
 
-/// `$TASKR_TMP_BASE`, else `/tmp/taskr-<uid>`.
+/// `$TASKR_TMP_BASE`, else `/tmp/taskr-<uid>`. The override is rebuilt from its components,
+/// which drops trailing separators and non-leading `.` components so `link/` and `link/.`
+/// cannot carry a symlink past the lstat check below. Symlinks are not resolved.
 pub fn base() -> PathBuf {
     std::env::var_os("TASKR_TMP_BASE")
         .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
+        .map(|v| PathBuf::from(v).components().collect::<PathBuf>())
         .unwrap_or_else(|| {
             PathBuf::from(format!("/tmp/taskr-{}", rustix::process::getuid().as_raw()))
         })
@@ -85,6 +87,11 @@ pub fn finish(a: &Args, root: i64) -> ExitCode {
     let made = if !base.is_absolute() {
         Err(format!(
             "TASKR_TMP_BASE must be an absolute path, got {}",
+            base.display()
+        ))
+    } else if base.components().any(|c| c == Component::ParentDir) {
+        Err(format!(
+            "TASKR_TMP_BASE must not contain '..', got {}",
             base.display()
         ))
     } else if a.mkdir {
