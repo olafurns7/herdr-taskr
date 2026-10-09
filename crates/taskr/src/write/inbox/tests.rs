@@ -108,3 +108,84 @@ fn wait_polls_like_go() {
         woke.duration_since(wrote)
     );
 }
+
+/// `wait --for pr` wakes on the poller's kind (code `pu`), and an older `pr` event is
+/// coalesced into a newer one for the same PR, filtered or not.
+#[test]
+fn wait_for_pr_coalesces_per_pr() {
+    assert_eq!(super::code("pr"), "pu");
+    if std::env::var_os("TASKR_WAIT_PR_CHILD").is_none() {
+        let dir = std::env::temp_dir().join(format!("taskr-wait-pr-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "write::inbox::tests::wait_for_pr_coalesces_per_pr",
+                "--nocapture",
+            ])
+            .env_clear()
+            .env("TASKR_WAIT_PR_CHILD", "1")
+            .env("HOME", &dir)
+            .env("TASKR_DB", dir.join("taskr.db"))
+            .env("HERDR_SOCKET_PATH", dir.join("absent.sock"))
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            out.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        return;
+    }
+    run(&["new", "top", "--role", "orchestrator"]);
+    let mut db = taskr_core::db::open(&taskr_core::db::path().unwrap()).unwrap();
+    let mut ids = vec![];
+    for (pr, sub) in [
+        ("o/r#1", "blocked"),
+        ("o/r#2", "dirty"),
+        ("o/r#1", "checks_green"),
+        ("o/r#2", "behind"),
+    ] {
+        ids.push(
+            store::transaction(&mut db, |tx| {
+                store::event(
+                    tx,
+                    store::Event {
+                        task: 1,
+                        to: Some(1),
+                        kind: "pr",
+                        summary: sub,
+                        data: Some(serde_json::json!({"pr":pr,"sub":sub})),
+                        ..store::Event::default()
+                    },
+                )
+            })
+            .unwrap(),
+        );
+    }
+    let pending = |db: &taskr_core::db::Connection| -> i64 {
+        db.query_row("select pending_event_id from tasks where id=1", [], |r| {
+            r.get(0)
+        })
+        .unwrap()
+    };
+    // Filtered: #1's blocked and #2's dirty are superseded; checks_green comes first.
+    run(&["wait", "--as", "1", "--for", "pr", "--timeout", "1000"]);
+    assert_eq!(pending(&db), ids[2]);
+    // A pending event replays and is never coalesced.
+    run(&["wait", "--as", "1", "--timeout", "1000"]);
+    assert_eq!(pending(&db), ids[2]);
+    run(&[
+        "wait",
+        "--as",
+        "1",
+        "--ack",
+        &ids[2].to_string(),
+        "--timeout",
+        "1000",
+    ]);
+    assert_eq!(pending(&db), ids[3]);
+}

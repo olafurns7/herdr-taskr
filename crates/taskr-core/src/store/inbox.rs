@@ -67,6 +67,16 @@ fn coalesce(
 ) -> Result<bool> {
     let kind = ev["kind"].as_str().unwrap_or("");
     let eid = ev["id"].as_i64().expect("event id");
+    // Storm control, filtered or not: a newer `pr` event for the same PR supersedes
+    // an unacked older one in this inbox (its data carries the whole PR state).
+    if kind == "pr" {
+        return Ok(pending != Some(eid)
+            && tx.query_row(
+                "select exists(select 1 from events where recipient_task_id=? and id>? and kind='pr' and json_extract(data,'$.pr')=?)",
+                params![as_id, eid, ev["data"]["pr"].as_str()],
+                |r| r.get(0),
+            )?);
+    }
     if !filtered && !(kind == "prompt_outcome" && ev["summary"] == "late_receipt") {
         return Ok(false);
     }

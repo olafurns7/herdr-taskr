@@ -1,5 +1,6 @@
 //! Resident event bridge. All state and sockets come from the selected HOME/ledger.
 mod checkin;
+pub(crate) mod github;
 mod hub;
 mod identity;
 #[cfg(any(target_os = "macos", test))]
@@ -824,6 +825,7 @@ fn resident(
         pane_send.send_replace(state.watch.clone());
     }
     let mut pending = None;
+    let mut poller = github::Poller::new(&state.dir, db.is_some());
     loop {
         if interrupted.load(Ordering::SeqCst) {
             return "signal";
@@ -851,6 +853,10 @@ fn resident(
         if fallback_due {
             fallback = now + Duration::from_secs(60);
             state.tokens.fallback();
+        }
+        // The PR poller's deadline fires whether Herdr is up or not; gh runs off-thread.
+        if let (Some(poller), Some(db)) = (poller.as_mut(), db.as_deref_mut()) {
+            poller.tick(db, &state.log);
         }
         let event = recv.recv_timeout(Duration::from_millis(50));
         match event {
