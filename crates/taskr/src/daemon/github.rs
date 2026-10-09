@@ -13,8 +13,10 @@ const TIMEOUT: Duration = Duration::from_secs(20);
 const MINUTE: Duration = Duration::from_secs(60);
 const CAP: Duration = Duration::from_secs(15 * 60);
 /// SQL predicate for poller bookkeeping that is not campaign activity: `pr` events
-/// other than sub `merged`, and the refs the poller writes.
-pub(crate) const PR_NOISE: &str = "((e.kind='pr' and coalesce(json_extract(e.data,'$.sub'),'')!='merged') or (e.kind='ref' and coalesce(json_extract(e.data,'$.source'),'')='github'))";
+/// other than sub `merged`, their generated `after` notifications (a `pr:` target
+/// whose sub is not material; `merged` stays activity, as does a task target), and
+/// the refs the poller writes.
+pub(crate) const PR_NOISE: &str = "((e.kind='pr' and coalesce(json_extract(e.data,'$.sub'),'')!='merged') or (e.kind='after' and coalesce(json_extract(e.data,'$.target'),'') like 'pr:%' and coalesce(json_extract(e.data,'$.on'),'')!='merged') or (e.kind='ref' and coalesce(json_extract(e.data,'$.source'),'')='github'))";
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct Pr {
