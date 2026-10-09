@@ -34,7 +34,7 @@ fn anchor(
     if busy {
         return Ok(None);
     }
-    let latest = db.query_row(&format!("{tree}select e.id,e.created_at from tree join events e on e.task_id=tree.id where (e.task_id!=? or e.kind='prompt') and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not (e.kind='prompt_outcome' and exists(select 1 from events p where p.id=e.related_event_id and json_extract(p.data,'$.nudge') is not null)) order by e.id desc limit 1"), params![root.id, root.id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))).optional()?;
+    let latest = db.query_row(&format!("{tree}select e.id,e.created_at from tree join events e on e.task_id=tree.id where (e.task_id!=? or e.kind='prompt') and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not (e.kind='prompt_outcome' and exists(select 1 from events p where p.id=e.related_event_id and json_extract(p.data,'$.nudge') is not null)) and not {noise} order by e.id desc limit 1", noise = super::github::PR_NOISE), params![root.id, root.id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))).optional()?;
     let (id, at) = latest.unwrap_or((0, root.created.clone()));
     Ok(old(&at, now, 90).then_some(("R2", id, at)))
 }

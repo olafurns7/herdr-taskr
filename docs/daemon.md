@@ -40,6 +40,50 @@ open at least four hours on an asker that is not closed, including asks on
 client hosts. Blocking owner asks always notify immediately. Check-ins never answer asks or change task
 status.
 
+## PR events
+
+The ledger daemon (the hub, or a host with its own ledger) can follow linked
+GitHub pull requests and tell the lead when one changes. It is off unless
+`~/.local/state/taskr/watch.json` turns it on:
+
+```json
+{"github": {"enabled": true, "default_repo": "example-org/example-repo"}}
+```
+
+The file is read at each poll, so no restart is needed. Link a PR with
+`taskr set TASK pr=31` (the default repo) or `pr=owner/repo#31`, and unlink it
+with `pr=`. Without `default_repo`, only `owner/repo#N` links are followed.
+
+- **Read-only, through `gh`.** Every 60 seconds one batched `gh api graphql`
+  query (as the hub user, so taskr never holds a token) reads at most 30 linked
+  PRs, rotating through the rest; past 20 PRs the interval stretches to 60 s
+  per 20. `gh` runs in a worker thread with a 20-second deadline; the result is
+  applied in one short ledger transaction, never across the network call.
+- **What is followed:** PRs whose linked task is not closed, until they merge
+  or close.
+- **Events:** kind `pr` (compact code `pu`), on change only, to the linked
+  task's lead (a linked root gets its own); a closed lead's inbox is skipped.
+  Subs: `checks_green`, `checks_failed` (each after two polls that agree, over
+  the required checks, or all checks when none is required), `dirty`,
+  `behind`, `blocked`, `thread_opened`, `threads_clear`, `merged`, `closed`.
+  A PR GitHub reports as not found gets `closed` with a `reason` and is
+  unlinked. Data: `pr`, `sub`, `head`, `checks`, `merge_state`,
+  `threads_open`, plus `merge_commit` or `reason`. An unacked older `pr`
+  event is skipped when a newer one for the same PR is in the same inbox.
+  `pr` events have no launch, are not searchable, send no notification, and
+  are not campaign activity (glance, park, R2) except `merged`.
+- **Refs:** the poller keeps the task's `pr.state` (`open`, `merged`,
+  `closed`) and `pr.ci` (`pass`, `fail`, `running`) refs current, so
+  `taskr campaign` and the TUI's PR panel show live state. Its refs carry
+  `"source":"github"` in their data.
+- **Failures:** JSON on stdout is used whatever `gh`'s exit code. With no
+  JSON or `data: null` the poller backs off 1, 2, 4, 8 then 15 minutes; `gh`
+  exit 4 (not authenticated) retries every 15 minutes. `daemon.log` gets one
+  line per change of state.
+
+The last-seen state of each PR lives in the ledger's `meta` table as
+`pr_state:owner/repo#N`. Wait for these events with `taskr wait --for pr`.
+
 ## Three kinds of host
 
 | Kind | Set up by | What it does |
@@ -146,6 +190,7 @@ Everything lives in `~/.local/state/taskr/`:
 | `daemon.lock` | Keeps the daemon single; holds its pid. |
 | `dashboard.addr` | Where the hub server listens (see above). |
 | `server.url` | Makes this host a client. |
+| `watch.json` | Turns on [PR events](#pr-events) on the ledger daemon. |
 | `spool/` | A client's queued records. |
 
 ## Pane and workspace tokens

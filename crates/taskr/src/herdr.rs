@@ -42,10 +42,15 @@ pub fn command(sock: &str, args: &[&str], timeout: Duration) -> std::io::Result<
             "Herdr server not reachable; no herdr command run",
         ));
     }
-    let mut child = Command::new("herdr")
-        .args(args)
+    let mut cmd = Command::new("herdr");
+    cmd.args(args).env("HERDR_SOCKET_PATH", sock);
+    run(cmd, timeout)
+}
+/// Run a child in its own process group with pipe readers and a deadline that
+/// kills the group; `herdr` and the PR poller's `gh` share it.
+pub fn run(mut cmd: Command, timeout: Duration) -> std::io::Result<Output> {
+    let mut child = cmd
         .process_group(0)
-        .env("HERDR_SOCKET_PATH", sock)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;

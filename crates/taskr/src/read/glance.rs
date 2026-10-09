@@ -277,7 +277,8 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
         if let Some(a) = one(
             db,
             &format!(
-                "{TREES}select e.id,e.created_at from tree join events e on e.task_id=tree.id where tree.root=? and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not (e.kind='prompt_outcome' and exists(select 1 from events p where p.id=e.related_event_id and json_extract(p.data,'$.nudge') is not null)) order by e.id desc limit 1"
+                "{TREES}select e.id,e.created_at from tree join events e on e.task_id=tree.id where tree.root=? and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not (e.kind='prompt_outcome' and exists(select 1 from events p where p.id=e.related_event_id and json_extract(p.data,'$.nudge') is not null)) and not {noise} order by e.id desc limit 1",
+                noise = crate::daemon::github::PR_NOISE
             ),
             vec![rid.into()],
         )? {
@@ -313,7 +314,8 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
             r.activity_id = one(
                 db,
                 &format!(
-                    "{TREES}select max(e.id) as id from tree join events e on e.task_id=tree.id where tree.root=? and (e.task_id!=tree.root or e.kind='prompt') and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null)"
+                    "{TREES}select max(e.id) as id from tree join events e on e.task_id=tree.id where tree.root=? and (e.task_id!=tree.root or e.kind='prompt') and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not {noise}",
+                    noise = crate::daemon::github::PR_NOISE
                 ),
                 vec![rid.into()],
             )?
@@ -805,6 +807,14 @@ mod tests {
             (1, "decision", "{}", false),
             (1, "next", "{}", false),
             (1, "ref", r#"{"key":"pr","value":"1"}"#, false),
+            (2, "pr", r#"{"pr":"o/r#1","sub":"checks_green"}"#, false),
+            (
+                2,
+                "ref",
+                r#"{"key":"pr.ci","value":"pass","source":"github"}"#,
+                false,
+            ),
+            (2, "pr", r#"{"pr":"o/r#1","sub":"merged"}"#, true),
             (2, "ready", "{}", true),
             (1, "prompt", "{}", true),
         ] {
@@ -815,6 +825,34 @@ mod tests {
             event(&db, task, kind, data);
             assert_eq!(parked_active(&db), active, "{task} {kind} {data}");
         }
+    }
+    #[test]
+    fn pr_poller_noise_is_not_activity() {
+        let db = fixture();
+        event(&db, 2, "note", "{}");
+        let activity = |db: &Connection| {
+            snapshot(db).unwrap()["campaigns"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|c| c["id"] == 1)
+                .unwrap()["activity_id"]
+                .clone()
+        };
+        let before = activity(&db);
+        event(&db, 2, "pr", r#"{"pr":"o/r#1","sub":"thread_opened"}"#);
+        event(
+            &db,
+            2,
+            "ref",
+            r#"{"key":"pr.state","value":"open","source":"github"}"#,
+        );
+        assert_eq!(activity(&db), before);
+        event(&db, 2, "ref", r#"{"key":"branch","value":"x"}"#);
+        assert_ne!(activity(&db), before, "a plain ref is still activity");
+        let before = activity(&db);
+        event(&db, 2, "pr", r#"{"pr":"o/r#1","sub":"merged"}"#);
+        assert_ne!(activity(&db), before);
     }
     #[test]
     fn withdrawn_ask_leaves_needs_you() {

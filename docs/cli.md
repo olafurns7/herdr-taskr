@@ -85,7 +85,7 @@ It also keeps the campaign's plan in the ledger:
 | `doc set ROOT goal\|plan --file PATH` | Store the goal or the plan. |
 | `next ID TEXT` | Record the next step for a task. |
 | `decide --as ROOT TEXT` | Record a rule in force (`--revoke EVENT_ID` withdraws it). |
-| `set ID KEY=VALUE` | Store a reference such as a branch or a PR number. |
+| `set ID KEY=VALUE` | Store a reference such as a branch or a PR number. `pr=31` or `pr=owner/repo#31` links a PR, which the hub follows when `watch.json` enables it ([PR events](daemon.md#pr-events)); `pr=` unlinks. |
 | `handover --as ROOT`, `adopt ROOT` | Write a Markdown handover; let a new agent take the campaign over. |
 | `note "OWNER: ..." --owner --as ROOT` | Leave a note for you. |
 | `ask [TEXT] --owner --question JSON [--dialog] [--blocking] --as ROOT` | A structured owner ask: one AskUserQuestion-shaped object (`question`, 2-4 `options` with `label`, optional `description` and one `recommended`, optional `header` and `multiSelect`; `preview` is dropped; at most 4 KiB). The summary is built from it as `[header: ]question (A) label; (B) label`, with TEXT as context before it. `--dialog` marks a question relayed from the hub's dialog. Answers stay plain text. |
