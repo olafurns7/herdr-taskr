@@ -13,6 +13,7 @@ mod hook;
 mod inbox;
 pub(crate) use inbox::observe::{daemon_observe, host_snapshot};
 mod prompt;
+mod question;
 pub(crate) use prompt::{Attempt, Delivery, begin, finish};
 
 pub fn flags(cmd: &str, json: bool) -> FlagSet {
@@ -111,6 +112,12 @@ pub fn flags(cmd: &str, json: bool) -> FlagSet {
                 false,
                 "a question for the owner; routed to the root",
             )
+            .string(
+                "question",
+                "",
+                "one AskUserQuestion-shaped `JSON` object (with --owner); TEXT becomes optional context",
+            )
+            .bool("dialog", false, "an owner ask relayed from the hub's question dialog")
             .string("key", "", "idempotency key")
             .int("as", 0, "a root orchestrator's own task id");
         }
@@ -392,9 +399,23 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
         "done" => (0, 1),
         "answer" | "doc set" => (2, 2),
         "set" => (2, 41),
+        // ask's TEXT is optional with --question: checked below, once flags are known.
+        "ask" => (0, 1),
         _ => (1, 1),
     };
-    if let Err(e) = f.parse(tail, min, max) {
+    let mut parsed = f.parse(tail, min, max);
+    if parsed.is_ok()
+        && cmd == "ask"
+        && !f.help()
+        && !f.was_set("question")
+        && f.positional.len() != 1
+    {
+        parsed = Err(format!(
+            "ask: expected 1 to 1 positional arguments, got {}",
+            f.positional.len()
+        ));
+    }
+    if let Err(e) = parsed {
         return Some(error(f.json(), raw, store::usage(e), json!({})));
     }
     if f.help() {
@@ -550,12 +571,30 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
                     "--owner: only a root orchestrator's own note",
                 ));
             }
+            let mut summary = p.first().cloned().unwrap_or_default();
             let mut data = match cmd {
                 "ask" => Some(json!({"blocking":f.get_bool("blocking"),"owner":owner})),
                 "note" if owner => Some(json!({"owner":true})),
                 "ready" => Some(json!({})),
                 _ => None,
             };
+            if cmd == "ask" {
+                let d = data.as_mut().expect("ask data");
+                if f.was_set("question") {
+                    if !owner {
+                        return Err(store::usage("--question needs --owner"));
+                    }
+                    let q = question::parse(f.get_string("question"))?;
+                    summary = question::summary(&summary, &q);
+                    d["question"] = q;
+                }
+                if f.get_bool("dialog") {
+                    if !owner {
+                        return Err(store::usage("--dialog needs --owner"));
+                    }
+                    d["dialog"] = json!(true);
+                }
+            }
             if cmd == "ready" {
                 let d = data.as_mut().expect("ready data");
                 if !f.get_string("report").is_empty() {
@@ -584,7 +623,7 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
                 &mut open()?,
                 worker::Write {
                     kind: cmd,
-                    summary: p.first().map_or("", String::as_str),
+                    summary: &summary,
                     key: f.get_string("key"),
                     data,
                     status: match cmd {
