@@ -400,6 +400,27 @@ fn legend(t: &Theme) -> Vec<Line<'static>> {
     ]
 }
 
+/// The slotr view's marks.
+fn slotr_legend(t: &Theme, width: usize) -> Vec<Line<'static>> {
+    let mut out = vec![Line::from(vec![
+        Span::raw(" "),
+        bold(" ●", t.work),
+        sp(" holds a slot  ", t.text),
+        bold(" ○", t.sub),
+        sp(" queued  ", t.text),
+        bold(" ▲", t.accent),
+        sp(" priority", t.text),
+    ])];
+    let amber =
+        "amber: stopping, warned, yielding, overdue, or waiting on memory, psi, load, recovery";
+    out.extend(
+        wrap(amber, width.saturating_sub(3))
+            .into_iter()
+            .map(|l| Line::from(sp(format!("  {l}"), t.check))),
+    );
+    out
+}
+
 /// One group of the key table for a view, under its name.
 fn group(t: &Theme, name: &str, view: u8, width: usize) -> Vec<Line<'static>> {
     let mut out = vec![Line::from(bold(format!(" {name}"), t.sub))];
@@ -433,11 +454,16 @@ pub(crate) fn help(f: &mut Frame, app: &App) {
     let (view, name) = match app.under() {
         Screen::Campaign => (keys::CAMPAIGN, "campaign"),
         Screen::Pager => (keys::PAGER, "pager"),
+        Screen::Slotr => (keys::SLOTR, "slotr"),
         _ => (keys::GLANCE, "glance"),
     };
-    let marks = |mut lines: Vec<Line<'static>>| {
+    let marks = |mut lines: Vec<Line<'static>>, width: u16| {
         lines.push(Line::from(bold(" Marks", t.sub)));
-        lines.extend(legend(t));
+        if view == keys::SLOTR {
+            lines.extend(slotr_legend(t, width as usize));
+        } else {
+            lines.extend(legend(t));
+        }
         lines
     };
     if f.area().width >= 100 {
@@ -458,7 +484,7 @@ pub(crate) fn help(f: &mut Frame, app: &App) {
                 .collect::<Vec<_>>()
         };
         f.render_widget(Paragraph::new(column(&GROUPS[..2])), a);
-        f.render_widget(Paragraph::new(marks(column(&GROUPS[2..]))), b);
+        f.render_widget(Paragraph::new(marks(column(&GROUPS[2..]), b.width)), b);
         return;
     }
     // One scrolling column.
@@ -480,7 +506,10 @@ pub(crate) fn help(f: &mut Frame, app: &App) {
         ],
     );
     let w = body.width as usize;
-    let lines = marks(GROUPS.iter().flat_map(|n| group(t, n, view, w)).collect());
+    let lines = marks(
+        GROUPS.iter().flat_map(|n| group(t, n, view, w)).collect(),
+        body.width,
+    );
     let (total, h) = (lines.len(), body.height as usize);
     app.seen.borrow_mut().page = (h, total);
     let first = app.scroll.min(total.saturating_sub(h));

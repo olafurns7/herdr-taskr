@@ -18,7 +18,7 @@ use crate::{
     glance::{self, Selected},
     lists,
     model::Doc,
-    ui,
+    slotr, ui,
 };
 
 /// What the loop does after a key.
@@ -115,7 +115,7 @@ fn travel(app: &mut App, by: isize) {
         return select(app, row);
     }
     let (at, last) = match app.screen {
-        Screen::AllCampaigns => (&mut app.row, rows.saturating_sub(1)),
+        Screen::AllCampaigns | Screen::Slotr => (&mut app.row, rows.saturating_sub(1)),
         Screen::Campaign if app.pane == 0 => (&mut app.lane, rows.saturating_sub(1)),
         _ => (&mut app.scroll, total.saturating_sub(height)),
     };
@@ -156,7 +156,7 @@ fn view(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
     let page = app.seen.borrow().page.0;
     let detail = on_detail(app);
     let lists = (app.screen == Screen::Glance && !detail)
-        || app.screen == Screen::AllCampaigns
+        || matches!(app.screen, Screen::AllCampaigns | Screen::Slotr)
         || (app.screen == Screen::Campaign && app.pane == 0);
     let half = if lists { 5 } else { (page / 2).max(1) } as isize;
     match code {
@@ -180,6 +180,17 @@ fn view(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
             app.close();
         }
         KeyCode::Char('?') => app.go(Screen::Help),
+        // From a campaign opened out of slotr, `s` goes back rather than stacking another.
+        KeyCode::Char('s')
+            if app.screen == Screen::Slotr
+                || (app.screen == Screen::Campaign && app.under() == Screen::Slotr) =>
+        {
+            app.close();
+        }
+        KeyCode::Char('s') if matches!(app.screen, Screen::Glance | Screen::Campaign) => {
+            app.go(Screen::Slotr);
+            app.row = 0;
+        }
         KeyCode::Char('m') => {
             app.mouse = !app.mouse;
             let now = if app.mouse {
@@ -219,6 +230,7 @@ fn view(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
                 Screen::Glance => glance_key(app, code),
                 Screen::Campaign => campaign_key(app, code),
                 Screen::AllCampaigns => all_key(app, code),
+                Screen::Slotr => slotr_key(app, code),
                 Screen::Pager if code == KeyCode::Char('y') => {
                     app.status = Some("copied the document".into());
                     Effect::Copy(app.data.doc.body.clone())
@@ -325,6 +337,7 @@ pub fn demo(app: &mut App, job: Job) {
             app.data.campaign.root.name
         )),
         Job::Doc { .. } => Ok(Done::Doc(app.data.doc.body.clone())),
+        Job::Slotr => Ok(Done::Slotr(Box::new(app.data.slotr.clone()))),
         _ => {
             app.status = Some(format!("demo: {} (nothing was sent)", job.label()));
             return;
@@ -478,6 +491,41 @@ fn all_key(app: &mut App, code: KeyCode) -> Effect {
     }
 }
 
+/// The slotr view: ⏎ and `y` work the row's pane, as on every list; `l` opens the row's
+/// campaign, by the root taskr found for its task or else by the campaign's name.
+fn slotr_key(app: &mut App, code: KeyCode) -> Effect {
+    let view = app.view();
+    let Some(row) = slotr::rows(&view.data.slotr).get(app.row).copied() else {
+        return Effect::None;
+    };
+    let host = &view.data.slotr.host;
+    match code {
+        KeyCode::Enter => go_to(app, host, &row.pane),
+        KeyCode::Char('y') => copy(app, host, &row.pane),
+        KeyCode::Char('l') | KeyCode::Right => {
+            let named = view
+                .data
+                .glance
+                .campaigns
+                .iter()
+                .find(|c| !row.campaign.is_empty() && c.name == row.campaign);
+            match (row.root_id, named) {
+                (0, Some(c)) => open(app, c.id, &c.name),
+                (0, None) => say(app, "no campaign for this row"),
+                (root, _) => {
+                    let name = if row.root_name.is_empty() {
+                        &row.campaign
+                    } else {
+                        &row.root_name
+                    };
+                    open(app, root, name)
+                }
+            }
+        }
+        _ => Effect::None,
+    }
+}
+
 /// Step 1: choose an option or write; Enter goes on to the confirmation and sends nothing.
 fn answer(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
     // The ask's own text scrolls when it is longer than its room.
@@ -552,6 +600,51 @@ pub fn done(app: &mut App, job: &Job, result: Result<Done, String>) {
         Done::Note(note) => format!(" · {note}"),
         _ => String::new(),
     };
+    if let Job::Slotr = job {
+        // The slotr view says its own trouble, on its own line; the last good pools stay.
+        let s = &mut app.slotr;
+        match result {
+            Ok(Done::Slotr(slotr)) if slotr.available => {
+                // The cursor the slotr view owns: its own row when the view is on
+                // top, else the nearest saved row of a slotr screen under an
+                // overlay. The cursor follows its run, from the queue into a
+                // slot too; no slotr screen anywhere, no cursor moves.
+                let own = app.screen == Screen::Slotr;
+                let saved = if own {
+                    None
+                } else {
+                    app.back
+                        .iter_mut()
+                        .rev()
+                        .find(|b| b.screen == Screen::Slotr)
+                };
+                let was = if own {
+                    Some(app.row)
+                } else {
+                    saved.as_ref().map(|b| b.row)
+                };
+                let seq = was
+                    .and_then(|row| slotr::rows(&app.data.slotr).get(row).map(|r| r.enqueue_seq));
+                app.data.slotr = *slotr;
+                (s.loaded, s.error) = (true, None);
+                if let Some(row) = was {
+                    let rows = slotr::rows(&app.data.slotr);
+                    let at = seq
+                        .and_then(|seq| rows.iter().position(|r| r.enqueue_seq == seq))
+                        .unwrap_or(row.min(rows.len().saturating_sub(1)));
+                    if own {
+                        app.row = at;
+                    } else if let Some(back) = saved {
+                        back.row = at;
+                    }
+                }
+            }
+            Ok(Done::Slotr(slotr)) if !slotr.error.is_empty() => s.error = Some(slotr.error),
+            Ok(_) => s.error = Some("slotr unavailable".into()),
+            Err(error) => s.error = Some(error),
+        }
+        return;
+    }
     app.status = match (job, result) {
         (Job::Campaign { root, open, .. }, Ok(Done::Campaign(campaign))) => {
             if *open && !showing {
@@ -1638,5 +1731,121 @@ mod tests {
             line.ends_with(" polling") && line.contains("? help"),
             "{line}"
         );
+    }
+
+    #[test]
+    fn s_opens_the_slotr_view_and_its_rows_go_where_they_say() {
+        let mut p = Pane::new(80, 24);
+        p.keys("s");
+        assert_eq!((p.app.screen, p.app.row), (Screen::Slotr, 0));
+        assert!(p.text().contains("reading slotr"));
+        // The loop reads slotr on its own cadence; the demo serves the fixture.
+        demo(&mut p.app, Job::Slotr);
+        let screen = p.text();
+        assert!(
+            screen.contains("HEAVY") && screen.contains("RUNTIME"),
+            "{screen}"
+        );
+        // The heavy holder, on the hub, as every hub row: Enter focuses, y copies.
+        let pane = "wF2:p3".to_string();
+        assert_eq!(p.keys("\n"), Effect::Run(Job::Focus { pane }));
+        assert_eq!(p.keys("y"), Effect::Copy("herdr agent focus wF2:p3".into()));
+        // The heavy waiter has no ledger task: its campaign is found by name.
+        p.keys("j");
+        p.keys("l");
+        assert!(p.status().contains("search-index"), "{}", p.status());
+        // The last waiter has neither a task nor a pane nor a known campaign.
+        p.keys("G");
+        assert_eq!(p.app.row, 5);
+        p.keys("l");
+        assert_eq!(p.status(), "no campaign for this row");
+        p.keys("\n");
+        assert_eq!(p.status(), "no live pane for this row");
+        // A click selects; a new glance does not move the slotr cursor.
+        p.click_on("auth-rotation");
+        assert_eq!(p.app.row, 4);
+        p.app.snapshot(p.app.data.glance.clone());
+        assert_eq!(p.app.row, 4);
+        // The runtime holder's root is the campaign the demo holds: l opens it.
+        p.keys("kk");
+        p.keys("l");
+        assert_eq!(p.app.screen, Screen::Campaign);
+        // s from that campaign goes back to slotr, so l and s loops do not stack.
+        p.keys("s");
+        assert_eq!((p.app.screen, p.app.back.len()), (Screen::Slotr, 1));
+        p.keys("ls");
+        assert_eq!((p.app.screen, p.app.back.len()), (Screen::Slotr, 1));
+        // From a campaign opened on the glance, s opens slotr and s again closes back to it.
+        p.keys("h");
+        p.app.go(Screen::Campaign);
+        p.keys("s");
+        assert_eq!(p.app.screen, Screen::Slotr);
+        p.keys("s");
+        assert_eq!(p.app.screen, Screen::Campaign);
+        p.keys("h");
+        assert_eq!(p.app.screen, Screen::Glance);
+    }
+
+    #[test]
+    fn the_slotr_cursor_follows_its_run_across_reads() {
+        let mut p = Pane::new(80, 24);
+        p.keys("s");
+        demo(&mut p.app, Job::Slotr);
+        p.click_on("auth-rotation");
+        assert_eq!(p.app.row, 4);
+        // A runtime holder above the cursor ends; the next read keeps the cursor on its run.
+        let mut next = p.app.data.slotr.clone();
+        next.pools.get_mut("runtime").unwrap().holders.remove(0);
+        done(&mut p.app, &Job::Slotr, Ok(Done::Slotr(Box::new(next))));
+        assert_eq!(p.app.row, 3);
+        assert_eq!(
+            slotr::rows(&p.app.data.slotr)[p.app.row].campaign,
+            "auth-rotation"
+        );
+    }
+
+    #[test]
+    fn s_is_text_in_a_filter_and_in_an_answer() {
+        let mut p = Pane::new(80, 24);
+        p.keys("/s");
+        assert_eq!((p.app.screen, p.app.filter.as_str()), (Screen::Glance, "s"));
+        p.keys("\x1b");
+        p.keys("a");
+        assert_eq!(p.app.screen, Screen::Answer);
+        p.app.editing = true;
+        p.app.text.clear();
+        p.keys("slots");
+        assert_eq!(
+            (p.app.screen, p.app.text.as_str()),
+            (Screen::Answer, "slots")
+        );
+    }
+
+    #[test]
+    fn the_slotr_view_keeps_its_own_error_line() {
+        let mut p = Pane::new(80, 24);
+        p.keys("s");
+        let error = "slotr: no systemd user bus here".to_string();
+        let mut gone = p.app.data.slotr.clone();
+        (gone.available, gone.error) = (false, error.clone());
+        done(&mut p.app, &Job::Slotr, Ok(Done::Slotr(Box::new(gone))));
+        assert_eq!(p.app.slotr.error.as_deref(), Some(error.as_str()));
+        assert!(p.app.fetch.error.is_none() && p.app.status.is_none());
+        assert!(p.text().contains(" ! slotr: no systemd"));
+        // The last good pools stay, and come back with the next good read.
+        demo(&mut p.app, Job::Slotr);
+        done(
+            &mut p.app,
+            &Job::Slotr,
+            Err("taskr did not answer in 10s".into()),
+        );
+        assert!(p.app.slotr.loaded && p.app.data.slotr.pools.len() == 2);
+        assert!(p.text().contains("HEAVY"));
+        demo(&mut p.app, Job::Slotr);
+        assert!(p.app.slotr.error.is_none());
+        // An older taskr on either end does not know the command.
+        let old = "taskr: unknown command slotr".to_string();
+        done(&mut p.app, &Job::Slotr, Err(old));
+        assert!(p.text().contains("older than taskr slotr: update both"));
     }
 }

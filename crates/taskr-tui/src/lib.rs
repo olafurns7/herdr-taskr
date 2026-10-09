@@ -17,6 +17,7 @@ mod dialog;
 mod glance;
 mod keys;
 mod lists;
+mod slotr;
 mod ui;
 
 use std::{cell::RefCell, rc::Rc, time::Instant};
@@ -39,6 +40,8 @@ pub enum Screen {
     /// Every root, closed ones too.
     AllCampaigns,
     Pager,
+    /// slotr's pools: holders and the queue (`s`).
+    Slotr,
 }
 
 /// How fresh the snapshot is. The view's own state, not part of the snapshot.
@@ -164,6 +167,9 @@ pub struct App {
     pub detail: bool,
     /// `--ascii`: draw every glyph as its ASCII stand-in.
     pub ascii: bool,
+    /// The slotr view's own read, apart from the glance's: `loaded` once slotr answered,
+    /// `error` while it cannot be read. The last good pools stay in `data.slotr`.
+    pub slotr: Fetch,
 }
 
 impl App {
@@ -195,6 +201,7 @@ impl App {
             scroll: 0,
             detail: false,
             ascii: false,
+            slotr: Fetch::default(),
         }
     }
 
@@ -234,10 +241,11 @@ impl App {
     /// Takes a new snapshot and keeps the cursor on the row it was on.
     pub fn snapshot(&mut self, glance: model::Glance) {
         let at = |app: &App| glance::ids(&app.view().data.glance);
-        // ponytail: under the all-campaigns list `row` is that list's cursor, so the
-        // glance row saved for the way back is not followed.
-        let glance_row = !matches!(self.screen, Screen::AllCampaigns)
-            && self.back.iter().all(|b| b.screen != Screen::AllCampaigns);
+        // ponytail: under the all-campaigns list or the slotr view `row` is that
+        // screen's cursor, so the glance row saved for the way back is not followed.
+        // The slotr view's cursor is `row` too.
+        let own = |s: Screen| matches!(s, Screen::AllCampaigns | Screen::Slotr);
+        let glance_row = !own(self.screen) && self.back.iter().all(|b| !own(b.screen));
         let was = at(self).get(self.row).cloned();
         let before = was.clone().filter(|_| glance_row);
         self.sent
@@ -399,6 +407,7 @@ fn screen(f: &mut Frame, app: &App) {
         Screen::Help => dialog::help(f, app),
         Screen::AllCampaigns => lists::all_campaigns(f, app),
         Screen::Pager => lists::pager(f, app),
+        Screen::Slotr => slotr::draw(f, app),
     }
 }
 

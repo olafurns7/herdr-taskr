@@ -486,6 +486,7 @@ pub(crate) fn ascii(buf: &mut ratatui::buffer::Buffer) {
             s if s.is_ascii() => continue,
             "●" | "◐" | "◓" | "◑" | "◒" | "◆" => "*",
             "○" => "o",
+            "▲" => "^",
             "•" | "·" | "░" | "…" | "▂" | "▃" => ".",
             "×" | "✗" | "⊘" => "x",
             "✓" => "v",

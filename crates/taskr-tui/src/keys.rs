@@ -4,7 +4,8 @@
 pub(crate) const GLANCE: u8 = 1;
 pub(crate) const CAMPAIGN: u8 = 2;
 pub(crate) const PAGER: u8 = 4;
-const ALL: u8 = GLANCE | CAMPAIGN | PAGER;
+pub(crate) const SLOTR: u8 = 8;
+const ALL: u8 = GLANCE | CAMPAIGN | PAGER | SLOTR;
 
 pub(crate) struct Key {
     pub keys: &'static str,
@@ -53,9 +54,10 @@ pub(crate) const KEYS: &[Key] = &[
         "⏎",
         "go",
         "go to the row's agent pane",
-        GLANCE | CAMPAIGN,
+        GLANCE | CAMPAIGN | SLOTR,
     ),
     key("Go", "l", "open", "open the campaign", GLANCE),
+    key("Go", "l", "open", "open the row's campaign", SLOTR),
     key("Go", "h", "back", "back, close (esc too)", ALL),
     key(
         "Go",
@@ -68,10 +70,18 @@ pub(crate) const KEYS: &[Key] = &[
     key("Go", "c", "all", "all campaigns, closed too", GLANCE),
     key(
         "Go",
+        "s",
+        "slotr",
+        "slotr holders and queue",
+        GLANCE | CAMPAIGN,
+    ),
+    key("Go", "s", "back", "close slotr (h, esc too)", SLOTR),
+    key(
+        "Go",
         "click",
         "select",
         "select; double-click is ⏎",
-        GLANCE | CAMPAIGN,
+        GLANCE | CAMPAIGN | SLOTR,
     ),
     key(
         "Act",
@@ -95,7 +105,13 @@ pub(crate) const KEYS: &[Key] = &[
         GLANCE | CAMPAIGN,
     ),
     key("Act", "y", "copy", "copy the jump command", ALL),
-    key("Act", "r", "refresh", "refresh now", GLANCE | CAMPAIGN),
+    key(
+        "Act",
+        "r",
+        "refresh",
+        "refresh now",
+        GLANCE | CAMPAIGN | SLOTR,
+    ),
     key("View", "?", "help", "this help", ALL),
     key("View", "m", "mouse", "mouse on or off", ALL),
     key("View", "t", "theme", "theme: dark, light, terminal", ALL),

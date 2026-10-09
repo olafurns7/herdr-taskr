@@ -330,7 +330,7 @@ async fn handle_inner(hub: &Arc<Hub>, peer: SocketAddr, req: Request<Body>) -> R
     } else {
         run(hub, &identity.machine, &req).await.into_reply()
     };
-    if !matches!(log_name.as_str(), "glance" | "campaign") || rep.exit != 0 {
+    if !matches!(log_name.as_str(), "glance" | "campaign" | "slotr") || rep.exit != 0 {
         crate::daemon::rpc_log(
             &hub.cfg.home,
             &format!(

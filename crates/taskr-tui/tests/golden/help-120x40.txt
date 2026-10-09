@@ -25,9 +25,9 @@
 │ ○ checko│    h             back, close (esc too)           Marks                                           │         │
 │   FIX: t│    /             filter rows by name              ? ask   ! to check   ◐ working   ○ waiting     │         │
 │ ◐ ios-wi│    c             all campaigns, closed too        ● lane   ● ready   · idle   × gone   ‖ parked  │         │
-│   Widget│    click         select; double-click is ⏎        ✓ done   ⊘ abandoned   ✗ rejected              │         │
-│ ◐ tui-fr│    ⏎ moves every client attached to that Herdr    ⏎ pane on this machine   ↗ another             │         │
-│   NOW: p│    server.                                        • changed since you looked                     │─────────╯
+│   Widget│    s             slotr holders and queue          ✓ done   ⊘ abandoned   ✗ rejected              │         │
+│ ◐ tui-fr│    click         select; double-click is ⏎        ⏎ pane on this machine   ↗ another             │         │
+│   NOW: p│    ⏎ moves every client attached to that Herdr    • changed since you looked                     │─────────╯
 │ · infra-│                                                                                                  │─────────╮
 │   cache-╰──────────────────────────────────────────────────────────────────────────────────────────────────╯         │
 │ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁        14m││       ██      ██  ██▂▂  ██▂▂    ██          ████         │
@@ -37,4 +37,4 @@
 │ ‖ legacy-importer                              parked  3h││ last NOW: plan rev 3.1 sent; the trust rules and the     │
 │ · 2 quiet                                                ││ first frames are in flight.                              │
 ╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
- ⏎ go to lead   a answer   l open   / filter   y copy   ? help   q quit
+ ⏎ go to lead   a answer   l open   / filter   y copy   s slotr   ? help   q quit

@@ -1846,5 +1846,155 @@
   "asker_task_id": 4031,
   "asker_waiting": true,
   "text": "Release runbook for v2.5, ready to run once you pick the window. Each step waits for the one before:\n1. Freeze the release branch and post the freeze note in the team channel.\n2. Tag the release candidate from the head of the release branch.\n3. Build the server, the client and the daemon for both architectures.\n4. Run the full suite on the build host with the slow tests switched on.\n5. Install the candidate on the staging host and replay one day of traffic.\n6. Compare the replay's error rate and latency with the last release.\n7. Write the changelog from the merged pull requests since v2.4.\n8. Publish the candidate to the beta channel and wait one hour for crash reports.\n9. Promote the candidate to stable if the beta channel stays quiet.\n10. Update the install docs and the upgrade notes for the new flags.\n11. Unfreeze the release branch and merge it back into main.\n12. Close the release milestone and archive the runbook with the timings.\nWhen: (A) tonight after 22:00 [recommended]; (B) tomorrow morning."
+ },
+ "slotr": {
+  "schema_version": 1,
+  "available": true,
+  "host": "",
+  "now": "2026-03-14T14:16:10.000Z",
+  "events_path": "",
+  "stats": {
+   "available_mib": 9216,
+   "total_mib": 31952.0,
+   "psi_full_avg10": 0.42,
+   "psi_full_avg60": 1.18,
+   "load1": 7.9,
+   "cores": 16
+  },
+  "last_stop": {
+   "run": "slotr-runtime-77",
+   "reason": "stop_psi_full_avg10",
+   "at": "2026-03-14T14:02:31.000Z"
+  },
+  "pools": {
+   "heavy": {
+    "slots": 2,
+    "budget": {
+     "reserve_mib": 3072,
+     "outstanding_mib": 1690.3,
+     "projected_free_mib": 3429.7
+    },
+    "holders": [
+     {
+      "enqueue_seq": 41,
+      "run": "slotr-heavy-41",
+      "campaign": "tui-frames",
+      "task": "4131",
+      "pane": "wF2:p3",
+      "purpose": "cargo test --workspace",
+      "cost_mib": 4096,
+      "anon_mib": 3311.5,
+      "admitted_at": "2026-03-14T14:09:40.000Z",
+      "since": "2026-03-14T14:09:40.000Z",
+      "lease_expires_at": "2026-03-14T15:39:40.000Z",
+      "warned_at": null,
+      "stopping_at": null,
+      "state": "running",
+      "notify": "configured",
+      "slot": 0,
+      "cpu_usage_usec": 1200000,
+      "root_id": 4120,
+      "root_name": "tui-frames"
+     }
+    ],
+    "queue": [
+     {
+      "enqueue_seq": 47,
+      "position": 1,
+      "campaign": "search-index",
+      "task": "",
+      "pane": "w3:p2",
+      "purpose": "vitest run",
+      "cost_mib": 3072,
+      "since": "2026-03-14T14:15:02.000Z",
+      "wait_reason": "legacy_lock",
+      "legacy_holder_pid": 48211,
+      "stop_claimed_by": null
+     }
+    ]
+   },
+   "runtime": {
+    "slots": 3,
+    "budget": {
+     "reserve_mib": 3072,
+     "outstanding_mib": 1690.3,
+     "projected_free_mib": -154.3
+    },
+    "holders": [
+     {
+      "enqueue_seq": 90,
+      "run": "slotr-runtime-90",
+      "campaign": "tui-frames",
+      "task": "4134",
+      "pane": "wF2:p5",
+      "purpose": "dev stack for frames",
+      "cost_mib": 6144,
+      "anon_mib": 5420.0,
+      "admitted_at": "2026-03-14T13:31:10.000Z",
+      "since": "2026-03-14T13:31:10.000Z",
+      "lease_expires_at": "2026-03-14T15:01:10.000Z",
+      "warned_at": null,
+      "stopping_at": null,
+      "state": "running",
+      "notify": "configured",
+      "slot": 0,
+      "cpu_usage_usec": 1200000,
+      "root_id": 4120,
+      "root_name": "tui-frames"
+     },
+     {
+      "enqueue_seq": 93,
+      "run": "slotr-runtime-93",
+      "campaign": "billing-export",
+      "task": "4177",
+      "pane": "w7:p1",
+      "purpose": "exporter preview",
+      "cost_mib": 3072,
+      "anon_mib": 2890.2,
+      "admitted_at": "2026-03-14T12:40:00.000Z",
+      "since": "2026-03-14T12:40:00.000Z",
+      "lease_expires_at": "2026-03-14T14:10:00.000Z",
+      "warned_at": "2026-03-14T14:05:00.000Z",
+      "stopping_at": "2026-03-14T14:15:40.000Z",
+      "state": "stopping",
+      "notify": "configured",
+      "slot": 0,
+      "cpu_usage_usec": 1200000,
+      "root_id": 4171,
+      "root_name": "billing-export"
+     }
+    ],
+    "queue": [
+     {
+      "enqueue_seq": 95,
+      "position": 1,
+      "campaign": "auth-rotation",
+      "task": "4290",
+      "pane": "w5:p2",
+      "purpose": "token service",
+      "cost_mib": 6144,
+      "since": "2026-03-14T14:12:30.000Z",
+      "wait_reason": "memory_budget",
+      "legacy_holder_pid": null,
+      "stop_claimed_by": null,
+      "root_id": 4288,
+      "root_name": "auth-rotation"
+     },
+     {
+      "enqueue_seq": 96,
+      "position": 2,
+      "campaign": "scratch",
+      "task": "",
+      "pane": "",
+      "purpose": "one-off notebook",
+      "cost_mib": 2048,
+      "since": "2026-03-14T14:14:55.000Z",
+      "wait_reason": "fifo",
+      "legacy_holder_pid": null,
+      "stop_claimed_by": null
+     }
+    ]
+   }
+  }
  }
 }

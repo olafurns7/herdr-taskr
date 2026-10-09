@@ -9,6 +9,7 @@ use taskr_core::{
 mod campaign;
 mod glance;
 mod queries;
+mod slotr;
 type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug)]
 struct Error {
@@ -176,6 +177,7 @@ pub fn dispatch(json: bool, args: &[String]) -> Option<ExitCode> {
             | "search"
             | "glance"
             | "campaign"
+            | "slotr"
             | "doc ls"
             | "doc get"
             | "help"
@@ -215,6 +217,7 @@ pub fn dispatch(json: bool, args: &[String]) -> Option<ExitCode> {
         "doc get" => queries::doc_get(&f),
         "glance" => glance::run(&f),
         "campaign" => campaign::run(&f),
+        "slotr" => slotr::run(&f),
         "version" => {
             let version = option_env!("TASKR_VERSION").unwrap_or("dev");
             println!(

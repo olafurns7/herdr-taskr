@@ -85,6 +85,7 @@ pub(super) fn stored(argv: &[String]) -> bool {
                 | "help"
                 | "glance"
                 | "campaign"
+                | "slotr"
         )
         && !(name == "doc"
             && args

@@ -308,11 +308,174 @@ pub struct Data {
     pub campaign: Campaign,
     pub roots: Vec<RootRow>,
     pub doc: Doc,
+    pub slotr: Slotr,
+}
+
+/// `taskr slotr --json`: `slotr status --json` (schema 1) as the hub reads it, plus
+/// `available`, `host`, `now` and, on rows whose task is a ledger id, `root_id` and
+/// `root_name`. Nullable fields are `Option`; `kind` and `priority` arrive with slotr's H1.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Slotr {
+    pub available: bool,
+    pub error: String,
+    /// Where the rows are: empty for the hub, as the glance's hub rows.
+    pub host: String,
+    /// The hub's clock when it read slotr; ages are taken against it.
+    pub now: String,
+    pub schema_version: u32,
+    /// By name, so in name order.
+    pub pools: std::collections::BTreeMap<String, Pool>,
+    pub stats: SlotrStats,
+    pub last_stop: Option<LastStop>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Pool {
+    pub slots: u32,
+    pub holders: Vec<SlotRow>,
+    /// In admission order.
+    pub queue: Vec<SlotRow>,
+    pub budget: Budget,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Budget {
+    pub reserve_mib: f64,
+    pub outstanding_mib: f64,
+    /// What would be left after one more run of the pool's default cost, before the
+    /// reserve: one more fits when this is at least `reserve_mib`. Null when slotr cannot
+    /// read free memory.
+    pub projected_free_mib: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+/// Each figure is null when slotr cannot read it (a kernel without PSI, say).
+pub struct SlotrStats {
+    pub available_mib: Option<f64>,
+    pub total_mib: Option<f64>,
+    pub psi_full_avg10: Option<f64>,
+    pub psi_full_avg60: Option<f64>,
+    pub load1: Option<f64>,
+    pub cores: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct LastStop {
+    pub run: String,
+    pub reason: String,
+    pub at: String,
+}
+
+/// A holder or a waiter; the fields of the other kind stay empty.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct SlotRow {
+    pub run: String,
+    pub campaign: String,
+    pub task: String,
+    pub pane: String,
+    pub purpose: String,
+    pub kind: Option<String>,
+    /// H1's flag; any truthy value marks the row.
+    pub priority: serde_json::Value,
+    pub cost_mib: f64,
+    pub anon_mib: Option<f64>,
+    /// When it queued.
+    pub since: Option<String>,
+    pub admitted_at: Option<String>,
+    pub lease_expires_at: Option<String>,
+    pub warned_at: Option<String>,
+    pub stopping_at: Option<String>,
+    pub state: String,
+    pub position: u32,
+    pub wait_reason: String,
+    /// Who holds the old heavy flock, on a `legacy_lock` wait.
+    pub legacy_holder_pid: Option<i64>,
+    /// The run's place in line; it keeps it when admitted, so the cursor can follow it.
+    pub enqueue_seq: u64,
+    pub root_id: i64,
+    pub root_name: String,
+}
+
+impl SlotRow {
+    pub fn priority(&self) -> bool {
+        match &self.priority {
+            serde_json::Value::Bool(b) => *b,
+            serde_json::Value::Number(n) => n.as_f64().is_some_and(|n| n != 0.0),
+            serde_json::Value::String(s) => !matches!(s.as_str(), "" | "normal" | "false"),
+            _ => false,
+        }
+    }
+
+    pub fn stopping(&self) -> bool {
+        self.state == "stopping" || self.stopping_at.is_some()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_slotr_sample_decodes_with_and_without_the_h1_fields() {
+        // Synthetic, in the shape of `taskr slotr --json` over slotr 0.1.0 (schema 1).
+        let raw: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/slotr-sample.json")).unwrap();
+        let s: Slotr = serde_json::from_value(raw.clone()).unwrap();
+        assert!(s.available && s.schema_version == 1 && s.host.is_empty());
+        let pool = &s.pools["runtime"];
+        let h = &pool.holders[0];
+        assert_eq!(
+            (pool.slots, h.run.as_str(), h.root_id),
+            (2, "slotr-runtime-90", 1)
+        );
+        assert_eq!(
+            (h.anon_mib, h.kind.as_deref(), h.priority()),
+            (Some(5420.25), None, false)
+        );
+        assert!(h.stopping_at.is_none() && !h.stopping());
+        assert_eq!(pool.budget.projected_free_mib, Some(-1740.8));
+        assert_eq!((h.enqueue_seq, s.stats.cores), (30, Some(16.0)));
+        let q: Vec<_> = pool
+            .queue
+            .iter()
+            .map(|r| (r.position, r.wait_reason.as_str()))
+            .collect();
+        assert_eq!(q, [(1, "memory_budget"), (2, "fifo")]);
+        assert_eq!(s.last_stop.unwrap().reason, "stop_psi_full_avg10");
+
+        // H1 adds kind and priority to rows; anything else unknown is ignored.
+        let mut h1 = raw;
+        let row = &mut h1["pools"]["runtime"]["queue"][0];
+        row["kind"] = "build".into();
+        row["priority"] = true.into();
+        h1["pools"]["runtime"]["holders"][0]["priority"] = false.into();
+        h1["schema_version"] = 2.into();
+        h1["future"] = serde_json::json!({"x": 1});
+        // A figure slotr cannot read is null, not a failed read.
+        h1["stats"]["psi_full_avg10"] = serde_json::Value::Null;
+        h1["pools"]["runtime"]["budget"]["projected_free_mib"] = serde_json::Value::Null;
+        let s: Slotr = serde_json::from_value(h1).unwrap();
+        assert!(
+            s.stats.psi_full_avg10.is_none()
+                && s.pools["runtime"].budget.projected_free_mib.is_none()
+        );
+        let q = &s.pools["runtime"].queue[0];
+        assert_eq!((q.kind.as_deref(), q.priority()), (Some("build"), true));
+        assert!(!s.pools["runtime"].holders[0].priority());
+
+        // taskr's answer when slotr cannot be read.
+        let s: Slotr = serde_json::from_str(
+            r#"{"available":false,"error":"no systemd user bus here","host":"","now":"2026-03-14T14:16:10.000Z"}"#,
+        )
+        .unwrap();
+        assert!(!s.available && s.pools.is_empty() && s.error.starts_with("no systemd"));
+    }
 
     #[test]
     fn the_p1b_sample_decodes() {

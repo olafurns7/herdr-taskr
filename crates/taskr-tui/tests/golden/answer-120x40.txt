@@ -37,4 +37,4 @@
 │ ‖ legacy-importer                              parked  3h││ last NOW: plan rev 3.1 sent; the trust rules and the     │
 │ · 2 quiet                                                ││ first frames are in flight.                              │
 ╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
- ⏎ go to lead   a answer   l open   / filter   y copy   ? help   q quit
+ ⏎ go to lead   a answer   l open   / filter   y copy   s slotr   ? help   q quit
