@@ -120,6 +120,8 @@ fn go_json(v: &Value) -> String {
             "asker",
             "asker_waiting",
             "also",
+            "question",
+            "dialog",
         ]
     } else if map.contains_key("event_id") {
         &["event_id", "kind", "text", "age_ms"]
@@ -142,7 +144,15 @@ fn go_json(v: &Value) -> String {
     format!(
         "{{{}}}",
         keys.iter()
-            .filter_map(|k| map.get(*k).map(|v| format!("\"{k}\":{}", go_json(v))))
+            .filter_map(|k| map.get(*k).map(|v| {
+                // An ask's question is opaque data: printed whole, not through these key lists.
+                let v = if *k == "question" {
+                    taskr_core::compact_json(v).unwrap()
+                } else {
+                    go_json(v)
+                };
+                format!("\"{k}\":{v}")
+            }))
             .collect::<Vec<_>>()
             .join(",")
     )
@@ -337,7 +347,7 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
     for ask in rows(
         db,
         &format!(
-            "{TREES}select e.id,e.task_id,coalesce(e.summary,'') as text,e.created_at as since,coalesce(json_extract(e.data,'$.blocking'),0) as blocking from tree join tasks t on t.id=tree.id join events e on e.task_id=t.id where t.status!='closed' and e.kind='ask' and e.answered_by is null and json_extract(e.data,'$.owner')=1 order by e.id"
+            "{TREES}select e.id,e.task_id,coalesce(e.summary,'') as text,e.created_at as since,coalesce(json_extract(e.data,'$.blocking'),0) as blocking,json_extract(e.data,'$.question') as question,coalesce(json_extract(e.data,'$.dialog'),0) as dialog from tree join tasks t on t.id=tree.id join events e on e.task_id=t.id where t.status!='closed' and e.kind='ask' and e.answered_by is null and json_extract(e.data,'$.owner')=1 order by e.id"
         ),
         vec![],
     )? {
@@ -348,6 +358,12 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
         omit(&mut need, "host", s(t, "host"));
         omit(&mut need, "pane_id", s(t, "pane"));
         omit(&mut need, "text", s(&ask, "text"));
+        if let Ok(q) = serde_json::from_str::<Value>(s(&ask, "question")) {
+            need["question"] = q;
+        }
+        if n(&ask, "dialog") == 1 {
+            need["dialog"] = json!(true);
+        }
         if n(t, "parent") != 0 {
             omit(&mut need, "asker", s(t, "name"));
             if !asked.contains(&n(t, "id"))
