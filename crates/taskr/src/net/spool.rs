@@ -136,6 +136,8 @@ fn read(path: &Path) -> Result<Value> {
         || r["request"]["request_key"] != key
         || parsed_time(r["queued_at"].as_str().unwrap_or("")).is_none()
         || (!stuck.is_empty() && parsed_time(stuck).is_none())
+        || r.get("busy_since")
+            .is_some_and(|v| v.as_str().and_then(parsed_time).is_none())
         || (stuck.is_empty()
             && (r["stuck_reason"].as_str().is_some_and(|s| !s.is_empty())
                 || r["stuck_shown"] == true))
@@ -340,6 +342,17 @@ fn http_stuck(e: &Error) -> bool {
         .into_iter()
         .any(|s| e.message.starts_with(&format!("server answered {s}:")))
 }
+fn busy(dir: &Path, p: &Path, keep: bool) -> Result<Value> {
+    let _lock = lock(dir, "lock", false)?;
+    let mut r = read(p)?;
+    if keep && r.get("busy_since").is_none() {
+        r["busy_since"] = json!(timestamp());
+        atomic(p, &r)?;
+    } else if !keep && r.as_object_mut().unwrap().remove("busy_since").is_some() {
+        atomic(p, &r)?;
+    }
+    Ok(r)
+}
 fn transient(e: &Error) -> bool {
     e.kind == "transport"
         || http_stuck(e)
@@ -426,59 +439,74 @@ fn send_count(dir: &Path, raw: &str, sent: &mut usize) -> Result<()> {
                 }
                 refuse(dir, &p, r, e.code as i64, &e.message)?;
             }
-            Ok(rep) => match outcome(&argv, &rep) {
-                Outcome::Keep => {
-                    log(dir, "spool head waiting: hub database is locked");
-                    return Ok(());
-                }
-                Outcome::Unknown => {
-                    let r = stuck(dir, &p, UNKNOWN)?;
-                    if super::now() - parsed_time(r["stuck_since"].as_str().unwrap()).unwrap()
-                        < time::Duration::minutes(10)
-                    {
-                        return Ok(());
-                    }
-                    refuse(dir, &p, r, 5, UNKNOWN)?;
-                }
-                Outcome::Remove => {
-                    remove(dir, &p)?;
-                }
-                Outcome::Refuse => {
-                    refuse(
-                        dir,
-                        &p,
-                        r,
-                        rep["exit"].as_i64().unwrap(),
-                        &reply_error(&rep),
-                    )?;
-                }
-                Outcome::Delivered => {
-                    match super::doc::uploads(
-                        &cl,
-                        &rep,
-                        req["cwd"].as_str().unwrap_or(""),
-                        &req["env"],
-                        r.get("document"),
-                    ) {
-                        Ok(()) => {
-                            remove(dir, &p)?;
-                            *sent += 1;
-                        }
-                        Err(e)
-                            if e.message.starts_with("document upload refused:")
-                                || !transient(&e) =>
+            Ok(rep) => {
+                let outcome = outcome(&argv, &rep);
+                let r = busy(dir, &p, outcome == Outcome::Keep)?;
+                match outcome {
+                    Outcome::Keep => {
+                        if super::now() - parsed_time(r["busy_since"].as_str().unwrap()).unwrap()
+                            < time::Duration::minutes(10)
                         {
-                            remove(dir, &p)?;
+                            log(dir, "spool head waiting: hub database is locked");
+                            return Ok(());
                         }
-                        Err(e) => {
-                            if http_stuck(&e) {
-                                stuck(dir, &p, &e.message)?;
+                        refuse(
+                            dir,
+                            &p,
+                            r,
+                            rep["exit"].as_i64().unwrap(),
+                            &reply_error(&rep),
+                        )?;
+                    }
+                    Outcome::Unknown => {
+                        let r = stuck(dir, &p, UNKNOWN)?;
+                        if super::now() - parsed_time(r["stuck_since"].as_str().unwrap()).unwrap()
+                            < time::Duration::minutes(10)
+                        {
+                            return Ok(());
+                        }
+                        refuse(dir, &p, r, 5, UNKNOWN)?;
+                    }
+                    Outcome::Remove => {
+                        remove(dir, &p)?;
+                    }
+                    Outcome::Refuse => {
+                        refuse(
+                            dir,
+                            &p,
+                            r,
+                            rep["exit"].as_i64().unwrap(),
+                            &reply_error(&rep),
+                        )?;
+                    }
+                    Outcome::Delivered => {
+                        match super::doc::uploads(
+                            &cl,
+                            &rep,
+                            req["cwd"].as_str().unwrap_or(""),
+                            &req["env"],
+                            r.get("document"),
+                        ) {
+                            Ok(()) => {
+                                remove(dir, &p)?;
+                                *sent += 1;
                             }
-                            return Err(e);
+                            Err(e)
+                                if e.message.starts_with("document upload refused:")
+                                    || !transient(&e) =>
+                            {
+                                remove(dir, &p)?;
+                            }
+                            Err(e) => {
+                                if http_stuck(&e) {
+                                    stuck(dir, &p, &e.message)?;
+                                }
+                                return Err(e);
+                            }
                         }
                     }
                 }
-            },
+            }
         }
         if let Some(next) = head(dir)? {
             first = next;
