@@ -283,6 +283,7 @@ pub fn set(db: &mut Connection, id: i64, kind: &str, name: &str, input: &Input) 
 }
 
 pub fn purge(db: &mut Connection, id: i64) -> Result<Value> {
+    let busy_timeout: u32 = db.pragma_query_value(None, "busy_timeout", |r| r.get(0))?;
     let out = transaction(db, |tx| {
         let (task, kind, name) = tx
             .query_row(
@@ -332,7 +333,7 @@ pub fn purge(db: &mut Connection, id: i64) -> Result<Value> {
     })?;
     let _ = db.busy_timeout(std::time::Duration::ZERO);
     let _ = db.execute_batch("pragma wal_checkpoint(truncate)");
-    let _ = db.busy_timeout(std::time::Duration::from_secs(5));
+    let _ = db.busy_timeout(std::time::Duration::from_millis(busy_timeout.into()));
     Ok(out)
 }
 struct Backfill {
@@ -470,5 +471,34 @@ fn record_upload(
     {
         let want = json!({"task":task,"kind":kind,"name":name,"path":input.path,"event_id":event});
         let _ = writeln!(file, "{}", compact_json(&want).expect("upload JSON"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn purge_restores_the_connections_busy_timeout() {
+        let mut db = Connection::open_in_memory().unwrap();
+        crate::schema::migrate(&mut db).unwrap();
+        db.execute("insert into tasks(id,name,role,status,created_at,updated_at) values(1,'root','orchestrator','open','now','now')", []).unwrap();
+        for millis in [5000, 30000, 150] {
+            db.busy_timeout(std::time::Duration::from_millis(millis.into()))
+                .unwrap();
+            let doc = set(
+                &mut db,
+                1,
+                "goal",
+                "",
+                &body(b"synthetic report", "report.md"),
+            )
+            .unwrap();
+            purge(&mut db, doc["doc_id"].as_i64().unwrap()).unwrap();
+            assert_eq!(
+                db.pragma_query_value(None, "busy_timeout", |r| r.get::<_, u32>(0))
+                    .unwrap(),
+                millis
+            );
+        }
     }
 }

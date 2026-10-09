@@ -27,6 +27,7 @@ Hook records also queue locally and are sent by the client daemon (stale ones ar
 A running client daemon sends `$HOME/.local/state/taskr/spool/` in order after a pass that reaches the server; without a daemon records stay queued until manual send. `taskr spool ls` lists queued/refused/bad files; `taskr spool send` tries now on a client host only; `taskr spool rm SEQ|FILE` removes one after inspection.
 
 - A stuck head (server 401/403/408/429) holds the whole queue in order. Fix the host's token or wait for the server to be free; it remains queued. A document upload's 401/403/408/429 also holds the head; 5xx keeps it queued.
+- A queued head with no stuck reason while the hub is reachable is waiting for a busy hub ledger; `daemon.log` says `spool head waiting: hub database is locked`; it is sent again on the next pass; do nothing.
 - A refused record marked `outcome unknown` had no final answer for 10 minutes. Look for it with `taskr log`; run the command again only if it is missing.
 - Other refused records will not be sent again; the server's error says why. Resolve that error before issuing corrected work.
 - A bad file could not be read. Inspect it, then remove it with `spool rm`.

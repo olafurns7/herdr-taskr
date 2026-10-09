@@ -489,9 +489,9 @@ TestSearchOwnerAnswer		search_test.go	read:search	a	todo		cmd:answer;cmd:ask
 TestSearchQueriesAndFilters		search_test.go	read:search	a	todo		cmd:search		
 TestSearchQueriesAndFilters	query	search_test.go	read:search	a	todo		cmd:search		
 TestSearchRPC		search_test.go	net:rpc-client	a	todo		rpc:/api/rpc		
-TestSearchRepair		search_test.go	read:search	a	todo		cmd:note;cmd:status;migration		
-TestSearchRepair	missing	search_test.go	read:search	a	todo		cmd:note;cmd:status;migration		
-TestSearchSecureDeleteExisting		search_test.go	read:search	c	todo		cmd:search		
+TestSearchRepair		search_test.go	read:search	a	blackbox	cargo:busy_resilience:current_version_open_repairs_search	cmd:note;cmd:status;migration	Current-version CLI repairs missing table/trigger, old trigger and secure-delete; backfill and second-open rowids preserved	pending
+TestSearchRepair	missing	search_test.go	read:search	a	blackbox	cargo:busy_resilience:current_version_open_repairs_search	cmd:note;cmd:status;migration	Current-version CLI repairs missing table/trigger, old trigger and secure-delete; backfill and second-open rowids preserved	pending
+TestSearchSecureDeleteExisting		search_test.go	read:search	c	blackbox	cargo:busy_resilience:current_version_open_repairs_search	cmd:search	Current-version CLI repairs missing table/trigger, old trigger and secure-delete; backfill and second-open rowids preserved	pending
 TestSearchSnippet		search_test.go	read:search	a	todo		cmd:search		
 TestSearchSources		search_test.go	read:search	a	todo		cmd:search		
 TestSearchTransactionRollback		search_test.go	read:search	a	todo		cmd:doc-rm		

@@ -496,10 +496,20 @@ async fn stored(hub: Arc<Hub>, machine: String, req: RpcRequest) -> RpcReply {
     }
     let exited = matches!(&result, Execution::Exited(_));
     let rep = result.into_reply();
+    let exited = exited
+        && !(crate::net::spoolable(&req.argv)
+            && db::busy_reply(
+                rep.exit.into(),
+                &crate::net::reply_error(
+                    &json!({"exit":rep.exit,"stdout":rep.stdout,"stderr":rep.stderr}),
+                ),
+            ));
     let upload = serde_json::to_string(&rep.upload).expect("upload");
     let (exit, stdout, stderr) = (rep.exit, rep.stdout.clone(), rep.stderr.clone());
     let _ = tokio::task::spawn_blocking(move || -> Result<(), String> {
         let db = db::open_migrated(&hub.cfg.db_path)?;
+        db.busy_timeout(Duration::from_secs(30))
+            .map_err(|e| db::error_text(&e))?;
         if exited {
             db.execute(
                 "update requests set state='done',exit=?,stdout=?,stderr=?,upload=? where key=?",

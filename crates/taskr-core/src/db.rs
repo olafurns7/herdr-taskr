@@ -41,6 +41,9 @@ pub fn open_migrated(path: &Path) -> Result<Connection, String> {
     crate::schema::connect(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
         .map_err(|e| error_text(&e))
 }
+pub fn busy_reply(exit: i64, error: &str) -> bool {
+    exit == 4 && error.starts_with("database is locked")
+}
 pub fn error_text(e: &rusqlite::Error) -> String {
     match e {
         rusqlite::Error::SqlInputError { error, msg, .. } => {
@@ -104,6 +107,20 @@ pub fn error_text(e: &rusqlite::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn busy_reply_requires_database_exit_and_busy_prefix() {
+        for code in [5, 261, 517, 773] {
+            assert!(busy_reply(4, &format!("database is locked ({code})")));
+        }
+        assert!(!busy_reply(5, "database is locked (5) (SQLITE_BUSY)"));
+        for error in [
+            "database table is locked (6)",
+            "disk I/O error (10)",
+            "unrelated SQLITE_BUSY text",
+        ] {
+            assert!(!busy_reply(4, error));
+        }
+    }
     #[test]
     fn migrated_reader_does_not_take_the_writer_lock_or_create_a_ledger() {
         let root = std::env::temp_dir().join(format!("taskr-migrated-db-{}", std::process::id()));

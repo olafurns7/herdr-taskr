@@ -354,6 +354,35 @@ pub fn send(dir: &Path, raw: &str) -> Result<usize> {
     send_count(dir, raw, &mut sent)?;
     Ok(sent)
 }
+#[derive(Debug, PartialEq)]
+enum Outcome {
+    Keep,
+    Unknown,
+    Refuse,
+    Remove,
+    Delivered,
+}
+fn outcome(argv: &[String], rep: &Value) -> Outcome {
+    if taskr_core::db::busy_reply(rep["exit"].as_i64().unwrap_or(-1), &reply_error(rep)) {
+        Outcome::Keep
+    } else if rep["exit"] == 5
+        && rep["stdout"]
+            .as_str()
+            .unwrap_or("")
+            .contains("outcome unknown (still running")
+    {
+        Outcome::Unknown
+    } else if command(argv).0 == "_hook"
+        && rep["exit"] == 0
+        && rep["stdout"].as_str().unwrap_or("").trim() == "expired"
+    {
+        Outcome::Remove
+    } else if rep["exit"] != 0 {
+        Outcome::Refuse
+    } else {
+        Outcome::Delivered
+    }
+}
 fn send_count(dir: &Path, raw: &str, sent: &mut usize) -> Result<()> {
     if files(&root(dir).join("queue"))?.is_empty() {
         return Ok(());
@@ -397,13 +426,12 @@ fn send_count(dir: &Path, raw: &str, sent: &mut usize) -> Result<()> {
                 }
                 refuse(dir, &p, r, e.code as i64, &e.message)?;
             }
-            Ok(rep) => {
-                if rep["exit"] == 5
-                    && rep["stdout"]
-                        .as_str()
-                        .unwrap_or("")
-                        .contains("outcome unknown (still running")
-                {
+            Ok(rep) => match outcome(&argv, &rep) {
+                Outcome::Keep => {
+                    log(dir, "spool head waiting: hub database is locked");
+                    return Ok(());
+                }
+                Outcome::Unknown => {
                     let r = stuck(dir, &p, UNKNOWN)?;
                     if super::now() - parsed_time(r["stuck_since"].as_str().unwrap()).unwrap()
                         < time::Duration::minutes(10)
@@ -411,12 +439,11 @@ fn send_count(dir: &Path, raw: &str, sent: &mut usize) -> Result<()> {
                         return Ok(());
                     }
                     refuse(dir, &p, r, 5, UNKNOWN)?;
-                } else if command(&argv).0 == "_hook"
-                    && rep["exit"] == 0
-                    && rep["stdout"].as_str().unwrap_or("").trim() == "expired"
-                {
+                }
+                Outcome::Remove => {
                     remove(dir, &p)?;
-                } else if rep["exit"] != 0 {
+                }
+                Outcome::Refuse => {
                     refuse(
                         dir,
                         &p,
@@ -424,7 +451,8 @@ fn send_count(dir: &Path, raw: &str, sent: &mut usize) -> Result<()> {
                         rep["exit"].as_i64().unwrap(),
                         &reply_error(&rep),
                     )?;
-                } else {
+                }
+                Outcome::Delivered => {
                     match super::doc::uploads(
                         &cl,
                         &rep,
@@ -450,7 +478,7 @@ fn send_count(dir: &Path, raw: &str, sent: &mut usize) -> Result<()> {
                         }
                     }
                 }
-            }
+            },
         }
         if let Some(next) = head(dir)? {
             first = next;
@@ -822,6 +850,51 @@ pub fn notify(dir: &Path, sock: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reply_outcomes_keep_only_busy_database_errors() {
+        let argv = ["note", "progress"].map(String::from);
+        for stdout in [
+            "x1 4 {\"err\":\"database is locked (5) (SQLITE_BUSY)\",\"k\":\"database\"}\n",
+            "{\"error\":\"database is locked (517)\",\"kind\":\"database\"}\n",
+        ] {
+            assert_eq!(
+                outcome(&argv, &json!({"exit":4,"stdout":stdout})),
+                Outcome::Keep
+            );
+        }
+        assert_eq!(
+            outcome(
+                &argv,
+                &json!({"exit":4,"stdout":"x1 4 {\"err\":\"database table is locked (6)\"}\n"})
+            ),
+            Outcome::Refuse
+        );
+        assert_eq!(
+            outcome(
+                &argv,
+                &json!({"exit":4,"stdout":"{\"error\":\"disk I/O error (10)\"}\n"})
+            ),
+            Outcome::Refuse
+        );
+        assert_eq!(
+            outcome(
+                &argv,
+                &json!({"exit":5,"stdout":"outcome unknown (still running)"})
+            ),
+            Outcome::Unknown
+        );
+        assert_eq!(
+            outcome(
+                &["--json", "_hook"].map(String::from),
+                &json!({"exit":0,"stdout":"expired\n"})
+            ),
+            Outcome::Remove
+        );
+        assert_eq!(
+            outcome(&argv, &json!({"exit":0,"stdout":"ok\n"})),
+            Outcome::Delivered
+        );
+    }
     #[test]
     fn malformed_argv_head_is_quarantined_and_next_record_survives() {
         let dir = std::env::temp_dir().join(format!(
