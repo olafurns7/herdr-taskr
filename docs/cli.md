@@ -203,8 +203,11 @@ Hub daemons use the existing local host identity; clients use their verified RPC
 identity. Invalid/fallback identities skip publication without inventing a host.
 Unknown/mismatched roots or lane members, unsafe/unmarked bases, walk cutoffs
 and filesystem/ledger errors keep the prior report. Measurement creates, marks
-and deletes nothing. Closed roots retain their last report because the existing
-`set` path accepts open tasks only. Detailed JSON additionally exposes `tmp_bytes`.
+and deletes nothing. Closed roots are skipped before traversal and retain their
+last report. Glance JSON includes `tmp` and `tmp_bytes`. Briefs append size after
+the primary status; narrow TUI rows omit size when it would clip primary fields,
+while the detail pane retains it. Campaign log pages and their counts omit size
+telemetry; raw `taskr log` still includes it.
 
 `taskr close ID --clean-tmp` skips the grace and policy after confirmed
 closure. Explicit root cleanup removes all campaign tmp, including open-lane

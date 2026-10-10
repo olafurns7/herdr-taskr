@@ -798,6 +798,117 @@ fn daemon_limits_lookup_errors_without_hiding_removal_errors() {
 }
 
 #[test]
+fn daemon_size_json_boundary_known_zero_and_missing() {
+    let h = Harness::new();
+    let (root, lane) = campaign(&h);
+    let base = h.home.join("json-sizes");
+    let env = base_env(&base);
+    let row = || {
+        let glance = h.ok(&env, &["glance"]);
+        glance["campaigns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == root)
+            .unwrap()
+            .clone()
+    };
+    assert!(row().get("tmp_bytes").is_none());
+    assert!(row().get("tmp").is_none());
+    h.ok(&env, &["tmp", &lane.to_string(), "--mkdir"]);
+    let file = base
+        .join(root.to_string())
+        .join(lane.to_string())
+        .join("data");
+    fs::write(&file, "12345").unwrap();
+    h.ok(&env, &["daemon", "--once"]);
+    assert_eq!(row()["tmp_bytes"], 5);
+    assert_eq!(row()["tmp"], "tmp 5");
+    fs::remove_file(file).unwrap();
+    h.ok(&env, &["daemon", "--once"]);
+    assert_eq!(row()["tmp_bytes"], 0);
+    assert_eq!(row()["tmp"], "tmp 0");
+}
+
+#[test]
+fn campaign_log_telemetry_flood_preserves_events_and_page_count() {
+    let h = Harness::new();
+    let (root, _) = campaign(&h);
+    let r = root.to_string();
+    h.ok(&[], &["note", "real milestone", "--as", &r]);
+    h.ok(&[], &["set", &r, "ordinary=visible"]);
+    let before = h.ok(&[], &["campaign", &r]);
+    for i in 0..125 {
+        h.conn().execute(
+            "insert into events(task_id,kind,summary,data,created_at) values(?,'ref','size telemetry',?,?)",
+            taskr_core::db::params![root, serde_json::json!({"key":"tmp.bytes.test","value":i.to_string()}).to_string(), taskr_core::store::now()],
+        ).unwrap();
+    }
+    let after = h.ok(&[], &["campaign", &r, "--page", "2"]);
+    assert_eq!(after["log_page"], before["log_page"]);
+    assert_eq!(after["log"], before["log"]);
+    assert!(
+        after["log"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["text"] == "real milestone")
+    );
+    assert!(
+        after["log"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "ref")
+    );
+    let raw = run(&h, &Env::new(), &["log", &r, "--limit", "0"]);
+    assert_eq!(raw.0, 0);
+    assert!(raw.1.contains("tmp.bytes.test"));
+    assert!(raw.1.contains("real milestone"));
+}
+
+#[test]
+fn daemon_size_closed_keep_root_skips_traversal_and_retains_report() {
+    let h = Harness::new();
+    let (root, lane) = campaign(&h);
+    let base = h.home.join("closed-sizes");
+    let env = base_env(&base);
+    let r = root.to_string();
+    let key = format!("tmp.bytes.{}", taskr_core::store::local_machine());
+    h.ok(&env, &["set", &r, "tmp.cleanup=keep"]);
+    h.ok(&env, &["tmp", &lane.to_string(), "--mkdir"]);
+    let file = base.join(&r).join(lane.to_string()).join("data");
+    fs::write(&file, "12345").unwrap();
+    h.ok(&env, &["daemon", "--once"]);
+    fs::write(&file, "123456789").unwrap();
+    h.ok(&env, &["daemon", "--once"]);
+    assert_eq!(h.ok(&env, &["set", &r, "ordinary=ok"])["refs"][&key], "9");
+    let unknown = base.join(&r).join("999999");
+    fs::create_dir(&unknown).unwrap();
+    fs::write(&file, "more than nine bytes").unwrap();
+    h.ok(&env, &["daemon", "--once"]);
+    assert_eq!(h.ok(&env, &["set", &r, "ordinary=ok"])["refs"][&key], "9");
+    let log = h.home.join(".local/state/taskr/daemon.log");
+    let prior = fs::read_to_string(&log).unwrap();
+    assert!(prior.contains(&format!("tmp size {root}:")));
+    h.ok(&env, &["close", &r]);
+    for _ in 0..2 {
+        h.ok(&env, &["daemon", "--once"]);
+        let current = fs::read_to_string(&log).unwrap();
+        assert!(
+            !current[prior.len()..].contains(&format!("tmp size {root}:")),
+            "{current}"
+        );
+    }
+    assert!(unknown.is_dir());
+    assert_eq!(
+        taskr_core::store::tmp::total(&h.conn(), root).unwrap(),
+        Some(9)
+    );
+    assert_eq!(h.count("select count(*) from events where task_id=? and kind='ref' and json_extract(data,'$.key') like 'tmp.bytes.%'", root), 2);
+}
+
+#[test]
 fn daemon_size_persistence_budget_and_display() {
     let h = Harness::new();
     let (root, lane) = campaign(&h);

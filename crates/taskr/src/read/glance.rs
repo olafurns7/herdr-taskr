@@ -104,6 +104,8 @@ fn go_json(v: &Value) -> String {
             "parked_active",
             "park_age_ms",
             "activity_age_ms",
+            "tmp",
+            "tmp_bytes",
         ]
     } else if map.contains_key("ask_id") {
         &[
@@ -218,8 +220,9 @@ struct Root {
 }
 pub(super) fn snapshot(db: &Connection) -> Result<Value> {
     let noise = format!(
-        "({} or (e.kind='ref' and json_extract(e.data,'$.key') like 'tmp.bytes.%'))",
-        crate::daemon::github::PR_NOISE
+        "({} or {})",
+        crate::daemon::github::PR_NOISE,
+        super::TMP_NOISE
     );
     let mut roots = BTreeMap::<i64, Root>::new();
     let mut tasks = BTreeMap::new();

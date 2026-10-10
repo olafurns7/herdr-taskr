@@ -24,7 +24,8 @@ daemon's heartbeat loop; sweeps never overlap. Clients use fresh hub RPC reads; 
 
 The same worker measures remaining local campaign dirs and updates only this
 host's `tmp.bytes.<host>` root ref through the existing `set` path, only when
-changed. It reuses the no-follow descriptor/base/marker and root lookup checks;
+changed. Closed roots are skipped before traversal, preserving their last report.
+It reuses the no-follow descriptor/base/marker and root lookup checks;
 no foreign-device descent or base initialization is allowed. Each complete walk
 counts regular files' metadata lengths, not allocated blocks or symlink targets.
 Bounds are fixed: 1,000,000 entries and 128 directory levels per campaign,

@@ -119,10 +119,13 @@ fn measure_under(
             if root <= 0 || root.to_string() != text {
                 continue;
             }
-            let campaign = (|| -> Result<u64> {
+            let campaign = (|| -> Result<Option<u64>> {
                 let state = lookup(root)?;
                 if state.task_id != root || state.root_id != root {
                     bail!("tmp campaign is not a real root");
+                }
+                if state.closed {
+                    return Ok(None);
                 }
                 let mut limit = Walk {
                     left: ENTRIES,
@@ -134,10 +137,11 @@ fn measure_under(
                 if s.st_dev != identity.st_dev || s.st_ino != identity.st_ino {
                     bail!("tmp size base was replaced");
                 }
-                Ok(bytes)
+                Ok(Some(bytes))
             })();
             match campaign {
-                Ok(bytes) => measured.push((root, bytes)),
+                Ok(Some(bytes)) => measured.push((root, bytes)),
+                Ok(None) => {}
                 Err(e) => report(format!("tmp size {root}: {e:#}")),
             }
         }

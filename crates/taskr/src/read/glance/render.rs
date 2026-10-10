@@ -267,10 +267,10 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64, brief: bool) -> 
         let ago = age(n(c, "activity_age_ms") + age_ms);
         if brief && let Some(bytes) = c["tmp_bytes"].as_u64() {
             text = format!(
-                "tmp {}{}{}",
-                store::tmp::compact(bytes),
+                "{}{}tmp {}",
+                text,
                 if text.is_empty() { "" } else { " · " },
-                text
+                store::tmp::compact(bytes)
             );
         }
         let mut row = vec![if brief {
@@ -570,6 +570,24 @@ mod parity_tests {
             out.contains("  root=100000  ") && out.contains("  root=100001  "),
             "{out}"
         );
+    }
+    #[test]
+    fn brief_size_follows_primary_text_and_keeps_urgent_rows() {
+        let mut v = brief_fixture();
+        let plain = brief(v.clone(), "").unwrap();
+        assert!(!plain.contains("tmp "));
+        v["campaigns"][0]["last"]["text"] = json!("x".repeat(200));
+        v["campaigns"][0]["tmp_bytes"] = json!(0);
+        let out = brief(v.clone(), "").unwrap();
+        assert!(out.contains(&format!("{}…", "x".repeat(59))), "{out}");
+        assert!(
+            !out.contains("tmp 0"),
+            "secondary size must yield to clipping: {out}"
+        );
+        assert!(out.contains("BLOCKING"), "{out}");
+        v["campaigns"][0]["last"]["text"] = json!("primary milestone");
+        let out = brief(v, "").unwrap();
+        assert!(out.contains("primary milestone · tmp 0"), "{out}");
     }
     #[test]
     fn brief_clips_overlong_quote() {

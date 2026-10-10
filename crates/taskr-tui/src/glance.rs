@@ -314,7 +314,10 @@ fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Op
                 sp(format!(" {host} "), t.remote),
                 sp(format!("{:>3}", age(c.activity_age_ms)), t.sub),
             ];
-            if let Some(label) = c.tmp_label() {
+            if let Some(label) = c.tmp_label()
+                && ui::width(&right) + label.len() < spark_w + 10
+                && ui::width(&left) + 1 + ui::width(&right) + label.len() < body
+            {
                 right.insert(0, sp(format!(" {label}"), t.dim));
             }
             // A long machine name takes its room from the sparkline.
@@ -350,7 +353,9 @@ fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Op
                 hits.resize(out.len(), None);
                 let left = vec![sp("‖ ", t.dim), sp(c.name.clone(), t.dim)];
                 let mut right = vec![sp(format!(" parked {:>3}", age(c.park_age_ms)), t.dim)];
-                if let Some(label) = c.tmp_label() {
+                if let Some(label) = c.tmp_label()
+                    && ui::width(&left) + ui::width(&right) + label.len() < body
+                {
                     right.insert(0, sp(format!(" {label}"), t.dim));
                 }
                 out.push(ui::row(
@@ -826,6 +831,40 @@ fn activity(f: &mut Frame, app: &App, area: Rect) {
 mod tests {
     use super::*;
     use crate::frames::fixture;
+
+    #[test]
+    fn tmp_size_yields_to_remote_primary_row_at_46_columns() {
+        let mut app = App::new(fixture());
+        let c = &mut app.data.glance.campaigns[0];
+        c.name = "remote-primary".into();
+        c.host = "laptop".into();
+        c.lanes = crate::model::LaneCounts {
+            working: 3,
+            ready: 2,
+            open: 7,
+        };
+        c.tmp = serde_json::Value::Null;
+        let row = |app: &App, width| {
+            lines(app, width, 28)
+                .iter()
+                .map(|l| {
+                    l.spans
+                        .iter()
+                        .map(|s| s.content.as_ref())
+                        .collect::<String>()
+                })
+                .find(|r| r.contains("remote-primary"))
+                .unwrap()
+        };
+        let primary = row(&app, 46);
+        app.data.glance.campaigns[0].tmp = serde_json::json!("tmp 1.2G");
+        let narrow = row(&app, 46);
+        assert_eq!(narrow, primary);
+        assert!(narrow.contains("●●●●●○○"), "{narrow}");
+        assert!(narrow.contains("laptop"), "{narrow}");
+        assert!(!narrow.contains("tmp "));
+        assert!(row(&app, 80).contains("tmp 1.2G"));
+    }
 
     #[test]
     fn tmp_size_narrow_fixture_keeps_urgent_rows_and_rejects_malformed_values() {
