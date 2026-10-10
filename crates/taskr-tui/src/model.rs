@@ -120,9 +120,35 @@ pub struct CampaignRow {
     pub activity_age_ms: i64,
     /// Events in the tree per ten minutes, oldest first, 24 buckets (P1b).
     pub spark: Vec<u32>,
+    /// A preformatted last-reported logical size from the existing glance projection.
+    pub tmp: serde_json::Value,
 }
 
 impl CampaignRow {
+    pub fn tmp_label(&self) -> Option<&str> {
+        let label = self.tmp.as_str()?;
+        let size = label.strip_prefix("tmp ")?;
+        let number = size
+            .strip_suffix(['K', 'M', 'G', 'T', 'P', 'E'])
+            .unwrap_or(size);
+        if size.len() > 8
+            || number.is_empty()
+            || !number.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+        {
+            return None;
+        }
+        let mut parts = number.split('.');
+        let whole = parts.next()?;
+        if whole.is_empty() || whole.parse::<u64>().is_err() {
+            return None;
+        }
+        if let Some(fraction) = parts.next()
+            && (fraction.len() != 1 || parts.next().is_some())
+        {
+            return None;
+        }
+        Some(label)
+    }
     /// The row's second line: the owner note without its `OWNER: nothing.` segment, or the
     /// latest milestone when nothing is left.
     pub fn status_text(&self) -> &str {

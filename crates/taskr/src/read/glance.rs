@@ -1,6 +1,7 @@
 use super::queries::{self as q, TREES, age, host_fresh, meta, one, rows};
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
+use taskr_core::store;
 mod render;
 pub(super) fn s<'a>(v: &'a Value, k: &str) -> &'a str {
     v[k].as_str().unwrap_or_default()
@@ -103,6 +104,8 @@ fn go_json(v: &Value) -> String {
             "parked_active",
             "park_age_ms",
             "activity_age_ms",
+            "tmp",
+            "tmp_bytes",
         ]
     } else if map.contains_key("ask_id") {
         &[
@@ -216,6 +219,11 @@ struct Root {
     park_id: i64,
 }
 pub(super) fn snapshot(db: &Connection) -> Result<Value> {
+    let noise = format!(
+        "({} or {})",
+        crate::daemon::github::PR_NOISE,
+        super::TMP_NOISE
+    );
     let mut roots = BTreeMap::<i64, Root>::new();
     let mut tasks = BTreeMap::new();
     let mut hosts = BTreeMap::new();
@@ -274,11 +282,15 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
     let sparks = sparks(db, 0)?;
     for (&rid, r) in &mut roots {
         r.v["spark"] = json!(sparks[&rid]);
+        if let Some(bytes) = store::tmp::total(db, rid)? {
+            r.v["tmp_bytes"] = json!(bytes);
+            r.v["tmp"] = json!(format!("tmp {}", store::tmp::compact(bytes)));
+        }
         if let Some(a) = one(
             db,
             &format!(
                 "{TREES}select e.id,e.created_at from tree join events e on e.task_id=tree.id where tree.root=? and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not (e.kind='prompt_outcome' and exists(select 1 from events p where p.id=e.related_event_id and json_extract(p.data,'$.nudge') is not null)) and not {noise} order by e.id desc limit 1",
-                noise = crate::daemon::github::PR_NOISE
+                noise = noise
             ),
             vec![rid.into()],
         )? {
@@ -315,7 +327,7 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
                 db,
                 &format!(
                     "{TREES}select max(e.id) as id from tree join events e on e.task_id=tree.id where tree.root=? and (e.task_id!=tree.root or e.kind='prompt') and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not {noise}",
-                    noise = crate::daemon::github::PR_NOISE
+                    noise = noise
                 ),
                 vec![rid.into()],
             )?
@@ -840,6 +852,12 @@ mod tests {
                 .clone()
         };
         let before = activity(&db);
+        event(&db, 1, "ref", r#"{"key":"tmp.bytes.h","value":"1024"}"#);
+        assert_eq!(
+            activity(&db),
+            before,
+            "size bookkeeping must not reset urgent idle ages"
+        );
         event(&db, 2, "pr", r#"{"pr":"o/r#1","sub":"thread_opened"}"#);
         event(
             &db,

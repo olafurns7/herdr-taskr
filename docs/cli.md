@@ -186,6 +186,29 @@ known closed lanes may still be removed individually under `on-close`. Once the
 whole campaign is authorized, extra files inside it also go. Client daemons read the hub; there is no
 local-ledger fallback.
 
+Each daemon also measures its local campaign dirs on that three-minute worker.
+`glance --brief`, `status` and the TUI show `tmp 1.2G`: the sum of known hosts'
+**last-reported logical file bytes**, using binary K/M/G units. This is neither an
+instant measurement nor exact reclaimable disk space. Hard links count at each
+file entry and sparse files count their logical length; symlink targets never
+count. Missing/invalid reports stay unknown; a successfully measured empty dir
+reports `tmp 0`. A removed dir retains its last report until updated or cleared.
+
+Reports use root refs `tmp.bytes.<host>`, outside the ordinary 20-ref budget.
+Only these valid bookkeeping keys may exceed 32 ASCII bytes: the nonempty
+existing lowercase host label may have up to 63 bytes (73 including the prefix),
+using `[a-z0-9_.-]`. A caller can update only its own host report, with unsigned
+integer bytes. Ordinary keys keep their existing 32-byte limit and budget.
+Hub daemons use the existing local host identity; clients use their verified RPC
+identity. Invalid/fallback identities skip publication without inventing a host.
+Unknown/mismatched roots or lane members, unsafe/unmarked bases, walk cutoffs
+and filesystem/ledger errors keep the prior report. Measurement creates, marks
+and deletes nothing. Closed roots are skipped before traversal and retain their
+last report. Glance JSON includes `tmp` and `tmp_bytes`. Briefs append size after
+the primary status; narrow TUI rows omit size when it would clip primary fields,
+while the detail pane retains it. Campaign log pages and their counts omit size
+telemetry; raw `taskr log` still includes it.
+
 `taskr close ID --clean-tmp` skips the grace and policy after confirmed
 closure. Explicit root cleanup removes all campaign tmp, including open-lane
 dirs; it does not close those lanes. Clients forward only the close; cleanup runs locally after a fresh

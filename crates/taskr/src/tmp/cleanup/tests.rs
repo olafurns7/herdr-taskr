@@ -6,9 +6,9 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 static NEXT: AtomicU64 = AtomicU64::new(0);
-struct Scratch(PathBuf);
+pub(super) struct Scratch(pub(super) PathBuf);
 impl Scratch {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let p = std::env::temp_dir().join(format!(
             "taskr-cleanup-{}-{}",
             std::process::id(),
@@ -19,7 +19,7 @@ impl Scratch {
         init_base(&p).unwrap();
         Self(p)
     }
-    fn lane(&self, root: i64, task: i64) -> PathBuf {
+    pub(super) fn lane(&self, root: i64, task: i64) -> PathBuf {
         let p = self.0.join(root.to_string()).join(task.to_string());
         fs::create_dir_all(&p).unwrap();
         fs::write(p.join("file"), "scratch").unwrap();
@@ -34,7 +34,13 @@ impl Drop for Scratch {
 fn at() -> time::OffsetDateTime {
     store::parse_time("2026-10-10T00:20:00Z").unwrap()
 }
-fn state(root: i64, task: i64, policy: &str, lane: Option<&str>, campaign: Option<&str>) -> State {
+pub(super) fn state(
+    root: i64,
+    task: i64,
+    policy: &str,
+    lane: Option<&str>,
+    campaign: Option<&str>,
+) -> State {
     State {
         root_id: root,
         task_id: task,

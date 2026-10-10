@@ -796,7 +796,8 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
                     )));
                 };
                 if k.is_empty()
-                    || k.len() > 32
+                    || (k.len() > 32 && store::tmp::host(k).is_none())
+                    || (k.starts_with("tmp.bytes.") && store::tmp::host(k).is_none())
                     || !k.as_bytes()[0].is_ascii_lowercase()
                     || !k.bytes().all(|b| {
                         b.is_ascii_lowercase() || b.is_ascii_digit() || b"_.-".contains(&b)

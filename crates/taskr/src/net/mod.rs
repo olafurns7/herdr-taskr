@@ -766,6 +766,36 @@ pub(crate) fn tmp_state(raw: &str, task: i64) -> anyhow::Result<crate::tmp::clea
     Ok(state)
 }
 
+/// Uses the existing verified set RPC; neither a new endpoint nor an offline size spool.
+pub(crate) fn tmp_report(raw: &str, root: i64, bytes: u64) -> anyhow::Result<()> {
+    let cl = rpc::Client::new(raw).map_err(|e| anyhow::anyhow!(e.message))?;
+    let key = format!("tmp.bytes.{}", cl.short);
+    if taskr_core::store::tmp::host(&key).is_none() {
+        anyhow::bail!("invalid local tmp host identity");
+    }
+    let argv = vec![
+        "--json".into(),
+        "set".into(),
+        root.to_string(),
+        format!("{key}={bytes}"),
+    ];
+    let cwd = std::env::current_dir()?;
+    let request = rpc::request(
+        &argv,
+        &cwd.to_string_lossy(),
+        &new_key().map_err(|e| anyhow::anyhow!(e.message))?,
+        json!({}),
+        None,
+    );
+    let rep = cl
+        .call(&request, Duration::from_secs(3), false)
+        .map_err(|e| anyhow::anyhow!(e.message))?;
+    if rep["exit"] != 0 {
+        anyhow::bail!("hub tmp size set failed");
+    }
+    Ok(())
+}
+
 fn exit(n: i64) -> ExitCode {
     match n {
         0 => ExitCode::Ok,

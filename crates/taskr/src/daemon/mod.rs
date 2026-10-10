@@ -170,6 +170,13 @@ impl Log {
             self.line(text);
         }
     }
+    fn tmp_size_error(&self, text: &str) {
+        self.limited(
+            "tmp-size",
+            Duration::from_secs(180),
+            &text.chars().take(240).collect::<String>(),
+        );
+    }
 }
 pub(crate) fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
     if args.first().map(String::as_str) != Some("daemon") {
@@ -601,7 +608,7 @@ impl State {
         let raw = self.raw.clone();
         let log = self.log.clone();
         let run = move || {
-            let db = match path.map(|p| db::open(&p)).transpose() {
+            let mut db = match path.map(|p| db::open(&p)).transpose() {
                 Ok(db) => db,
                 Err(e) => {
                     log.line(&format!("tmp sweep ledger: {e}"));
@@ -622,6 +629,38 @@ impl State {
                 store::parse_time(&store::now()).expect("validated clock"),
                 |e, lookup_failed| log.tmp_error(&e, lookup_failed),
             );
+            let measured = crate::tmp::cleanup::measure(
+                |task| {
+                    if let Some(db) = &db {
+                        crate::tmp::cleanup::State::read(db, task)
+                            .map_err(|e| anyhow::anyhow!(e.message))
+                    } else if let Some(raw) = &raw {
+                        crate::net::tmp_state(raw, task)
+                    } else {
+                        anyhow::bail!("no ledger available")
+                    }
+                },
+                |e| log.tmp_size_error(&e),
+            );
+            for (root, bytes) in measured {
+                let result = if let Some(db) = &mut db {
+                    let key = format!("tmp.bytes.{}", store::local_machine());
+                    if store::tmp::host(&key).is_none() {
+                        Err(anyhow::anyhow!("invalid local tmp host identity"))
+                    } else {
+                        store::orch::set(db, root, &[(key, bytes.to_string())])
+                            .map(|_| ())
+                            .map_err(|e| anyhow::anyhow!(e.message))
+                    }
+                } else if let Some(raw) = &raw {
+                    crate::net::tmp_report(raw, root, bytes)
+                } else {
+                    Err(anyhow::anyhow!("no ledger available"))
+                };
+                if let Err(e) = result {
+                    log.tmp_size_error(&format!("tmp size {root}: {e:#}"));
+                }
+            }
         };
         if self.tmp_once {
             run();

@@ -10,6 +10,8 @@ mod campaign;
 mod glance;
 mod queries;
 mod slotr;
+const TMP_NOISE: &str =
+    "(e.kind='ref' and coalesce(json_extract(e.data,'$.key') like 'tmp.bytes.%',0))";
 type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug)]
 struct Error {

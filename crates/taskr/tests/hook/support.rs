@@ -54,6 +54,7 @@ impl Harness {
             .env("HOME", &self.home)
             .env("TASKR_DB", &self.db)
             .env("TASKR_TMP_BASE", self.home.join("taskr-tmp"))
+            .env("TMPDIR", &self.home)
             .env(
                 "PATH",
                 format!("{}:/usr/bin:/bin", self.home.join("bin").display()),

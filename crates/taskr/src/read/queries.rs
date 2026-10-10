@@ -1,5 +1,6 @@
 use super::*;
 use rusqlite::types::{Value as Sql, ValueRef};
+use taskr_core::store;
 const CAP: usize = (32 << 10) - 96;
 pub(super) const TREES: &str = "with recursive tree(root,id) as (select id,id from tasks where parent_id is null and status != 'closed' union all select tree.root,t.id from tasks t join tree on t.parent_id=tree.id) ";
 const EVENT_COLS: &str = "e.id,e.task_id,t.name as task_name,e.recipient_task_id,e.launch_id,e.kind,e.summary,e.data,e.related_event_id,e.answered_by,e.event_key,e.created_at";
@@ -169,6 +170,12 @@ pub fn status(f: &FlagSet) -> Result<()> {
         )? && n["clear"] != true
         {
             m["next"] = n["text"].clone();
+        }
+        if m["parent_id"].is_null()
+            && let Some(bytes) = store::tmp::total(&db, id)?
+        {
+            m["tmp_bytes"] = json!(bytes);
+            m["tmp"] = json!(format!("tmp {}", store::tmp::compact(bytes)));
         }
         cli::emit(f.json(), &m, true);
     }
