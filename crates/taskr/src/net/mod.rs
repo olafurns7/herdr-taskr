@@ -518,6 +518,33 @@ pub fn route(mut json_mode: bool, raw_args: &[String]) -> Option<ExitCode> {
         let cwd_text = cwd.to_string_lossy();
         let mut cargs = cargs.to_vec();
         let out = paths(cmd, &mut cargs, &cwd)?;
+        let clean_tmp = if cmd == "close" {
+            let mut f = crate::write::flags("close", json_mode);
+            if let Err(e) = f.parse(&cargs, 1, 1) {
+                return Err(Error::usage(e));
+            }
+            if f.help() {
+                print!("{}", f.usage(&crate::cli::usage_line("close")));
+                return Ok(ExitCode::Ok);
+            }
+            if f.was_set("clean-tmp") {
+                let task = taskr_core::store::id(&f.positional[0], "task id")
+                    .map_err(|e| Error::usage(e.message))?;
+                // Forward a normalized close without the host-local deletion flag.
+                cargs = vec![task.to_string()];
+                if f.json() && !json_mode {
+                    cargs.push("--json".into());
+                }
+                if f.was_set("outcome") {
+                    cargs.extend(["--outcome".into(), f.get_string("outcome").into()]);
+                }
+                f.get_bool("clean-tmp").then_some(task)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         // tmp asks the hub only for the root; the dir is made here, on the caller's host.
         let tmp = if cmd == "tmp" {
             match crate::tmp::parse(json_mode, &cargs) {
@@ -562,6 +589,9 @@ pub fn route(mut json_mode: bool, raw_args: &[String]) -> Option<ExitCode> {
             let n = spool::queue(&dir, &request, saved.as_ref(), false)
                 .map_err(|e| spool_failure(e, &retry))?
                 .unwrap();
+            if clean_tmp.is_some() {
+                warn_queued_cleanup();
+            }
             queued(json_mode || flag_true(&cargs, "json"), &key, n, reason);
             Ok(ExitCode::Ok)
         };
@@ -574,6 +604,9 @@ pub fn route(mut json_mode: bool, raw_args: &[String]) -> Option<ExitCode> {
                 }
             })?
         {
+            if clean_tmp.is_some() {
+                warn_queued_cleanup();
+            }
             queued(
                 json_mode || flag_true(&cargs, "json"),
                 &key,
@@ -632,7 +665,9 @@ pub fn route(mut json_mode: bool, raw_args: &[String]) -> Option<ExitCode> {
             let v: Value =
                 serde_json::from_str(rep["stdout"].as_str().unwrap()).unwrap_or_default();
             return Ok(match v["root_id"].as_i64() {
-                Some(root) if code == ExitCode::Ok => crate::tmp::finish(&a, root),
+                Some(root) if code == ExitCode::Ok => {
+                    crate::tmp::finish(&a, root, v.get("cleanup").cloned())
+                }
                 _ => crate::cli::error(
                     a.json,
                     cmd,
@@ -647,6 +682,43 @@ pub fn route(mut json_mode: bool, raw_args: &[String]) -> Option<ExitCode> {
                 ),
             });
         }
+        if code == ExitCode::Ok
+            && let Some(task) = clean_tmp
+        {
+            // Capture a client report before deleting the tmp tree that may contain it.
+            doc::uploads(&cl, &rep, &cwd_text, &env, None).map_err(|e| {
+                Error::new(
+                    ExitCode::Watch,
+                    "tmp",
+                    format!(
+                        "close succeeded; report upload failed; tmp cleanup skipped: {}",
+                        e.message
+                    ),
+                )
+            })?;
+            let state = tmp_state(raw, task).map_err(|e| {
+                Error::new(
+                    ExitCode::Watch,
+                    "tmp",
+                    format!("close succeeded; tmp lookup failed: {e}"),
+                )
+            })?;
+            if !state.closed {
+                return Err(Error::new(
+                    ExitCode::Watch,
+                    "tmp",
+                    "close succeeded but fresh hub read did not confirm closure; no tmp removed",
+                ));
+            }
+            crate::tmp::cleanup::remove(state.root_id, (task != state.root_id).then_some(task))
+                .map_err(|e| {
+                    Error::new(
+                        ExitCode::Watch,
+                        "tmp",
+                        format!("close succeeded; tmp cleanup failed: {e:#}"),
+                    )
+                })?;
+        }
         print!("{}", rep["stdout"].as_str().unwrap());
         eprint!("{}", rep["stderr"].as_str().unwrap());
         if code == ExitCode::Ok {
@@ -657,7 +729,9 @@ pub fn route(mut json_mode: bool, raw_args: &[String]) -> Option<ExitCode> {
                 }
                 eprintln!("taskr handover: wrote {}", out.display());
             }
-            let _ = doc::uploads(&cl, &rep, &cwd_text, &env, None);
+            if clean_tmp.is_none() {
+                let _ = doc::uploads(&cl, &rep, &cwd_text, &env, None);
+            }
         }
         Ok(code)
     };
@@ -666,6 +740,32 @@ pub fn route(mut json_mode: bool, raw_args: &[String]) -> Option<ExitCode> {
         Err(e) => e.emit(json_mode, cmd),
     })
 }
+fn warn_queued_cleanup() {
+    eprintln!(
+        "taskr: --clean-tmp immediate cleanup skipped: hub close is unconfirmed; no local deletion. Policy sweep waits for confirmed closure and 10-minute grace; keep/root-close may retain the dir. Rerun close ID --clean-tmp when connectivity returns."
+    );
+}
+/// A fresh hub read; no retry/spool or local fallback for deletion decisions.
+pub(crate) fn tmp_state(raw: &str, task: i64) -> anyhow::Result<crate::tmp::cleanup::State> {
+    let cl = rpc::Client::new(raw).map_err(|e| anyhow::anyhow!(e.message))?;
+    let argv = vec!["--json".into(), "tmp".into(), task.to_string()];
+    let cwd = std::env::current_dir()?;
+    let key = new_key().map_err(|e| anyhow::anyhow!(e.message))?;
+    let request = rpc::request(&argv, &cwd.to_string_lossy(), &key, json!({}), None);
+    let rep = cl
+        .call(&request, Duration::from_secs(3), false)
+        .map_err(|e| anyhow::anyhow!(e.message))?;
+    if rep["exit"] != 0 {
+        anyhow::bail!("hub tmp read failed: {}", rep["stdout"]);
+    }
+    let v: Value = serde_json::from_str(rep["stdout"].as_str().unwrap_or(""))?;
+    let state: crate::tmp::cleanup::State = serde_json::from_value(v["cleanup"].clone())?;
+    if state.task_id != task || state.root_id <= 0 {
+        anyhow::bail!("hub tmp identity mismatch");
+    }
+    Ok(state)
+}
+
 fn exit(n: i64) -> ExitCode {
     match n {
         0 => ExitCode::Ok,

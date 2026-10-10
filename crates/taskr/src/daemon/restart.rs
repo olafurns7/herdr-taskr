@@ -74,18 +74,8 @@ pub(super) fn restart(db: Option<&db::Connection>, dir: &Path, lock: &Path) -> R
     let exe = std::env::current_exe()
         .map_err(|e| store::usage(format!("cannot find this taskr binary: {e}")))?;
     let home = store::env("HOME");
-    let mut cmd = Command::new(exe);
-    cmd.args(args)
-        .env_clear()
-        .env("HOME", &home)
-        .env("HERDR_SOCKET_PATH", &sock)
-        .current_dir(&home)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    if !store::env("PATH").is_empty() {
-        cmd.env("PATH", store::env("PATH"));
-    }
+    let tmp_base = std::env::var_os("TASKR_TMP_BASE");
+    let mut cmd = detached_command(&exe, &args, Path::new(&home), &sock, tmp_base.as_deref());
     let mut child =
         spawn_detached(&mut cmd).map_err(|e| transport(format!("starting the daemon: {e}")))?;
     let pid = child.id() as i32;
@@ -138,4 +128,67 @@ fn spawn_detached(cmd: &mut Command) -> std::io::Result<std::process::Child> {
         cmd.pre_exec(|| rustix::process::setsid().map(drop).map_err(Into::into));
     }
     cmd.spawn()
+}
+
+fn detached_command(
+    exe: &Path,
+    args: &[String],
+    home: &Path,
+    sock: &str,
+    tmp_base: Option<&std::ffi::OsStr>,
+) -> Command {
+    let mut cmd = Command::new(exe);
+    cmd.args(args)
+        .env_clear()
+        .env("HOME", home)
+        .env("HERDR_SOCKET_PATH", sock)
+        .current_dir(home)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if !store::env("PATH").is_empty() {
+        cmd.env("PATH", store::env("PATH"));
+    }
+    if let Some(base) = tmp_base {
+        cmd.env("TASKR_TMP_BASE", base);
+    }
+    cmd
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn detached_restart_preserves_tmp_base_without_worker_identity() {
+        let home = Path::new("/fixture/home");
+        let base = std::ffi::OsStr::new("/fixture/home/taskr-tmp");
+        let args = vec!["daemon".into()];
+        let cmd = detached_command(
+            Path::new("/fixture/taskr"),
+            &args,
+            home,
+            "/fixture/socket",
+            Some(base),
+        );
+        assert_eq!(
+            cmd.get_envs()
+                .find(|(key, _)| *key == "TASKR_TMP_BASE")
+                .unwrap()
+                .1,
+            Some(base)
+        );
+        assert!(
+            cmd.get_envs()
+                .all(|(key, _)| key != "TASKR_TASK" && key != "TASKR_LAUNCH")
+        );
+        assert_eq!(cmd.get_current_dir(), Some(home));
+        let unset = detached_command(
+            Path::new("/fixture/taskr"),
+            &args,
+            home,
+            "/fixture/socket",
+            None,
+        );
+        assert!(unset.get_envs().all(|(key, _)| key != "TASKR_TMP_BASE"));
+    }
 }

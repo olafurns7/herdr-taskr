@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='rev-r2-emfile-') as tmp:
         state = home / '.local/state/taskr'; state.mkdir(parents=True)
         (state / 'dashboard.addr').write_text('127.0.0.1:0\n')
         db = home / 'hub.db'
-        env = {'PATH': '/usr/bin:/bin', 'HOME': str(home), 'TASKR_DB': str(db), 'LANG': 'C.UTF-8', 'TZ': 'UTC',
+        env = {'TASKR_TMP_BASE': str(home / 'taskr-tmp'), 'PATH': '/usr/bin:/bin', 'HOME': str(home), 'TASKR_DB': str(db), 'LANG': 'C.UTF-8', 'TZ': 'UTC',
                'HERDR_SOCKET_PATH': str(home / 'absent.sock')}
         log = open(home / 'stdout.log', 'wb')
         p = subprocess.Popen([str(binary), 'daemon', '--stay'], env=env, stdout=log, stderr=log, preexec_fn=limit)

@@ -342,6 +342,9 @@ fn run(
         log: log.clone(),
         missing: false,
         uplink: uplink::Uplink::default(),
+        tmp_sweep: None,
+        tmp_worker: None,
+        tmp_once: once,
     };
     if once {
         let (observed, notified, error) = state.pass(db.as_mut(), false);
@@ -552,13 +555,79 @@ struct State {
     log: Arc<Log>,
     missing: bool,
     uplink: uplink::Uplink,
+    tmp_sweep: Option<Instant>,
+    tmp_worker: Option<std::thread::JoinHandle<()>>,
+    tmp_once: bool,
 }
 impl State {
+    fn sweep_tmp(&mut self, db: Option<&db::Connection>) {
+        if self
+            .tmp_worker
+            .as_ref()
+            .is_some_and(|job| !job.is_finished())
+        {
+            return;
+        }
+        if let Some(job) = self.tmp_worker.take()
+            && job.join().is_err()
+        {
+            self.log.line("tmp sweep worker panicked");
+        }
+        if self
+            .tmp_sweep
+            .is_some_and(|at| at.elapsed() < Duration::from_secs(180))
+        {
+            return;
+        }
+        self.tmp_sweep = Some(Instant::now());
+        let path = if db.is_some() {
+            match db::path() {
+                Ok(path) => Some(path),
+                Err(e) => {
+                    self.log.line(&format!("tmp sweep: {e}"));
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        let raw = self.raw.clone();
+        let log = self.log.clone();
+        let run = move || {
+            let db = match path.map(|p| db::open(&p)).transpose() {
+                Ok(db) => db,
+                Err(e) => {
+                    log.line(&format!("tmp sweep ledger: {e}"));
+                    return;
+                }
+            };
+            crate::tmp::cleanup::sweep(
+                |task| {
+                    if let Some(db) = &db {
+                        crate::tmp::cleanup::State::read(db, task)
+                            .map_err(|e| anyhow::anyhow!(e.message))
+                    } else if let Some(raw) = &raw {
+                        crate::net::tmp_state(raw, task)
+                    } else {
+                        anyhow::bail!("no ledger available")
+                    }
+                },
+                store::parse_time(&store::now()).expect("validated clock"),
+                |e| log.line(&e),
+            );
+        };
+        if self.tmp_once {
+            run();
+        } else {
+            self.tmp_worker = Some(std::thread::spawn(run));
+        }
+    }
     fn pass(
         &mut self,
         db: Option<&mut db::Connection>,
         connected: bool,
     ) -> (usize, usize, Option<Error>) {
+        self.sweep_tmp(db.as_deref());
         if let Some(db) = db {
             if let Err(e) = store::inbox::expire(db) {
                 self.log
@@ -854,6 +923,7 @@ fn resident(
             fallback = now + Duration::from_secs(60);
             state.tokens.fallback();
         }
+        state.sweep_tmp(db.as_deref());
         // The PR poller's deadline fires whether Herdr is up or not; gh runs off-thread.
         if let (Some(poller), Some(db)) = (poller.as_mut(), db.as_deref_mut()) {
             poller.tick(db, &state.log);

@@ -67,7 +67,7 @@ fn lane_and_root_paths() {
     assert!(!base.exists());
     // The default base is /tmp/taskr-<uid>.
     let uid = uid();
-    let v = h.ok(&[], &["tmp", &lane.to_string()]);
+    let v = h.ok(&base_env(Path::new("")), &["tmp", &lane.to_string()]);
     assert_eq!(v["tmpdir"], format!("/tmp/taskr-{uid}/{root}/{lane}"));
 }
 
@@ -307,4 +307,314 @@ fn a_client_makes_the_dir_on_its_own_host() {
     assert_eq!(code, 6, "{out}");
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["kind"], "rejected", "{v}");
+    let (code, help) = run(
+        &h,
+        &client,
+        &["close", &lane.to_string(), "--clean-tmp", "--help"],
+    );
+    assert_eq!(code, 0, "{help}");
+    assert!(help.contains("clean-tmp"));
+    assert_eq!(
+        h.count("select status='open' from tasks where id=?", lane),
+        1
+    );
+    let no_clean = h.ok(
+        &client,
+        &[
+            "new",
+            "no-clean",
+            "--role",
+            "implementer",
+            "--parent",
+            &root.to_string(),
+        ],
+    )["task_id"]
+        .as_i64()
+        .unwrap();
+    h.ok(&client, &["tmp", &no_clean.to_string(), "--mkdir"]);
+    h.ok(
+        &client,
+        &["close", &no_clean.to_string(), "--clean-tmp=false"],
+    );
+    assert!(
+        client_base
+            .join(root.to_string())
+            .join(no_clean.to_string())
+            .exists()
+    );
+    // Client close never forwards the deletion flag to the hub.
+    fs::create_dir_all(hub_base.join(root.to_string()).join(lane.to_string())).unwrap();
+    let hub_sentinel = hub_base
+        .join(root.to_string())
+        .join(lane.to_string())
+        .join("sentinel");
+    fs::write(&hub_sentinel, "hub").unwrap();
+    h.ok(&client, &["set", &root.to_string(), "tmp.cleanup=keep"]);
+    let report = want.join("report.md");
+    fs::write(&report, "client report in tmp").unwrap();
+    h.conn()
+        .execute(
+            "update tasks set report_path=? where id=?",
+            taskr_core::db::params![report.to_str().unwrap(), lane],
+        )
+        .unwrap();
+    h.ok(&client, &["close", &lane.to_string(), "--clean-tmp"]);
+    let doc = h.count("select id from documents where task_id=? and kind='report' and captured=1 order by id desc limit 1",lane);
+    assert_eq!(
+        run(&h, &client, &["doc", "get", &doc.to_string()]),
+        (0, "client report in tmp".into())
+    );
+    assert!(!want.exists());
+    assert!(hub_sentinel.exists());
+    h.ok(&client, &["tmp", &lane.to_string(), "--mkdir"]);
+    // Legacy closed rows without a timestamp still authorize an explicit close cleanup.
+    h.conn()
+        .execute("update tasks set closed_at=null where id=?", [lane])
+        .unwrap();
+    h.ok(&client, &["close", &lane.to_string(), "--clean-tmp"]);
+    assert!(!want.exists());
+    fs::copy(
+        h.home.join("agents.json"),
+        h.home.join("client/agents.json"),
+    )
+    .unwrap();
+    // A client daemon reads closure/policy over RPC and sweeps only its own base.
+    h.ok(&client, &["set", &root.to_string(), "tmp.cleanup=on-close"]);
+    h.ok(&client, &["tmp", &lane.to_string(), "--mkdir"]);
+    age_close(&h, lane, 660);
+    h.ok(&client, &["daemon", "--once"]);
+    assert!(!want.exists());
+    assert!(hub_sentinel.exists());
+    let offline = h.ok(
+        &client,
+        &[
+            "new",
+            "offline",
+            "--role",
+            "implementer",
+            "--parent",
+            &root.to_string(),
+        ],
+    )["task_id"]
+        .as_i64()
+        .unwrap();
+    h.ok(&client, &["tmp", &offline.to_string(), "--mkdir"]);
+    let sentinel = client_base
+        .join(root.to_string())
+        .join(offline.to_string())
+        .join("sentinel");
+    fs::write(&sentinel, "offline").unwrap();
+    let mut hub = _hub;
+    hub.0.kill().unwrap();
+    hub.0.wait().unwrap();
+    let out = h.output(
+        &client,
+        &["close", &offline.to_string(), "--clean-tmp"],
+        b"",
+    );
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("qd1 "));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("immediate cleanup skipped"));
+    assert!(sentinel.exists());
+    assert_eq!(
+        h.count("select status='open' from tasks where id=?", offline),
+        1
+    );
+    let spool = h.home.join("client/.local/state/taskr/spool/queue");
+    for entry in fs::read_dir(spool).unwrap() {
+        let v: Value = serde_json::from_slice(&fs::read(entry.unwrap().path()).unwrap()).unwrap();
+        assert!(
+            !v["request"]["argv"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|v| v == "--clean-tmp")
+        );
+        assert!(!v.to_string().contains(client_base.to_str().unwrap()));
+    }
+    // Unreachable sweep is fail-closed too (daemon's observation may exit 5).
+    let _ = h.output(&client, &["daemon", "--once"], b"");
+    assert!(sentinel.exists());
+}
+
+#[test]
+fn cleanup_policy_values_defaults_root_only_and_budget() {
+    let h = Harness::new();
+    let (root, lane) = campaign(&h);
+    let env = base_env(&h.home.join("policy-base"));
+    assert_eq!(
+        h.ok(&env, &["tmp", &lane.to_string()])["cleanup"]["policy"],
+        "on-close"
+    );
+    for policy in ["on-close", "root-close", "keep"] {
+        h.ok(
+            &env,
+            &["set", &root.to_string(), &format!("tmp.cleanup={policy}")],
+        );
+        assert_eq!(
+            h.ok(&env, &["tmp", &lane.to_string()])["cleanup"]["policy"],
+            policy
+        );
+        assert_eq!(
+            run(
+                &h,
+                &env,
+                &["set", &lane.to_string(), &format!("tmp.cleanup={policy}")]
+            )
+            .0,
+            2
+        );
+    }
+    for bad in ["", "invalid", "ON-CLOSE"] {
+        assert_eq!(
+            run(
+                &h,
+                &env,
+                &["set", &root.to_string(), &format!("tmp.cleanup={bad}")]
+            )
+            .0,
+            2
+        );
+        assert_eq!(
+            h.ok(&env, &["tmp", &lane.to_string()])["cleanup"]["policy"],
+            "keep"
+        );
+    }
+    for n in 0..19 {
+        h.ok(&env, &["set", &root.to_string(), &format!("ref{n}=x")]);
+    }
+    assert_eq!(run(&h, &env, &["set", &root.to_string(), "extra=x"]).0, 6);
+}
+
+#[test]
+fn close_clean_tmp_is_immediate_local_and_repeatable() {
+    let h = Harness::new();
+    let (root, lane) = campaign(&h);
+    let base = h.home.join("cleanup-base");
+    let env = base_env(&base);
+    h.ok(&env, &["set", &root.to_string(), "tmp.cleanup=keep"]);
+    let path = base.join(root.to_string()).join(lane.to_string());
+    h.ok(&env, &["tmp", &lane.to_string(), "--mkdir"]);
+    fs::write(path.join("sentinel"), "x").unwrap();
+    assert_eq!(run(&h, &env, &["close", "999999", "--clean-tmp"]).0, 6);
+    assert!(path.join("sentinel").exists());
+    h.ok(&env, &["close", &lane.to_string(), "--clean-tmp"]);
+    assert!(!path.exists());
+    h.ok(&env, &["close", &lane.to_string(), "--clean-tmp"]);
+    h.ok(&env, &["tmp", &lane.to_string(), "--mkdir"]);
+    h.ok(&env, &["close", &lane.to_string(), "--clean-tmp"]);
+    assert!(!path.exists());
+    h.ok(&env, &["tmp", &root.to_string(), "--mkdir"]);
+    h.ok(&env, &["close", &root.to_string(), "--clean-tmp"]);
+    assert!(!base.join(root.to_string()).exists());
+}
+
+#[test]
+fn close_clean_tmp_refuses_unsafe_base_after_recording_close() {
+    let h = Harness::new();
+    let (root, lane) = campaign(&h);
+    let base = h.home.join("cleanup-base");
+    let env = base_env(&base);
+    h.ok(&env, &["tmp", &lane.to_string(), "--mkdir"]);
+    let sentinel = base
+        .join(root.to_string())
+        .join(lane.to_string())
+        .join("sentinel");
+    fs::write(&sentinel, "x").unwrap();
+    let link = h.home.join("cleanup-link");
+    symlink(&base, &link).unwrap();
+    for spelling in [link.clone(), link.join(".")] {
+        let out = h.output(
+            &base_env(&spelling),
+            &["close", &lane.to_string(), "--clean-tmp"],
+            b"",
+        );
+        assert_eq!(out.status.code(), Some(1));
+        assert!(String::from_utf8_lossy(&out.stdout).contains("close succeeded"));
+        assert!(sentinel.exists());
+        assert_eq!(
+            h.count("select status='closed' from tasks where id=?", lane),
+            1
+        );
+    }
+}
+
+fn age_close(h: &Harness, task: i64, seconds: i64) {
+    let at = taskr_core::store::stamp(
+        time::OffsetDateTime::now_utc() - time::Duration::seconds(seconds),
+    );
+    h.conn()
+        .execute(
+            "update tasks set closed_at=? where id=?",
+            taskr_core::db::params![at, task],
+        )
+        .unwrap();
+}
+
+#[test]
+fn daemon_sweeps_ledger_state_with_grace_on_this_host() {
+    let h = Harness::new();
+    let base = h.home.join("sweep-base");
+    let env = base_env(&base);
+    for policy in ["on-close", "root-close", "keep"] {
+        let (root, lane) = campaign(&h);
+        if policy != "on-close" {
+            h.ok(
+                &env,
+                &["set", &root.to_string(), &format!("tmp.cleanup={policy}")],
+            );
+        }
+        h.ok(&env, &["tmp", &lane.to_string(), "--mkdir"]);
+        let path = base.join(root.to_string()).join(lane.to_string());
+        fs::write(path.join("sentinel"), "x").unwrap();
+        h.ok(&env, &["daemon", "--once"]);
+        assert!(path.exists(), "open {policy}");
+        h.ok(&env, &["close", &lane.to_string()]);
+        h.ok(&env, &["daemon", "--once"]);
+        assert!(path.exists(), "grace {policy}");
+        age_close(&h, lane, 660);
+        fs::create_dir_all(base.join(root.to_string()).join("999999")).unwrap();
+        fs::create_dir_all(base.join(root.to_string()).join("nonnumeric")).unwrap();
+        h.ok(&env, &["daemon", "--once"]);
+        assert_eq!(path.exists(), policy != "on-close", "lane {policy}");
+        assert!(base.join(root.to_string()).join("999999").exists());
+        assert!(base.join(root.to_string()).join("nonnumeric").exists());
+        h.ok(&env, &["close", &root.to_string()]);
+        h.ok(&env, &["daemon", "--once"]);
+        assert!(base.join(root.to_string()).exists(), "root grace {policy}");
+        age_close(&h, root, 660);
+        h.ok(&env, &["daemon", "--once"]);
+        assert_eq!(
+            base.join(root.to_string()).exists(),
+            policy == "keep",
+            "root {policy}"
+        );
+    }
+    fs::create_dir_all(base.join("888888/1")).unwrap();
+    fs::create_dir_all(base.join("nonnumeric/1")).unwrap();
+    h.ok(&env, &["daemon", "--once"]);
+    assert!(base.join("888888/1").exists());
+    assert!(base.join("nonnumeric/1").exists());
+}
+
+#[test]
+fn fixture_commands_keep_tmp_work_inside_scratch() {
+    let h = Harness::new();
+    let cmd = h.command(&[]);
+    assert_eq!(
+        cmd.get_envs()
+            .find(|(k, _)| *k == "TASKR_TMP_BASE")
+            .unwrap()
+            .1,
+        Some(h.home.join("taskr-tmp").as_os_str())
+    );
+    let base = h.home.join("override");
+    let cmd = h.command(&base_env(&base));
+    assert_eq!(
+        cmd.get_envs()
+            .find(|(k, _)| *k == "TASKR_TMP_BASE")
+            .unwrap()
+            .1,
+        Some(base.as_os_str())
+    );
 }

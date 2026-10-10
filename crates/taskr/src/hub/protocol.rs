@@ -194,6 +194,16 @@ pub(super) fn check_args(argv: &[String]) -> Result<(), String> {
     {
         return Err("tmp --mkdir creates the dir on the caller's host; the client does it".into());
     }
+    if name == "close"
+        && args
+            .iter()
+            .take_while(|s| s.as_str() != "--")
+            .any(|s| s.starts_with('-') && s.trim_start_matches('-').starts_with("clean-tmp"))
+    {
+        return Err(
+            "close --clean-tmp removes dirs on the caller's host; the client does it".into(),
+        );
+    }
     if name == "handover" && flag(args, "out").is_some() {
         return Err("handover --out writes on the caller's host; the client writes it".into());
     }
@@ -418,6 +428,9 @@ mod tests {
         // tmp is a read the hub answers; it never makes a caller's dir.
         assert!(!stored(&argv(&["--json", "tmp", "7"])));
         assert!(check_args(&argv(&["--json", "tmp", "7"])).is_ok());
+        for clean in ["--clean-tmp", "-clean-tmp", "--clean-tmp=true"] {
+            assert!(check_args(&argv(&["close", "7", clean])).is_err());
+        }
         for mkdir in ["--mkdir", "-mkdir", "--mkdir=true"] {
             assert!(check_args(&argv(&["tmp", "7", mkdir])).is_err());
         }

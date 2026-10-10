@@ -1,7 +1,8 @@
 //! `taskr tmp ID [--mkdir]`: a lane's own tmp dir, `<base>/<root-id>/<task-id>`. The ledger
 //! names the root (a read a client forwards to the hub); the directory work is always on the
 //! caller's host. Paths are built from integer ids only.
-use serde_json::json;
+pub mod cleanup;
+use serde_json::{Value, json};
 use std::{
     fs,
     os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt},
@@ -73,15 +74,15 @@ pub fn dispatch(json: bool, args: &[String]) -> Option<ExitCode> {
     let root = taskr_core::db::path()
         .and_then(|p| taskr_core::db::open(&p))
         .map_err(|e| (ExitCode::Database, e))
-        .and_then(|db| taskr_core::store::root(&db, a.task).map_err(|e| (e.code, e.message)));
+        .and_then(|db| cleanup::State::read(&db, a.task).map_err(|e| (e.code, e.message)));
     Some(match root {
-        Ok(root) => finish(&a, root),
+        Ok(state) => finish(&a, state.root_id, Some(json!(state))),
         Err((code, e)) => crate::cli::error(a.json, "tmp", &e, code),
     })
 }
 
 /// Prints the lane dir, creating it first with `--mkdir`.
-pub fn finish(a: &Args, root: i64) -> ExitCode {
+pub fn finish(a: &Args, root: i64, cleanup: Option<Value>) -> ExitCode {
     let base = base();
     let dir = lane(root, a.task);
     let made = if !base.is_absolute() {
@@ -121,7 +122,7 @@ pub fn finish(a: &Args, root: i64) -> ExitCode {
         return ExitCode::Watch;
     }
     if a.json {
-        let v = json!({"task_id":a.task,"root_id":root,"tmpdir":dir.to_string_lossy()});
+        let v = json!({"task_id":a.task,"root_id":root,"tmpdir":dir.to_string_lossy(),"cleanup":cleanup});
         println!("{}", compact_json(&v).unwrap());
     } else {
         println!("{}", dir.display());

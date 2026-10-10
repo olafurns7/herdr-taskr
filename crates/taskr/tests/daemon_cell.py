@@ -126,7 +126,7 @@ def eventually(check, timeout=12):
 
 
 def env(home, fake):
-    return {'HOME':str(home), 'TASKR_DB':str(home/'ledger.db'), 'PATH':str(home/'bin')+':/usr/bin:/bin',
+    return {'TASKR_TMP_BASE':str(home/'taskr-tmp'), 'HOME':str(home), 'TASKR_DB':str(home/'ledger.db'), 'PATH':str(home/'bin')+':/usr/bin:/bin',
             'HERDR_SOCKET_PATH':str(fake.path), 'TASKR_FROZEN_NOW':'2026-10-08T00:00:00Z', 'TASKR_CONTRACT_ORACLE':'1', 'LANG':'C.UTF-8', 'TZ':'UTC'}
 
 

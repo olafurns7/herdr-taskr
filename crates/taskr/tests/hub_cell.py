@@ -28,8 +28,8 @@ class RustHub(Cell):
         fake=self.tmp/'bin';fake.mkdir();(fake/'tailscale').write_text(FAKE_TS);(fake/'tailscale').chmod(0o755)
         self.env={'PATH':f'{fake}:/usr/bin:/bin','LANG':'C.UTF-8','TZ':'UTC','TASKR_CONTRACT_TAILNET':'1','TASKR_CONTRACT_ORACLE':'1','HERDR_SOCKET_PATH':str(self.tmp/'absent.sock')}
         for home in (self.hub_home,self.client_home):(home/'.local/state/taskr').mkdir(parents=True)
-        self.client_env={**self.env,'NET_ID':'host-a','HOME':str(self.client_home)}
-        self.hub_env={**self.env,'NET_ID':'hub','HOME':str(self.hub_home),'TASKR_DB':str(self.db)}
+        self.client_env={**self.env,'NET_ID':'host-a','HOME':str(self.client_home),'TASKR_TMP_BASE':str(self.client_home/'taskr-tmp')}
+        self.hub_env={**self.env,'NET_ID':'hub','HOME':str(self.hub_home),'TASKR_TMP_BASE':str(self.hub_home/'taskr-tmp'),'TASKR_DB':str(self.db)}
         self.log=open(self.tmp/'hub.log','wb')
         self.hub=subprocess.Popen([str(rust),'--contract-hub'],env=self.hub_env,stdout=subprocess.PIPE,stderr=self.log)
         readable,_,_=select.select([self.hub.stdout],[],[],15)

@@ -41,7 +41,8 @@ def run(go,rust,out):
                 assert os.getsid(pid)==pid
                 environ=(Path('/proc')/str(pid)/'environ').read_bytes().split(b'\0')
                 keys={p.split(b'=',1)[0].decode() for p in environ if p}
-                assert keys=={'HOME','PATH','HERDR_SOCKET_PATH'},keys
+                assert keys==({'HOME','PATH','HERDR_SOCKET_PATH','TASKR_TMP_BASE'} if label=='rust' else {'HOME','PATH','HERDR_SOCKET_PATH'}),keys
+                if label=='rust': assert b'TASKR_TMP_BASE='+e['TASKR_TMP_BASE'].encode() in environ
                 results.append(label+': initial detached restart, setsid, minimal env')
                 second=record(binary,e,'daemon','--restart');new=second['new_pid'];owned.add(new)
                 if label == 'go': golden.observe('second', second)

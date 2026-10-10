@@ -3,9 +3,10 @@ worker:       start | got ATTEMPT_ID | note TEXT | ready TEXT --report PATH [--k
               note TEXT [--owner] --as ID | ask TEXT --owner --as ID   (a root orchestrator: no parent, no launch; note --owner requires TASKR_TASK unset)
               ask [TEXT] --owner --question JSON [--dialog] [--blocking]   (a structured owner ask; the summary is built from the JSON, TEXT is context)
 orchestrator: new NAME --role ROLE [--parent ID] [--planned] ... | launch ID --provider P --model M --effort E | prompt ID (--file PATH | --text TEXT) [--receipt-timeout MS] [--confirm [--confirm-timeout MS]]
-              answer ASK_ID TEXT [--prompt [--confirm [--confirm-timeout MS]]] | answer ASK_ID --withdraw TEXT --as ID | close ID [--outcome accepted|reworked|rejected|abandoned]
+              answer ASK_ID TEXT [--prompt [--confirm [--confirm-timeout MS]]] | answer ASK_ID --withdraw TEXT --as ID | close ID [--outcome accepted|reworked|rejected|abandoned] [--clean-tmp]
 outcomes:     accepted (work taken as delivered), reworked (taken after a fix round), rejected (not taken), abandoned (stopped before a result)
 after:        after TARGET --as ID [--on KINDS] [--keep] | after --list --as ID | after --cancel SUB_ID   (TARGET: a task id, pr:N or pr:owner/repo#N; fires an `after` event into the root's inbox)
+tmp policy:   set ROOT tmp.cleanup=on-close|root-close|keep (default on-close; counts toward 20 refs; root only)
 plan:         next ID TEXT | next ID --clear | set ID KEY=VALUE... (KEY= deletes) | decide --as ID TEXT | decide --as ID --revoke EVENT_ID
 documents:    doc set ID goal|plan [--name NAME] --file PATH (any host) | doc ls ID [--tree] [--kind K] [--versions] [--limit N] | doc get DOC_ID | doc rm DOC_ID --purge | doc backfill [--tree ID] [--dry-run] (any host)
 handover:     handover --as ID [--note TEXT] [--out PATH] | adopt ID [--workspace W --tab T --pane P]   (Markdown on stdout)

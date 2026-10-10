@@ -22,7 +22,7 @@ def check(binary, home, expected_soft):
         path = fake / name
         path.write_text('#!/bin/sh\nexit 2\n')
         path.chmod(0o755)
-    env = {'HOME': str(home), 'TASKR_DB': str(home / 'ledger.db'),
+    env = {'TASKR_TMP_BASE': str(home / 'taskr-tmp'), 'HOME': str(home), 'TASKR_DB': str(home / 'ledger.db'),
            'PATH': f'{fake}:/usr/bin:/bin', 'HERDR_SOCKET_PATH': str(home / 'absent.sock'),
            'LANG': 'C.UTF-8', 'TZ': 'UTC'}
 

@@ -18,7 +18,7 @@ def probes(binary, place, contract=False):
     home = place / 'home'
     home.mkdir()
     db = place / 'ledger.db'
-    env = {'HOME': str(home), 'PATH': '/usr/bin:/bin', 'TASKR_DB': str(db), 'LANG': 'C.UTF-8', 'TZ': 'UTC', 'HERDR_SOCKET_PATH': str(place / 'absent.sock')}
+    env = {'TASKR_TMP_BASE': str(home / 'taskr-tmp'), 'HOME': str(home), 'PATH': '/usr/bin:/bin', 'TASKR_DB': str(db), 'LANG': 'C.UTF-8', 'TZ': 'UTC', 'HERDR_SOCKET_PATH': str(place / 'absent.sock')}
     results = {}
 
     def run(args, overrides=None, body=b'', tty=False):

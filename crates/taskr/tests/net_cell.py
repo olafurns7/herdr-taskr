@@ -56,8 +56,8 @@ class Cell:
         for home in (self.hub_home,self.client_home):
             (home/'.local/state/taskr').mkdir(parents=True)
         (self.hub_home/'.local/state/taskr/dashboard.addr').write_text('tailnet:0\n')
-        self.hub_env = {**self.env,'NET_ID':'hub','HOME':str(self.hub_home),'TASKR_DB':str(self.db)}
-        self.client_env = {**self.env,'NET_ID':'host-a','HOME':str(self.client_home)}
+        self.hub_env = {**self.env,'NET_ID':'hub','HOME':str(self.hub_home),'TASKR_TMP_BASE':str(self.hub_home/'taskr-tmp'),'TASKR_DB':str(self.db)}
+        self.client_env = {**self.env,'NET_ID':'host-a','HOME':str(self.client_home),'TASKR_TMP_BASE':str(self.client_home/'taskr-tmp')}
         self.log = open(self.tmp/'hub.log','wb')
         self.hub = subprocess.Popen([str(go),'daemon','--stay'],env=self.hub_env,stdout=self.log,stderr=self.log)
         try:

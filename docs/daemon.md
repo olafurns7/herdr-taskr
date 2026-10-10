@@ -10,6 +10,28 @@ The Herdr plugin starts it; you do not run it by hand. It does two jobs:
    over one HTTP route, `/api/rpc`. It serves no web page: you read the ledger
    with [`taskr-tui`](tui.md) and the [CLI](cli.md).
 
+## Local tmp cleanup
+
+Every daemon (ledger host and client) sweeps its local `$TASKR_TMP_BASE`,
+default `/tmp/taskr-<uid>`, at startup and every three minutes, including when
+Herdr is unavailable. Only canonical positive-integer campaign/lane names
+are candidates. Ledger reads confirm each task's campaign, close timestamp
+and the root's `tmp.cleanup` policy ([Lane tmp dirs](cli.md#lane-tmp-dirs)).
+A single background sweep keeps slow filesystem/hub reads off the resident
+daemon's heartbeat loop; sweeps never overlap. Clients use fresh hub RPC reads; hub failures leave those directories alone.
+
+The default `on-close` policy removes a lane ten minutes after its close,
+and the entire campaign ten minutes after the root closes. `root-close`
+waits for the root; `keep` disables automatic removal. Open and unknown tasks
+are retained. A root cleanup removes its whole campaign tree, including
+extra entries inside it. Invalid/missing close timestamps never authorize
+removal. The grace lets a lane's process finish exiting.
+
+Removal rechecks base ownership and writable bits each time, uses no-follow
+directory descriptor traversal and never crosses devices. It unlinks interior
+symlinks themselves. Failures go to `daemon.log` and do not abort other
+campaigns or lanes. `daemon --once` also runs one cleanup sweep.
+
 ## Optional check-ins
 
 `TASKR_CHECKIN=1` enables the Rust hub's check-in sweep, read once at daemon
@@ -170,7 +192,9 @@ taskr daemon --status    # what is running
 taskr daemon --restart   # stop this host's daemon and start the installed binary
 ```
 
-`--restart` restarts taskr, never Herdr. The most useful status fields:
+`--restart` restarts taskr, never Herdr. The detached child preserves the caller's
+`TASKR_TMP_BASE` alongside HOME, PATH and the Herdr socket, so a configured tmp
+base survives restart. Worker identity is cleared. The most useful status fields:
 
 | Field | Meaning |
 | --- | --- |
