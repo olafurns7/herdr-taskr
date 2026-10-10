@@ -666,7 +666,7 @@ pub fn route(mut json_mode: bool, raw_args: &[String]) -> Option<ExitCode> {
                 serde_json::from_str(rep["stdout"].as_str().unwrap()).unwrap_or_default();
             return Ok(match v["root_id"].as_i64() {
                 Some(root) if code == ExitCode::Ok => {
-                    crate::tmp::finish(&a, root, v.get("cleanup").cloned())
+                    crate::tmp::finish(&a, root, v.get("cleanup").cloned(), |id| tmp_state(raw, id))
                 }
                 _ => crate::cli::error(
                     a.json,
