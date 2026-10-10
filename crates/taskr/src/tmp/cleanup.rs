@@ -103,9 +103,26 @@ fn open_base(base: &Path) -> Result<Option<OwnedFd>> {
     }
     Ok(Some(base_fd))
 }
-// Only an explicit tmp --mkdir may initialize an existing T1 base.
-pub(super) fn init_base(base: &Path) -> Result<()> {
+// Numeric names alone cannot establish that an existing base belongs to taskr.
+pub(super) fn init_base(base: &Path, lookup: &mut impl FnMut(i64) -> Result<State>) -> Result<()> {
     let dir = open_base(base)?.context("tmp base is missing")?;
+    let identity = fd::fstat(&dir)?;
+    dedicated(
+        &dir,
+        None,
+        identity.st_dev,
+        lookup,
+        &mut size::Walk {
+            left: 4096,
+            deadline: std::time::Instant::now() + std::time::Duration::from_secs(60),
+        },
+    )
+    .context("not a dedicated taskr tmp base")?;
+    let current = open_base(base)?.context("tmp base disappeared")?;
+    let current = fd::fstat(&current)?;
+    if current.st_dev != identity.st_dev || current.st_ino != identity.st_ino {
+        bail!("tmp base changed during initialization");
+    }
     match fd::openat(
         &dir,
         MARKER,
@@ -117,6 +134,49 @@ pub(super) fn init_base(base: &Path) -> Result<()> {
         Err(e) => return Err(e.into()),
     }
     check_marker(&dir)
+}
+fn dedicated(
+    dir: &OwnedFd,
+    root: Option<i64>,
+    device: fd::Dev,
+    lookup: &mut impl FnMut(i64) -> Result<State>,
+    limit: &mut size::Walk,
+) -> Result<()> {
+    let mut entries = fd::Dir::read_from(dir)?;
+    while let Some(entry) = entries.read() {
+        let entry = entry?;
+        let child = entry.file_name();
+        if matches!(child.to_bytes(), b"." | b"..") {
+            continue;
+        }
+        limit.entry()?;
+        if root.is_none() && child.to_bytes() == MARKER.as_bytes() {
+            check_marker(dir)?;
+            continue;
+        }
+        let text = child.to_str()?;
+        let id = text.parse::<i64>()?;
+        if id <= 0 || id.to_string() != text {
+            bail!("noncanonical tmp directory id");
+        }
+        let state = lookup(id)?;
+        if state.task_id != id || state.root_id != root.unwrap_or(id) {
+            bail!("tmp directory membership mismatch");
+        }
+        let before = fd::statat(dir, child, AtFlags::SYMLINK_NOFOLLOW)?;
+        if FileType::from_raw_mode(before.st_mode) == FileType::Symlink {
+            bail!("tmp directory candidate is a symlink");
+        }
+        let candidate = open_dir(dir, child, device)?;
+        let identity = fd::fstat(&candidate)?;
+        check_base_stat(&identity)?;
+        if root.is_none() {
+            dedicated(&candidate, Some(id), device, lookup, limit)?;
+        }
+        size::linked(dir, child, &identity)?;
+    }
+    limit.entry()?;
+    Ok(())
 }
 fn check_marker(base: &OwnedFd) -> Result<()> {
     let before = fd::statat(base, MARKER, AtFlags::SYMLINK_NOFOLLOW)

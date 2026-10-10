@@ -7,12 +7,12 @@ const DEPTH: usize = 128;
 const SECONDS: u64 = 15;
 const ROOTS: usize = 4096;
 
-struct Walk {
-    left: usize,
-    deadline: Instant,
+pub(super) struct Walk {
+    pub(super) left: usize,
+    pub(super) deadline: Instant,
 }
 impl Walk {
-    fn entry(&mut self) -> Result<()> {
+    pub(super) fn entry(&mut self) -> Result<()> {
         if self.left == 0 || Instant::now() >= self.deadline {
             bail!("tmp size walk limit reached");
         }
@@ -20,7 +20,7 @@ impl Walk {
         Ok(())
     }
 }
-fn linked(parent: &OwnedFd, name: &std::ffi::CStr, identity: &Stat) -> Result<()> {
+pub(super) fn linked(parent: &OwnedFd, name: &std::ffi::CStr, identity: &Stat) -> Result<()> {
     let current = fd::statat(parent, name, AtFlags::SYMLINK_NOFOLLOW)?;
     if current.st_dev != identity.st_dev || current.st_ino != identity.st_ino {
         bail!("tmp size directory was replaced");

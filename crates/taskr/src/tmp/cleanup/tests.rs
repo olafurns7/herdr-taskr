@@ -16,7 +16,7 @@ impl Scratch {
         ));
         fs::create_dir(&p).unwrap();
         fs::set_permissions(&p, fs::Permissions::from_mode(0o700)).unwrap();
-        init_base(&p).unwrap();
+        init_base(&p, &mut |_| bail!("empty base needs no lookup")).unwrap();
         Self(p)
     }
     pub(super) fn lane(&self, root: i64, task: i64) -> PathBuf {
@@ -241,9 +241,46 @@ fn marker_required_before_any_deletion() {
         assert!(lane.join("file").exists(), "{invalid}");
         assert_eq!(fs::read_to_string(&target).unwrap(), "outside");
         if invalid != "missing" {
-            assert!(init_base(&b.0).is_err(), "{invalid}");
+            assert!(
+                init_base(&b.0, &mut |id| Ok(state(1, id, "keep", None, None))).is_err(),
+                "{invalid}"
+            );
             assert_eq!(fs::read_to_string(&target).unwrap(), "outside");
         }
+    }
+}
+#[test]
+fn initialization_preflight_is_bounded_and_refuses_other_devices() {
+    let b = Scratch::new();
+    b.lane(1, 2);
+    let dir = open_base(&b.0).unwrap().unwrap();
+    let device = fd::fstat(&dir).unwrap().st_dev;
+    let marker = fs::read(b.0.join(MARKER)).unwrap();
+    for (left, deadline, device) in [
+        (
+            0,
+            std::time::Instant::now() + std::time::Duration::from_secs(60),
+            device,
+        ),
+        (4096, std::time::Instant::now(), device),
+        (
+            4096,
+            std::time::Instant::now() + std::time::Duration::from_secs(60),
+            device.wrapping_add(1),
+        ),
+    ] {
+        assert!(
+            dedicated(
+                &dir,
+                None,
+                device,
+                &mut |id| Ok(state(1, id, "keep", None, None)),
+                &mut size::Walk { left, deadline }
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(b.0.join(MARKER)).unwrap(), marker);
+        assert_eq!(fs::read(b.0.join("1/2/file")).unwrap(), b"scratch");
     }
 }
 #[test]

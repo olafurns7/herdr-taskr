@@ -74,15 +74,26 @@ pub fn dispatch(json: bool, args: &[String]) -> Option<ExitCode> {
     let root = taskr_core::db::path()
         .and_then(|p| taskr_core::db::open(&p))
         .map_err(|e| (ExitCode::Database, e))
-        .and_then(|db| cleanup::State::read(&db, a.task).map_err(|e| (e.code, e.message)));
+        .and_then(|db| {
+            cleanup::State::read(&db, a.task)
+                .map(|state| (db, state))
+                .map_err(|e| (e.code, e.message))
+        });
     Some(match root {
-        Ok(state) => finish(&a, state.root_id, Some(json!(state))),
+        Ok((db, state)) => finish(&a, state.root_id, Some(json!(state)), |id| {
+            cleanup::State::read(&db, id).map_err(|e| anyhow::anyhow!(e.message))
+        }),
         Err((code, e)) => crate::cli::error(a.json, "tmp", &e, code),
     })
 }
 
 /// Prints the lane dir, creating it first with `--mkdir`.
-pub fn finish(a: &Args, root: i64, cleanup: Option<Value>) -> ExitCode {
+pub fn finish(
+    a: &Args,
+    root: i64,
+    cleanup: Option<Value>,
+    mut lookup: impl FnMut(i64) -> anyhow::Result<cleanup::State>,
+) -> ExitCode {
     let base = base();
     let dir = lane(root, a.task);
     let made = if !base.is_absolute() {
@@ -98,7 +109,7 @@ pub fn finish(a: &Args, root: i64, cleanup: Option<Value>) -> ExitCode {
     } else if a.mkdir {
         dir_ok(&base)
             .and_then(|()| {
-                cleanup::init_base(&base)
+                cleanup::init_base(&base, &mut lookup)
                     .map_err(|e| format!("refusing tmp base {}: {e:#}", base.display()))
             })
             .and_then(|()| {

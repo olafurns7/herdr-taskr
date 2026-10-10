@@ -162,6 +162,184 @@ fn refused(h: &Harness, base: &Path, lane: i64, why: &str) {
     assert!(out.starts_with("x1 1 {") && out.contains(why), "{out}");
 }
 
+fn snapshot(p: &Path) -> Vec<(std::path::PathBuf, u32, u32, u64, Vec<u8>)> {
+    let m = fs::symlink_metadata(p).unwrap();
+    let bytes = if m.is_file() {
+        fs::read(p).unwrap()
+    } else if m.file_type().is_symlink() {
+        fs::read_link(p)
+            .unwrap()
+            .as_os_str()
+            .as_encoded_bytes()
+            .to_vec()
+    } else {
+        Vec::new()
+    };
+    let mut entries = vec![(p.into(), m.mode(), m.uid(), m.ino(), bytes)];
+    if m.is_dir() {
+        let mut children: Vec<_> = fs::read_dir(p)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        children.sort();
+        for child in children {
+            entries.extend(snapshot(&child));
+        }
+    }
+    entries
+}
+
+#[test]
+fn mkdir_refuses_non_dedicated_bases_without_mutation() {
+    let h = Harness::new();
+    let (root, lane) = campaign(&h);
+    let requested = h.ok(
+        &[],
+        &[
+            "new",
+            "next",
+            "--role",
+            "implementer",
+            "--parent",
+            &root.to_string(),
+        ],
+    )["task_id"]
+        .as_i64()
+        .unwrap();
+    let outside = h.home.join("outside-guard");
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("sentinel"), "outside data").unwrap();
+    for marked in [false, true] {
+        for case in [
+            "home-like",
+            "numeric-only",
+            "wrong-root",
+            "noncanonical-root",
+            "noncanonical-lane",
+            "root-file",
+            "lane-file",
+            "root-link",
+            "lane-link",
+            "unsafe-root",
+            "unsafe-lane",
+            "bad-marker",
+        ] {
+            let base = h.home.join(format!("guard-{marked}-{case}"));
+            let campaign = base.join(root.to_string());
+            let dir = campaign.join(lane.to_string());
+            fs::create_dir_all(&dir).unwrap();
+            fs::set_permissions(&base, fs::Permissions::from_mode(0o750)).unwrap();
+            fs::write(dir.join("sentinel"), "lane data").unwrap();
+            match case {
+                "home-like" => {
+                    fs::write(base.join("notes.txt"), "user notes").unwrap();
+                    fs::create_dir(campaign.join("Photos")).unwrap();
+                    fs::write(campaign.join("Photos/photo"), "photo data").unwrap();
+                }
+                "numeric-only" => {
+                    fs::create_dir(campaign.join("999999")).unwrap();
+                    fs::write(campaign.join("999999/sentinel"), "numeric user data").unwrap();
+                }
+                "wrong-root" => {
+                    fs::create_dir(base.join(lane.to_string())).unwrap();
+                }
+                "noncanonical-root" => {
+                    fs::create_dir(base.join(format!("0{root}"))).unwrap();
+                }
+                "noncanonical-lane" => {
+                    fs::create_dir(campaign.join(format!("0{lane}"))).unwrap();
+                }
+                "root-file" => {
+                    fs::write(base.join(requested.to_string()), "file").unwrap();
+                }
+                "lane-file" => {
+                    fs::write(campaign.join(requested.to_string()), "file").unwrap();
+                }
+                "root-link" => {
+                    fs::rename(&campaign, base.join("saved")).unwrap();
+                    symlink(&outside, &campaign).unwrap();
+                }
+                "lane-link" => {
+                    fs::rename(&dir, campaign.join("saved")).unwrap();
+                    symlink(&outside, &dir).unwrap();
+                }
+                "unsafe-root" => {
+                    fs::set_permissions(&campaign, fs::Permissions::from_mode(0o770)).unwrap()
+                }
+                "unsafe-lane" => {
+                    fs::set_permissions(&dir, fs::Permissions::from_mode(0o707)).unwrap()
+                }
+                "bad-marker" => {}
+                _ => unreachable!(),
+            }
+            let marker = base.join(".taskr-tmp");
+            if marked || case == "bad-marker" {
+                fs::write(
+                    &marker,
+                    if case == "bad-marker" {
+                        b"bad marker".as_slice()
+                    } else {
+                        b"taskr tmp base v1\n".as_slice()
+                    },
+                )
+                .unwrap();
+                fs::set_permissions(&marker, fs::Permissions::from_mode(0o600)).unwrap();
+            }
+            let before = snapshot(&base);
+            let outside_before = snapshot(&outside);
+            refused(&h, &base, requested, "not a dedicated taskr tmp base");
+            assert_eq!(
+                snapshot(&base),
+                before,
+                "{marked}/{case}: refusal mutated base"
+            );
+            assert_eq!(
+                snapshot(&outside),
+                outside_before,
+                "{marked}/{case}: outside sentinel changed"
+            );
+        }
+    }
+}
+
+#[test]
+fn mkdir_accepts_empty_and_ledger_confirmed_legacy_bases() {
+    let h = Harness::new();
+    let (root, lane) = campaign(&h);
+    for legacy in [false, true] {
+        let base = h.home.join(format!("dedicated-{legacy}"));
+        fs::create_dir(&base).unwrap();
+        fs::set_permissions(&base, fs::Permissions::from_mode(0o750)).unwrap();
+        let dir = base.join(root.to_string()).join(root.to_string());
+        if legacy {
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("sentinel"), "legacy data").unwrap();
+            symlink(&h.db, dir.join("link")).unwrap();
+        }
+        let before = legacy.then(|| snapshot(&base.join(root.to_string())));
+        h.ok(&base_env(&base), &["tmp", &lane.to_string(), "--mkdir"]);
+        assert_eq!(mode(&base), 0o750);
+        if let Some(before) = before {
+            assert_eq!(
+                snapshot(&dir),
+                before
+                    .into_iter()
+                    .filter(|e| e.0.starts_with(&dir))
+                    .collect::<Vec<_>>()
+            );
+        }
+        let marker_before = snapshot(&base.join(".taskr-tmp"));
+        h.ok(&base_env(&base), &["tmp", &lane.to_string(), "--mkdir"]);
+        assert_eq!(snapshot(&base.join(".taskr-tmp")), marker_before);
+        h.ok(
+            &base_env(&base),
+            &["close", &root.to_string(), "--clean-tmp"],
+        );
+        assert!(!base.join(root.to_string()).exists());
+        assert!(h.db.is_file());
+    }
+}
+
 #[test]
 fn mkdir_refuses_unsafe_paths() {
     let h = Harness::new();
@@ -339,7 +517,7 @@ fn a_client_makes_the_dir_on_its_own_host() {
         .as_i64()
         .unwrap();
     let requests = || h.count("select count(*) from requests where length(key)>?", 0);
-    let before = requests();
+    let requests_before = requests();
     let want = client_base.join(root.to_string()).join(lane.to_string());
     assert_eq!(
         run(&h, &client, &["tmp", &lane.to_string(), "--mkdir"]),
@@ -347,6 +525,22 @@ fn a_client_makes_the_dir_on_its_own_host() {
     );
     assert_eq!(mode(&want), 0o700);
     assert!(!hub_base.exists(), "the hub made a dir");
+    // Client initialization uses hub membership, including legacy bases.
+    fs::remove_file(client_base.join(".taskr-tmp")).unwrap();
+    h.ok(&client, &["tmp", &lane.to_string(), "--mkdir"]);
+    fs::create_dir(client_base.join(root.to_string()).join("999999")).unwrap();
+    fs::write(
+        client_base.join(root.to_string()).join("999999/sentinel"),
+        "unrelated numeric data",
+    )
+    .unwrap();
+    let before = snapshot(&client_base);
+    let (code, out) = run(&h, &client, &["tmp", &lane.to_string(), "--mkdir"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("not a dedicated taskr tmp base"), "{out}");
+    assert_eq!(snapshot(&client_base), before);
+    fs::remove_file(client_base.join(root.to_string()).join("999999/sentinel")).unwrap();
+    fs::remove_dir(client_base.join(root.to_string()).join("999999")).unwrap();
     let v = h.ok(&client, &["tmp", &root.to_string()]);
     assert_eq!(
         (v["root_id"].as_i64(), v["tmpdir"].as_str()),
@@ -358,7 +552,11 @@ fn a_client_makes_the_dir_on_its_own_host() {
                 .to_str()
         )
     );
-    assert_eq!(requests(), before, "a tmp read is not a stored request");
+    assert_eq!(
+        requests(),
+        requests_before,
+        "a tmp read is not a stored request"
+    );
     // Both daemon entry points persist their own host's size on the real scratch hub.
     h.ok(&client, &["daemon", "--once"]);
     assert_eq!(h.count("select count(*) from events where task_id=? and kind='ref' and json_extract(data,'$.key')='tmp.bytes.host-a' and json_extract(data,'$.value')='0'", root), 1);
