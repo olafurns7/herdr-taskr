@@ -6,7 +6,7 @@ mod support;
 use serde_json::Value;
 use std::{
     fs,
-    os::unix::fs::{PermissionsExt, symlink},
+    os::unix::fs::{MetadataExt, PermissionsExt, symlink},
     path::Path,
 };
 use support::*;
@@ -83,6 +83,7 @@ fn mkdir_makes_0700_dirs_and_is_idempotent() {
     let base = h.home.join("tb");
     let env = base_env(&base);
     let want = base.join(root.to_string()).join(lane.to_string());
+    let mut marker_inode = None;
     for _ in 0..2 {
         assert_eq!(
             run(&h, &env, &["tmp", &lane.to_string(), "--mkdir"]),
@@ -91,11 +92,68 @@ fn mkdir_makes_0700_dirs_and_is_idempotent() {
         for p in [&base, &base.join(root.to_string()), &want] {
             assert_eq!(mode(p), 0o700, "{}", p.display());
         }
+        let marker = base.join(".taskr-tmp");
+        assert_eq!(fs::read(&marker).unwrap(), b"taskr tmp base v1\n");
+        assert_eq!(mode(&marker), 0o600);
+        let inode = fs::symlink_metadata(&marker).unwrap().ino();
+        if let Some(before) = marker_inode {
+            assert_eq!(inode, before);
+        }
+        marker_inode = Some(inode);
     }
     // A file left in the lane dir survives a second --mkdir.
     fs::write(want.join("keep"), "x").unwrap();
     assert_eq!(run(&h, &env, &["tmp", &lane.to_string(), "--mkdir"]).0, 0);
     assert!(want.join("keep").exists());
+}
+
+#[test]
+fn unmarked_base_is_preserved_until_explicit_mkdir() {
+    let h = Harness::new();
+    let (root, lane) = campaign(&h);
+    let base = h.home.join("home-like");
+    let env = base_env(&base);
+    let dir = base.join(root.to_string()).join(lane.to_string());
+    fs::create_dir_all(&dir).unwrap();
+    fs::set_permissions(&base, fs::Permissions::from_mode(0o750)).unwrap();
+    fs::write(dir.join("precious"), "user data").unwrap();
+    h.ok(&env, &["close", &root.to_string()]);
+    age_close(&h, root, 660);
+    h.ok(&env, &["daemon", "--once"]);
+    assert!(dir.join("precious").exists());
+    assert!(!base.join(".taskr-tmp").exists());
+    assert_eq!(
+        run(&h, &env, &["close", &root.to_string(), "--clean-tmp"]).0,
+        1
+    );
+    assert!(dir.join("precious").exists());
+    assert!(!base.join(".taskr-tmp").exists());
+    h.ok(&env, &["tmp", &lane.to_string(), "--mkdir"]);
+    assert!(base.join(".taskr-tmp").is_file());
+    assert!(dir.join("precious").exists());
+    h.ok(&env, &["close", &root.to_string(), "--clean-tmp"]);
+    assert!(!base.join(root.to_string()).exists());
+}
+
+#[test]
+fn python_fixture_isolation() {
+    let h = Harness::new();
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/tmp_isolation.py"
+        ))
+        .arg(&h.home)
+        .env_remove("TASKR_TASK")
+        .env_remove("TASKR_LAUNCH")
+        .output()
+        .expect("run process-free Python fixture isolation gate");
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn refused(h: &Harness, base: &Path, lane: i64, why: &str) {
@@ -505,6 +563,20 @@ fn close_clean_tmp_is_immediate_local_and_repeatable() {
     h.ok(&env, &["close", &lane.to_string(), "--clean-tmp"]);
     assert!(!path.exists());
     h.ok(&env, &["tmp", &root.to_string(), "--mkdir"]);
+    let open_lane = h.ok(
+        &env,
+        &[
+            "new",
+            "open",
+            "--role",
+            "implementer",
+            "--parent",
+            &root.to_string(),
+        ],
+    )["task_id"]
+        .as_i64()
+        .unwrap();
+    h.ok(&env, &["tmp", &open_lane.to_string(), "--mkdir"]);
     h.ok(&env, &["close", &root.to_string(), "--clean-tmp"]);
     assert!(!base.join(root.to_string()).exists());
 }
@@ -584,10 +656,17 @@ fn daemon_sweeps_ledger_state_with_grace_on_this_host() {
         assert!(base.join(root.to_string()).exists(), "root grace {policy}");
         age_close(&h, root, 660);
         h.ok(&env, &["daemon", "--once"]);
+        assert!(
+            base.join(root.to_string()).exists(),
+            "unknown lane retains root {policy}"
+        );
+        assert!(base.join(root.to_string()).join("999999").exists());
+        fs::remove_dir(base.join(root.to_string()).join("999999")).unwrap();
+        h.ok(&env, &["daemon", "--once"]);
         assert_eq!(
             base.join(root.to_string()).exists(),
             policy == "keep",
-            "root {policy}"
+            "confirmed root {policy}"
         );
     }
     fs::create_dir_all(base.join("888888/1")).unwrap();
@@ -616,5 +695,40 @@ fn fixture_commands_keep_tmp_work_inside_scratch() {
             .unwrap()
             .1,
         Some(base.as_os_str())
+    );
+}
+
+#[test]
+fn daemon_limits_lookup_errors_without_hiding_removal_errors() {
+    let h = Harness::new();
+    let base = h.home.join("log-base");
+    let env = base_env(&base);
+    let (root, _) = campaign(&h);
+    h.ok(&env, &["tmp", &root.to_string(), "--mkdir"]);
+    for id in 900000..900300 {
+        fs::create_dir(base.join(id.to_string())).unwrap();
+    }
+    let (unsafe_root, _) = campaign(&h);
+    let outside = h.home.join("outside");
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("sentinel"), "outside").unwrap();
+    symlink(&outside, base.join(unsafe_root.to_string())).unwrap();
+    h.ok(&env, &["daemon", "--once"]);
+    let log = fs::read_to_string(h.home.join(".local/state/taskr/daemon.log")).unwrap();
+    assert_eq!(
+        log.lines()
+            .filter(|line| line.contains("does not exist"))
+            .count(),
+        1,
+        "{log}"
+    );
+    assert!(
+        log.lines()
+            .any(|line| line.contains(&format!("tmp sweep {unsafe_root}:"))),
+        "{log}"
+    );
+    assert_eq!(
+        fs::read_to_string(outside.join("sentinel")).unwrap(),
+        "outside"
     );
 }

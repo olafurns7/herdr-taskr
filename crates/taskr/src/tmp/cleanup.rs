@@ -2,13 +2,20 @@
 use anyhow::{Context, Result, bail};
 use rustix::fs::{self as fd, AtFlags, FileType, Mode, OFlags, Stat};
 use serde::{Deserialize, Serialize};
-use std::{os::fd::OwnedFd, path::Path};
+use std::{
+    fs::File,
+    io::{Read, Write},
+    os::fd::OwnedFd,
+    path::Path,
+};
 use taskr_core::{db::Connection, store};
 
 const DIR: OFlags = OFlags::RDONLY
     .union(OFlags::DIRECTORY)
     .union(OFlags::NOFOLLOW)
     .union(OFlags::CLOEXEC);
+const MARKER: &str = ".taskr-tmp";
+const MARKER_CONTENT: &[u8] = b"taskr tmp base v1\n";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct State {
@@ -70,7 +77,7 @@ fn check_base_stat(s: &Stat) -> Result<()> {
     }
     Ok(())
 }
-fn checked_base(base: &Path) -> Result<Option<OwnedFd>> {
+fn open_base(base: &Path) -> Result<Option<OwnedFd>> {
     if !base.is_absolute()
         || base
             .components()
@@ -93,6 +100,60 @@ fn checked_base(base: &Path) -> Result<Option<OwnedFd>> {
         bail!("base changed while opening");
     }
     Ok(Some(base_fd))
+}
+// Only an explicit tmp --mkdir may initialize an existing T1 base.
+pub(super) fn init_base(base: &Path) -> Result<()> {
+    let dir = open_base(base)?.context("tmp base is missing")?;
+    match fd::openat(
+        &dir,
+        MARKER,
+        OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::RUSR | Mode::WUSR,
+    ) {
+        Ok(marker) => File::from(marker).write_all(MARKER_CONTENT)?,
+        Err(e) if e == rustix::io::Errno::EXIST => {}
+        Err(e) => return Err(e.into()),
+    }
+    check_marker(&dir)
+}
+fn check_marker(base: &OwnedFd) -> Result<()> {
+    let before = fd::statat(base, MARKER, AtFlags::SYMLINK_NOFOLLOW)
+        .context("missing or unreadable taskr tmp base marker; initialize a dedicated base with tmp ID --mkdir")?;
+    if FileType::from_raw_mode(before.st_mode) != FileType::RegularFile
+        || before.st_uid != rustix::process::getuid().as_raw()
+        || before.st_mode & 0o7777 != 0o600
+    {
+        bail!("invalid taskr tmp base marker type, owner or mode");
+    }
+    let marker = fd::openat(
+        base,
+        MARKER,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+        Mode::empty(),
+    )?;
+    let after = fd::fstat(&marker)?;
+    if after.st_dev != before.st_dev
+        || after.st_ino != before.st_ino
+        || after.st_mode != before.st_mode
+        || after.st_uid != before.st_uid
+    {
+        bail!("taskr tmp base marker changed while opening");
+    }
+    let mut contents = Vec::new();
+    File::from(marker)
+        .take(MARKER_CONTENT.len() as u64 + 1)
+        .read_to_end(&mut contents)?;
+    if contents != MARKER_CONTENT {
+        bail!("invalid taskr tmp base marker content");
+    }
+    Ok(())
+}
+fn checked_base(base: &Path) -> Result<Option<OwnedFd>> {
+    let dir = open_base(base)?;
+    if let Some(dir) = &dir {
+        check_marker(dir)?;
+    }
+    Ok(dir)
 }
 fn same_device(s: &Stat, device: fd::Dev) -> Result<()> {
     if s.st_dev != device {
@@ -200,11 +261,12 @@ fn ids(dir: &OwnedFd) -> Result<Vec<i64>> {
     }
     Ok(ids)
 }
-/// Independent errors leave the next campaign/lane eligible; failed ledger reads never delete.
+/// Independent errors leave the next candidate eligible. The report's bool marks lookup
+/// errors for rate limiting; filesystem errors remain individually visible.
 pub fn sweep(
     mut lookup: impl FnMut(i64) -> Result<State>,
     now: time::OffsetDateTime,
-    mut report: impl FnMut(String),
+    mut report: impl FnMut(String, bool),
 ) {
     let base = super::base();
     sweep_under(&base, &mut lookup, now, &mut report);
@@ -213,7 +275,7 @@ fn sweep_under(
     base: &Path,
     lookup: &mut impl FnMut(i64) -> Result<State>,
     now: time::OffsetDateTime,
-    report: &mut impl FnMut(String),
+    report: &mut impl FnMut(String, bool),
 ) {
     let scan = (|| -> Result<()> {
         let Some(base_fd) = checked_base(base)? else {
@@ -221,40 +283,60 @@ fn sweep_under(
         };
         let device = fd::fstat(&base_fd)?.st_dev;
         for root in ids(&base_fd)? {
+            let state = match lookup(root) {
+                Ok(state) => state,
+                Err(e) => {
+                    report(format!("tmp sweep {root}: {e:#}"), true);
+                    continue;
+                }
+            };
             let campaign = (|| -> Result<()> {
-                let state = lookup(root)?;
                 if state.root_id != root || state.task_id != root {
                     return Ok(());
                 }
-                if state.campaign_due(now) {
-                    return remove_under(base, root, None);
-                }
-                if state.policy != "on-close" {
+                let mut whole = state.campaign_due(now);
+                if !whole && state.policy != "on-close" {
                     return Ok(());
                 }
                 let dir = open_dir(&base_fd, &name(root)?, device)?;
+                let mut lanes = Vec::new();
                 for task in ids(&dir)? {
-                    let lane = (|| -> Result<()> {
-                        let state = lookup(task)?;
-                        if state.root_id == root && state.task_id == task && state.lane_due(now) {
-                            remove_under(base, root, Some(task))?;
+                    match lookup(task) {
+                        Ok(lane) => {
+                            let confirmed = lane.root_id == root
+                                && lane.task_id == task
+                                && lane.policy == state.policy
+                                && lane.closed
+                                && old(&lane.closed_at, now);
+                            whole &= confirmed;
+                            if confirmed && state.policy == "on-close" && lane.lane_due(now) {
+                                lanes.push(task);
+                            }
                         }
-                        Ok(())
-                    })();
-                    if let Err(e) = lane {
-                        report(format!("tmp sweep {root}/{task}: {e:#}"));
+                        Err(e) => {
+                            whole = false;
+                            report(format!("tmp sweep {root}/{task}: {e:#}"), true);
+                        }
+                    }
+                }
+                if whole {
+                    return remove_under(base, root, None);
+                }
+                for task in lanes {
+                    if let Err(e) = remove_under(base, root, Some(task)) {
+                        report(format!("tmp sweep {root}/{task}: {e:#}"), false);
                     }
                 }
                 Ok(())
             })();
             if let Err(e) = campaign {
-                report(format!("tmp sweep {root}: {e:#}"));
+                report(format!("tmp sweep {root}: {e:#}"), false);
             }
         }
         Ok(())
     })();
     if let Err(e) = scan {
-        report(format!("tmp sweep {}: {e:#}", base.display()));
+        report(format!("tmp sweep {}: {e:#}", base.display()), false);
     }
 }
 

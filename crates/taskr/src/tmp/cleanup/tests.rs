@@ -16,6 +16,7 @@ impl Scratch {
         ));
         fs::create_dir(&p).unwrap();
         fs::set_permissions(&p, fs::Permissions::from_mode(0o700)).unwrap();
+        init_base(&p).unwrap();
         Self(p)
     }
     fn lane(&self, root: i64, task: i64) -> PathBuf {
@@ -81,7 +82,7 @@ fn sweep_policies_grace_unknown_open_and_noninteger() {
             })
         },
         at(),
-        &mut |e| errors.push(e),
+        &mut |e, _| errors.push(e),
     );
     for p in ["1", "4", "2/12", "6/16"] {
         assert!(!b.0.join(p).exists(), "{p}");
@@ -158,9 +159,12 @@ fn failed_ledger_reads_and_one_unsafe_campaign_do_not_delete_other_paths() {
     let b = Scratch::new();
     let lane = b.lane(1, 2);
     let mut errors = vec![];
-    sweep_under(&b.0, &mut |_| bail!("hub unreachable"), at(), &mut |e| {
-        errors.push(e)
-    });
+    sweep_under(
+        &b.0,
+        &mut |_| bail!("hub unreachable"),
+        at(),
+        &mut |e, _| errors.push(e),
+    );
     assert!(lane.join("file").exists());
     assert!(errors.iter().any(|e| e.contains("hub unreachable")));
     let target = Scratch::new();
@@ -178,11 +182,124 @@ fn failed_ledger_reads_and_one_unsafe_campaign_do_not_delete_other_paths() {
             ))
         },
         at(),
-        &mut |e| errors.push(e),
+        &mut |e, _| errors.push(e),
     );
     assert!(!lane.exists());
     assert!(outside.join("file").exists());
     assert!(errors.iter().any(|e| e.contains("tmp sweep 3")));
+}
+#[test]
+fn marker_required_before_any_deletion() {
+    let outside = Scratch::new();
+    let target = outside.0.join("sentinel");
+    fs::write(&target, "outside").unwrap();
+    for invalid in ["missing", "symlink", "content", "mode", "directory"] {
+        let b = Scratch::new();
+        let lane = b.lane(1, 2);
+        let marker = b.0.join(MARKER);
+        fs::remove_file(&marker).unwrap();
+        match invalid {
+            "missing" => {}
+            "symlink" => symlink(&target, &marker).unwrap(),
+            "content" => fs::write(&marker, "not taskr").unwrap(),
+            "mode" => fs::write(&marker, MARKER_CONTENT).unwrap(),
+            "directory" => fs::create_dir(&marker).unwrap(),
+            _ => unreachable!(),
+        }
+        if invalid == "content" {
+            fs::set_permissions(&marker, fs::Permissions::from_mode(0o600)).unwrap();
+        } else if invalid == "mode" {
+            fs::set_permissions(&marker, fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        assert!(remove_under(&b.0, 1, None).is_err(), "{invalid}");
+        assert!(remove_under(&b.0, 1, Some(2)).is_err(), "{invalid}");
+        let mut errors = vec![];
+        sweep_under(
+            &b.0,
+            &mut |id| {
+                Ok(state(
+                    1,
+                    id,
+                    "on-close",
+                    Some("2026-10-10T00:00:00Z"),
+                    Some("2026-10-10T00:00:00Z"),
+                ))
+            },
+            at(),
+            &mut |e, lookup| {
+                assert!(!lookup);
+                errors.push(e);
+            },
+        );
+        assert!(!errors.is_empty(), "{invalid}");
+        assert!(lane.join("file").exists(), "{invalid}");
+        assert_eq!(fs::read_to_string(&target).unwrap(), "outside");
+        if invalid != "missing" {
+            assert!(init_base(&b.0).is_err(), "{invalid}");
+            assert_eq!(fs::read_to_string(&target).unwrap(), "outside");
+        }
+    }
+}
+#[test]
+fn campaign_removal_requires_all_lane_authority() {
+    let old = Some("2026-10-10T00:00:00Z");
+    for policy in ["on-close", "root-close"] {
+        for blocked in [
+            "open",
+            "unknown",
+            "mismatched",
+            "malformed",
+            "unconfirmed",
+            "recent",
+            "failed",
+        ] {
+            let b = Scratch::new();
+            b.lane(1, 1);
+            b.lane(1, 2);
+            let protected = b.lane(1, 3);
+            fs::write(b.0.join("1/extra"), "campaign sentinel").unwrap();
+            let mut errors = vec![];
+            // Whole campaign is ineligible; only 1/1 and 1/2 may go under on-close.
+            sweep_under(
+                &b.0,
+                &mut |id| {
+                    let mut lane = state(1, id, policy, old, old);
+                    if id == 3 {
+                        match blocked {
+                            "open" => {
+                                lane.closed = false;
+                                lane.closed_at = None;
+                            }
+                            "unknown" => bail!("unknown task 3"),
+                            "mismatched" => lane.root_id = 9,
+                            "malformed" => lane.closed_at = Some("invalid".into()),
+                            "unconfirmed" => lane.closed = false,
+                            "recent" => lane.closed_at = Some("2026-10-10T00:19:59Z".into()),
+                            "failed" => bail!("hub unreachable"),
+                            _ => unreachable!(),
+                        }
+                    }
+                    Ok(lane)
+                },
+                at(),
+                &mut |e, lookup| {
+                    assert!(lookup);
+                    errors.push(e);
+                },
+            );
+            assert!(protected.join("file").exists(), "{policy}/{blocked}");
+            assert!(b.0.join("1/extra").exists(), "{policy}/{blocked}");
+            assert_eq!(b.0.join("1/2").exists(), policy == "root-close");
+            assert_eq!(!errors.is_empty(), matches!(blocked, "unknown" | "failed"));
+            sweep_under(
+                &b.0,
+                &mut |id| Ok(state(1, id, policy, old, old)),
+                at(),
+                &mut |e, _| panic!("{e}"),
+            );
+            assert!(!b.0.join("1").exists(), "all confirmed closed: {policy}");
+        }
+    }
 }
 #[test]
 fn symlink_replacement_race_never_follows_target() {

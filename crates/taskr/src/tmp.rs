@@ -96,12 +96,19 @@ pub fn finish(a: &Args, root: i64, cleanup: Option<Value>) -> ExitCode {
             base.display()
         ))
     } else if a.mkdir {
-        [root, a.task]
-            .iter()
-            .try_fold(base, |dir, id| {
-                dir_ok(&dir).map(|()| dir.join(id.to_string()))
+        dir_ok(&base)
+            .and_then(|()| {
+                cleanup::init_base(&base)
+                    .map_err(|e| format!("refusing tmp base {}: {e:#}", base.display()))
             })
-            .and_then(|dir| dir_ok(&dir))
+            .and_then(|()| {
+                [root, a.task]
+                    .iter()
+                    .try_fold(base, |dir, id| {
+                        dir_ok(&dir).map(|()| dir.join(id.to_string()))
+                    })
+                    .and_then(|dir| dir_ok(&dir))
+            })
     } else {
         Ok(())
     };

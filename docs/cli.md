@@ -88,7 +88,7 @@ It also keeps the campaign's plan in the ledger:
 | `set ID KEY=VALUE` | Store a reference such as a branch or a PR number. `pr=31` or `pr=owner/repo#31` links a PR, which the hub follows when `watch.json` enables it ([PR events](daemon.md#pr-events)); `pr=` unlinks. A task holds at most 20 references; the poller's `pr.state` and `pr.ci` do not count toward them. `tmp.cleanup=on-close\|root-close\|keep` sets a root's tmp cleanup policy; it counts as one reference, and any other value or a non-root target exits 2. |
 | `after TARGET --as ROOT [--on KINDS] [--keep]` | Subscribe the root to another tree's lane or a PR. TARGET is a task id (`--on` from `done`, `ready`, `closed`, `fail`; default `done,closed`) or `pr:owner/repo#N` (`pr:N` uses `watch.json`'s default repo; `--on` any PR sub; default `merged`). A match puts an `after` event (code `af`) in the root's inbox with data `target`, `on` and `source_event_id`; a filtered `wait` always returns it. It fires once unless `--keep`, which repeats until the root closes. Closing the root cancels its subscriptions. A PR target fires only for a PR some task links with `pr=`; the hub keeps polling it while the subscription is unfired, even after that task closes. Prints `af1 SUB_ID`. |
 | `after --list --as ROOT`, `after --cancel SUB_ID` | List the root's subscriptions (one `j1` row each, with `fired_at`), or cancel one (`af1 SUB_ID cancelled`). |
-| `close ID [--outcome accepted\|reworked\|rejected\|abandoned] [--clean-tmp]` | Close the task. `--clean-tmp` immediately removes this host's lane tmp dir (a root: the whole campaign), regardless of policy, after confirmed closure. See [Lane tmp dirs](#lane-tmp-dirs). |
+| `close ID [--outcome accepted\|reworked\|rejected\|abandoned] [--clean-tmp]` | Close the task. `--clean-tmp` immediately removes this host's lane tmp dir (a root: the whole campaign, including open-lane dirs), regardless of policy, after confirmed closure. See [Lane tmp dirs](#lane-tmp-dirs). |
 | `tmp ID [--mkdir]` | Print lane ID's own tmp dir, `<base>/<root-id>/<task-id>` (a root's own dir is `<base>/<root-id>/<root-id>`). `--mkdir` creates the base, campaign and lane dirs with mode 0700. See [Lane tmp dirs](#lane-tmp-dirs). |
 | `handover --as ROOT`, `adopt ROOT` | Write a Markdown handover; let a new agent take the campaign over. |
 | `note "OWNER: ..." --owner --as ROOT` | Leave a note for you. |
@@ -149,6 +149,14 @@ with mode 0700 and checks every one with lstat; it exits 1 when the base is
 relative or any of the three is a symlink, not a directory, owned by another
 user, or group- or world-writable. An unknown task exits 6.
 
+The base must be a dedicated taskr directory, never HOME or a shared tmp/project
+directory. `tmp ID --mkdir` also explicitly initializes its `.taskr-tmp` marker
+(owned by the caller, regular file, mode 0600, content `taskr tmp base v1\n`).
+Creation is exclusive and relative to a validated directory descriptor; an
+existing marker is checked without following links or overwriting it. Cleanup
+refuses a missing, symlinked or invalid marker. Existing T1 bases are initialized
+only by an explicit `tmp ID --mkdir`; neither a daemon nor `--clean-tmp` marks them.
+
 The directory work is always on the host that runs the command. On a client
 host, taskr asks the hub for the task's root and cleanup state (a read, not stored) and makes
 the dir locally; the hub refuses a forwarded `tmp --mkdir`.
@@ -159,8 +167,9 @@ informational and creates nothing. The `--json` launch object is unchanged.
 
 Set `taskr set ROOT tmp.cleanup=on-close|root-close|keep` on a root. Unset
 means `on-close`: closed lanes are cleaned individually, then the entire
-campaign when its root closes. `root-close` retains all lanes until the root
-closes; `keep` disables automatic cleanup. The policy counts toward the
+campaign once the root and every canonical lane entry are confirmed closed
+past the grace. `root-close` retains all lanes until that same campaign check
+passes; `keep` disables automatic cleanup. The policy counts toward the
 20-reference limit. Empty or unknown values and non-root targets exit 2.
 The `cleanup` JSON object contains `root_id`, `task_id`, `policy`, `closed`, `closed_at`
 and `root_closed_at`; `closed` confirms task status. Timestamps are null for
@@ -170,12 +179,16 @@ close time; explicit cleanup requires confirmed closed status.
 Every host's daemon sweeps its own base every three minutes, after a
 10-minute grace from the ledger's close timestamp. It ignores unknown ids,
 open tasks, noncanonical integer directory names (including leading zeros)
-and failed ledger reads. Closing a root removes the entire campaign tree,
-including extra files inside it. Client daemons read the hub; there is no
+and failed ledger reads. Before removing a whole campaign, it freshly checks
+every canonical integer lane entry. Any open, unknown, mismatched, unconfirmed,
+recent or malformed entry, or failed lookup, preserves the campaign. Eligible
+known closed lanes may still be removed individually under `on-close`. Once the
+whole campaign is authorized, extra files inside it also go. Client daemons read the hub; there is no
 local-ledger fallback.
 
 `taskr close ID --clean-tmp` skips the grace and policy after confirmed
-closure. Clients forward only the close; cleanup runs locally after a fresh
+closure. Explicit root cleanup removes all campaign tmp, including open-lane
+dirs; it does not close those lanes. Clients forward only the close; cleanup runs locally after a fresh
 hub identity/status read. An offline/queued close deletes nothing and warns
 that immediate cleanup was skipped. The ordinary policy sweep waits for
 confirmed closure and grace; `keep` and `root-close` may retain the lane.
@@ -185,7 +198,7 @@ A cleanup failure exits 1 and says the close succeeded; it does not undo the
 ledger close.
 
 Both cleanup paths recheck the normalized base: a real directory owned by
-the caller, never group/world-writable. Removal uses directory descriptors,
+the caller, never group/world-writable, with a valid `.taskr-tmp` marker. Removal uses directory descriptors,
 no-follow opens and unlinkat. Symlinks inside the tree are unlinked without
 following their targets; symlinked campaign/lane directories are refused.
 Directories on another device are refused. Filesystem errors are reported
@@ -199,4 +212,4 @@ are refused rather than exhausting the stack.
 | `TASKR_TASK`, `TASKR_LAUNCH` | Which lane a worker is. Set by its parent; never replace them. |
 | `TASKR_DB` | Use this ledger file, locally, even on a client host. Useful for experiments. |
 | `TASKR_FORMAT=json` | JSON output. |
-| `TASKR_TMP_BASE` | The base of the lane tmp dirs (default `/tmp/taskr-<uid>`). An absolute path; see [Lane tmp dirs](#lane-tmp-dirs). |
+| `TASKR_TMP_BASE` | A dedicated taskr directory for lane tmp (default `/tmp/taskr-<uid>`), never HOME or a shared tmp/project directory. Absolute path; initialize its marker explicitly with `tmp ID --mkdir`. See [Lane tmp dirs](#lane-tmp-dirs). |

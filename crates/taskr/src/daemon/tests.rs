@@ -126,3 +126,32 @@ fn slow_tmp_sweep_does_not_block_or_overlap_the_daemon() {
     drop(state);
     fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn tmp_lookup_errors_are_limited_but_removal_errors_remain_visible() {
+    let path = std::env::temp_dir().join(format!("taskr-tmp-errors-{}", std::process::id()));
+    let log = Log::open(&path);
+    for id in 0..300 {
+        log.tmp_error(&format!("tmp sweep {id}: hub unreachable"), true);
+    }
+    log.tmp_error("tmp sweep 1/2: unlink failed", false);
+    log.tmp_error("tmp sweep 2/3: device refused", false);
+    let lines = fs::read_to_string(&path).unwrap();
+    assert_eq!(lines.lines().count(), 3);
+    assert!(lines.contains("hub unreachable"));
+    assert!(lines.contains("unlink failed") && lines.contains("device refused"));
+    log.limited
+        .lock()
+        .unwrap()
+        .get_mut("tmp-sweep-lookup")
+        .unwrap()
+        .0 = Instant::now() - Duration::from_secs(181);
+    log.tmp_error("tmp sweep 300: unknown task", true);
+    assert!(
+        fs::read_to_string(&path)
+            .unwrap()
+            .contains("299 similar suppressed")
+    );
+    drop(log);
+    fs::remove_file(path).unwrap();
+}

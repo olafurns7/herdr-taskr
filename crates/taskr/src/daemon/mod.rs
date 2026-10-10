@@ -163,6 +163,13 @@ impl Log {
             text.into()
         });
     }
+    fn tmp_error(&self, text: &str, lookup_failed: bool) {
+        if lookup_failed {
+            self.limited("tmp-sweep-lookup", Duration::from_secs(180), text);
+        } else {
+            self.line(text);
+        }
+    }
 }
 pub(crate) fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
     if args.first().map(String::as_str) != Some("daemon") {
@@ -613,7 +620,7 @@ impl State {
                     }
                 },
                 store::parse_time(&store::now()).expect("validated clock"),
-                |e| log.line(&e),
+                |e, lookup_failed| log.tmp_error(&e, lookup_failed),
             );
         };
         if self.tmp_once {
