@@ -16,6 +16,8 @@ const DIR: OFlags = OFlags::RDONLY
     .union(OFlags::CLOEXEC);
 const MARKER: &str = ".taskr-tmp";
 const MARKER_CONTENT: &[u8] = b"taskr tmp base v1\n";
+mod size;
+pub use size::measure;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct State {

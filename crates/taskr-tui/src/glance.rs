@@ -310,10 +310,13 @@ fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Op
             } else {
                 ui::host_name(g, &c.host)
             };
-            let right = vec![
+            let mut right = vec![
                 sp(format!(" {host} "), t.remote),
                 sp(format!("{:>3}", age(c.activity_age_ms)), t.sub),
             ];
+            if let Some(label) = c.tmp_label() {
+                right.insert(0, sp(format!(" {label}"), t.dim));
+            }
             // A long machine name takes its room from the sparkline.
             let bars = spark_w.saturating_sub(ui::width(&right).saturating_sub(10));
             left.push(sp(format!(" {}", ui::spark(&c.spark, bars)), t.accent));
@@ -346,7 +349,10 @@ fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Op
             for c in &parked {
                 hits.resize(out.len(), None);
                 let left = vec![sp("‖ ", t.dim), sp(c.name.clone(), t.dim)];
-                let right = vec![sp(format!(" parked {:>3}", age(c.park_age_ms)), t.dim)];
+                let mut right = vec![sp(format!(" parked {:>3}", age(c.park_age_ms)), t.dim)];
+                if let Some(label) = c.tmp_label() {
+                    right.insert(0, sp(format!(" {label}"), t.dim));
+                }
                 out.push(ui::row(
                     t,
                     ui::spread(left, right, body),
@@ -711,6 +717,9 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
                 sp(format!(" {}   lanes ", c.lead), t.sub),
             ];
             head.extend(ui::pips(t, &c.lanes, 7));
+            if let Some(label) = c.tmp_label() {
+                head.push(sp(format!(" · {label}"), t.dim));
+            }
             (
                 format!("{} · #{}", c.name, c.id),
                 vec![Line::from(head)],
@@ -817,6 +826,42 @@ fn activity(f: &mut Frame, app: &App, area: Rect) {
 mod tests {
     use super::*;
     use crate::frames::fixture;
+
+    #[test]
+    fn tmp_size_narrow_fixture_keeps_urgent_rows_and_rejects_malformed_values() {
+        let mut app = App::new(fixture());
+        app.data.glance.campaigns[0].tmp = serde_json::json!("tmp 1.2G");
+        let text = |app: &App| -> Vec<String> {
+            lines(app, 46, 28)
+                .iter()
+                .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+                .collect()
+        };
+        let rows = text(&app);
+        assert!(rows.iter().any(|r| r.contains("tmp 1.2G")), "{rows:?}");
+        assert!(rows.iter().any(|r| r.contains("BLOCKING")), "{rows:?}");
+        assert!(
+            rows.iter()
+                .all(|r| unicode_width::UnicodeWidthStr::width(r.as_str()) <= 46)
+        );
+        for value in [
+            serde_json::json!(0),
+            serde_json::json!("tmp -1"),
+            serde_json::json!("tmp 18446744073709551616"),
+            serde_json::json!("tmp 1.2.3G"),
+            serde_json::json!(null),
+        ] {
+            app.data.glance.campaigns[0].tmp = value;
+            assert!(app.data.glance.campaigns[0].tmp_label().is_none());
+            assert!(!text(&app).iter().any(|r| r.contains("tmp ")));
+        }
+        let bad: Glance =
+            serde_json::from_value(serde_json::json!({"campaigns":[{"tmp":{"invalid":true}}]}))
+                .unwrap();
+        assert!(bad.campaigns[0].tmp_label().is_none());
+        app.data.glance.campaigns[0].tmp = serde_json::json!("tmp 0");
+        assert!(text(&app).iter().any(|r| r.contains("tmp 0")));
+    }
 
     /// The owner's rule for the split pane: no wasted rows while text is folded.
     #[test]

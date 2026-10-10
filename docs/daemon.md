@@ -22,6 +22,18 @@ and the root's `tmp.cleanup` policy ([Lane tmp dirs](cli.md#lane-tmp-dirs)).
 A single background sweep keeps slow filesystem/hub reads off the resident
 daemon's heartbeat loop; sweeps never overlap. Clients use fresh hub RPC reads; hub failures leave those directories alone.
 
+The same worker measures remaining local campaign dirs and updates only this
+host's `tmp.bytes.<host>` root ref through the existing `set` path, only when
+changed. It reuses the no-follow descriptor/base/marker and root lookup checks;
+no foreign-device descent or base initialization is allowed. Each complete walk
+counts regular files' metadata lengths, not allocated blocks or symlink targets.
+Bounds are fixed: 1,000,000 entries and 128 directory levels per campaign,
+15 seconds per campaign, 4096 base entries and 60 seconds for the measurement
+scan. Errors/cutoffs publish no partial campaign value and retain its prior ref.
+Size diagnostics are capped to 240 characters and share one three-minute
+rate-limit key with suppressed counts. The CLI and TUI totals are last-reported
+logical bytes across known hosts; they do not promise how much cleanup frees.
+
 The default `on-close` policy removes a lane ten minutes after its close,
 and the entire campaign once the root and all canonical lane entries are
 confirmed closed for ten minutes. `root-close` waits for that whole-campaign

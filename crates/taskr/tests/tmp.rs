@@ -305,6 +305,11 @@ fn a_client_makes_the_dir_on_its_own_host() {
     assert!(line.starts_with("http://[::1]:"), "{line}");
     fs::create_dir_all(h.home.join("client/.local/state/taskr")).unwrap();
     fs::write(h.home.join("client/.local/state/taskr/server.url"), &line).unwrap();
+    fs::copy(
+        h.home.join("agents.json"),
+        h.home.join("client/agents.json"),
+    )
+    .unwrap();
     let client_base = h.home.join("client-tmp");
     let mut client: Env = vec![
         (
@@ -354,6 +359,66 @@ fn a_client_makes_the_dir_on_its_own_host() {
         )
     );
     assert_eq!(requests(), before, "a tmp read is not a stored request");
+    // Both daemon entry points persist their own host's size on the real scratch hub.
+    h.ok(&client, &["daemon", "--once"]);
+    assert_eq!(h.count("select count(*) from events where task_id=? and kind='ref' and json_extract(data,'$.key')='tmp.bytes.host-a' and json_extract(data,'$.value')='0'", root), 1);
+    fs::write(want.join("bytes"), "12345").unwrap();
+    h.ok(&client, &["daemon", "--once"]);
+    h.ok(&client, &["daemon", "--once"]);
+    assert_eq!(h.count("select count(*) from events where task_id=? and kind='ref' and json_extract(data,'$.key')='tmp.bytes.host-a'", root), 2, "unchanged measurement emits no event");
+    let hub_env = vec![
+        ("NET_ID".into(), "hub".into()),
+        ("TASKR_CONTRACT_TAILNET".into(), "1".into()),
+        ("TASKR_CONTRACT_ORACLE".into(), "1".into()),
+        ("TASKR_TMP_BASE".into(), hub_base.to_str().unwrap().into()),
+    ];
+    h.ok(&hub_env, &["tmp", &lane.to_string(), "--mkdir"]);
+    fs::write(
+        hub_base
+            .join(root.to_string())
+            .join(lane.to_string())
+            .join("bytes"),
+        "123",
+    )
+    .unwrap();
+    h.ok(&hub_env, &["daemon", "--once"]);
+    let host_key = format!("tmp.bytes.{}", taskr_core::store::local_machine());
+    assert_eq!(h.conn().query_row("select json_extract(data,'$.value') from events where task_id=? and kind='ref' and json_extract(data,'$.key')=? order by id desc limit 1", taskr_core::db::params![root, host_key], |r| r.get::<_, String>(0)).unwrap(), "3");
+    assert_eq!(
+        h.ok(&client, &["set", &root.to_string(), "ordinary=yes"])["refs"]["tmp.bytes.host-a"],
+        "5"
+    );
+    let status = run(&h, &client, &["status", "--tree", &root.to_string()]).1;
+    assert!(status.contains("tmp 8"), "{status}");
+    // An RPC caller cannot write a report for a different host.
+    assert_eq!(
+        run(
+            &h,
+            &client,
+            &["set", &root.to_string(), "tmp.bytes.other=99"]
+        )
+        .0,
+        6
+    );
+    let long_host = "h".repeat(63);
+    h.script(
+        "tailscale",
+        &include_str!("hook/tailscale.sh").replace("name=host-a", &format!("name={long_host}")),
+    );
+    let long_key = format!("tmp.bytes.{long_host}");
+    assert_eq!(
+        h.ok(
+            &client,
+            &["set", &root.to_string(), &format!("{long_key}=17")]
+        )["refs"][&long_key],
+        "17"
+    );
+    h.ok(
+        &client,
+        &["set", &root.to_string(), &format!("{long_key}=")],
+    );
+    h.script("tailscale", include_str!("hook/tailscale.sh"));
+    fs::remove_file(want.join("bytes")).unwrap();
     // An unknown task is rejected through the hub, in either format.
     let (code, out) = run(&h, &client, &["tmp", "999999", "--mkdir"]);
     assert_eq!(code, 6, "{out}");
@@ -431,11 +496,6 @@ fn a_client_makes_the_dir_on_its_own_host() {
         .unwrap();
     h.ok(&client, &["close", &lane.to_string(), "--clean-tmp"]);
     assert!(!want.exists());
-    fs::copy(
-        h.home.join("agents.json"),
-        h.home.join("client/agents.json"),
-    )
-    .unwrap();
     // A client daemon reads closure/policy over RPC and sweeps only its own base.
     h.ok(&client, &["set", &root.to_string(), "tmp.cleanup=on-close"]);
     h.ok(&client, &["tmp", &lane.to_string(), "--mkdir"]);
@@ -681,6 +741,10 @@ fn fixture_commands_keep_tmp_work_inside_scratch() {
     let h = Harness::new();
     let cmd = h.command(&[]);
     assert_eq!(
+        cmd.get_envs().find(|(k, _)| *k == "TMPDIR").unwrap().1,
+        Some(h.home.as_os_str())
+    );
+    assert_eq!(
         cmd.get_envs()
             .find(|(k, _)| *k == "TASKR_TMP_BASE")
             .unwrap()
@@ -717,7 +781,7 @@ fn daemon_limits_lookup_errors_without_hiding_removal_errors() {
     let log = fs::read_to_string(h.home.join(".local/state/taskr/daemon.log")).unwrap();
     assert_eq!(
         log.lines()
-            .filter(|line| line.contains("does not exist"))
+            .filter(|line| line.contains("tmp sweep") && line.contains("does not exist"))
             .count(),
         1,
         "{log}"
@@ -731,4 +795,121 @@ fn daemon_limits_lookup_errors_without_hiding_removal_errors() {
         fs::read_to_string(outside.join("sentinel")).unwrap(),
         "outside"
     );
+}
+
+#[test]
+fn daemon_size_persistence_budget_and_display() {
+    let h = Harness::new();
+    let (root, lane) = campaign(&h);
+    let r = root.to_string();
+    let base = h.home.join("sizes");
+    let env = base_env(&base);
+    h.ok(&env, &["tmp", &lane.to_string(), "--mkdir"]);
+    let dir = base.join(&r).join(lane.to_string());
+    fs::write(dir.join("data"), "12345").unwrap();
+    let outside = h.home.join("outside-size");
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("large"), vec![0; 10000]).unwrap();
+    symlink(&outside, dir.join("link")).unwrap();
+    h.ok(&env, &["daemon", "--once"]);
+    let key = format!("tmp.bytes.{}", taskr_core::store::local_machine());
+    let refs = h.ok(&env, &["set", &r, "ordinary=ok"]);
+    assert_eq!(refs["refs"][&key], "5");
+    h.ok(&env, &["daemon", "--once"]);
+    assert_eq!(h.conn().query_row("select count(*) from events where task_id=? and kind='ref' and json_extract(data,'$.key')=?", taskr_core::db::params![root, key], |r| r.get::<_, i64>(0)).unwrap(), 1);
+    let status = run(&h, &env, &["status", "--tree", &r]).1;
+    assert!(status.contains("tmp 5"), "{status}");
+    let brief = run(&h, &env, &["glance", "--brief"]).1;
+    assert!(brief.contains("tmp 5"), "{brief}");
+    assert!(!brief.contains(base.to_str().unwrap()));
+    // Failed member authority retains the previously persisted 5, never a partial sum.
+    fs::create_dir(base.join(&r).join("999999")).unwrap();
+    fs::write(dir.join("data"), "more bytes").unwrap();
+    h.ok(&env, &["daemon", "--once"]);
+    assert_eq!(h.ok(&env, &["set", &r, "ordinary=ok"])["refs"][&key], "5");
+    fs::remove_dir(base.join(&r).join("999999")).unwrap();
+    let mut deep = dir.clone();
+    for _ in 0..128 {
+        deep = deep.join("d");
+        fs::create_dir(&deep).unwrap();
+    }
+    h.ok(&env, &["daemon", "--once"]);
+    assert_eq!(
+        h.ok(&env, &["set", &r, "ordinary=ok"])["refs"][&key],
+        "5",
+        "depth cutoff retained persisted prior report"
+    );
+    assert_eq!(fs::read(outside.join("large")).unwrap().len(), 10000);
+    let mut pairs = vec!["set".to_string(), r.clone()];
+    for i in 0..19 {
+        pairs.push(format!("user{i}=x"));
+    }
+    h.ok(&env, &pairs.iter().map(String::as_str).collect::<Vec<_>>());
+    assert_eq!(run(&h, &env, &["set", &r, "overflow=x"]).0, 6);
+    assert_eq!(
+        run(&h, &env, &["set", &r, &format!("{}=x", "a".repeat(33))]).0,
+        2
+    );
+    for invalid in ["tmp.bytes.=1", "tmp.bytes.Host=1", "tmp.bytes.h/path=1"] {
+        assert_eq!(run(&h, &env, &["set", &r, invalid]).0, 2);
+    }
+    assert_eq!(
+        run(
+            &h,
+            &env,
+            &["set", &r, &format!("{key}=18446744073709551616")]
+        )
+        .0,
+        2
+    );
+    assert_eq!(
+        run(&h, &env, &["set", &lane.to_string(), &format!("{key}=0")]).0,
+        2
+    );
+}
+
+#[test]
+fn host_totals_malformed_and_overflow_are_not_zero() {
+    let h = Harness::new();
+    let (root, _) = campaign(&h);
+    let add = |key: &str, value: &str| {
+        h.conn()
+            .execute(
+                "insert into events(task_id,kind,data,created_at) values(?,'ref',?,?)",
+                taskr_core::db::params![
+                    root,
+                    serde_json::json!({"key":key,"value":value}).to_string(),
+                    taskr_core::store::now()
+                ],
+            )
+            .unwrap();
+    };
+    let total = || taskr_core::store::tmp::total(&h.conn(), root).unwrap();
+    assert_eq!(total(), None);
+    add("tmp.bytes.a", "1024");
+    add(&format!("tmp.bytes.{}", "h".repeat(63)), "2048");
+    add("tmp.bytes.bad", "not bytes");
+    add("tmp.bytes.", "1000");
+    h.conn()
+        .execute(
+            "insert into events(task_id,kind,data,created_at) values(?,'ref',?,?)",
+            taskr_core::db::params![
+                root,
+                serde_json::json!({"key":"tmp.bytes.numeric","value":0}).to_string(),
+                taskr_core::store::now()
+            ],
+        )
+        .unwrap();
+    assert_eq!(total(), Some(3072));
+    add("tmp.bytes.a", "0");
+    assert_eq!(total(), Some(2048));
+    add("tmp.bytes.a", "18446744073709551615");
+    assert_eq!(total(), None);
+    let status = run(&h, &Env::new(), &["status", "--tree", &root.to_string()]).1;
+    assert!(!status.contains("tmp_bytes"), "{status}");
+    add("tmp.bytes.a", "");
+    add(&format!("tmp.bytes.{}", "h".repeat(63)), "bad");
+    assert_eq!(total(), None);
+    add("tmp.bytes.zero", "0");
+    assert_eq!(total(), Some(0));
 }

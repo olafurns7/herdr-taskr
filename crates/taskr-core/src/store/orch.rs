@@ -391,6 +391,23 @@ pub fn answer(
 pub fn set(db: &mut Connection, id: i64, pairs: &[(String, String)]) -> Result<Value> {
     transaction(db, |tx| {
         let t = open_task(tx, id)?;
+        for (key, value) in pairs
+            .iter()
+            .filter(|(key, _)| key.starts_with("tmp.bytes."))
+        {
+            let host = super::tmp::host(key).ok_or_else(|| usage("invalid tmp bytes host key"))?;
+            if t.parent.is_some() {
+                return Err(usage("tmp bytes refs are for campaign roots only"));
+            }
+            if host != caller_machine().unwrap_or_else(local_machine) {
+                return Err(reject(
+                    "tmp bytes refs may only report the caller's own host",
+                ));
+            }
+            if !value.is_empty() && super::tmp::bytes(value).is_none() {
+                return Err(usage("tmp bytes must be unsigned integer logical bytes"));
+            }
+        }
         if pairs.iter().any(|(k, _)| k == "glance.state") {
             if t.parent.is_some() || t.launch.is_some() {
                 return Err(reject("glance.state is for a root orchestrator only"));
@@ -421,10 +438,12 @@ pub fn set(db: &mut Connection, id: i64, pairs: &[(String, String)]) -> Result<V
                 have.insert(k.clone(), v.clone());
             }
         }
-        // pr.state and pr.ci are the PR poller's bookkeeping, outside the 20.
+        // PR and per-host tmp bookkeeping stay outside the ordinary ref budget.
         let ordinary = have
             .keys()
-            .filter(|k| !["pr.state", "pr.ci"].contains(&k.as_str()))
+            .filter(|k| {
+                !["pr.state", "pr.ci"].contains(&k.as_str()) && super::tmp::host(k).is_none()
+            })
             .count();
         if ordinary > 20 {
             return Err(reject(format!(

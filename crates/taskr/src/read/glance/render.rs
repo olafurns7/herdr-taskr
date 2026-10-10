@@ -265,6 +265,14 @@ pub(super) fn frame(v: &Value, w: usize, h: usize, age_ms: i64, brief: bool) -> 
             .into();
         }
         let ago = age(n(c, "activity_age_ms") + age_ms);
+        if brief && let Some(bytes) = c["tmp_bytes"].as_u64() {
+            text = format!(
+                "tmp {}{}{}",
+                store::tmp::compact(bytes),
+                if text.is_empty() { "" } else { " · " },
+                text
+            );
+        }
         let mut row = vec![if brief {
             format!(
                 "{sym} {}  {}  {}  {} {}",

@@ -11,6 +11,7 @@ pub mod hook;
 pub mod inbox;
 pub mod orch;
 pub mod plan;
+pub mod tmp;
 pub mod worker;
 
 #[derive(Debug)]
