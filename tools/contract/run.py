@@ -101,7 +101,7 @@ def execute(binary, args, home, db, extra_env, timeout, client_url=None, child_m
     state = home / '.local/state/taskr'
     state.mkdir(parents=True)
     (state / 'dashboard.addr').write_text('127.0.0.1:7788\n')
-    env = {"HOME": str(home), "TASKR_DB": str(db), "PATH": str(fake) + ':/usr/bin:/bin',
+    env = {"TASKR_TMP_BASE": str(home / "taskr-tmp"), "HOME": str(home), "TASKR_DB": str(db), "PATH": str(fake) + ':/usr/bin:/bin',
            "HERDR_SOCKET_PATH": str(home / 'absent.sock'), "TASKR_FROZEN_NOW": '2026-10-08T00:00:00Z',
            "TASKR_CONTRACT_ORACLE": '1', "LANG": 'C.UTF-8', "TZ": 'UTC',
            "SQLITE_TMPDIR": str(home), **extra_env}

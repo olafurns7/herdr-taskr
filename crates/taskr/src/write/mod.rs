@@ -136,6 +136,11 @@ pub fn flags(cmd: &str, json: bool) -> FlagSet {
             f.string("key", "", "idempotency key");
         }
         "close" => {
+            f.bool(
+                "clean-tmp",
+                false,
+                "remove this host's lane tmp dir after close (a root: the campaign)",
+            );
             f.string("outcome","","accepted (work taken as delivered) | reworked (taken after a fix round) | rejected (not taken) | abandoned (stopped before a result)");
         }
         "answer" => {
@@ -204,6 +209,7 @@ fn usage_line(cmd: &str) -> String {
 
 pub(crate) fn error(json: bool, cmd: &str, e: Error, mut out: Value) -> ExitCode {
     let kind = match e.code {
+        ExitCode::Watch => "tmp",
         ExitCode::Usage => "usage",
         ExitCode::Rejected => "rejected",
         ExitCode::Transport => "herdr",
@@ -753,7 +759,22 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
                 ));
             }
             let id = store::id(&p[0], "task id")?;
-            orch::close(&mut open()?, id, outcome)
+            let mut db = open()?;
+            let root = if f.get_bool("clean-tmp") {
+                Some(store::root(&db, id)?)
+            } else {
+                None
+            };
+            let out = orch::close(&mut db, id, outcome)?;
+            if let Some(root) = root {
+                crate::tmp::cleanup::remove(root, (id != root).then_some(id)).map_err(|e| {
+                    store::Error {
+                        code: ExitCode::Watch,
+                        message: format!("close succeeded; tmp cleanup failed: {e:#}"),
+                    }
+                })?;
+            }
+            Ok(out)
         }
         "answer" => prompt::answer(f),
         "ack" => {
@@ -811,7 +832,18 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
                     return Err(store::usage("glance.state must be parked or empty"));
                 }
             }
-            orch::set(&mut open()?, id, &pairs)
+            let mut db = open()?;
+            if let Some((_, policy)) = pairs.iter().find(|(k, _)| k == "tmp.cleanup") {
+                if !["on-close", "root-close", "keep"].contains(&policy.as_str()) {
+                    return Err(store::usage(
+                        "tmp.cleanup must be on-close, root-close or keep",
+                    ));
+                }
+                if store::task(&db, id)?.parent.is_some() {
+                    return Err(store::usage("tmp.cleanup is for a root only"));
+                }
+            }
+            orch::set(&mut db, id, &pairs)
         }
         "doc set" => {
             let id = store::id(&p[0], "task id")?;

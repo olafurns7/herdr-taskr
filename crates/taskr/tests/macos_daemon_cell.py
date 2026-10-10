@@ -71,6 +71,9 @@ def run(go, rust, root):
                 assert reply['restarted'] and reply['old_pid'] == old and reply['new_pid'] != old, reply
                 assert locked(lock) and lock.stat().st_ino == inode
                 assert int(lock.read_text()) == reply['new_pid']
+                if replacement.samefile(rust):
+                    child_env = subprocess.check_output(['ps','eww','-p',str(reply['new_pid'])],text=True)
+                    assert 'TASKR_TMP_BASE='+environment['TASKR_TMP_BASE'] in child_env, child_env
                 if child is not None:
                     stop(child)
                     child = None

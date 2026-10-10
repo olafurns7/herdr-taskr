@@ -10,6 +10,35 @@ The Herdr plugin starts it; you do not run it by hand. It does two jobs:
    over one HTTP route, `/api/rpc`. It serves no web page: you read the ledger
    with [`taskr-tui`](tui.md) and the [CLI](cli.md).
 
+## Local tmp cleanup
+
+Every daemon (ledger host and client) sweeps its local `$TASKR_TMP_BASE`,
+default `/tmp/taskr-<uid>`, at startup and every three minutes, including when
+Herdr is unavailable. Only canonical positive-integer campaign/lane names
+are candidates. The base must be dedicated to taskr and already have a valid
+`.taskr-tmp` marker created explicitly by `tmp ID --mkdir`; a daemon never
+initializes an old or mistaken base. Ledger reads confirm each task's campaign, close timestamp
+and the root's `tmp.cleanup` policy ([Lane tmp dirs](cli.md#lane-tmp-dirs)).
+A single background sweep keeps slow filesystem/hub reads off the resident
+daemon's heartbeat loop; sweeps never overlap. Clients use fresh hub RPC reads; hub failures leave those directories alone.
+
+The default `on-close` policy removes a lane ten minutes after its close,
+and the entire campaign once the root and all canonical lane entries are
+confirmed closed for ten minutes. `root-close` waits for that whole-campaign
+check; `keep` disables automatic removal. Open, unknown, mismatched or
+unconfirmed entries and failed lookups preserve the campaign. Eligible closed
+lanes can still go individually under `on-close`. An authorized whole-campaign
+cleanup includes extra entries inside it. Invalid/missing close timestamps never authorize
+removal. The grace lets a lane's process finish exiting.
+
+Removal rechecks base ownership, writable bits and the marker each time, uses no-follow
+directory descriptor traversal and never crosses devices. It unlinks interior
+symlinks themselves. Failures go to `daemon.log` and do not abort other
+campaigns or lanes. Lookup errors share one rate-limit key (three minutes),
+with suppressed counts in the next message; removal errors remain individually
+visible. `daemon --once` also runs one cleanup sweep. Explicit root
+`close --clean-tmp` skips the automatic lane check and removes open-lane tmp too.
+
 ## Optional check-ins
 
 `TASKR_CHECKIN=1` enables the Rust hub's check-in sweep, read once at daemon
@@ -170,7 +199,9 @@ taskr daemon --status    # what is running
 taskr daemon --restart   # stop this host's daemon and start the installed binary
 ```
 
-`--restart` restarts taskr, never Herdr. The most useful status fields:
+`--restart` restarts taskr, never Herdr. The detached child preserves the caller's
+`TASKR_TMP_BASE` alongside HOME, PATH and the Herdr socket, so a configured tmp
+base survives restart. Worker identity is cleared. The most useful status fields:
 
 | Field | Meaning |
 | --- | --- |

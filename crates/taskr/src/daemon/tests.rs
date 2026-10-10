@@ -93,3 +93,65 @@ fn macos_kernel_identity_matches_self() {
     assert!(usec.parse::<u32>().unwrap() < 1_000_000);
     assert!(identity::proc_identity(i32::MAX).is_err());
 }
+
+#[test]
+fn slow_tmp_sweep_does_not_block_or_overlap_the_daemon() {
+    let (release, blocked) = std::sync::mpsc::channel();
+    let job = std::thread::spawn(move || {
+        let _ = blocked.recv_timeout(Duration::from_secs(2));
+    });
+    let worker = job.thread().id();
+    let path = std::env::temp_dir().join(format!("taskr-tmp-sweep-log-{}", std::process::id()));
+    let mut state = State {
+        checkin: false,
+        tokens: tokens::Tokens::default(),
+        watch: Vec::new(),
+        raw: None,
+        sock: String::new(),
+        dir: PathBuf::new(),
+        log: Arc::new(Log::open(&path)),
+        missing: false,
+        uplink: uplink::Uplink::default(),
+        tmp_sweep: None,
+        tmp_worker: Some(job),
+        tmp_once: false,
+    };
+    let start = Instant::now();
+    state.sweep_tmp(None);
+    assert!(start.elapsed() < Duration::from_secs(1));
+    assert_eq!(state.tmp_worker.as_ref().unwrap().thread().id(), worker);
+    assert!(state.tmp_sweep.is_none());
+    release.send(()).unwrap();
+    state.tmp_worker.take().unwrap().join().unwrap();
+    drop(state);
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn tmp_lookup_errors_are_limited_but_removal_errors_remain_visible() {
+    let path = std::env::temp_dir().join(format!("taskr-tmp-errors-{}", std::process::id()));
+    let log = Log::open(&path);
+    for id in 0..300 {
+        log.tmp_error(&format!("tmp sweep {id}: hub unreachable"), true);
+    }
+    log.tmp_error("tmp sweep 1/2: unlink failed", false);
+    log.tmp_error("tmp sweep 2/3: device refused", false);
+    let lines = fs::read_to_string(&path).unwrap();
+    assert_eq!(lines.lines().count(), 3);
+    assert!(lines.contains("hub unreachable"));
+    assert!(lines.contains("unlink failed") && lines.contains("device refused"));
+    log.limited
+        .lock()
+        .unwrap()
+        .get_mut("tmp-sweep-lookup")
+        .unwrap()
+        .0 = Instant::now() - Duration::from_secs(181);
+    log.tmp_error("tmp sweep 300: unknown task", true);
+    assert!(
+        fs::read_to_string(&path)
+            .unwrap()
+            .contains("299 similar suppressed")
+    );
+    drop(log);
+    fs::remove_file(path).unwrap();
+}
