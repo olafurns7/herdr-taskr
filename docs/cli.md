@@ -166,12 +166,14 @@ directories and a preflight exceeding 4096 entries or 60 seconds refuse without
 changing existing files, modes or marker bytes. Empty bases remain usable.
 
 Automatic launcher initialization requires a release containing this guard.
-The first guarded release is v0.18.0: launchers must accept v0.18.0 or later
-releases and reject every earlier release (including all v0.17.x), `dev` and
-unknown versions before `--mkdir`. The owner-held v0.18.0 release must be built
+The first guarded release is v0.18.0: launchers must accept only plain
+`vMAJOR.MINOR.PATCH` versions at v0.18.0 or later, and reject `git describe`
+or `-dirty` forms, `dev`, unknown and every earlier release (including all
+v0.17.x) before `--mkdir`. The owner-held v0.18.0 release must be built
 from a master commit containing the merged initializer guard; no reuse of staged
-artifacts or old tags. A dev test artifact is not a release. `--json version` reports the build's `TASKR_VERSION`
-(or `dev` when unset), not the Cargo package version.
+artifacts or old tags. A dev test artifact is not a release. `--json version`
+reports the build's `TASKR_VERSION` (or `dev` when unset), not the Cargo package
+version.
 
 The directory work is always on the host that runs the command. On a client
 host, taskr asks the hub for the task's root and cleanup state (a read, not stored) and makes
