@@ -611,7 +611,7 @@ fn an_idle_event_is_pushed_once_then_received_acked_and_the_next_follows() {
     );
     let content = p["content"].as_str().unwrap();
     let lines: Vec<&str> = content.lines().collect();
-    assert_eq!(lines.len(), 6, "{content}");
+    assert_eq!(lines.len(), 7, "{content}");
     assert_eq!(
         lines[0],
         format!("taskr event {e} (kind note) from task 1: delivery attempt {a}, consumer fence 1.")
@@ -786,7 +786,7 @@ fn hostile_summaries_stay_one_escaped_untrusted_line() {
     let (_, push) = c.expect_push(Duration::from_secs(20));
     let content = push["params"]["content"].as_str().unwrap();
     let lines: Vec<&str> = content.lines().collect();
-    assert_eq!(lines.len(), 6, "{content}");
+    assert_eq!(lines.len(), 7, "{content}");
     assert!(lines[0].starts_with(&format!("taskr event {e} (kind unknown) from task 1:")));
     assert_eq!(meta(&push, "kind"), "unknown");
     assert!(

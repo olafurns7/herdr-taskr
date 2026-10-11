@@ -17,7 +17,7 @@ fn run(mut args: Vec<String>) -> ExitCode {
     if let Some(code) = net::events::dispatch(json, &args) {
         return code;
     }
-    // The MCP server is local only; its children route like any other command.
+    // The MCP server and `push` are local only; their children route like any other command.
     if let Some(code) = mcp::dispatch(json, &args) {
         return code;
     }
