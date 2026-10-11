@@ -1675,7 +1675,7 @@ fn wait_clears_its_marker_before_a_failing_skipped_print() {
             .success()
     );
     let (code, out) = finish(child);
-    assert_ne!(code, Some(0), "{out}");
+    assert_eq!(code, Some(141), "{out}");
     assert_eq!(
         text(&h, &format!("select waiting_until from tasks where id={r}")),
         "",
