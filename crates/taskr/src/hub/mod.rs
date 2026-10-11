@@ -546,6 +546,22 @@ impl Execution {
     }
 }
 
+/// This running build as a child: `/proc/self/exe` on Linux, so an install replaced
+/// since start still runs the same binary; argv[0] keeps the current path.
+pub(crate) fn self_command() -> std::io::Result<std::process::Command> {
+    let executable = std::env::current_exe()?;
+    #[cfg(target_os = "linux")]
+    let mut cmd = std::process::Command::new("/proc/self/exe");
+    #[cfg(not(target_os = "linux"))]
+    let mut cmd = std::process::Command::new(&executable);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.arg0(&executable);
+    }
+    Ok(cmd)
+}
+
 async fn run(hub: &Hub, machine: &str, req: &RpcRequest) -> Execution {
     if let Err(message) = protocol::check_args(&req.argv) {
         return Execution::NotStarted(protocol::error(req, 2, "usage", &message));
@@ -555,16 +571,7 @@ async fn run(hub: &Hub, machine: &str, req: &RpcRequest) -> Execution {
         let result = async {
             let uploads = UploadFile::new()?;
             // ponytail: one process per request (~19/min); use in-process dispatch if RPC volume warrants it.
-            let executable = std::env::current_exe()?;
-            #[cfg(target_os = "linux")]
-            let mut cmd = Command::new("/proc/self/exe");
-            #[cfg(not(target_os = "linux"))]
-            let mut cmd = Command::new(&executable);
-            #[cfg(unix)]
-            {
-                use std::os::unix::process::CommandExt;
-                cmd.as_std_mut().arg0(&executable);
-            }
+            let mut cmd = Command::from(self_command()?);
             cmd.arg("--hub-child")
                 .args(&req.argv)
                 .env_clear()

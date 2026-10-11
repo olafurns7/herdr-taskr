@@ -253,3 +253,29 @@ pub fn expire(db: &mut Connection) -> Result<()> {
         Ok(())
     })
 }
+/// `taskr inbox`: the caller's events after its ack cursor, oldest first and raw (no
+/// coalescing, no --for/--from filtering), read with its identity and cursors in one
+/// snapshot. It never offers, expires, receipts or acks: reading is not consumption,
+/// and the first row is not necessarily what the next wait returns.
+pub fn peek(db: &mut Connection, as_id: i64, limit: i64) -> Result<Value> {
+    let tx = db.transaction_with_behavior(TransactionBehavior::Deferred)?;
+    let t = if as_id == 0 {
+        delivery::worker(&tx)?.0
+    } else {
+        worker::resolve(&tx, as_id)?
+    };
+    let ids = tx
+        .prepare("select id from events where recipient_task_id=? and id>? order by id limit ?")?
+        .query_map(params![t.id, t.acked, limit + 1], |r| r.get::<_, i64>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let events = ids
+        .iter()
+        .take(limit as usize)
+        .map(|&eid| load_event(&tx, eid))
+        .collect::<Result<Vec<_>>>()?;
+    let mut out = json!({"acked_event_id":t.acked,"pending_event_id":t.pending,"events":events});
+    if ids.len() as i64 > limit {
+        out["more"] = json!(true);
+    }
+    Ok(out)
+}

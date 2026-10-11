@@ -118,6 +118,18 @@ fn flags(cmd: &str, json: bool) -> FlagSet {
                     "include closed lanes and their unanswered asks",
                 );
         }
+        "inbox" => {
+            f.int(
+                "as",
+                0,
+                "a root orchestrator's own task id (a worker uses TASKR_TASK and TASKR_LAUNCH)",
+            )
+            .int(
+                "limit",
+                20,
+                "oldest N events after the ack cursor, 1 to 200",
+            );
+        }
         "glance" => {
             f.bool("watch", false, "live terminal view")
                 .duration("every", 5_000_000_000, "refresh interval (1s to 5m)")
@@ -180,6 +192,7 @@ pub fn dispatch(json: bool, args: &[String]) -> Option<ExitCode> {
             | "glance"
             | "campaign"
             | "slotr"
+            | "inbox"
             | "doc ls"
             | "doc get"
             | "help"
@@ -205,6 +218,17 @@ pub fn dispatch(json: bool, args: &[String]) -> Option<ExitCode> {
             ExitCode::Usage,
         ));
     }
+    // As the hub's check_args: a repeated inbox flag, help included, is refused.
+    if name == "inbox"
+        && let Some(k) = crate::write::repeated(rest, &["as", "limit", "help"])
+    {
+        return Some(cli::error(
+            f.json(),
+            cmd,
+            &format!("inbox: --{k} given more than once"),
+            ExitCode::Usage,
+        ));
+    }
     if f.help() {
         print!("{}", f.usage(&cli::usage_line(&name)));
         return Some(ExitCode::Ok);
@@ -220,6 +244,7 @@ pub fn dispatch(json: bool, args: &[String]) -> Option<ExitCode> {
         "glance" => glance::run(&f),
         "campaign" => campaign::run(&f),
         "slotr" => slotr::run(&f),
+        "inbox" => inbox(&f),
         "version" => {
             let version = option_env!("TASKR_VERSION").unwrap_or("dev");
             println!(
@@ -238,6 +263,23 @@ pub fn dispatch(json: bool, args: &[String]) -> Option<ExitCode> {
         Err(e) => cli::error(f.json(), cmd, &e.text, e.code),
     })
 }
+/// A raw, non-consuming snapshot of the caller's inbox; see store::inbox::peek.
+fn inbox(f: &FlagSet) -> Result<()> {
+    let as_id = f.get_int("as");
+    if f.was_set("as") && as_id <= 0 {
+        return Err(usage("--as must be a positive task id"));
+    }
+    let limit = f.get_int("limit");
+    if !(1..=200).contains(&limit) {
+        return Err(usage(format!("--limit must be 1 to 200, got {limit}")));
+    }
+    let v = taskr_core::store::inbox::peek(&mut open()?, as_id, limit).map_err(|e| Error {
+        code: e.code,
+        text: e.message,
+    })?;
+    cli::emit(f.json(), &v, false);
+    Ok(())
+}
 fn help(f: &FlagSet) -> Result<()> {
     if f.positional.is_empty() {
         println!("{}", cli::USAGE);
@@ -252,7 +294,8 @@ fn help(f: &FlagSet) -> Result<()> {
         });
     }
     let args = vec![cmd.clone(), "--help".into()];
-    let code = crate::net::route(f.json(), &args)
+    let code = crate::mcp::dispatch(f.json(), &args)
+        .or_else(|| crate::net::route(f.json(), &args))
         .or_else(|| dispatch(f.json(), &args))
         .or_else(|| crate::write::dispatch(f.json(), &args))
         .or_else(|| crate::daemon::dispatch(f.json(), &args));

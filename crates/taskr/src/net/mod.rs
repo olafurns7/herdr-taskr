@@ -369,6 +369,16 @@ pub(crate) fn reply_error(rep: &Value) -> String {
     }
 }
 
+/// Whether `route` sends a known command over RPC: no TASKR_DB and a server.url that is
+/// not missing (an unreadable one still routes, and fails there). Local mode refuses
+/// `--request-key`.
+pub(crate) fn client_mode() -> bool {
+    !std::env::var("TASKR_DB").is_ok_and(|s| !s.is_empty())
+        && state_dir().is_ok_and(|dir| {
+            std::fs::metadata(dir.join("server.url"))
+                .map_or_else(|e| e.kind() != std::io::ErrorKind::NotFound, |_| true)
+        })
+}
 /// Return `None` only for commands Go executes locally on a client host.
 pub fn route(mut json_mode: bool, raw_args: &[String]) -> Option<ExitCode> {
     if std::env::var("TASKR_DB").is_ok_and(|s| !s.is_empty()) {

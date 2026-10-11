@@ -3,6 +3,7 @@ use std::path::PathBuf;
 mod cli;
 mod daemon;
 mod hub;
+mod mcp;
 mod net;
 mod read;
 mod tmp;
@@ -14,6 +15,10 @@ fn run(mut args: Vec<String>) -> ExitCode {
         return code;
     }
     if let Some(code) = net::events::dispatch(json, &args) {
+        return code;
+    }
+    // The MCP server is local only; its children route like any other command.
+    if let Some(code) = mcp::dispatch(json, &args) {
         return code;
     }
     if let Some(code) = net::route(json, &args) {
