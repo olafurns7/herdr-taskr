@@ -191,5 +191,5 @@ Rollout, v0.18.0 (a prerelease), 2026-10-11: one canary lane per client on the L
 
 Still owed:
 
-- macOS busy delivery for Codex, and queueing behind a turn of two minutes or more for Claude and pi;
+- macOS busy delivery for Codex, Codex sidecar restart and absent or resumed-session delivery on macOS, and queueing behind a turn of two minutes or more for Claude and pi;
 - an owner decision before any wider enablement.
