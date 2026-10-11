@@ -15,9 +15,10 @@ macro_rules! println {
 
 fn print_stdout(args: std::fmt::Arguments<'_>) {
     use std::io::Write;
-    if let Err(error) = std::io::stdout().lock().write_fmt(args) {
+    let mut out = std::io::stdout().lock();
+    if let Err(error) = out.write_fmt(args).and_then(|()| out.flush()) {
         if error.kind() == std::io::ErrorKind::BrokenPipe {
-            std::process::exit(0);
+            std::process::exit(141);
         }
         panic!("failed printing to stdout: {error}");
     }

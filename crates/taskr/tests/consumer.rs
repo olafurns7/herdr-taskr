@@ -15,6 +15,7 @@ fn closed_stdout_exits_quietly() {
         &h.ok(&[], &["new", "top", "--role", "orchestrator"]),
         "task_id",
     );
+    h.ok(&[], &["note", "fixture", "--as", &root]);
     for args in [
         vec!["consumer", "show", "--as", &root],
         vec!["log", &root],
@@ -33,7 +34,7 @@ fn closed_stdout_exits_quietly() {
             .unwrap();
         let err = String::from_utf8_lossy(&out.stderr);
         assert!(!err.contains("panicked"), "{args:?}: {err}");
-        assert_eq!(out.status.code(), Some(0), "{args:?}: {err}");
+        assert_eq!(out.status.code(), Some(141), "{args:?}: {err}");
         assert!(err.is_empty(), "{args:?}: {err}");
     }
 }
