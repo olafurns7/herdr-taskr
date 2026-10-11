@@ -1738,9 +1738,11 @@ fn an_expired_fence_is_refused_without_a_cursor_change() {
     );
 }
 
-// macOS re-execs by path (hub::self_command), so the replaced-binary guarantee is Linux-only.
-#[cfg(target_os = "linux")]
 #[test]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "macOS re-execs by path (hub::self_command), so the replaced-binary guarantee is Linux-only"
+)]
 fn a_replaced_binary_and_stdin_eof_finish_the_running_call() {
     use std::io::{BufRead, Write};
     let h = Harness::new();
