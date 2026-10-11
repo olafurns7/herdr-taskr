@@ -73,7 +73,7 @@ A child that exits on its own is logged and not restarted.
 2. Check the registration. `taskr log TASK --limit 1` shows the launch with provider `codex`, `session_kind` `thread_id`, a UUID `session_ref` and an absolute `native_home`.
 3. Know the hook's limits. A SessionStart hook records the thread but not the home. A thread recorded by a hook is never replaced by a later SessionStart.
 4. Keep one launch to one thread and home. To switch either, stop the sidecar and start from a fresh launch and registration.
-5. Use the same taskr. A queued turn runs the envelope's `taskr` lines in the session's own shell, so `taskr` on that shell's PATH must be the release the sidecar runs. A login profile that puts an older install first makes every receipt fail (`unknown command delivery`). The ledger stays truthful and redelivery stays bounded, but nothing is received until it is fixed. Check with `command -v taskr` inside the session.
+5. Use the same taskr. A queued turn runs the envelope's `taskr` lines in the session's own shell, so `taskr` on that shell's PATH must be the release the sidecar runs. A login profile that puts first an older install without the `delivery` command makes every receipt fail (`unknown command delivery`). The ledger stays truthful and redelivery stays bounded, but nothing is received until it is fixed. Check with `command -v taskr` inside the session.
 
 Launch metadata is trusted-host registration, not authentication of a native session.
 
@@ -121,7 +121,7 @@ The worker form relies on the Codex session's own `TASKR_TASK` and `TASKR_LAUNCH
 | non-zero exit, signal, deadline, killed by a stop (also after an exit 0 whose output was still open) | unsubmitted | Unconfirmed: the message may have been queued. It counts against the cap, is never retried at once, and its output is logged. |
 | could not start | unsubmitted | No queue process ran. It still counts against the cap. |
 
-A duplicate turn is possible after an unconfirmed submission or a restart. The event id deduplicates the work. Busy-thread, sidecar-restart and absent-session behavior of the real CLI is not yet measured (see the table below).
+A duplicate turn is possible after an unconfirmed submission or a restart. The event id deduplicates the work. Linux observations of a busy thread, a sidecar restart and an absent session are recorded in the table below; macOS and unknown real submissions remain unproved.
 
 ## Handing the inbox back to `taskr wait`
 
