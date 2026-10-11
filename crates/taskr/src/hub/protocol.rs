@@ -96,6 +96,7 @@ pub(super) fn stored(argv: &[String]) -> bool {
             && args.iter().take_while(|s| s.as_str() != "--").any(|s| {
                 s.starts_with('-') && matches!(s.trim_start_matches('-'), "list" | "list=true")
             }))
+        && !(name == "delivery" && args.first().is_none_or(|s| s == "ls"))
         && !wants_help(args)
 }
 
@@ -134,6 +135,12 @@ pub(super) fn check_args(argv: &[String]) -> Result<(), String> {
             .trim_start_matches('-')
             .split_once('=')
             .map_or((s.trim_start_matches('-'), None), |(k, v)| (k, Some(v)));
+        // delivery: a repeated help flag runs a write in the child but stored() sees help.
+        let key = if name == "delivery" && key == "h" {
+            "help"
+        } else {
+            key
+        };
         if !matches!(
             key,
             "cwd"
@@ -150,13 +157,14 @@ pub(super) fn check_args(argv: &[String]) -> Result<(), String> {
                 | "confirm-timeout"
                 | "prompt"
                 | "receipt-timeout"
-        ) {
+        ) && !(name == "delivery" && matches!(key, "as" | "session" | "adapter" | "help"))
+        {
             continue;
         }
         if !seen.insert(key) {
             return Err(format!("repeated RPC flag --{key}"));
         }
-        if value.is_none() && !matches!(key, "planned" | "confirm" | "prompt") {
+        if value.is_none() && !matches!(key, "planned" | "confirm" | "prompt" | "help") {
             iter.next();
         }
     }
@@ -407,12 +415,64 @@ mod tests {
             vec!["note", "--help"],
             vec!["_host", "observe"],
             vec!["after", "--list", "--as", "1"],
+            vec!["delivery", "ls", "--as", "1"],
+            vec!["--json", "delivery", "ls", "--open"],
+            vec!["delivery"],
+            vec!["delivery", "--help"],
+            vec!["delivery", "new", "9", "--adapter", "x", "-h"],
         ] {
             assert!(!stored(&argv(&args)));
         }
         assert!(stored(&argv(&["note", "--", "--help"])));
         assert!(stored(&argv(&["after", "7", "--as", "1"])));
         assert!(stored(&argv(&["after", "--cancel", "3"])));
+        // delivery's writes are stored (a same-key retry replays); ls is a fresh read.
+        for sub in ["new", "submitted", "received"] {
+            assert!(stored(&argv(&[
+                "delivery",
+                sub,
+                "9",
+                "--as",
+                "1",
+                "--session",
+                "0"
+            ])));
+        }
+        assert!(stored(&argv(&["delivery", "received", "--", "--help"])));
+        assert!(!crate::net::spoolable(&argv(&[
+            "delivery", "received", "3"
+        ])));
+        for repeat in [
+            vec!["delivery", "new", "9", "--as", "1", "--as=1"],
+            vec!["delivery", "received", "3", "--session=0", "-session", "0"],
+            vec!["delivery", "new", "9", "--adapter", "x", "--adapter", "x"],
+            vec!["delivery", "new", "9", "--help", "--help=false"],
+            vec!["delivery", "received", "3", "-h", "--help=false"],
+        ] {
+            assert!(
+                check_args(&argv(&repeat))
+                    .unwrap_err()
+                    .starts_with("repeated RPC flag --")
+            );
+        }
+        assert!(
+            check_args(&argv(&[
+                "delivery",
+                "new",
+                "9",
+                "--as",
+                "1",
+                "--session",
+                "0",
+                "--adapter",
+                "x"
+            ]))
+            .is_ok()
+        );
+        assert!(check_args(&argv(&["note", "x", "--as", "1", "--as", "1"])).is_ok());
+        // One help flag stays a fresh help read.
+        assert!(check_args(&argv(&["delivery", "new", "9", "--help"])).is_ok());
+        assert!(check_args(&argv(&["note", "x", "--help", "--help=false"])).is_ok());
         assert_eq!(
             check_args(&argv(&["new", "x", "--role", "gate", "--role=gate"])),
             Err("repeated RPC flag --role".into())

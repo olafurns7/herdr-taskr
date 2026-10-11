@@ -22,6 +22,7 @@ ds1 DOC VERSION [same] # doc set
 dr1 DOC VERSIONS_REMOVED # doc rm --purge
 rf1 [CHANGED_IDS]     # set; []=no changes
 af1 SUB [cancelled]   # after; after --cancel; after --list prints j1 rows
+dv1 ATTEMPT STATE launch=L|session=GEN [dup] # delivery new/submitted/received; delivery ls prints j1 rows
 dc1 {e,k,dc}          # decide; k=revoke includes revoked=EVENT
 a1 {a,sent,w,...}     # answer; transported: prompt fields too
 sk1 COUNT            # skipped nonmatches (>0), before result

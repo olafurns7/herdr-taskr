@@ -37,6 +37,16 @@ with tempfile.TemporaryDirectory(prefix='taskr-contract-check-') as scratch:
     with sqlite3.connect(copy) as db:
         db.execute("insert into subscriptions(target) values ('7')")
     assert 'subscriptions' in contract.logical(copy)['tables']
+    # Schema 3's delivery attempts, likewise; the populated subscriptions stay visible.
+    with sqlite3.connect(copy) as db:
+        db.execute('create table delivery_attempts(id integer primary key, task_id integer, received_at text)')
+        db.execute('create index delivery_attempts_task on delivery_attempts(task_id)')
+    empty = contract.logical(copy)
+    assert 'delivery_attempts' not in empty['tables'] and not any('delivery_attempts' in row[2] for row in empty['schema'])
+    assert 'subscriptions' in empty['tables']
+    with sqlite3.connect(copy) as db:
+        db.execute("insert into delivery_attempts(task_id) values (7)")
+    assert 'delivery_attempts' in contract.logical(copy)['tables']
     binary = Path('/usr/bin/python3').resolve()
     golden.session = golden.Session('selfcheck', True, directory, binary, binary)
     assert golden.normalize(str(directory / 'copy.db')) == '<tmp>/copy.db'

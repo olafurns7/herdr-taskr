@@ -14,7 +14,7 @@ import golden
 
 ROOT = Path(__file__).resolve().parents[2]
 NOT_IMPLEMENTED = 125
-RUST_ONLY = ('subscriptions',)
+RUST_ONLY = ('subscriptions', 'delivery_attempts')
 
 
 def quote(name):
@@ -29,8 +29,9 @@ def logical(path, normalized=False):
         db.execute('pragma temp_store=MEMORY')
         shadow = {row[1] for row in db.execute("pragma table_list") if row[2] == "shadow"}
         schema = list(db.execute("select type,name,tbl_name,sql from sqlite_master order by type,name"))
-        # Rust-only tables the Go oracle never has (schema 2: `taskr after`) are left out
-        # while empty, so a migrated ledger matches; a row written in one still shows.
+        # Rust-only tables the Go oracle never has (schema 2: `taskr after`, schema 3:
+        # `taskr delivery`) are left out while empty, so a migrated ledger matches; a row
+        # written in one still shows.
         shadow |= {name for name in RUST_ONLY if any(row[1] == name for row in schema)
                    and not db.execute(f"select exists(select 1 from {quote(name)})").fetchone()[0]}
         schema = [row for row in schema if row[1] not in shadow and row[2] not in shadow]
