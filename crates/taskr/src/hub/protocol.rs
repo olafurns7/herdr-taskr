@@ -89,6 +89,7 @@ pub(super) fn stored(argv: &[String]) -> bool {
                 | "tmp"
                 | "inbox"
                 | "mcp"
+                | "push"
         )
         && !(name == "doc"
             && args
@@ -197,6 +198,11 @@ pub(super) fn check_args(argv: &[String]) -> Result<(), String> {
         "mcp" => {
             return Err(
                 "mcp is a local stdio server on its own host; it is not available over RPC".into(),
+            );
+        }
+        "push" => {
+            return Err(
+                "push is a local process on its own host; it is not available over RPC".into(),
             );
         }
         _ => {}
@@ -418,6 +424,8 @@ mod tests {
             vec!["--json", "inbox", "--as", "1", "--limit", "5"],
             vec!["mcp"],
             vec!["mcp", "--as", "1", "--session", "0"],
+            vec!["push", "codex"],
+            vec!["--json", "push", "codex", "--as", "1", "--session", "0"],
         ] {
             assert!(!stored(&argv(&args)), "{args:?}");
             assert!(!crate::net::spoolable(&argv(&args)));
@@ -439,6 +447,9 @@ mod tests {
         for args in [
             vec!["mcp"],
             vec!["--json", "mcp", "--as", "1", "--session", "0"],
+            vec!["push", "codex"],
+            vec!["push", "codex", "--help"],
+            vec!["--json", "push", "codex", "--as", "1", "--session", "0"],
         ] {
             assert!(
                 check_args(&argv(&args))

@@ -5,8 +5,10 @@
 //! codes. The server itself never opens the ledger or contacts the hub. Calls are
 //! serial; a started child always runs to completion, also after a cancel or EOF.
 //! With `--channel` it also pushes inbox events as `notifications/claude/channel`
-//! (see channel.rs); without it nothing here changes.
+//! (see channel.rs); without it nothing here changes. `taskr push codex` (push.rs) is
+//! the same delivery loop as a local sidecar process, with no MCP framing.
 mod channel;
+mod push;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -58,8 +60,8 @@ impl Who {
     }
 }
 
-/// `taskr mcp ...` (after an optional leading `--json`): handled here, before client
-/// routing, so the server itself never goes to the hub.
+/// `taskr mcp ...` and `taskr push ...` (after an optional leading `--json`): handled
+/// here, before client routing, so neither process itself ever goes to the hub.
 pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
     let mut json_mode = json_mode;
     let mut rest = args;
@@ -78,8 +80,10 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
             break;
         }
     }
-    if rest.first().is_none_or(|s| s != "mcp") {
-        return None;
+    match rest.first().map(String::as_str) {
+        Some("mcp") => {}
+        Some("push") => return Some(push::dispatch(json_mode, keyed, &rest[1..])),
+        _ => return None,
     }
     let mut f = FlagSet::new("mcp", json_mode);
     f.int(
@@ -116,7 +120,7 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
             "mcp is a local stdio server; --request-key does not apply",
         );
     }
-    let who = match identity(&f) {
+    let who = match identity(&f, "mcp") {
         Ok(who) => who,
         Err(message) => return usage(&f, &message),
     };
@@ -145,7 +149,7 @@ fn positive(name: &str, s: &str) -> Result<i64, String> {
         .ok_or_else(|| format!("{name} must be a positive integer, got {s:?}"))
 }
 
-fn identity(f: &FlagSet) -> Result<Who, String> {
+fn identity(f: &FlagSet, cmd: &str) -> Result<Who, String> {
     let env = |k| std::env::var(k).unwrap_or_default();
     let (task, launch) = (env("TASKR_TASK"), env("TASKR_LAUNCH"));
     if f.was_set("as") && f.get_int("as") <= 0 {
@@ -156,7 +160,7 @@ fn identity(f: &FlagSet) -> Result<Who, String> {
             return Err(crate::write::WORKER_SESSION.into());
         }
         if task.is_empty() {
-            return Err("mcp needs TASKR_TASK with TASKR_LAUNCH".into());
+            return Err(format!("{cmd} needs TASKR_TASK with TASKR_LAUNCH"));
         }
         let task = positive("TASKR_TASK", &task)?;
         if f.was_set("as") && f.get_int("as") != task {
@@ -169,10 +173,9 @@ fn identity(f: &FlagSet) -> Result<Who, String> {
         return Ok(Who::Worker { task, launch });
     }
     if !f.was_set("as") {
-        return Err(
-            "mcp needs TASKR_TASK and TASKR_LAUNCH (a worker) or --as ROOT --session GEN (a root)"
-                .into(),
-        );
+        return Err(format!(
+            "{cmd} needs TASKR_TASK and TASKR_LAUNCH (a worker) or --as ROOT --session GEN (a root)"
+        ));
     }
     let root = f.get_int("as");
     if !f.was_set("session") || f.get_int("session") < 0 {
