@@ -1654,14 +1654,26 @@ fn wait_clears_its_marker_before_a_failing_skipped_print() {
     let (w, _, env) = h.lane("claude", "implementer");
     let r = parent(&h, w);
     ask(&h, &env, "skipped?");
-    // The nonmatching ask is skipped, the marker is set, then the budget ends and the
-    // `sk1` print hits a closed stdout.
-    let mut child = spawn(
-        &h,
-        &[],
-        &["wait", "--as", &r, "--for", "done", "--timeout", "300"],
+    // The nonmatching ask is skipped before the marker is set; SIGTERM then ends the
+    // wait and the `sk1` print hits a stdout that was closed before spawn.
+    let (reader, writer) = std::io::pipe().unwrap();
+    drop(reader);
+    let child = h
+        .command(&[])
+        .args(["wait", "--as", &r, "--for", "done", "--timeout", "60000"])
+        .stdin(Stdio::null())
+        .stdout(writer)
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    marked(&h, &r, "");
+    assert!(
+        std::process::Command::new("kill")
+            .args(["-TERM", &child.id().to_string()])
+            .status()
+            .unwrap()
+            .success()
     );
-    drop(child.stdout.take());
     let (code, out) = finish(child);
     assert_ne!(code, Some(0), "{out}");
     assert_eq!(
