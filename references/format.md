@@ -23,6 +23,7 @@ dr1 DOC VERSIONS_REMOVED # doc rm --purge
 rf1 [CHANGED_IDS]     # set; []=no changes
 af1 SUB [cancelled]   # after; after --cancel; after --list prints j1 rows
 dv1 ATTEMPT STATE launch=L|session=GEN [dup] # delivery new/submitted/received; delivery ls prints j1 rows
+cs1 FENCE live HOLDER EXPIRES_AT launch=L|session=GEN # consumer take/renew/show; cs1 FENCE free: release, or show without a live lease
 dc1 {e,k,dc}          # decide; k=revoke includes revoked=EVENT
 a1 {a,sent,w,...}     # answer; transported: prompt fields too
 sk1 COUNT            # skipped nonmatches (>0), before result

@@ -97,6 +97,7 @@ pub(super) fn stored(argv: &[String]) -> bool {
                 s.starts_with('-') && matches!(s.trim_start_matches('-'), "list" | "list=true")
             }))
         && !(name == "delivery" && args.first().is_none_or(|s| s == "ls"))
+        && !(name == "consumer" && args.first().is_none_or(|s| s == "show"))
         && !wants_help(args)
 }
 
@@ -122,6 +123,21 @@ pub(super) fn flag<'a>(args: &'a [String], wanted: &str) -> Option<&'a str> {
 
 pub(super) fn check_args(argv: &[String]) -> Result<(), String> {
     let (name, args) = command(argv);
+    // Flags that must not repeat for this command, beyond the shared list below. wait and
+    // ack get them only once a consumer flag is present, so plain calls are unchanged.
+    let fenced = args.iter().take_while(|s| s.as_str() != "--").any(|s| {
+        s.starts_with('-')
+            && matches!(
+                s.trim_start_matches('-').split('=').next(),
+                Some("fence" | "session")
+            )
+    });
+    let once: &[&str] = match name {
+        "delivery" => &["as", "session", "adapter", "fence", "help"],
+        "consumer" => &["as", "session", "holder", "ttl", "fence", "force", "help"],
+        "wait" | "ack" if fenced => &["fence", "session", "help"],
+        _ => &[],
+    };
     let mut seen = std::collections::BTreeSet::new();
     let mut iter = args.iter();
     while let Some(s) = iter.next() {
@@ -135,8 +151,8 @@ pub(super) fn check_args(argv: &[String]) -> Result<(), String> {
             .trim_start_matches('-')
             .split_once('=')
             .map_or((s.trim_start_matches('-'), None), |(k, v)| (k, Some(v)));
-        // delivery: a repeated help flag runs a write in the child but stored() sees help.
-        let key = if name == "delivery" && key == "h" {
+        // A repeated help flag runs a write in the child but stored() sees help.
+        let key = if once.contains(&"help") && key == "h" {
             "help"
         } else {
             key
@@ -157,14 +173,14 @@ pub(super) fn check_args(argv: &[String]) -> Result<(), String> {
                 | "confirm-timeout"
                 | "prompt"
                 | "receipt-timeout"
-        ) && !(name == "delivery" && matches!(key, "as" | "session" | "adapter" | "help"))
+        ) && !once.contains(&key)
         {
             continue;
         }
         if !seen.insert(key) {
             return Err(format!("repeated RPC flag --{key}"));
         }
-        if value.is_none() && !matches!(key, "planned" | "confirm" | "prompt" | "help") {
+        if value.is_none() && !matches!(key, "planned" | "confirm" | "prompt" | "help" | "force") {
             iter.next();
         }
     }
@@ -470,6 +486,90 @@ mod tests {
             .is_ok()
         );
         assert!(check_args(&argv(&["note", "x", "--as", "1", "--as", "1"])).is_ok());
+        // consumer: take/renew/release are stored, never spooled; show and help are reads.
+        for args in [
+            vec!["consumer", "take", "--holder", "a", "--ttl", "5000"],
+            vec!["consumer", "renew", "--fence", "2", "--ttl", "5000"],
+            vec![
+                "consumer",
+                "release",
+                "--fence",
+                "2",
+                "--as",
+                "1",
+                "--session",
+                "0",
+            ],
+        ] {
+            assert!(stored(&argv(&args)) && !crate::net::spoolable(&argv(&args)));
+            assert!(check_args(&argv(&args)).is_ok());
+        }
+        for args in [
+            vec!["consumer", "show"],
+            vec!["--json", "consumer", "show", "--as", "1"],
+            vec!["consumer"],
+            vec!["consumer", "--help"],
+            vec!["consumer", "take", "--holder", "a", "-h"],
+        ] {
+            assert!(!stored(&argv(&args)));
+        }
+        assert!(!crate::net::spoolable(&argv(&["ack", "3", "--as", "1"])));
+        for repeat in [
+            vec!["consumer", "take", "--holder", "a", "--holder=a"],
+            vec!["consumer", "take", "--ttl", "5000", "-ttl", "5000"],
+            vec!["consumer", "take", "--force", "--force=false"],
+            vec!["consumer", "renew", "--fence", "2", "--fence=3"],
+            vec!["consumer", "release", "--fence", "2", "-h", "--help=false"],
+            vec!["consumer", "--help", "--help"],
+            vec!["consumer", "-h", "--help"],
+            vec![
+                "consumer",
+                "take",
+                "--as",
+                "1",
+                "--session",
+                "0",
+                "--session=0",
+            ],
+            vec!["delivery", "new", "9", "--fence", "2", "--fence", "2"],
+            vec!["wait", "--fence", "2", "--fence", "3"],
+            vec![
+                "wait",
+                "--as",
+                "1",
+                "--session",
+                "0",
+                "--fence",
+                "2",
+                "--session=0",
+            ],
+            vec![
+                "ack",
+                "3",
+                "--as",
+                "1",
+                "--fence",
+                "2",
+                "--help",
+                "--help=false",
+            ],
+        ] {
+            assert!(
+                check_args(&argv(&repeat))
+                    .unwrap_err()
+                    .starts_with("repeated RPC flag --"),
+                "{repeat:?}"
+            );
+        }
+        // Plain wait/ack keep their flags as they were; --for/--from stay repeatable.
+        assert!(check_args(&argv(&["ack", "3", "--as", "1", "--help", "--help=false"])).is_ok());
+        assert!(
+            check_args(&argv(&[
+                "wait", "--fence", "2", "--for", "ready", "--for", "ask", "--from", "a", "--from",
+                "b"
+            ]))
+            .is_ok()
+        );
         // One help flag stays a fresh help read.
         assert!(check_args(&argv(&["delivery", "new", "9", "--help"])).is_ok());
         assert!(check_args(&argv(&["note", "x", "--help", "--help=false"])).is_ok());

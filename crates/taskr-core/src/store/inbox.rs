@@ -1,5 +1,13 @@
 use super::*;
-pub fn ack(db: &mut Connection, as_id: i64, eid: i64, already: bool) -> Result<Value> {
+use consumer::{Fence, guard};
+/// Every ack, fenced or plain, passes the consumer guard before it reads the cursor.
+pub fn ack(
+    db: &mut Connection,
+    as_id: i64,
+    eid: i64,
+    already: bool,
+    fence: Option<&Fence>,
+) -> Result<Value> {
     transaction(db, |tx| {
         let t = task(tx, as_id)?;
         check_host(tx, as_id)?;
@@ -8,6 +16,7 @@ pub fn ack(db: &mut Connection, as_id: i64, eid: i64, already: bool) -> Result<V
                 "task {as_id} is planned and has no inbox; launch it first"
             )));
         }
+        guard(tx, as_id, fence)?;
         let mut out = json!({"ok":true,"as":as_id,"acked_event_id":eid});
         if t.pending == Some(eid) {
             tx.execute(
@@ -133,9 +142,19 @@ pub fn offer(
     as_id: i64,
     filtered: bool,
 ) -> Result<(Option<Value>, bool, bool)> {
+    offer_fenced(db, as_id, filtered, None)
+}
+/// Every offer, fenced or plain, passes the consumer guard before it loads or coalesces.
+pub fn offer_fenced(
+    db: &mut Connection,
+    as_id: i64,
+    filtered: bool,
+    fence: Option<&Fence>,
+) -> Result<(Option<Value>, bool, bool)> {
     transaction(db, |tx| {
         let t = task(tx, as_id)?;
         check_host(tx, as_id)?;
+        guard(tx, as_id, fence)?;
         let eid = tx
             .query_row(
                 "select id from events where recipient_task_id=? and id>? order by id limit 1",

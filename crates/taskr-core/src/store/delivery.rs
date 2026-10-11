@@ -4,7 +4,7 @@
 use super::*;
 
 /// The writer an attempt binds: a worker's current launch, or a root's adopt generation.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Binding {
     Launch(i64),
     Session(i64),
@@ -21,7 +21,7 @@ pub fn generation(db: &Connection, root: i64) -> Result<i64> {
 
 /// A worker with TASKR_TASK and its current TASKR_LAUNCH; an env-only identity
 /// without a launch is not one.
-fn worker(db: &Connection) -> Result<(Task, i64)> {
+pub(super) fn worker(db: &Connection) -> Result<(Task, i64)> {
     if env("TASKR_LAUNCH").is_empty() {
         if env("TASKR_TASK").is_empty() {
             return Err(usage(
@@ -39,7 +39,11 @@ fn worker(db: &Connection) -> Result<(Task, i64)> {
 
 /// The caller of a mutation. A root's GEN is pinned by the caller and must be the
 /// root's current generation; it is never refreshed from the ledger.
-fn identify(db: &Connection, as_id: i64, session: Option<i64>) -> Result<(Task, Binding)> {
+pub(super) fn identify(
+    db: &Connection,
+    as_id: i64,
+    session: Option<i64>,
+) -> Result<(Task, Binding)> {
     if as_id == 0 {
         let (t, lid) = worker(db)?;
         return Ok((t, Binding::Launch(lid)));
@@ -92,16 +96,24 @@ fn get(db: &Connection, id: i64) -> Result<Value> {
     Ok(v)
 }
 
-/// Record an attempt to deliver inbox event `event_id` to the caller.
+/// Record an attempt to deliver inbox event `event_id` to the caller. While a consumer
+/// lease is live only its holder may, with `fence`; a fence with no live lease is refused.
 pub fn new(
     db: &mut Connection,
     as_id: i64,
     session: Option<i64>,
     event_id: i64,
     adapter: &str,
+    fence: Option<i64>,
 ) -> Result<Value> {
     transaction(db, |tx| {
         let (t, binding) = identify(tx, as_id, session)?;
+        let fence = fence.map(|fence| consumer::Fence {
+            fence,
+            as_id,
+            session,
+        });
+        consumer::guard(tx, t.id, fence.as_ref())?;
         let to = tx
             .query_row(
                 "select recipient_task_id from events where id=?",
