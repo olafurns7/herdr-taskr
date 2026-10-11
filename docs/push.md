@@ -181,7 +181,15 @@ Deterministic scratch fixtures live in `crates/taskr/tests/channel.rs` and `crat
 | envelope and hostile summaries | `hostile_summaries_stay_one_escaped_untrusted_line`, `hostile_summaries_stay_one_escaped_string_in_the_cli_message` | n/a |
 | canary scratch safety | `the_canary_selftest_passes_and_refuses_unowned_state` | n/a |
 
-Still owed before any rollout:
+macOS, 2026-10-11 (macOS 27.0.1 arm64, the release tree with the macOS test-harness fix): build, clippy and both test suites pass, and so do the canary selftest, the failure gate (EOF release, kill -9 then lease expiry then a plain `wait`, the poll without a hub, child reaping) and the client-host authority fixtures. After 17 to 19 idle minutes, a pushed event woke Claude, pi and Codex, and each received and acked it. Codex busy delivery was not run on macOS.
 
-- per client, macOS failure, authority and idle-wake proof (unrun);
-- an owner decision before enabling any adapter.
+Rollout, v0.18.0 (a prerelease), 2026-10-11: one canary lane per client on the Linux host, in the order Codex, pi, Claude.
+
+- Codex: a real implementer lane with the sidecar received two lead answers pushed into its idle thread, the second after ten idle minutes. Each was submitted within a second, received about 10 s later and acked at fence 1, with no redelivery. Stdin EOF released the lease.
+- pi: a real lane started with the extension woke from ten idle minutes when the lead's answer arrived as a followUp message. It received the answer 3.5 s after the push and acked about 3 s later, through the CLI in its own shell. A stray plain `ack` was refused with exit 6, and pi's exit released the lease at once.
+- Claude: a real lane started with the development-channel flag and a project `.mcp.json` woke from ten idle minutes. It received the answer 4.4 s after the push and acked through the server's tools. The development-channel dialog appears at every start and needs an answer before the session is ready. Claude's exit left the lease to its 60 s expiry.
+
+Still owed:
+
+- macOS busy delivery for Codex, Codex sidecar restart and absent or resumed-session delivery on macOS, and queueing behind a turn of two minutes or more for Claude and pi;
+- an owner decision before any wider enablement.
