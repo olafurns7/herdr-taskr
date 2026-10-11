@@ -186,8 +186,10 @@ macOS, 2026-10-11 (macOS 27.0.1 arm64, the release tree with the macOS test-harn
 Rollout, v0.18.0 (a prerelease), 2026-10-11: one canary lane per client on the Linux host, in the order Codex, pi, Claude.
 
 - Codex: a real implementer lane with the sidecar received two lead answers pushed into its idle thread, the second after ten idle minutes. Each was submitted within a second, received about 10 s later and acked at fence 1, with no redelivery. Stdin EOF released the lease.
+- pi: a real lane started with the extension woke from ten idle minutes when the lead's answer arrived as a followUp message. It received the answer 3.5 s after the push and acked about 3 s later, through the CLI in its own shell. A stray plain `ack` was refused with exit 6, and pi's exit released the lease at once.
+- Claude: a real lane started with the development-channel flag and a project `.mcp.json` woke from ten idle minutes. It received the answer 4.4 s after the push and acked through the server's tools. The development-channel dialog appears at every start and needs an answer before the session is ready. Claude's exit left the lease to its 60 s expiry.
 
 Still owed:
 
 - macOS busy delivery for Codex, and queueing behind a turn of two minutes or more for Claude and pi;
-- the pi and Claude canaries, then an owner decision before any wider enablement.
+- an owner decision before any wider enablement.
