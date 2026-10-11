@@ -73,6 +73,7 @@ A child that exits on its own is logged and not restarted.
 2. Check the registration. `taskr log TASK --limit 1` shows the launch with provider `codex`, `session_kind` `thread_id`, a UUID `session_ref` and an absolute `native_home`.
 3. Know the hook's limits. A SessionStart hook records the thread but not the home. A thread recorded by a hook is never replaced by a later SessionStart.
 4. Keep one launch to one thread and home. To switch either, stop the sidecar and start from a fresh launch and registration.
+5. Use the same taskr. A queued turn runs the envelope's `taskr` lines in the session's own shell, so `taskr` on that shell's PATH must be the release the sidecar runs. A login profile that puts first an older install without the `delivery` command makes every receipt fail (`unknown command delivery`). The ledger stays truthful and redelivery stays bounded, but nothing is received until it is fixed. Check with `command -v taskr` inside the session.
 
 Launch metadata is trusted-host registration, not authentication of a native session.
 
@@ -120,7 +121,7 @@ The worker form relies on the Codex session's own `TASKR_TASK` and `TASKR_LAUNCH
 | non-zero exit, signal, deadline, killed by a stop (also after an exit 0 whose output was still open) | unsubmitted | Unconfirmed: the message may have been queued. It counts against the cap, is never retried at once, and its output is logged. |
 | could not start | unsubmitted | No queue process ran. It still counts against the cap. |
 
-A duplicate turn is possible after an unconfirmed submission or a restart. The event id deduplicates the work. Busy-thread, sidecar-restart and absent-session behavior of the real CLI is not yet measured (see the table below).
+A duplicate turn is possible after an unconfirmed submission or a restart. The event id deduplicates the work. Linux observations of a busy thread, a sidecar restart and an absent session are recorded in the table below; macOS and unknown real submissions remain unproved.
 
 ## Handing the inbox back to `taskr wait`
 
@@ -159,11 +160,11 @@ Deterministic scratch fixtures live in `crates/taskr/tests/channel.rs` and `crat
 | Stack gate | Deterministic fixture | Real-client evidence |
 | --- | --- | --- |
 | idle and busy delivery, model receipt and ack: Claude, pi | `an_idle_event_is_pushed_once_then_received_acked_and_the_next_follows`, `the_worker_binding_comes_from_the_launch_and_codex_sees_only_it` | Linux, 2026-10-11: Claude Code 2.1.296 (claude-opus-5-5) woke idle and delivered busy events after the turn; pi 1.0.4 (glm-5.3-flash) woke idle, redelivered at +120 s, re-pushed after a restart and delivered busy events as follow-ups. Both received and acked; attempt, then submitted, then received; no ack on submit. |
-| idle wake: Codex | `the_worker_binding_comes_from_the_launch_and_codex_sees_only_it`, `a_root_binding_is_the_operators_and_an_adopt_stops_it` | 2026-10-10, codex-cli 0.162.1: `codex queue` into an idle throwaway thread started a turn (exit 0 in about 1 s), run through an account-selecting wrapper. That is idle-wake evidence only, not binding proof. |
-| malformed or wrong Codex binding | `a_missing_wrong_or_malformed_binding_fails_before_the_take` | owed: the trial records the CLI and backend versions, the executable, the home and the thread UUID |
+| idle wake: Codex | `the_worker_binding_comes_from_the_launch_and_codex_sees_only_it`, `a_root_binding_is_the_operators_and_an_adopt_stops_it` | Linux, 2026-10-11: codex-cli 0.162.1 (gpt-6-astra medium) on a canary ledger: an idle thread woke 24 s after the fire (30 s poll), and after the PATH fix (Prerequisites, item 5) the turn received and acked. 2026-10-10: `codex queue` through an account-selecting wrapper started a turn (idle wake only). |
+| malformed or wrong Codex binding | `a_missing_wrong_or_malformed_binding_fails_before_the_take` | Linux, 2026-10-11: `taskr start` registered provider codex, kind thread_id, the thread UUID and the home (source env:CODEX_THREAD_ID), and every push targeted only that thread. Wrong bindings are fixture-only. |
 | binding drift | `a_changed_binding_or_launch_stops_for_good_and_releases`, `an_unreadable_binding_suspends_and_a_change_mid_submission_kills_it` | n/a |
-| queued-turn identity: the queued model's CLI uses the intended task, launch and ledger | none: a fake cannot prove it | owed (trial) |
-| busy Codex thread, sidecar restart, Codex session absent or restarted | restart: `failed_submissions_are_bounded_and_a_receipt_suppresses_them_across_restarts` | owed (trial); a sidecar restart is not a backend restart |
+| queued-turn identity: the queued model's CLI uses the intended task, launch and ledger | none: a fake cannot prove it | Linux, 2026-10-11: the queued turn ran inside the target session's process, and its tool host carried the session's TASKR_TASK, TASKR_LAUNCH and TASKR_DB. The session's `taskr` must be the sidecar's release (Prerequisites, item 5). |
+| busy Codex thread, sidecar restart, Codex session absent or restarted | restart: `failed_submissions_are_bounded_and_a_receipt_suppresses_them_across_restarts` | Linux, 2026-10-11: busy: queued mid-turn (exit 0) and run after the turn ended. Sidecar restart: EOF released the lease at once, and the restart retook it at a new fence without re-pushing an acked event. Absent: with Codex exited, `codex queue` still exited 0 and kept the message, which ran when the same thread was resumed; nothing ran headless. |
 | queue timeout, non-zero exit, spawn failure, cap | `failed_submissions_are_bounded_and_a_receipt_suppresses_them_across_restarts`, `a_spawn_failure_and_a_timeout_stay_unsubmitted_and_count` | an unknown submission that cannot be induced safely in the real client stays unproved |
 | cancellation, slow, flooding or never-ending queue output, held pipes, output held outside the group | `eof_or_a_takeover_during_a_submission_kills_it_and_bounds_its_pipes`, `sustained_output_past_the_deadline_or_at_eof_is_killed_and_unconfirmed`, `a_drain_that_never_runs_dry_returns_within_its_budget` (unit), `an_output_held_outside_the_group_strands_the_lease_and_stops` | n/a |
 | a slow final binding read before a spawn | `a_delayed_final_binding_read_never_spawns_after_eof_or_expiry` | n/a |
@@ -178,6 +179,5 @@ Deterministic scratch fixtures live in `crates/taskr/tests/channel.rs` and `crat
 
 Still owed before any rollout:
 
-- the Codex real-client trial above;
 - per client, macOS failure, authority and idle-wake proof (unrun);
 - an owner decision before enabling any adapter.
