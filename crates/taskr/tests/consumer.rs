@@ -1646,3 +1646,41 @@ fn rpc_leases_are_host_bound_stored_by_key_and_never_queued() {
     assert_eq!(stdout(&h, &client, &retry), once);
     assert_eq!(lease(&h), rows);
 }
+
+#[test]
+fn wait_clears_its_marker_before_a_failing_skipped_print() {
+    let h = Harness::new();
+    h.agents(Some("working"), 1);
+    let (w, _, env) = h.lane("claude", "implementer");
+    let r = parent(&h, w);
+    ask(&h, &env, "skipped?");
+    // The nonmatching ask is skipped before the marker is set; SIGTERM then ends the
+    // wait and the `sk1` print hits a stdout that was closed before spawn.
+    let (reader, writer) = std::io::pipe().unwrap();
+    drop(reader);
+    let child = h
+        .command(&[])
+        .args(["wait", "--as", &r, "--for", "done", "--timeout", "60000"])
+        .stdin(Stdio::null())
+        .stdout(writer)
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    marked(&h, &r, "");
+    assert!(
+        std::process::Command::new("kill")
+            .args(["-TERM", &child.id().to_string()])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let (code, out) = finish(child);
+    assert_eq!(code, Some(141), "{out}");
+    assert_eq!(
+        text(&h, &format!("select waiting_until from tasks where id={r}")),
+        "",
+        "{out}"
+    );
+    let (_, out, _) = run(&h, &[], &["wait", "--as", &r, "--timeout", "0"]);
+    assert!(!out.contains("e1\t"), "the ask was skipped: {out}");
+}
