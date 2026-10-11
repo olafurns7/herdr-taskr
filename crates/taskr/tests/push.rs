@@ -39,7 +39,8 @@ case "$mode" in
 exit*) echo "synthetic refusal" >&2; exit "${mode#exit }" ;;
 sleep) echo $$ > "$c/pid"; exec sleep 30 ;;
 orphan) sleep 30 & echo $! > "$c/pid" ;;
-escape) setsid sh -c 'echo $$ > "$1/pid"; exec sleep 30' sh "$c" & ;;
+escape) if command -v setsid >/dev/null; then setsid sh -c 'echo $$ > "$1/pid"; exec sleep 30' sh "$c" &
+  else perl -MPOSIX -e 'POSIX::setsid() or die; exec @ARGV' sh -c 'echo $$ > "$1/pid"; exec sleep 30' sh "$c" & fi ;;
 flood) head -c 3000000 /dev/zero | tr '\0' x ;;
 spew) echo $$ > "$c/pid"; exec yes spew ;;
 hold) i=0; while [ ! -e "$top/codex-release" ] && [ $i -lt 100 ]; do sleep 0.02; i=$((i + 1)); done ;;
@@ -159,12 +160,27 @@ fn calls(h: &Harness) -> Vec<Call> {
 fn mode(h: &Harness, m: &str) {
     std::fs::write(h.home.join("codex-mode"), m).unwrap();
 }
+/// One `ps -o FIELD` value: the macOS stand-in for `/proc`.
+#[cfg(not(target_os = "linux"))]
+fn ps(pid: &str, field: &str) -> String {
+    std::process::Command::new("/bin/ps")
+        .args(["-o", field, "-p", pid.trim()])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()
+}
+#[cfg(target_os = "linux")]
 fn alive(pid: &str) -> bool {
     // A zombie is gone for our purpose: it holds no pipe and runs nothing.
     std::fs::read_to_string(format!("/proc/{}/stat", pid.trim())).is_ok_and(|s| {
         !s.rsplit_once(") ")
             .is_some_and(|(_, rest)| rest.starts_with('Z'))
     })
+}
+#[cfg(not(target_os = "linux"))]
+fn alive(pid: &str) -> bool {
+    let st = ps(pid, "stat=");
+    !st.is_empty() && !st.starts_with('Z')
 }
 
 /// A codex worker lane registered from inside its (synthetic) Codex session with
@@ -1127,8 +1143,15 @@ impl Drop for Reaper {
                 continue;
             };
             // Only the fake's own `sleep 30` or `yes spew`, never a reused pid.
-            let cmd = std::fs::read(format!("/proc/{}/cmdline", pid.trim())).unwrap_or_default();
-            if cmd == b"sleep\x0030\x00" || cmd == b"yes\x00spew\x00" {
+            #[cfg(target_os = "linux")]
+            let ours = {
+                let cmd =
+                    std::fs::read(format!("/proc/{}/cmdline", pid.trim())).unwrap_or_default();
+                cmd == b"sleep\x0030\x00" || cmd == b"yes\x00spew\x00"
+            };
+            #[cfg(not(target_os = "linux"))]
+            let ours = matches!(ps(&pid, "command=").as_str(), "sleep 30" | "yes spew");
+            if ours {
                 let _ = std::process::Command::new("kill")
                     .args(["-9", pid.trim()])
                     .status();
@@ -1136,8 +1159,22 @@ impl Drop for Reaper {
         }
     }
 }
+#[cfg(target_os = "linux")]
 fn threads(pid: u32) -> usize {
     std::fs::read_dir(format!("/proc/{pid}/task")).map_or(0, |d| d.count())
+}
+/// Elsewhere: `ps -M` prints a header and one line per thread.
+#[cfg(not(target_os = "linux"))]
+fn threads(pid: u32) -> usize {
+    std::process::Command::new("/bin/ps")
+        .args(["-M", "-p", &pid.to_string()])
+        .output()
+        .map_or(0, |o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .count()
+                .saturating_sub(1)
+        })
 }
 
 #[test]
@@ -1581,7 +1618,7 @@ fn the_canary_selftest_passes_and_refuses_unowned_state() {
         ("TASKR_FORMAT".into(), "json".into()),
         ("HOME".into(), live.join("home").to_str().unwrap().into()),
     ];
-    let dir = h.home.join("canary");
+    let dir = std::fs::canonicalize(&h.home).unwrap().join("canary");
     let d = dir.to_str().unwrap();
     let (code, out) = canary(&h, &contaminated, &["init", d]);
     assert_eq!(code, Some(0), "{out}");

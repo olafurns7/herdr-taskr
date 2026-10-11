@@ -20,6 +20,10 @@ How the loop holds the inbox, what a push carries and how it reconciles uncertai
 
 Each attempt records an adapter label naming the transport, not the client: `claude-channel` for a notification line (Claude, and pi through the shim), `codex-queue` for the sidecar.
 
+### macOS
+
+On macOS the adapters run each ledger step as a child by path, not through `/proc/self/exe`. Stop the channel, the pi extension and the Codex sidecar before replacing the taskr binary, or their later steps run the new binary.
+
 ## Claude Code (research preview)
 
 Register the server in the project's `.mcp.json` and start Claude with the development-channel flag:
