@@ -304,13 +304,14 @@ impl Pipe {
             total: 0,
         }
     }
-    /// Read what is there now; EOF or an error closes it.
+    /// Read what is there now, at most 64 KiB per call so a stream that never runs dry
+    /// still returns to the caller's deadline and stop checks; EOF or an error closes it.
     fn drain(&mut self) {
         let Some(fd) = &mut self.fd else { return };
         let mut buf = [0u8; 8192];
-        loop {
+        for _ in 0..8 {
             match fd.read(&mut buf) {
-                Ok(0) => break,
+                Ok(0) => return self.fd = None,
                 Ok(n) => {
                     self.total += n;
                     let room = KEEP.saturating_sub(self.kept.len()).min(n);
@@ -318,10 +319,9 @@ impl Pipe {
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return,
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(_) => break,
+                Err(_) => return self.fd = None,
             }
         }
-        self.fd = None;
     }
     fn text(self) -> Option<String> {
         if self.total == 0 {
@@ -509,6 +509,28 @@ fn resolve(bin: &str, cwd: &Path) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_drain_that_never_runs_dry_returns_within_its_budget() {
+        struct Endless;
+        impl Read for Endless {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                buf.fill(b'x');
+                Ok(buf.len())
+            }
+        }
+        let mut p = Pipe {
+            name: "stdout",
+            fd: Some(Box::new(Endless)),
+            kept: vec![],
+            total: 0,
+        };
+        for round in 1..=3 {
+            p.drain();
+            assert!(p.fd.is_some(), "an exhausted budget keeps the pipe open");
+            assert_eq!(p.total, round * (64 << 10));
+            assert_eq!(p.kept.len(), KEEP);
+        }
+    }
     #[test]
     fn worker_bindings_are_typed() {
         let row = |provider: &str, kind: &str, thread: &str, home: &str| serde_json::json!({"id":8,"task_id":7,"provider":provider,"session_kind":kind,"session_ref":thread,"native_home":home});

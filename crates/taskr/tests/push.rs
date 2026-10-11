@@ -41,6 +41,7 @@ sleep) echo $$ > "$c/pid"; exec sleep 30 ;;
 orphan) sleep 30 & echo $! > "$c/pid" ;;
 escape) setsid sh -c 'echo $$ > "$1/pid"; exec sleep 30' sh "$c" & ;;
 flood) head -c 3000000 /dev/zero | tr '\0' x ;;
+spew) echo $$ > "$c/pid"; exec yes spew ;;
 hold) i=0; while [ ! -e "$top/codex-release" ] && [ $i -lt 100 ]; do sleep 0.02; i=$((i + 1)); done ;;
 esac
 echo "Queued message 01a00000-0000-7000-8000-00000000c003 for thread $3."
@@ -615,7 +616,13 @@ fn an_unreadable_binding_suspends_and_a_change_mid_submission_kills_it() {
     });
     std::thread::sleep(Duration::from_secs(2));
     assert!(calls(&h).is_empty());
-    assert!(attempts(&h, &e).is_empty());
+    // A check already past its binding read may offer the event and write its attempt;
+    // the read right before the spawn then suspends it, kept for reuse.
+    let rows = attempts(&h, &e);
+    assert!(
+        rows.len() <= 1 && rows.iter().all(|r| r.ends_with("|attempted")),
+        "{rows:?}"
+    );
     assert!(lease(&h, &w).contains("|codex-queue-"));
     std::fs::rename(&aside, &home).unwrap();
     let call = wait_calls(&h, 1, Duration::from_secs(20)).remove(0);
@@ -913,6 +920,75 @@ fn a_spawn_failure_and_a_timeout_stay_unsubmitted_and_count() {
 }
 
 #[test]
+fn sustained_output_past_the_deadline_or_at_eof_is_killed_and_unconfirmed() {
+    let h = Harness::new();
+    let _reaper = Reaper(h.home.clone());
+    let (w, env, _) = codex_lane(&h);
+    // A queue process that writes without pause and never ends its output: the drain
+    // still yields to the 3 s deadline.
+    mode(&h, "spew");
+    let p = Push::start(&h, &env, &[], SCALE);
+    held(&h, &w);
+    let e = insert_event(
+        &h,
+        "1",
+        &w,
+        "note",
+        "a queue that never stops talking",
+        "{}",
+    );
+    let call = wait_calls(&h, 1, Duration::from_secs(20)).remove(0);
+    until("the fake's pid", Duration::from_secs(5), || {
+        call.dir.join("pid").exists()
+    });
+    let pid = std::fs::read_to_string(call.dir.join("pid")).unwrap();
+    until("the deadline", Duration::from_secs(6), || {
+        p.stderr()
+            .contains("passed its deadline and was killed: unconfirmed")
+    });
+    let err = p.stderr();
+    assert!(
+        err.contains(" bytes, the first 2048 kept)"),
+        "{}",
+        &err[err.len().saturating_sub(4000)..]
+    );
+    assert!(
+        !alive(&pid),
+        "the spewing queue process outlived its deadline"
+    );
+    assert_eq!(attempts(&h, &e).len(), 1);
+    assert!(attempts(&h, &e)[0].ends_with("|codex-queue|attempted"));
+    // Its retry after the 6 s spacing spews too; EOF stops it well before the deadline.
+    let call = wait_calls(&h, 2, Duration::from_secs(20)).remove(1);
+    until("the fake's pid", Duration::from_secs(5), || {
+        call.dir.join("pid").exists()
+    });
+    let pid = std::fs::read_to_string(call.dir.join("pid")).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    let closed = Instant::now();
+    let (code, err) = p.close();
+    assert_eq!(code, Some(0), "{}", &err[err.len().saturating_sub(4000)..]);
+    assert!(
+        closed.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        closed.elapsed()
+    );
+    assert!(
+        err.contains("killed by the stop: unconfirmed"),
+        "{}",
+        &err[err.len().saturating_sub(4000)..]
+    );
+    assert!(err.contains("released the inbox lease, fence 1"));
+    assert!(!alive(&pid), "the spewing queue process outlived the stop");
+    let rows = attempts(&h, &e);
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert!(
+        rows.iter().all(|r| r.ends_with("|codex-queue|attempted")),
+        "{rows:?}"
+    );
+}
+
+#[test]
 fn eof_or_a_takeover_during_a_submission_kills_it_and_bounds_its_pipes() {
     let h = Harness::new();
     let _reaper = Reaper(h.home.clone());
@@ -1050,9 +1126,9 @@ impl Drop for Reaper {
             let Ok(pid) = std::fs::read_to_string(call.unwrap().path().join("pid")) else {
                 continue;
             };
-            // Only the fake's own `sleep 30`, never a reused pid.
+            // Only the fake's own `sleep 30` or `yes spew`, never a reused pid.
             let cmd = std::fs::read(format!("/proc/{}/cmdline", pid.trim())).unwrap_or_default();
-            if cmd == b"sleep\x0030\x00" {
+            if cmd == b"sleep\x0030\x00" || cmd == b"yes\x00spew\x00" {
                 let _ = std::process::Command::new("kill")
                     .args(["-9", pid.trim()])
                     .status();
@@ -1089,8 +1165,10 @@ fn an_output_held_outside_the_group_strands_the_lease_and_stops() {
     }
     let (code, err) = p.exited(Duration::from_secs(1));
     assert_eq!(code, Some(6), "{err}");
+    // The submission thread, plus the joined stderr reader of one ledger step each on
+    // the loop and the hint stream: nothing accumulates.
     assert!(
-        most <= base + 1,
+        most <= base + 3,
         "threads grew from {base} to {most}: {err}"
     );
     assert!(
