@@ -329,6 +329,19 @@ pub fn wait(f: &FlagSet) -> Result<Value> {
     for id in signals {
         signal_hook::low_level::unregister(id);
     }
+    // Clear the marker before printing: a failed print must not leave it set.
+    let cleared = if marker.is_empty() {
+        Ok(())
+    } else {
+        store::transaction(&mut db, |tx| {
+            store::check_host(tx, as_id)?;
+            tx.execute(
+                "update tasks set waiting_until=null where id=? and waiting_until=?",
+                db::params![as_id, marker],
+            )?;
+            Ok(())
+        })
+    };
     if skipped > 0 {
         if f.json() {
             println!(
@@ -339,29 +352,19 @@ pub fn wait(f: &FlagSet) -> Result<Value> {
             println!("sk1 {skipped}");
         }
     }
-    if !marker.is_empty() {
-        let cleared = store::transaction(&mut db, |tx| {
-            store::check_host(tx, as_id)?;
-            tx.execute(
-                "update tasks set waiting_until=null where id=? and waiting_until=?",
-                db::params![as_id, marker],
-            )?;
-            Ok(())
-        });
-        if let Err(e) = cleared
-            && result.is_ok()
+    if let Err(e) = cleared
+        && result.is_ok()
+    {
+        let mut out = json!({"as":as_id,"stale_waiting_until":marker,"error":format!("clear waiting_until: {}",e.message),"kind":"database","_exit":4});
+        if let Ok(v) = &result
+            && v.get("event").is_some()
         {
-            let mut out = json!({"as":as_id,"stale_waiting_until":marker,"error":format!("clear waiting_until: {}",e.message),"kind":"database","_exit":4});
-            if let Ok(v) = &result
-                && v.get("event").is_some()
-            {
-                out["pending_event_id"] = v["event"]["id"].clone();
-            }
-            if ack_id != 0 {
-                out["acked_event_id"] = json!(ack_id);
-            }
-            return Ok(out);
+            out["pending_event_id"] = v["event"]["id"].clone();
         }
+        if ack_id != 0 {
+            out["acked_event_id"] = json!(ack_id);
+        }
+        return Ok(out);
     }
     if let Err(e) = result {
         if ack_id != 0 {
