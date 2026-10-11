@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use std::{path::PathBuf, sync::OnceLock};
 
 pub mod after;
+pub mod consumer;
 pub mod delivery;
 pub mod documents;
 pub mod handover;

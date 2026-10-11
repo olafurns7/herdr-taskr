@@ -53,7 +53,52 @@ pub fn flags(cmd: &str, json: bool) -> FlagSet {
                     "adapter",
                     "",
                     "the delivering adapter, [a-z0-9][a-z0-9._-]{0,31}",
+                )
+                .int(
+                    "fence",
+                    0,
+                    "the live consumer lease's fence; required while a lease is live",
                 );
+            }
+        }
+        "consumer take" | "consumer renew" | "consumer release" | "consumer show" => {
+            f.int(
+                "as",
+                0,
+                "a root orchestrator's own task id (a worker uses TASKR_TASK and TASKR_LAUNCH)",
+            );
+            if cmd != "consumer show" {
+                f.int(
+                    "session",
+                    0,
+                    "with --as: the root's generation, the event id `taskr adopt` printed (0 before any adopt)",
+                );
+            }
+            match cmd {
+                "consumer take" => {
+                    f.string(
+                        "holder",
+                        "",
+                        "a label for the consumer, [a-z0-9][a-z0-9._-]{0,31}",
+                    )
+                    .int("ttl", 0, "lease milliseconds, 1000 to 3600000")
+                    .bool(
+                        "force",
+                        false,
+                        "take over a live lease or a marked wait",
+                    );
+                }
+                "consumer renew" => {
+                    f.int("fence", 0, "the fence take returned").int(
+                        "ttl",
+                        0,
+                        "lease milliseconds from now, 1000 to 3600000",
+                    );
+                }
+                "consumer release" => {
+                    f.int("fence", 0, "the fence take returned");
+                }
+                _ => {}
             }
         }
         "decide" => {
@@ -186,7 +231,17 @@ pub fn flags(cmd: &str, json: bool) -> FlagSet {
                 );
         }
         "ack" => {
-            f.int("as", 0, "task id whose inbox event to ack");
+            f.int("as", 0, "task id whose inbox event to ack")
+                .int(
+                    "fence",
+                    0,
+                    "ack as the holder of this live consumer lease fence",
+                )
+                .int(
+                    "session",
+                    0,
+                    "with --as ROOT --fence: the root's generation (adopt event id, 0 before any adopt)",
+                );
         }
         "wait" => {
             f.int(
@@ -208,6 +263,16 @@ pub fn flags(cmd: &str, json: bool) -> FlagSet {
             .strings(
                 "from",
                 "only return events from this task name or id (repeatable)",
+            )
+            .int(
+                "fence",
+                0,
+                "consume as the holder of this live consumer lease fence",
+            )
+            .int(
+                "session",
+                0,
+                "with --as ROOT --fence: the root's generation (adopt event id, 0 before any adopt)",
             );
         }
         "doc set" => {
@@ -227,7 +292,10 @@ pub fn flags(cmd: &str, json: bool) -> FlagSet {
     f
 }
 fn usage_line(cmd: &str) -> String {
-    crate::cli::usage_line(cmd.strip_prefix("delivery ").map_or(cmd, |_| "delivery"))
+    crate::cli::usage_line(match cmd.split_once(' ') {
+        Some((head @ ("delivery" | "consumer"), _)) => head,
+        _ => cmd,
+    })
 }
 /// The first of `names` given more than once, in any `-x`, `--x` or `--x=v` form;
 /// `-h` and `--help` are one flag.
@@ -400,6 +468,23 @@ pub fn emit(cmd: &str, json_mode: bool, v: &Value) {
                 println!("j1 {}", compact_json(r).expect("JSON"));
             }
         }
+        "consumer take" | "consumer renew" | "consumer release" | "consumer show" => {
+            if v["live"] == true {
+                println!(
+                    "cs1 {} live {} {} {}",
+                    v["fence"],
+                    v["holder"].as_str().unwrap_or(""),
+                    v["expires_at"].as_str().unwrap_or(""),
+                    if v["launch_id"].is_null() {
+                        format!("session={}", v["session_gen"])
+                    } else {
+                        format!("launch={}", v["launch_id"])
+                    }
+                );
+            } else {
+                println!("cs1 {} free", v["fence"]);
+            }
+        }
         "delivery new" | "delivery submitted" | "delivery received" => println!(
             "dv1 {} {} {}{suffix}",
             v["attempt_id"],
@@ -459,26 +544,43 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
             },
             &args[2..],
         )
-    } else if raw == "delivery" {
-        const SUBS: [(&str, &str); 4] = [
+    } else if raw == "delivery" || raw == "consumer" {
+        const SUBS: [(&str, &str); 8] = [
             ("new", "delivery new"),
             ("submitted", "delivery submitted"),
             ("received", "delivery received"),
             ("ls", "delivery ls"),
+            ("take", "consumer take"),
+            ("renew", "consumer renew"),
+            ("release", "consumer release"),
+            ("show", "consumer show"),
         ];
         let Some((_, cmd)) = SUBS
             .iter()
-            .find(|(s, _)| args.get(1).is_some_and(|a| a == s))
+            .find(|(s, cmd)| cmd.starts_with(raw) && args.get(1).is_some_and(|a| a == s))
         else {
-            let mut f = flags("delivery", json_mode);
+            let mut f = flags(raw, json_mode);
             if f.parse(&args[1..], 0, usize::MAX).is_ok() && f.help() {
-                print!("{}", f.usage(&usage_line("delivery ls")));
+                // As the hub's check_args: a repeated help flag is refused, not read as help.
+                if let Some(k) = repeated(&args[1..], &["help"]) {
+                    return Some(error(
+                        f.json(),
+                        raw,
+                        store::usage(format!("{raw}: --{k} given more than once")),
+                        json!({}),
+                    ));
+                }
+                print!("{}", f.usage(&usage_line(raw)));
                 return Some(ExitCode::Ok);
             }
             return Some(error(
                 f.json(),
                 raw,
-                store::usage("delivery needs new, submitted, received or ls"),
+                store::usage(if raw == "delivery" {
+                    "delivery needs new, submitted, received or ls"
+                } else {
+                    "consumer needs take, renew, release or show"
+                }),
                 json!({}),
             ));
         };
@@ -514,6 +616,10 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
         "delivery submitted",
         "delivery received",
         "delivery ls",
+        "consumer take",
+        "consumer renew",
+        "consumer release",
+        "consumer show",
     ]
     .contains(&cmd)
     {
@@ -522,6 +628,7 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
     let mut f = flags(cmd, json_mode);
     let (min, max) = match cmd {
         "start" | "wait" | "handover" | "doc backfill" | "delivery ls" => (0, 0),
+        "consumer take" | "consumer renew" | "consumer release" | "consumer show" => (0, 0),
         "decide" | "after" => (0, 1),
         "next" => (1, 2),
         "done" => (0, 1),
@@ -543,10 +650,20 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
             f.positional.len()
         ));
     }
+    // A repeated help flag would run as a write locally but read as help to the hub.
+    let once: &[&str] = match cmd {
+        _ if cmd.starts_with("delivery ") => &["as", "session", "adapter", "fence", "help"],
+        _ if cmd.starts_with("consumer ") => {
+            &["as", "session", "holder", "ttl", "fence", "force", "help"]
+        }
+        // wait and ack: only once a consumer flag is given, so plain calls are unchanged.
+        "wait" | "ack" if f.was_set("fence") || f.was_set("session") => {
+            &["fence", "session", "help"]
+        }
+        _ => &[],
+    };
     if parsed.is_ok()
-        && cmd.starts_with("delivery ")
-        // A repeated help flag would run as a write locally but read as help to the hub.
-        && let Some(k) = repeated(tail, &["as", "session", "adapter", "help"])
+        && let Some(k) = repeated(tail, once)
     {
         parsed = Err(format!("{cmd}: --{k} given more than once"));
     }
@@ -585,6 +702,45 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
         }
         Err(e) => error(f.json(), raw, e, json!({})),
     })
+}
+/// A worker (TASKR_LAUNCH set) never passes a root's `--session`: a usage error, not a
+/// rejection, so it is never read as lost authority.
+pub(super) const WORKER_SESSION: &str =
+    "--session is for a root's --as ROOT; a worker uses TASKR_TASK and TASKR_LAUNCH";
+/// `--session GEN` for a root's `--as ROOT`: required with it, refused without it.
+fn root_session(f: &FlagSet, as_id: i64) -> Result<Option<i64>> {
+    let session = if f.was_set("session") {
+        if f.get_int("session") < 0 {
+            return Err(store::usage("--session must be 0 or an adopt event id"));
+        }
+        if as_id == 0 {
+            return Err(store::usage("--session needs --as ROOT"));
+        }
+        Some(f.get_int("session"))
+    } else {
+        None
+    };
+    if as_id != 0 && session.is_none() {
+        return Err(store::usage(
+            "--as ROOT needs --session GEN: the event id `taskr adopt` printed, 0 before any adopt",
+        ));
+    }
+    Ok(session)
+}
+fn positive_fence(f: &FlagSet) -> Result<i64> {
+    let fence = f.get_int("fence");
+    if fence <= 0 {
+        return Err(store::usage("--fence must be a positive fence"));
+    }
+    Ok(fence)
+}
+/// An adapter or holder label: [a-z0-9][a-z0-9._-]{0,31}.
+fn token(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 32
+        && (s.as_bytes()[0].is_ascii_lowercase() || s.as_bytes()[0].is_ascii_digit())
+        && s.bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))
 }
 fn open() -> Result<db::Connection> {
     let path = db::path().map_err(store::usage)?;
@@ -700,22 +856,7 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
             if cmd == "delivery ls" {
                 return store::delivery::list(&open()?, as_id, f.get_bool("open"));
             }
-            let session = if f.was_set("session") {
-                if f.get_int("session") < 0 {
-                    return Err(store::usage("--session must be 0 or an adopt event id"));
-                }
-                if as_id == 0 {
-                    return Err(store::usage("--session needs --as ROOT"));
-                }
-                Some(f.get_int("session"))
-            } else {
-                None
-            };
-            if as_id != 0 && session.is_none() {
-                return Err(store::usage(
-                    "--as ROOT needs --session GEN: the event id `taskr adopt` printed, 0 before any adopt",
-                ));
-            }
+            let session = root_session(f, as_id)?;
             if cmd != "delivery new" {
                 let id = store::id(&p[0], "attempt id")?;
                 return if cmd == "delivery submitted" {
@@ -726,19 +867,60 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
             }
             let id = store::id(&p[0], "event id")?;
             let adapter = f.get_string("adapter");
-            if adapter.is_empty()
-                || adapter.len() > 32
-                || !adapter.as_bytes()[0].is_ascii_lowercase()
-                    && !adapter.as_bytes()[0].is_ascii_digit()
-                || !adapter
-                    .bytes()
-                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))
-            {
+            if !token(adapter) {
                 return Err(store::usage(
                     "delivery new needs --adapter NAME matching [a-z0-9][a-z0-9._-]{0,31}",
                 ));
             }
-            store::delivery::new(&mut open()?, as_id, session, id, adapter)
+            let fence = if f.was_set("fence") {
+                Some(positive_fence(f)?)
+            } else {
+                None
+            };
+            store::delivery::new(&mut open()?, as_id, session, id, adapter, fence)
+        }
+        "consumer take" | "consumer renew" | "consumer release" | "consumer show" => {
+            let as_id = f.get_int("as");
+            if f.was_set("as") && as_id <= 0 {
+                return Err(store::usage("--as must be a positive task id"));
+            }
+            if cmd == "consumer show" {
+                return store::consumer::show(&open()?, as_id);
+            }
+            if f.was_set("session") && !store::env("TASKR_LAUNCH").is_empty() {
+                return Err(store::usage(WORKER_SESSION));
+            }
+            let session = root_session(f, as_id)?;
+            let ttl = if cmd == "consumer release" {
+                0
+            } else {
+                f.get_int("ttl")
+            };
+            if cmd != "consumer release" && !(1000..=3_600_000).contains(&ttl) {
+                return Err(store::usage("--ttl must be 1000 to 3600000 milliseconds"));
+            }
+            if cmd == "consumer take" {
+                let holder = f.get_string("holder");
+                if !token(holder) {
+                    return Err(store::usage(
+                        "consumer take needs --holder NAME matching [a-z0-9][a-z0-9._-]{0,31}",
+                    ));
+                }
+                return store::consumer::take(
+                    &mut open()?,
+                    as_id,
+                    session,
+                    holder,
+                    ttl,
+                    f.get_bool("force"),
+                );
+            }
+            let fence = positive_fence(f)?;
+            if cmd == "consumer renew" {
+                store::consumer::renew(&mut open()?, as_id, session, fence, ttl)
+            } else {
+                store::consumer::release(&mut open()?, as_id, session, fence)
+            }
         }
         "doc rm" => {
             let id = store::id(&p[0], "document id")?;
@@ -924,7 +1106,8 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
             if f.get_int("as") <= 0 {
                 return Err(store::usage("ack needs --as TASK_ID"));
             }
-            inbox::ack(&mut open()?, f.get_int("as"), id, true)
+            let fence = inbox::fence(f)?;
+            inbox::ack(&mut open()?, f.get_int("as"), id, true, fence.as_ref())
         }
         "wait" => inbox::wait(f),
         "set" => {

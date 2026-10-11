@@ -415,6 +415,76 @@ fn root_receipts_are_fenced_by_the_adopt_generation() {
 }
 
 #[test]
+fn delivery_new_follows_the_consumer_lease_and_receipts_ignore_it() {
+    let h = Harness::new();
+    let (w, _, env) = h.lane("claude", "implementer");
+    let q = id(&h.ok(&env, &["ask", "which way?"]), "ask_id");
+    let a = id(&h.ok(&[], &["answer", &q, "left"]), "answer_id");
+    // Without a live lease: unchanged, and a supplied fence is refused.
+    rejected(
+        &h,
+        &env,
+        &["delivery", "new", &a, "--adapter", "pi-ext", "--fence", "1"],
+        6,
+    );
+    let free = id(
+        &h.ok(&env, &["delivery", "new", &a, "--adapter", "pi-ext"]),
+        "attempt_id",
+    );
+    // While held: only the live fence of the same binding creates an attempt.
+    h.ok(
+        &env,
+        &["consumer", "take", "--holder", "pi-ext", "--ttl", "600000"],
+    );
+    rejected(&h, &env, &["delivery", "new", &a, "--adapter", "pi-ext"], 6);
+    rejected(
+        &h,
+        &env,
+        &["delivery", "new", &a, "--adapter", "pi-ext", "--fence", "2"],
+        6,
+    );
+    let held = h.ok(
+        &env,
+        &["delivery", "new", &a, "--adapter", "pi-ext", "--fence", "1"],
+    );
+    assert_eq!(
+        held["launch_id"],
+        h.count("select current_launch_id from tasks where id=?", w)
+    );
+    let held = id(&held, "attempt_id");
+    // A takeover under the same binding: receipts and ls stay valid evidence.
+    h.ok(
+        &env,
+        &[
+            "consumer", "take", "--holder", "cli", "--ttl", "600000", "--force",
+        ],
+    );
+    rejected(
+        &h,
+        &env,
+        &["delivery", "new", &a, "--adapter", "pi-ext", "--fence", "1"],
+        6,
+    );
+    for att in [&free, &held] {
+        assert_eq!(
+            h.ok(&env, &["delivery", "received", att])["state"],
+            "received"
+        );
+        assert_eq!(
+            h.ok(&env, &["delivery", "submitted", att])["state"],
+            "received"
+        );
+    }
+    assert_eq!(
+        h.ok(&env, &["delivery", "ls"])["attempts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
 fn crash_boundaries_leave_rows_and_the_inbox_offers_until_ack() {
     let h = Harness::new();
     let (w, _, env) = h.lane("claude", "implementer");

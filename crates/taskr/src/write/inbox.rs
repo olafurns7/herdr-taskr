@@ -4,7 +4,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use std::time::{Duration, Instant};
-use taskr_core::store::inbox as ledger;
+use taskr_core::store::{consumer::Fence, inbox as ledger};
 pub(crate) mod observe;
 #[cfg(test)]
 mod tests;
@@ -85,6 +85,47 @@ pub fn emit_wait(v: &Value) {
         compact_json(&data).expect("JSON")
     );
 }
+/// `--fence N [--session GEN]` on wait and ack: the consumer claim, or None for a plain
+/// call. A worker is TASKR_TASK/TASKR_LAUNCH (its `--as` must name that task); a root
+/// names `--as ROOT --session GEN`. The store checks the claim in every offer and ack.
+pub(super) fn fence(f: &FlagSet) -> Result<Option<Fence>> {
+    if !f.was_set("fence") {
+        if f.was_set("session") {
+            return Err(store::usage("--session needs --fence N"));
+        }
+        return Ok(None);
+    }
+    let fence = f.get_int("fence");
+    if fence <= 0 {
+        return Err(store::usage("--fence must be a positive fence"));
+    }
+    if f.was_set("session") {
+        if !store::env("TASKR_LAUNCH").is_empty() {
+            return Err(store::usage(super::WORKER_SESSION));
+        }
+        if !f.was_set("as") {
+            return Err(store::usage("--session needs --as ROOT"));
+        }
+        if f.get_int("session") < 0 {
+            return Err(store::usage("--session must be 0 or an adopt event id"));
+        }
+        return Ok(Some(Fence {
+            fence,
+            as_id: f.get_int("as"),
+            session: Some(f.get_int("session")),
+        }));
+    }
+    if f.was_set("as") && store::env("TASKR_LAUNCH").is_empty() {
+        return Err(store::usage(
+            "--as ROOT --fence N needs --session GEN: the event id `taskr adopt` printed, 0 before any adopt",
+        ));
+    }
+    Ok(Some(Fence {
+        fence,
+        as_id: 0,
+        session: None,
+    }))
+}
 pub fn wait(f: &FlagSet) -> Result<Value> {
     let as_given = f.was_set("as");
     let caller = store::env("TASKR_TASK");
@@ -105,6 +146,8 @@ pub fn wait(f: &FlagSet) -> Result<Value> {
     if f.was_set("ack") && ack_id <= 0 {
         return Err(store::usage("--ack must be a positive event id"));
     }
+    let fence = fence(f)?;
+    let fence = fence.as_ref();
     let mut kinds = std::collections::BTreeSet::new();
     for s in f.get_strings("for") {
         for k in s.split(',') {
@@ -156,7 +199,13 @@ pub fn wait(f: &FlagSet) -> Result<Value> {
     }
     let filtered = !kinds.is_empty() || !tasks.is_empty();
     if ack_id != 0 {
-        ack(&mut db, as_id, ack_id, store::caller_machine().is_some())?;
+        ack(
+            &mut db,
+            as_id,
+            ack_id,
+            store::caller_machine().is_some(),
+            fence,
+        )?;
     }
     let interrupted = Arc::new(AtomicBool::new(false));
     let mut signals = Vec::new();
@@ -193,7 +242,7 @@ pub fn wait(f: &FlagSet) -> Result<Value> {
                 observe::capacity(&mut db, as_id, budget.saturating_sub(start.elapsed()))?;
             }
             let _ = ledger::expire(&mut db);
-            let (ev, replay, coalesced) = ledger::offer(&mut db, as_id, filtered)?;
+            let (ev, replay, coalesced) = ledger::offer_fenced(&mut db, as_id, filtered, fence)?;
             if coalesced {
                 skipped += 1;
                 continue;
@@ -206,7 +255,13 @@ pub fn wait(f: &FlagSet) -> Result<Value> {
                 {
                     return Ok(json!({"as":as_id,"event":ev,"replay":replay}));
                 }
-                ack(&mut db, as_id, ev["id"].as_i64().expect("event"), false)?;
+                ack(
+                    &mut db,
+                    as_id,
+                    ev["id"].as_i64().expect("event"),
+                    false,
+                    fence,
+                )?;
                 skipped += 1;
                 continue;
             }
@@ -230,7 +285,7 @@ pub fn wait(f: &FlagSet) -> Result<Value> {
                 f.get_bool("scan-quota"),
                 budget.saturating_sub(start.elapsed()),
             )?;
-            let (ev, replay, coalesced) = ledger::offer(&mut db, as_id, filtered)?;
+            let (ev, replay, coalesced) = ledger::offer_fenced(&mut db, as_id, filtered, fence)?;
             if coalesced {
                 skipped += 1;
                 continue;
@@ -243,7 +298,13 @@ pub fn wait(f: &FlagSet) -> Result<Value> {
                 {
                     return Ok(json!({"as":as_id,"event":ev,"replay":replay}));
                 }
-                ack(&mut db, as_id, ev["id"].as_i64().expect("event"), false)?;
+                ack(
+                    &mut db,
+                    as_id,
+                    ev["id"].as_i64().expect("event"),
+                    false,
+                    fence,
+                )?;
                 skipped += 1;
                 continue;
             }

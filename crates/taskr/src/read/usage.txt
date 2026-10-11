@@ -6,12 +6,13 @@ orchestrator: new NAME --role ROLE [--parent ID] [--planned] ... | launch ID --p
               answer ASK_ID TEXT [--prompt [--confirm [--confirm-timeout MS]]] | answer ASK_ID --withdraw TEXT --as ID | close ID [--outcome accepted|reworked|rejected|abandoned] [--clean-tmp]
 outcomes:     accepted (work taken as delivered), reworked (taken after a fix round), rejected (not taken), abandoned (stopped before a result)
 after:        after TARGET --as ID [--on KINDS] [--keep] | after --list --as ID | after --cancel SUB_ID   (TARGET: a task id, pr:N or pr:owner/repo#N; fires an `after` event into the root's inbox)
-delivery:     delivery new EVENT --adapter NAME [--as ID --session GEN] | delivery submitted ATTEMPT [--as ID --session GEN] | delivery received ATTEMPT [--as ID --session GEN] | delivery ls [--as ID] [--open]   (a worker uses TASKR_TASK and TASKR_LAUNCH; GEN is the root's latest adopt event id, 0 before any adopt; never acks)
+delivery:     delivery new EVENT --adapter NAME [--as ID --session GEN] [--fence N] | delivery submitted ATTEMPT [--as ID --session GEN] | delivery received ATTEMPT [--as ID --session GEN] | delivery ls [--as ID] [--open]   (a worker uses TASKR_TASK and TASKR_LAUNCH; GEN is the root's latest adopt event id, 0 before any adopt; never acks)
+consumer:     consumer take --holder NAME --ttl MS [--force] [--as ID --session GEN] | consumer renew --fence N --ttl MS [--as ID --session GEN] | consumer release --fence N [--as ID --session GEN] | consumer show [--as ID]   (an opt-in inbox lease: while live, only wait/ack/delivery new with its --fence consume)
 tmp policy:   set ROOT tmp.cleanup=on-close|root-close|keep (default on-close; counts toward 20 refs; root only)
 plan:         next ID TEXT | next ID --clear | set ID KEY=VALUE... (KEY= deletes) | decide --as ID TEXT | decide --as ID --revoke EVENT_ID
 documents:    doc set ID goal|plan [--name NAME] --file PATH (any host) | doc ls ID [--tree] [--kind K] [--versions] [--limit N] | doc get DOC_ID | doc rm DOC_ID --purge | doc backfill [--tree ID] [--dry-run] (any host)
 handover:     handover --as ID [--note TEXT] [--out PATH] | adopt ID [--workspace W --tab T --pane P]   (Markdown on stdout)
-inbox:        wait [--as ID] [--for KIND[,KIND...]] [--from NAME|ID]... [--ack EVENT_ID] [--timeout MS] [--scan-quota] | ack EVENT_ID --as ID
+inbox:        wait [--as ID] [--for KIND[,KIND...]] [--from NAME|ID]... [--ack EVENT_ID] [--timeout MS] [--scan-quota] [--fence N [--session GEN]] | ack EVENT_ID --as ID [--fence N [--session GEN]]
 hooks:        hook <harness> <event> (JSON on stdin)
 read:         status [--tree ID] [--all] | asks [--open] [--tree ID] [--owner] [--limit N] [--all] | log ID [--tree] [--since EVENT_ID] [--before EVENT_ID] [--limit N]
               campaign ID [--page N] [--all]   (campaign detail; --all includes closed lanes)

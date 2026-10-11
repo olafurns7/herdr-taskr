@@ -4,7 +4,8 @@ use std::path::Path;
 pub const SCHEMA: &str = include_str!("../../../schema.sql");
 pub const SEARCH_TRIGGER: &str = include_str!("search-trigger.sql");
 pub const SEARCH_REBUILD: &str = include_str!("search-rebuild.sql");
-/// Rust-only tables (v2: `taskr after`, v3: `taskr delivery`); schema.sql stays the frozen Go schema.
+/// Rust-only tables (v2: `taskr after`, v3: `taskr delivery`, v4: `taskr consumer`); schema.sql
+/// stays the frozen Go schema.
 pub const SUBSCRIPTIONS: &str = "create table if not exists subscriptions (
   id             integer primary key,
   waiter_task_id integer not null references tasks(id),
@@ -33,9 +34,23 @@ pub const DELIVERY_ATTEMPTS: &str = "create table if not exists delivery_attempt
 );
 create index if not exists delivery_attempts_task on delivery_attempts(task_id);
 ";
-pub const SCHEMA_VERSION: i64 = 3;
+/// v4: `taskr consumer` leases, one row per task, never deleted: `fence` only grows. A held
+/// lease (holder set) binds a launch or an adopt generation; release clears holder only.
+pub const CONSUMER_LEASES: &str = "create table if not exists consumer_leases (
+  task_id     integer primary key references tasks(id),
+  fence       integer not null,
+  holder      text,
+  launch_id   integer references launches(id),
+  session_gen integer,
+  machine     text,
+  acquired_at text not null,
+  expires_at  text not null,
+  check (holder is null or (launch_id is null) != (session_gen is null))
+);
+";
+pub const SCHEMA_VERSION: i64 = 4;
 #[cfg(test)]
-const SCHEMA_HASH: &str = "86d8099e0b82cbd4191605109bd9a7605fe3edbe82ab224b69dc0dae2b3e23b1";
+const SCHEMA_HASH: &str = "53186dc40613849698221be9594dab076daed8d2a69c016928cb53f938d5e197";
 
 pub fn open(path: &Path) -> rusqlite::Result<Connection> {
     let mut db = connect(path, rusqlite::OpenFlags::default())?;
@@ -68,6 +83,7 @@ pub fn migrate(db: &mut Connection) -> rusqlite::Result<()> {
     tx.execute_batch(SCHEMA)?;
     tx.execute_batch(SUBSCRIPTIONS)?;
     tx.execute_batch(DELIVERY_ATTEMPTS)?;
+    tx.execute_batch(CONSUMER_LEASES)?;
     for (table, column, kind) in [
         ("tasks", "waiting_until", "text"),
         ("launches", "workspace_id", "text"),
@@ -239,7 +255,7 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
-    fn v2_ledger_migrates_to_v3_and_search_repair_keeps_attempts() {
+    fn v2_ledger_migrates_to_current_and_search_repair_keeps_attempts() {
         let root = std::env::temp_dir().join(format!("taskr-schema-v2-{}", std::process::id()));
         std::fs::create_dir(&root).unwrap();
         let path = root.join("ledger.db");
@@ -264,7 +280,7 @@ mod tests {
         };
         // A hub child of a daemon not yet restarted (open_migrated) migrates it once.
         let db = crate::db::open_migrated(&path).unwrap();
-        assert_eq!(shape(&db), (3, 1, "5/5".into(), 1, 0, 1));
+        assert_eq!(shape(&db), (SCHEMA_VERSION, 1, "5/5".into(), 1, 0, 1));
         // Exactly one of launch_id and session_gen: the CHECK, not a foreign key, refuses.
         db.execute(
             "insert into launches(id,task_id,recorded_at) values(1,1,'t')",
@@ -278,18 +294,18 @@ mod tests {
         db.execute("insert into delivery_attempts(event_id,task_id,launch_id,adapter,created_at) values(5,1,1,'x','t')", []).unwrap();
         db.execute("delete from delivery_attempts", []).unwrap();
         db.execute("insert into delivery_attempts(event_id,task_id,session_gen,adapter,received_at,created_at) values(5,1,0,'x','r','t')", []).unwrap();
-        // A healthy v3 ledger skips migration: a dropped index stays dropped.
+        // A healthy current ledger skips migration: a dropped index stays dropped.
         db.execute_batch("drop index delivery_attempts_task")
             .unwrap();
         drop(db);
         let db = open(&path).unwrap();
-        assert_eq!(shape(&db), (3, 1, "5/5".into(), 1, 1, 0));
+        assert_eq!(shape(&db), (SCHEMA_VERSION, 1, "5/5".into(), 1, 1, 0));
         // Damaged search reruns the migration; the attempt row survives unchanged.
         db.execute_batch("drop trigger search_events_insert")
             .unwrap();
         drop(db);
         let db = open(&path).unwrap();
-        assert_eq!(shape(&db), (3, 1, "5/5".into(), 1, 1, 1));
+        assert_eq!(shape(&db), (SCHEMA_VERSION, 1, "5/5".into(), 1, 1, 1));
         assert_eq!(
             db.query_row(
                 "select event_id||'/'||session_gen||'/'||received_at from delivery_attempts",
@@ -298,6 +314,70 @@ mod tests {
             )
             .unwrap(),
             "5/0/r"
+        );
+        assert!(search_intact(&db).unwrap());
+        drop(db);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn v3_ledger_migrates_to_v4_and_search_repair_keeps_leases() {
+        let root = std::env::temp_dir().join(format!("taskr-schema-v3-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("ledger.db");
+        // A v3 ledger as #46 left it, with a task, an inbox cursor and an attempt.
+        let db = Connection::open(&path).unwrap();
+        db.execute_batch(SCHEMA).unwrap();
+        db.execute_batch(SUBSCRIPTIONS).unwrap();
+        db.execute_batch(DELIVERY_ATTEMPTS).unwrap();
+        db.execute_batch(SEARCH_REBUILD).unwrap();
+        db.pragma_update(None, "user_version", 3).unwrap();
+        db.execute_batch("insert into tasks(id,name,role,created_at,updated_at) values(1,'kept','orchestrator','t','t');
+            insert into events(id,task_id,recipient_task_id,kind,summary,created_at) values(5,1,1,'note','kept event','t');
+            update tasks set acked_event_id=4,pending_event_id=5 where id=1;
+            insert into delivery_attempts(event_id,task_id,session_gen,adapter,created_at) values(5,1,0,'x','t');").unwrap();
+        drop(db);
+        let shape = |db: &Connection| {
+            db.query_row(
+                "select (select user_version from pragma_user_version), (select acked_event_id||'/'||pending_event_id from tasks where id=1), (select count(*) from delivery_attempts), (select group_concat(task_id||'/'||fence||'/'||ifnull(holder,'-')||'/'||ifnull(session_gen,'-')||'/'||expires_at) from consumer_leases), (select count(*) from sqlite_master where name='delivery_attempts_task')",
+                [],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, Option<String>>(3)?, r.get::<_, i64>(4)?)),
+            )
+            .unwrap()
+        };
+        // A hub child of a daemon not yet restarted (open_migrated) migrates it once.
+        let db = crate::db::open_migrated(&path).unwrap();
+        assert_eq!(shape(&db), (4, "4/5".into(), 1, None, 1));
+        // A held lease binds exactly one of launch_id and session_gen; a released one may keep its binding.
+        db.execute(
+            "insert into launches(id,task_id,recorded_at) values(1,1,'t')",
+            [],
+        )
+        .unwrap();
+        for (launch, session) in [(None, None), (Some(1), Some(0))] {
+            let err = db.execute("insert into consumer_leases(task_id,fence,holder,launch_id,session_gen,acquired_at,expires_at) values(1,1,'h',?,?,'t','t')", rusqlite::params![launch, session]).unwrap_err();
+            assert!(err.to_string().contains("CHECK constraint failed"), "{err}");
+        }
+        db.execute("insert into consumer_leases(task_id,fence,holder,launch_id,acquired_at,expires_at) values(1,1,'h',1,'t','t')", []).unwrap();
+        // One row per task: a second insert is refused, the counter moves only by update.
+        assert!(db.execute("insert into consumer_leases(task_id,fence,session_gen,acquired_at,expires_at) values(1,2,0,'t','t')", []).is_err());
+        db.execute("update consumer_leases set fence=7,holder=null,launch_id=null,session_gen=0,expires_at='e' where task_id=1", []).unwrap();
+        // A healthy v4 ledger skips migration: a dropped index stays dropped.
+        db.execute_batch("drop index delivery_attempts_task")
+            .unwrap();
+        drop(db);
+        let db = open(&path).unwrap();
+        assert_eq!(
+            shape(&db),
+            (4, "4/5".into(), 1, Some("1/7/-/0/e".into()), 0)
+        );
+        // Damaged search reruns the migration; the lease row and its fence survive unchanged.
+        db.execute_batch("drop trigger search_events_insert")
+            .unwrap();
+        drop(db);
+        let db = open(&path).unwrap();
+        assert_eq!(
+            shape(&db),
+            (4, "4/5".into(), 1, Some("1/7/-/0/e".into()), 1)
         );
         assert!(search_intact(&db).unwrap());
         drop(db);

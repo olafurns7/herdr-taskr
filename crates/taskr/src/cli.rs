@@ -118,7 +118,7 @@ pub const COMMANDS: &[&str] = &[
     "version", "new", "launch", "close", "start", "got", "note", "ready", "ask", "done", "fail",
     "prompt", "answer", "hook", "wait", "ack", "next", "decide", "set", "handover", "adopt",
     "status", "asks", "log", "notes", "glance", "campaign", "search", "daemon", "doc", "spool",
-    "help", "slotr", "after", "tmp", "delivery",
+    "help", "slotr", "after", "tmp", "delivery", "consumer",
 ];
 pub fn known(name: &str) -> bool {
     COMMANDS.contains(&name)
