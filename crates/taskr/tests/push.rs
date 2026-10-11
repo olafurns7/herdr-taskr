@@ -39,6 +39,7 @@ case "$mode" in
 exit*) echo "synthetic refusal" >&2; exit "${mode#exit }" ;;
 sleep) echo $$ > "$c/pid"; exec sleep 30 ;;
 orphan) sleep 30 & echo $! > "$c/pid" ;;
+escape) setsid sh -c 'echo $$ > "$1/pid"; exec sleep 30' sh "$c" & ;;
 flood) head -c 3000000 /dev/zero | tr '\0' x ;;
 hold) i=0; while [ ! -e "$top/codex-release" ] && [ $i -lt 100 ]; do sleep 0.02; i=$((i + 1)); done ;;
 esac
@@ -914,6 +915,7 @@ fn a_spawn_failure_and_a_timeout_stay_unsubmitted_and_count() {
 #[test]
 fn eof_or_a_takeover_during_a_submission_kills_it_and_bounds_its_pipes() {
     let h = Harness::new();
+    let _reaper = Reaper(h.home.clone());
     let (w, env, _) = codex_lane(&h);
     // EOF mid-submission: the queue child is killed and reaped, then the release.
     mode(&h, "sleep");
@@ -964,8 +966,8 @@ fn eof_or_a_takeover_during_a_submission_kills_it_and_bounds_its_pipes() {
     assert_eq!(lease(&h, &w), "3|operator");
     h.ok(&env, &["consumer", "release", "--fence", "3"]);
 
-    // A descendant that keeps the output pipe after an exit 0: drained within the
-    // deadline, its process group killed; exit 0 still counts as submitted.
+    // A descendant in the group keeps the output open after an exit 0: at the deadline
+    // the group is killed and the operation is unconfirmed, never submitted.
     mode(&h, "orphan");
     let p = Push::start(&h, &env, &[], SCALE);
     held(&h, &w);
@@ -975,9 +977,19 @@ fn eof_or_a_takeover_during_a_submission_kills_it_and_bounds_its_pipes() {
         call.dir.join("pid").exists()
     });
     let orphan = std::fs::read_to_string(call.dir.join("pid")).unwrap();
-    until("the submitted stamp", Duration::from_secs(10), || {
-        attempts(&h, &e).last().unwrap() == &format!("{a}|codex-queue|submitted")
+    until("the deadline", Duration::from_secs(10), || {
+        p.stderr().contains("passed its deadline")
     });
+    let err = p.stderr();
+    assert!(
+        err.contains("(it had exited 0 with its output still open)")
+            && err.contains("it stays unsubmitted"),
+        "{err}"
+    );
+    assert_eq!(
+        attempts(&h, &e).last().unwrap(),
+        &format!("{a}|codex-queue|attempted")
+    );
     assert!(!alive(&orphan), "the pipe holder outlived the deadline");
     h.ok(&env, &["delivery", "received", &a]);
     h.ok(&env, &["ack", &e, "--as", &w, "--fence", "4"]);
@@ -998,6 +1010,122 @@ fn eof_or_a_takeover_during_a_submission_kills_it_and_bounds_its_pipes() {
         &err[err.len().saturating_sub(4000)..]
     );
     assert!(err.len() < 64 << 10, "{}", err.len());
+
+    // EOF while an exit-0 parent's output is still held in its group: cancelled,
+    // unconfirmed, the holder killed, then the release.
+    mode(&h, "orphan");
+    let p = Push::start(&h, &env, &[], SCALE);
+    assert_eq!(held(&h, &w), "5");
+    // The flood's event, still unacked, is pushed again by the new process.
+    let call = wait_calls(&h, 5, Duration::from_secs(20)).remove(4);
+    until("the orphan's pid", Duration::from_secs(5), || {
+        call.dir.join("pid").exists()
+    });
+    let orphan = std::fs::read_to_string(call.dir.join("pid")).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    let (code, err) = p.close();
+    assert_eq!(code, Some(0), "{err}");
+    assert!(
+        err.contains("killed by the stop: unconfirmed, it may have been queued (it had exited 0 with its output still open)"),
+        "{err}"
+    );
+    assert!(err.contains("released the inbox lease, fence 5"), "{err}");
+    assert!(!alive(&orphan));
+    let a3 = attempt_of(&call.argv[4]);
+    assert_eq!(
+        attempts(&h, &e2).last().unwrap(),
+        &format!("{a3}|codex-queue|attempted")
+    );
+}
+
+/// Kills every process a fake call recorded (an escaped holder survives its group),
+/// even on a panic.
+struct Reaper(PathBuf);
+impl Drop for Reaper {
+    fn drop(&mut self) {
+        for call in std::fs::read_dir(self.0.join("codex-calls"))
+            .into_iter()
+            .flatten()
+        {
+            let Ok(pid) = std::fs::read_to_string(call.unwrap().path().join("pid")) else {
+                continue;
+            };
+            // Only the fake's own `sleep 30`, never a reused pid.
+            let cmd = std::fs::read(format!("/proc/{}/cmdline", pid.trim())).unwrap_or_default();
+            if cmd == b"sleep\x0030\x00" {
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", pid.trim()])
+                    .status();
+            }
+        }
+    }
+}
+fn threads(pid: u32) -> usize {
+    std::fs::read_dir(format!("/proc/{pid}/task")).map_or(0, |d| d.count())
+}
+
+#[test]
+fn an_output_held_outside_the_group_strands_the_lease_and_stops() {
+    let h = Harness::new();
+    let (w, env, _) = codex_lane(&h);
+    let _reaper = Reaper(h.home.clone());
+    mode(&h, "escape");
+    // Several events in turn; the first submission's holder escapes with setsid.
+    let mut p = Push::start(&h, &env, &[], SCALE);
+    held(&h, &w);
+    let base = threads(p.child.id());
+    for n in 0..3 {
+        insert_event(&h, "1", &w, "note", &format!("event {n}"), "{}");
+    }
+    let call = wait_calls(&h, 1, Duration::from_secs(20)).remove(0);
+    until("the holder's pid", Duration::from_secs(5), || {
+        call.dir.join("pid").exists()
+    });
+    let mut most = 0;
+    let start = Instant::now();
+    while matches!(p.child.try_wait(), Ok(None)) && start.elapsed() < Duration::from_secs(20) {
+        most = most.max(threads(p.child.id()));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let (code, err) = p.exited(Duration::from_secs(1));
+    assert_eq!(code, Some(6), "{err}");
+    assert!(
+        most <= base + 1,
+        "threads grew from {base} to {most}: {err}"
+    );
+    assert!(
+        err.contains("passed its deadline")
+            && err.contains("a process outside its group still holds its output")
+            && err.contains("the inbox lease is left to expire"),
+        "{err}"
+    );
+    assert!(!err.contains("released the inbox lease"), "{err}");
+    assert_eq!(calls(&h).len(), 1, "a submission after the stranding");
+    assert!(lease(&h, &w).contains("|codex-queue-"));
+    assert!(alive(
+        &std::fs::read_to_string(call.dir.join("pid")).unwrap()
+    ));
+
+    // EOF while the escaped holder keeps the output open: no release either.
+    let p = Push::start(&h, &env, &[], SCALE);
+    // The stranded row stays until it expires and the new sidecar takes fence 2.
+    until("the retake", Duration::from_secs(30), || {
+        lease(&h, &w).starts_with("2|codex-queue-")
+    });
+    let call = wait_calls(&h, 2, Duration::from_secs(30)).remove(1);
+    until("the holder's pid", Duration::from_secs(5), || {
+        call.dir.join("pid").exists()
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    let (code, err) = p.close();
+    assert_eq!(code, Some(6), "{err}");
+    assert!(
+        err.contains("killed by the stop")
+            && err.contains("a process outside its group still holds its output"),
+        "{err}"
+    );
+    assert!(!err.contains("released the inbox lease"), "{err}");
+    assert!(lease(&h, &w).starts_with("2|codex-queue-"));
 }
 
 #[test]
@@ -1083,14 +1211,56 @@ fn start_hub(h: &Harness) -> (Hub, u16) {
         .1;
     (hub, port.parse().unwrap())
 }
+/// Once armed by a `delivery new`, holds the next `log` reply (already answered by the
+/// hub) until released: the sidecar's final binding read before a spawn.
+#[derive(Default)]
+struct Gate {
+    /// armed, held, released
+    state: Mutex<(bool, bool, bool)>,
+    turn: std::sync::Condvar,
+}
+impl Gate {
+    fn pass(&self, argv: &[String]) {
+        let has = |w: &str| argv.iter().any(|a| a == w);
+        let mut s = self.state.lock().unwrap();
+        if has("delivery") && has("new") {
+            s.0 = true;
+        }
+        if s.0 && !s.1 && has("log") {
+            s.1 = true;
+            self.turn.notify_all();
+            while !s.2 {
+                s = self.turn.wait(s).unwrap();
+            }
+        }
+    }
+    fn held(&self) {
+        let s = self.state.lock().unwrap();
+        let (s, timeout) = self
+            .turn
+            .wait_timeout_while(s, Duration::from_secs(30), |s| !s.1)
+            .unwrap();
+        assert!(
+            !timeout.timed_out() && s.1,
+            "the final log read was never held"
+        );
+    }
+    fn release(&self) {
+        self.state.lock().unwrap().2 = true;
+        self.turn.notify_all();
+    }
+    fn rearm(&self) {
+        *self.state.lock().unwrap() = (false, false, false);
+    }
+}
 /// A proxy to the hub that records every RPC argv; the event stream is held unanswered.
-fn recorder(hub_port: u16) -> (u16, mpsc::Receiver<Vec<String>>) {
+fn recorder(hub_port: u16, gate: Option<Arc<Gate>>) -> (u16, mpsc::Receiver<Vec<String>>) {
     let listener = std::net::TcpListener::bind("[::1]:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let (send, seen) = mpsc::channel();
     std::thread::spawn(move || {
         for client in listener.incoming() {
-            let send = send.clone();
+            let (send, gate) = (send.clone(), gate.clone());
             std::thread::spawn(move || {
                 let mut client = client.unwrap();
                 let mut reader = BufReader::new(client.try_clone().unwrap());
@@ -1119,7 +1289,8 @@ fn recorder(hub_port: u16) -> (u16, mpsc::Receiver<Vec<String>>) {
                 let mut body = vec![0; len];
                 reader.read_exact(&mut body).unwrap();
                 let req: Value = serde_json::from_slice(&body).unwrap();
-                let _ = send.send(serde_json::from_value(req["argv"].clone()).unwrap());
+                let argv: Vec<String> = serde_json::from_value(req["argv"].clone()).unwrap();
+                let _ = send.send(argv.clone());
                 let mut hub =
                     std::net::TcpStream::connect((std::net::Ipv6Addr::LOCALHOST, hub_port))
                         .unwrap();
@@ -1127,6 +1298,9 @@ fn recorder(hub_port: u16) -> (u16, mpsc::Receiver<Vec<String>>) {
                 hub.write_all(&body).unwrap();
                 let mut reply = Vec::new();
                 hub.read_to_end(&mut reply).unwrap();
+                if let Some(gate) = gate {
+                    gate.pass(&argv);
+                }
                 let _ = client.write_all(&reply);
             });
         }
@@ -1134,12 +1308,10 @@ fn recorder(hub_port: u16) -> (u16, mpsc::Receiver<Vec<String>>) {
     (port, seen)
 }
 
-#[test]
-fn push_itself_never_goes_over_rpc_and_its_steps_route() {
-    let h = Harness::new();
+/// A codex worker lane on a client host whose hub is reached through `port`: its
+/// root, task and sidecar env.
+fn client_lane(h: &Harness, port: u16) -> (String, String, Env) {
     h.script("codex", FAKE);
-    let (_hub, hub_port) = start_hub(&h);
-    let (port, seen) = recorder(hub_port);
     let server = h.home.join("client/.local/state/taskr/server.url");
     std::fs::create_dir_all(server.parent().unwrap()).unwrap();
     std::fs::write(&server, format!("http://[::1]:{port}\n")).unwrap();
@@ -1195,7 +1367,16 @@ fn push_itself_never_goes_over_rpc_and_its_steps_route() {
     env.extend([("TASKR_TASK".into(), w.clone()), ("TASKR_LAUNCH".into(), l)]);
     let home = h.home.join("codex-home");
     std::fs::create_dir_all(&home).unwrap();
-    register(&h, &env, THREAD, &home);
+    register(h, &env, THREAD, &home);
+    (r, w, env)
+}
+
+#[test]
+fn push_itself_never_goes_over_rpc_and_its_steps_route() {
+    let h = Harness::new();
+    let (_hub, hub_port) = start_hub(&h);
+    let (port, seen) = recorder(hub_port, None);
+    let (r, w, env) = client_lane(&h, port);
     // Help and a usage error on the client host contact nothing.
     while seen.try_recv().is_ok() {}
     for argv in [
@@ -1230,6 +1411,43 @@ fn push_itself_never_goes_over_rpc_and_its_steps_route() {
         assert!(first.contains(&step), "{step}: {argvs:?}");
     }
     assert_eq!(lease(&h, &w), "1|-");
+}
+
+#[test]
+fn a_delayed_final_binding_read_never_spawns_after_eof_or_expiry() {
+    let h = Harness::new();
+    let (_hub, hub_port) = start_hub(&h);
+    let gate = Arc::new(Gate::default());
+    let (port, _seen) = recorder(hub_port, Some(gate.clone()));
+    let (r, w, env) = client_lane(&h, port);
+    // EOF while the read right before the spawn is held: it returns the same valid
+    // binding, and still nothing is spawned; the attempt stays and the lease is released.
+    let mut p = Push::start(&h, &env, &[], SCALE);
+    held(&h, &w);
+    let e = insert_event(&h, &r, &w, "note", "behind a slow read", "{}");
+    gate.held();
+    drop(p.stdin.take());
+    std::thread::sleep(Duration::from_millis(200));
+    gate.release();
+    let (code, err) = p.exited(Duration::from_secs(30));
+    assert_eq!(code, Some(0), "{err}");
+    assert!(calls(&h).is_empty(), "spawned after EOF: {err}");
+    assert!(err.contains("released the inbox lease, fence 1"), "{err}");
+    let [a] = &attempts(&h, &e)[..] else {
+        panic!("{err}")
+    };
+    assert!(a.ends_with("|codex-queue|attempted"), "{a}");
+    // The read held past the 3 s lease: no spawn on the expired fence, and the next
+    // renew stops it.
+    gate.rearm();
+    let mut p = Push::start(&h, &env, &[], SCALE);
+    assert_eq!(held(&h, &w), "2");
+    gate.held();
+    std::thread::sleep(Duration::from_secs(4));
+    gate.release();
+    let (code, err) = p.exited(Duration::from_secs(30));
+    assert_eq!(code, Some(6), "{err}");
+    assert!(calls(&h).is_empty(), "spawned on an expired lease: {err}");
 }
 
 // ---- the canary ----
@@ -1383,6 +1601,30 @@ fn the_canary_selftest_passes_and_refuses_unowned_state() {
     std::fs::hard_link(dir.join("ledger.db"), &hard).unwrap();
     refused(&["fire", d, "3"], "link");
     std::fs::remove_file(&hard).unwrap();
+    // SQLite's sidecars are written in place: an outside file hard-linked into either
+    // is refused before any taskr call, and stays byte-for-byte.
+    let outside = h.home.join("outside");
+    let bytes = vec![b'o'; 55_296];
+    for name in ["ledger.db-wal", "ledger.db-shm"] {
+        std::fs::write(&outside, &bytes).unwrap();
+        let p = dir.join(name);
+        let aside = dir.join(format!("{name}.aside"));
+        let had = p.exists();
+        if had {
+            std::fs::rename(&p, &aside).unwrap();
+        }
+        std::fs::hard_link(&outside, &p).unwrap();
+        refused(&["fire", d, "3"], &format!("{name} has another hard link"));
+        assert_eq!(std::fs::read(&outside).unwrap(), bytes, "{name}");
+        std::fs::remove_file(&p).unwrap();
+        std::fs::create_dir(&p).unwrap();
+        refused(&["fire", d, "3"], &format!("{name} is not a regular file"));
+        std::fs::remove_dir(&p).unwrap();
+        if had {
+            std::fs::rename(&aside, &p).unwrap();
+        }
+    }
+    std::fs::remove_file(&outside).unwrap();
     assert_eq!(
         std::fs::read_to_string(live.join("live.db")).unwrap(),
         "sentinel"

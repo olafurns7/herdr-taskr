@@ -95,8 +95,9 @@ The root flags are operator authority under the host-bound CLI, not proof that t
 
 - It holds the inbox lease as `codex-queue-PID` and runs the channel loop: a fenced offer, a complete `delivery ls` receipt check, and at most 3 pushes per event at least 120 s apart.
 - For each push it records `delivery new E --adapter codex-queue --fence N`, then runs `<codex> queue --thread T --message M`. The command takes argv only, with stdin closed, the inherited environment and `CODEX_HOME` set to the bound home. After exit 0 it records `delivery submitted A`.
-- One submission is in flight at a time. It has a 60 s wall clock, output draining included; at the deadline its process group is killed. Renewals, the stop and the binding checks continue while it runs.
-- It re-reads a worker's binding through the routed `log` read before each offer and again right before each spawn. If the read fails or the home is missing, it suspends and keeps the lease. A changed thread or home, a new SessionStart thread, or a launch that is no longer current stops it for good: it cancels the submission, releases the lease and exits 6. It never re-targets.
+- One submission is in flight at a time. It has a 60 s wall clock, output draining included; at the deadline or on a stop its process group is killed and its output pipes are closed, so nothing of it outlives the operation. Renewals, the stop and the binding checks continue while it runs.
+- If a process outside that group (one that called `setsid`) still holds the output after the kill, cleanup is incomplete: the sidecar submits nothing more, leaves the lease to expire instead of releasing it, and exits 6.
+- It re-reads a worker's binding through the routed `log` read before each offer and again right before each spawn, then checks the stop and the lease once more, since that read can be slow. If the read fails or the home is missing, it suspends and keeps the lease. A changed thread or home, a new SessionStart thread, or a launch that is no longer current stops it for good: it cancels the submission, releases the lease and exits 6. It never re-targets.
 
 M is the push envelope in CLI form: six lines, with the same untrusted summary, and with the CLI steps from the pinned identity in place of the tool names.
 
@@ -115,8 +116,8 @@ The worker form relies on the Codex session's own `TASKR_TASK` and `TASKR_LAUNCH
 
 | `codex queue` | Recorded | Meaning |
 | --- | --- | --- |
-| exit 0 | submitted | Queued for the thread. Not received: its output ("Queued message ...") is logged and never parsed. |
-| non-zero exit, signal, deadline, killed by a stop | unsubmitted | Unconfirmed: the message may have been queued. It counts against the cap, is never retried at once, and its output is logged. |
+| exit 0, with its output closed | submitted | Queued for the thread. Not received: its output ("Queued message ...") is logged and never parsed. |
+| non-zero exit, signal, deadline, killed by a stop (also after an exit 0 whose output was still open) | unsubmitted | Unconfirmed: the message may have been queued. It counts against the cap, is never retried at once, and its output is logged. |
 | could not start | unsubmitted | No queue process ran. It still counts against the cap. |
 
 A duplicate turn is possible after an unconfirmed submission or a restart. The event id deduplicates the work. Busy-thread, sidecar-restart and absent-session behavior of the real CLI is not yet measured (see the table below).
@@ -126,7 +127,7 @@ A duplicate turn is possible after an unconfirmed submission or a restart. The e
 1. Stop the old consumer first:
    - Claude: exiting Claude kills the channel server without stdin EOF, so its lease is not released; it expires within 60 s.
    - pi: shutdown closes the child's stdin, which releases the lease at once.
-   - Codex: close the sidecar's stdin (Ctrl-D in its tab). That cancels a submission in flight, releases the lease and exits 0. A killed sidecar's lease expires.
+   - Codex: close the sidecar's stdin (Ctrl-D in its tab). That cancels a submission in flight, releases the lease and exits 0. A killed sidecar's lease expires, and so does the lease of one that exited 6 with incomplete cleanup.
 2. Check that the lease is free: `taskr consumer show` (a worker) or `taskr consumer show --as ROOT` (a root) shows `live` false. Do not count on an exact 60 s from a kill.
 3. If the lease is still live, release it with its fence from the same identity: `taskr consumer release --fence N` for a worker, or `taskr consumer release --fence N --as ROOT --session GEN` for a root. To take the inbox over instead, use `taskr consumer take --holder NAME --ttl MS --force`; the old adapter stops at its next renew.
 4. Run `taskr wait` (a worker) or `taskr wait --as ROOT` (a root). A pending event is offered again from the same cursor.
@@ -164,7 +165,8 @@ Deterministic scratch fixtures live in `crates/taskr/tests/channel.rs` and `crat
 | queued-turn identity: the queued model's CLI uses the intended task, launch and ledger | none: a fake cannot prove it | owed (trial) |
 | busy Codex thread, sidecar restart, Codex session absent or restarted | restart: `failed_submissions_are_bounded_and_a_receipt_suppresses_them_across_restarts` | owed (trial); a sidecar restart is not a backend restart |
 | queue timeout, non-zero exit, spawn failure, cap | `failed_submissions_are_bounded_and_a_receipt_suppresses_them_across_restarts`, `a_spawn_failure_and_a_timeout_stay_unsubmitted_and_count` | an unknown submission that cannot be induced safely in the real client stays unproved |
-| cancellation, slow or flooding queue, held pipes | `eof_or_a_takeover_during_a_submission_kills_it_and_bounds_its_pipes` | n/a |
+| cancellation, slow or flooding queue, held pipes, output held outside the group | `eof_or_a_takeover_during_a_submission_kills_it_and_bounds_its_pipes`, `an_output_held_outside_the_group_strands_the_lease_and_stops` | n/a |
+| a slow final binding read before a spawn | `a_delayed_final_binding_read_never_spawns_after_eof_or_expiry` | n/a |
 | dropped notification, broken stdout | `a_broken_stdout_leaves_the_attempt_unsubmitted_and_ends_delivery` | n/a |
 | ignored notification (the T1 failure mode), retry exhaustion | `redelivery_is_bounded_and_receipts_suppress_it_across_restarts` | n/a |
 | reset and reconnect | `hints_wake_a_check_and_a_reset_reconnects_without_a_duplicate` (the hub's ten-minute stream expiry ends the stream the same way) | n/a |

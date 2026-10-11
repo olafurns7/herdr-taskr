@@ -159,8 +159,8 @@ impl Channel {
 
 /// `taskr push codex`: the loop on this thread with the queue sink; stdin is read only
 /// for its end. EOF stops scheduling, settles or cancels the submission in flight, then
-/// releases. true when the loop stopped for good first (a refused lease or a changed
-/// binding).
+/// releases. true when the loop stopped for good (a refused lease, a changed binding, or
+/// a submission whose cleanup is incomplete, which leaves the lease to expire).
 pub(super) fn serve(who: Who, cwd: PathBuf, queue: push::Queue) -> bool {
     let stop = Arc::new(AtomicBool::new(false));
     let idle = Arc::new(AtomicBool::new(false));
@@ -218,6 +218,7 @@ fn setup(
         send: send.clone(),
         flight: None,
         halted: false,
+        stranded: false,
     };
     (send, receive, hints, state)
 }
@@ -379,6 +380,9 @@ struct Loop {
     flight: Option<Flight>,
     /// The queue sink saw its binding change: end, then release.
     halted: bool,
+    /// A submission's cleanup is incomplete (unsettled, or its output held outside its
+    /// group): end, push nothing more, and leave the lease to expire.
+    stranded: bool,
 }
 
 /// A child's outcome as the tools report it, and its JSON.
@@ -396,7 +400,8 @@ impl Ran {
 }
 
 impl Loop {
-    /// true when the queue sink stopped for good before EOF.
+    /// true when the queue sink stopped for good: before EOF, or with a submission's
+    /// cleanup incomplete.
     fn run(mut self, receive: &mpsc::Receiver<Msg>) -> bool {
         loop {
             if self.stop.load(Ordering::SeqCst) {
@@ -421,22 +426,29 @@ impl Loop {
                 Ok(Msg::Done(done)) => self.settle(done),
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
-            if !self.stop.load(Ordering::SeqCst) {
+            // A settle may have ended the queue sink: no step after it.
+            if !self.stop.load(Ordering::SeqCst) && !self.ended() {
                 self.step();
             }
         }
-        let ended = self.ended();
         self.land(receive);
-        self.release();
+        let ended = self.ended();
+        if self.stranded {
+            log("cleanup is incomplete: the inbox lease is left to expire");
+        } else {
+            self.release();
+        }
         ended
     }
     /// The queue sink has nothing left to do once stopped for good; a channel server
     /// keeps serving its tools.
     fn ended(&self) -> bool {
-        matches!(self.sink, Sink::Queue(_)) && (self.halted || matches!(self.lease, Lease::Stopped))
+        matches!(self.sink, Sink::Queue(_))
+            && (self.halted || self.stranded || matches!(self.lease, Lease::Stopped))
     }
     /// Before the release: cancel the submission in flight and wait for its child to be
-    /// killed and reaped (bounded by the submission's own deadline).
+    /// killed and reaped (bounded by the submission's own deadline). One that does not
+    /// settle in time strands the lease.
     fn land(&mut self, receive: &mpsc::Receiver<Msg>) {
         let Some(flight) = &self.flight else { return };
         flight.cancel.store(true, Ordering::SeqCst);
@@ -446,7 +458,8 @@ impl Loop {
                 Ok(Msg::Done(done)) => self.settle(done),
                 Ok(_) => {}
                 Err(_) => {
-                    return log("the queue submission did not settle; releasing anyway");
+                    self.stranded = true;
+                    return log("the queue submission did not settle");
                 }
             }
         }
@@ -553,6 +566,9 @@ impl Loop {
         let Some(Flight { e, attempt, .. }) = self.flight.take() else {
             return;
         };
+        if done.stranded {
+            self.stranded = true;
+        }
         if done.submitted() {
             log(format!("event {e}: attempt {attempt}: {done}"));
             let key = self.key();
@@ -939,8 +955,9 @@ impl Loop {
 
     fn push(&mut self, e: i64, attempt: i64, fence: i64, event: &Value) {
         let queue = matches!(self.sink, Sink::Queue(_));
-        // After the delayed ledger steps, right before the spawn.
-        if queue && !self.bound() {
+        // After the delayed ledger steps, right before the spawn: the binding, then the
+        // authority and the stop again, since that read may be delayed too.
+        if queue && (!self.bound() || !self.fresh() || self.quiet()) {
             self.attempt = Some((e, Attempt::Known(attempt)));
             return;
         }

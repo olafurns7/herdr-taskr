@@ -15,10 +15,7 @@ use std::{
     os::unix::{fs::PermissionsExt, process::CommandExt},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc,
-    },
+    sync::atomic::{AtomicBool, Ordering},
     thread,
     time::{Duration, Instant},
 };
@@ -196,11 +193,16 @@ impl Queue {
         Ok(())
     }
 
-    /// One bounded `codex queue`: killed with its process group at `deadline` or on
-    /// `cancel`. Draining the output is inside the same deadline; a pipe held open by a
-    /// process outside the group is abandoned with its reader.
+    /// One bounded `codex queue` on this thread: killed with its process group at
+    /// `deadline` or on `cancel`. Both output pipes are read without blocking inside the
+    /// same deadline, and the operation closes them when it ends, so nothing outlives
+    /// it. The parent stays unreaped (WNOWAIT) until then, so its group id cannot be
+    /// reused before the group kill.
     pub(super) fn submit(&self, message: &str, deadline: Duration, cancel: &AtomicBool) -> Done {
         let start = Instant::now();
+        if cancel.load(Ordering::SeqCst) {
+            return Done::of(How::Spawn("stopped before the start".into()));
+        }
         let spawned = Command::new(&self.bin)
             .args([
                 "queue",
@@ -217,88 +219,131 @@ impl Queue {
             .spawn();
         let mut child = match spawned {
             Ok(child) => child,
-            Err(e) => {
-                return Done {
-                    how: How::Spawn(e.to_string()),
-                    out: vec![],
-                };
-            }
+            Err(e) => return Done::of(How::Spawn(e.to_string())),
         };
-        let (send, read) = mpsc::channel();
-        let pipes: [(&str, Option<Box<dyn Read + Send>>); 2] = [
-            ("stdout", child.stdout.take().map(|p| Box::new(p) as _)),
-            ("stderr", child.stderr.take().map(|p| Box::new(p) as _)),
+        let mut pipes = [
+            Pipe::new("stdout", child.stdout.take().map(|p| Box::new(p) as _)),
+            Pipe::new("stderr", child.stderr.take().map(|p| Box::new(p) as _)),
         ];
-        for (name, pipe) in pipes {
-            let (Some(mut pipe), send) = (pipe, send.clone()) else {
-                continue;
-            };
-            thread::spawn(move || {
-                let (mut kept, mut total, mut buf) = (Vec::new(), 0, [0u8; 8192]);
-                while let Ok(n) = pipe.read(&mut buf) {
-                    if n == 0 {
-                        break;
-                    }
-                    total += n;
-                    let room = KEEP.saturating_sub(kept.len()).min(n);
-                    kept.extend_from_slice(&buf[..room]);
-                }
-                if total > 0 {
-                    let text = String::from_utf8_lossy(&kept).trim_end().to_string();
-                    let cut = if total > kept.len() {
-                        format!(" ({total} bytes, the first {} kept)", kept.len())
-                    } else {
-                        String::new()
-                    };
-                    let _ = send.send(format!("{name} {text:?}{cut}"));
-                }
-            });
-        }
-        drop(send);
-        let mut out = vec![];
+        let pid = rustix::process::Pid::from_child(&child);
+        let tick = Duration::from_millis(10);
+        let mut parent = None;
         let mut how = None;
         loop {
-            if how.is_none()
-                && let Ok(Some(status)) = child.try_wait()
-            {
-                how = Some(status.code().map_or(How::Signal, How::Exit));
+            pipes.iter_mut().for_each(Pipe::drain);
+            let open = pipes.iter().any(|p| p.fd.is_some());
+            if parent.is_none() {
+                parent = exited(pid);
             }
-            let tick = Duration::from_millis(10);
-            if how.is_some() {
-                match read.recv_timeout(tick) {
-                    Ok(text) => out.push(text),
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                    Err(mpsc::RecvTimeoutError::Timeout) => {}
-                }
-            } else {
-                thread::sleep(tick);
+            if let (Some(p), false) = (&parent, open) {
+                how = Some(p.clone());
+                break;
             }
             let cancelled = cancel.load(Ordering::SeqCst);
             if cancelled || start.elapsed() >= deadline {
                 taskr_core::store::terminate_group(child.id());
-                if how.is_none() {
+                if parent.is_none() {
+                    // It may have left its group; the wait below must not block.
                     let _ = child.kill();
-                    let _ = child.wait();
-                    how = Some(if cancelled {
-                        How::Cancelled
-                    } else {
-                        How::Timeout
-                    });
                 }
-                // The group is gone; what its pipes still hold arrives at once.
-                while let Ok(text) = read.recv_timeout(Duration::from_millis(200)) {
-                    out.push(text);
+                // The group is gone: its pipe ends close at once unless a process
+                // outside it holds them.
+                let grace = Instant::now() + Duration::from_millis(200);
+                while pipes.iter().any(|p| p.fd.is_some()) && Instant::now() < grace {
+                    thread::sleep(tick);
+                    pipes.iter_mut().for_each(Pipe::drain);
                 }
                 break;
             }
+            thread::sleep(tick);
         }
+        let _ = child.wait();
+        let stranded = pipes.iter().any(|p| p.fd.is_some());
+        let out = pipes.into_iter().filter_map(Pipe::text).collect();
         Done {
-            how: how.expect("settled"),
+            // An ending with output still outstanding is unconfirmed, whatever the parent
+            // did; its status stays a diagnostic.
+            how: how.unwrap_or(if cancel.load(Ordering::SeqCst) {
+                How::Cancelled
+            } else {
+                How::Timeout
+            }),
+            parent,
             out,
+            stranded,
         }
     }
 }
 
+/// The parent's ending, if it has one, leaving it waitable.
+fn exited(pid: rustix::process::Pid) -> Option<How> {
+    use rustix::process::{WaitId, WaitIdOptions, waitid};
+    let options = WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT;
+    let status = waitid(WaitId::Pid(pid), options).ok()??;
+    Some(status.exit_status().map_or(How::Signal, How::Exit))
+}
+
+/// One output pipe, nonblocking: the first KEEP bytes kept, the rest counted.
+struct Pipe {
+    name: &'static str,
+    fd: Option<Box<dyn Read + Send>>,
+    kept: Vec<u8>,
+    total: usize,
+}
+impl Pipe {
+    fn new(name: &'static str, fd: Option<Box<dyn ReadFd>>) -> Self {
+        let fd = fd.and_then(|fd| {
+            let flags = rustix::fs::fcntl_getfl(fd.as_fd()).ok()?;
+            rustix::fs::fcntl_setfl(fd.as_fd(), flags | rustix::fs::OFlags::NONBLOCK).ok()?;
+            Some(fd as Box<dyn Read + Send>)
+        });
+        Pipe {
+            name,
+            fd,
+            kept: vec![],
+            total: 0,
+        }
+    }
+    /// Read what is there now; EOF or an error closes it.
+    fn drain(&mut self) {
+        let Some(fd) = &mut self.fd else { return };
+        let mut buf = [0u8; 8192];
+        loop {
+            match fd.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    self.total += n;
+                    let room = KEEP.saturating_sub(self.kept.len()).min(n);
+                    self.kept.extend_from_slice(&buf[..room]);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(_) => break,
+            }
+        }
+        self.fd = None;
+    }
+    fn text(self) -> Option<String> {
+        if self.total == 0 {
+            return None;
+        }
+        let text = String::from_utf8_lossy(&self.kept).trim_end().to_string();
+        let cut = if self.total > self.kept.len() {
+            format!(
+                " ({} bytes, the first {} kept)",
+                self.total,
+                self.kept.len()
+            )
+        } else {
+            String::new()
+        };
+        Some(format!("{} {text:?}{cut}", self.name))
+    }
+}
+trait ReadFd: Read + Send + std::os::fd::AsFd {}
+impl<T: Read + Send + std::os::fd::AsFd> ReadFd for T {}
+
+#[derive(Clone)]
 enum How {
     Spawn(String),
     Exit(i32),
@@ -309,12 +354,25 @@ enum How {
 /// A finished submission, for the loop's settle and its log line.
 pub(super) struct Done {
     how: How,
+    /// The parent's own ending when the operation ended otherwise (a diagnostic).
+    parent: Option<How>,
     out: Vec<String>,
+    /// A process outside the killed group still holds the output: cleanup is
+    /// incomplete.
+    pub(super) stranded: bool,
 }
 impl Done {
-    /// Exit 0 only: a submission, never a receipt. Every other ending after the spawn is
-    /// unconfirmed (the message may have been queued); only a spawn failure proves no
-    /// queue process ran.
+    fn of(how: How) -> Self {
+        Done {
+            how,
+            parent: None,
+            out: vec![],
+            stranded: false,
+        }
+    }
+    /// Exit 0 with all output closed: a submission, never a receipt. Every other
+    /// ending after the spawn is unconfirmed (the message may have been queued); only a
+    /// spawn failure proves no queue process ran.
     pub(super) fn submitted(&self) -> bool {
         matches!(self.how, How::Exit(0))
     }
@@ -332,6 +390,18 @@ impl std::fmt::Display for Done {
                 "codex queue passed its deadline and was killed: {unconfirmed}"
             )?,
             How::Cancelled => write!(f, "codex queue was killed by the stop: {unconfirmed}")?,
+        }
+        match &self.parent {
+            Some(How::Exit(n)) if !matches!(self.how, How::Exit(_)) => {
+                write!(f, " (it had exited {n} with its output still open)")?
+            }
+            Some(How::Signal) if !matches!(self.how, How::Signal) => {
+                write!(f, " (it had died by a signal with its output still open)")?
+            }
+            _ => {}
+        }
+        if self.stranded {
+            write!(f, "; a process outside its group still holds its output")?;
         }
         for text in &self.out {
             write!(f, "; {text}")?;

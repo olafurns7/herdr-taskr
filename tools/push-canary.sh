@@ -70,6 +70,12 @@ owned() {
 		[ -f "$DIR/$f" ] || die "$DIR/$f is missing; refusing to recreate state"
 		[ "$(links "$DIR/$f")" = 1 ] || die "$DIR/$f has another hard link"
 	done
+	# SQLite creates these, so absence is fine; an existing one is written in place.
+	for f in ledger.db-wal ledger.db-shm; do
+		[ -e "$DIR/$f" ] || continue
+		[ -f "$DIR/$f" ] || die "$DIR/$f is not a regular file"
+		[ "$(links "$DIR/$f")" = 1 ] || die "$DIR/$f has another hard link"
+	done
 }
 
 # taskr on this directory's ledger only; extra NAME=VALUE words come first.
