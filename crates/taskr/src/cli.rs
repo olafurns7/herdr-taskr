@@ -118,7 +118,7 @@ pub const COMMANDS: &[&str] = &[
     "version", "new", "launch", "close", "start", "got", "note", "ready", "ask", "done", "fail",
     "prompt", "answer", "hook", "wait", "ack", "next", "decide", "set", "handover", "adopt",
     "status", "asks", "log", "notes", "glance", "campaign", "search", "daemon", "doc", "spool",
-    "help", "slotr", "after", "tmp", "delivery", "consumer",
+    "help", "slotr", "after", "tmp", "delivery", "consumer", "inbox", "mcp",
 ];
 pub fn known(name: &str) -> bool {
     COMMANDS.contains(&name)
@@ -142,7 +142,6 @@ fn distance(a: &str, b: &str) -> usize {
 pub fn unknown(json_mode: bool, name: &str) -> ExitCode {
     let suggestion = match name {
         "show" => "status --tree ID / log ID",
-        "inbox" => "asks --open or wait --as ID --timeout 0 (consuming)",
         _ => {
             let best = COMMANDS
                 .iter()

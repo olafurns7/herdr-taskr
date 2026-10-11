@@ -299,7 +299,7 @@ fn usage_line(cmd: &str) -> String {
 }
 /// The first of `names` given more than once, in any `-x`, `--x` or `--x=v` form;
 /// `-h` and `--help` are one flag.
-fn repeated<'a>(args: &'a [String], names: &[&str]) -> Option<&'a str> {
+pub(crate) fn repeated<'a>(args: &'a [String], names: &[&str]) -> Option<&'a str> {
     let mut seen = vec![];
     for s in args.iter().take_while(|s| s.as_str() != "--") {
         let Some(raw) = s.strip_prefix('-') else {

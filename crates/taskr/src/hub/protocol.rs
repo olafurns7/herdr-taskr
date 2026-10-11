@@ -87,6 +87,8 @@ pub(super) fn stored(argv: &[String]) -> bool {
                 | "campaign"
                 | "slotr"
                 | "tmp"
+                | "inbox"
+                | "mcp"
         )
         && !(name == "doc"
             && args
@@ -133,6 +135,7 @@ pub(super) fn check_args(argv: &[String]) -> Result<(), String> {
             )
     });
     let once: &[&str] = match name {
+        "inbox" => &["as", "limit", "help"],
         "delivery" => &["as", "session", "adapter", "fence", "help"],
         "consumer" => &["as", "session", "holder", "ttl", "fence", "force", "help"],
         "wait" | "ack" if fenced => &["fence", "session", "help"],
@@ -189,6 +192,11 @@ pub(super) fn check_args(argv: &[String]) -> Result<(), String> {
         "spool" => {
             return Err(
                 "spool commands run on their own host; they are not available over RPC".into(),
+            );
+        }
+        "mcp" => {
+            return Err(
+                "mcp is a local stdio server on its own host; it is not available over RPC".into(),
             );
         }
         _ => {}
@@ -402,6 +410,42 @@ mod tests {
     use super::*;
     fn argv(s: &[&str]) -> Vec<String> {
         s.iter().map(|s| (*s).into()).collect()
+    }
+    #[test]
+    fn mcp_is_local_only_and_inbox_is_a_fresh_read() {
+        for args in [
+            vec!["inbox"],
+            vec!["--json", "inbox", "--as", "1", "--limit", "5"],
+            vec!["mcp"],
+            vec!["mcp", "--as", "1", "--session", "0"],
+        ] {
+            assert!(!stored(&argv(&args)), "{args:?}");
+            assert!(!crate::net::spoolable(&argv(&args)));
+        }
+        assert!(check_args(&argv(&["--json", "inbox", "--as", "1", "--limit", "5"])).is_ok());
+        assert!(check_args(&argv(&["inbox", "--help"])).is_ok());
+        for repeat in [
+            vec!["inbox", "--limit", "1", "--limit=2"],
+            vec!["inbox", "--as", "1", "-as", "1"],
+            vec!["inbox", "-h", "--help=false"],
+        ] {
+            assert!(
+                check_args(&argv(&repeat))
+                    .unwrap_err()
+                    .starts_with("repeated RPC flag --"),
+                "{repeat:?}"
+            );
+        }
+        for args in [
+            vec!["mcp"],
+            vec!["--json", "mcp", "--as", "1", "--session", "0"],
+        ] {
+            assert!(
+                check_args(&argv(&args))
+                    .unwrap_err()
+                    .contains("not available over RPC")
+            );
+        }
     }
     #[test]
     fn rpc_flag_and_storage_contract() {
