@@ -1,5 +1,29 @@
 #[cfg(feature = "contract")]
 use std::path::PathBuf;
+
+// Keep command prints fallible without changing SIGPIPE or the servers' direct writes.
+macro_rules! print {
+    ($($arg:tt)*) => {
+        crate::print_stdout(format_args!($($arg)*))
+    };
+}
+macro_rules! println {
+    ($($arg:tt)*) => {
+        crate::print_stdout(format_args!("{}\n", format_args!($($arg)*)))
+    };
+}
+
+fn print_stdout(args: std::fmt::Arguments<'_>) {
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    if let Err(error) = out.write_fmt(args).and_then(|()| out.flush()) {
+        if error.kind() == std::io::ErrorKind::BrokenPipe {
+            std::process::exit(141);
+        }
+        panic!("failed printing to stdout: {error}");
+    }
+}
+
 mod cli;
 mod daemon;
 mod hub;

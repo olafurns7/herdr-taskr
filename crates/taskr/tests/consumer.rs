@@ -8,6 +8,37 @@ use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 use support::*;
 
+#[test]
+fn closed_stdout_exits_quietly() {
+    let h = Harness::new();
+    let root = id(
+        &h.ok(&[], &["new", "top", "--role", "orchestrator"]),
+        "task_id",
+    );
+    h.ok(&[], &["note", "fixture", "--as", &root]);
+    for args in [
+        vec!["consumer", "show", "--as", &root],
+        vec!["log", &root],
+        vec!["consumer", "--help"],
+    ] {
+        let (reader, writer) = std::io::pipe().unwrap();
+        drop(reader);
+        let out = h
+            .command(&[])
+            .args(&args)
+            .stdout(writer)
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap()
+            .wait_with_output()
+            .unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(!err.contains("panicked"), "{args:?}: {err}");
+        assert_eq!(out.status.code(), Some(141), "{args:?}: {err}");
+        assert!(err.is_empty(), "{args:?}: {err}");
+    }
+}
+
 fn run(h: &Harness, env: &[(String, String)], args: &[&str]) -> (Option<i32>, String, String) {
     let out = h.output(env, args, b"");
     (
