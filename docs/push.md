@@ -181,7 +181,13 @@ Deterministic scratch fixtures live in `crates/taskr/tests/channel.rs` and `crat
 | envelope and hostile summaries | `hostile_summaries_stay_one_escaped_untrusted_line`, `hostile_summaries_stay_one_escaped_string_in_the_cli_message` | n/a |
 | canary scratch safety | `the_canary_selftest_passes_and_refuses_unowned_state` | n/a |
 
-Still owed before any rollout:
+macOS, 2026-10-11 (macOS 27.0.1 arm64, the release tree with the macOS test-harness fix): build, clippy and both test suites pass, and so do the canary selftest, the failure gate (EOF release, kill -9 then lease expiry then a plain `wait`, the poll without a hub, child reaping) and the client-host authority fixtures. After 17 to 19 idle minutes, a pushed event woke Claude, pi and Codex, and each received and acked it. Codex busy delivery was not run on macOS.
 
-- per client, macOS failure, authority and idle-wake proof (unrun);
-- an owner decision before enabling any adapter.
+Rollout, v0.18.0 (a prerelease), 2026-10-11: one canary lane per client on the Linux host, in the order Codex, pi, Claude.
+
+- Codex: a real implementer lane with the sidecar received two lead answers pushed into its idle thread, the second after ten idle minutes. Each was submitted within a second, received about 10 s later and acked at fence 1, with no redelivery. Stdin EOF released the lease.
+
+Still owed:
+
+- macOS busy delivery for Codex, and queueing behind a turn of two minutes or more for Claude and pi;
+- the pi and Claude canaries, then an owner decision before any wider enablement.
