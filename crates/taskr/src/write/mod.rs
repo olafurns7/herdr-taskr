@@ -33,6 +33,29 @@ pub fn flags(cmd: &str, json: bool) -> FlagSet {
                 .bool("list", false, "list the --as root's subscriptions")
                 .int("cancel", 0, "cancel this subscription id");
         }
+        "delivery new" | "delivery submitted" | "delivery received" | "delivery ls" => {
+            f.int(
+                "as",
+                0,
+                "a root orchestrator's own task id (a worker uses TASKR_TASK and TASKR_LAUNCH)",
+            );
+            if cmd == "delivery ls" {
+                f.bool("open", false, "only attempts not yet received");
+            } else {
+                f.int(
+                    "session",
+                    0,
+                    "with --as: the root's generation, the event id `taskr adopt` printed (0 before any adopt)",
+                );
+            }
+            if cmd == "delivery new" {
+                f.string(
+                    "adapter",
+                    "",
+                    "the delivering adapter, [a-z0-9][a-z0-9._-]{0,31}",
+                );
+            }
+        }
         "decide" => {
             f.int("as", 0, "the root orchestrator's own task id").int(
                 "revoke",
@@ -204,7 +227,28 @@ pub fn flags(cmd: &str, json: bool) -> FlagSet {
     f
 }
 fn usage_line(cmd: &str) -> String {
-    crate::cli::usage_line(cmd)
+    crate::cli::usage_line(cmd.strip_prefix("delivery ").map_or(cmd, |_| "delivery"))
+}
+/// The first of `names` given more than once, in any `-x`, `--x` or `--x=v` form;
+/// `-h` and `--help` are one flag.
+fn repeated<'a>(args: &'a [String], names: &[&str]) -> Option<&'a str> {
+    let mut seen = vec![];
+    for s in args.iter().take_while(|s| s.as_str() != "--") {
+        let Some(raw) = s.strip_prefix('-') else {
+            continue;
+        };
+        let name = match raw.trim_start_matches('-').split('=').next().unwrap_or("") {
+            "h" => "help",
+            name => name,
+        };
+        if names.contains(&name) {
+            if seen.contains(&name) {
+                return Some(name);
+            }
+            seen.push(name);
+        }
+    }
+    None
 }
 
 pub(crate) fn error(json: bool, cmd: &str, e: Error, mut out: Value) -> ExitCode {
@@ -351,6 +395,21 @@ pub fn emit(cmd: &str, json_mode: bool, v: &Value) {
                 }
             ),
         },
+        "delivery ls" => {
+            for r in v["attempts"].as_array().expect("attempts") {
+                println!("j1 {}", compact_json(r).expect("JSON"));
+            }
+        }
+        "delivery new" | "delivery submitted" | "delivery received" => println!(
+            "dv1 {} {} {}{suffix}",
+            v["attempt_id"],
+            v["state"].as_str().unwrap_or(""),
+            if v["launch_id"].is_null() {
+                format!("session={}", v["session_gen"])
+            } else {
+                format!("launch={}", v["launch_id"])
+            }
+        ),
         "prompt" | "answer" => {
             let mut m = json!({});
             for (k, v) in v.as_object().expect("object") {
@@ -400,6 +459,30 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
             },
             &args[2..],
         )
+    } else if raw == "delivery" {
+        const SUBS: [(&str, &str); 4] = [
+            ("new", "delivery new"),
+            ("submitted", "delivery submitted"),
+            ("received", "delivery received"),
+            ("ls", "delivery ls"),
+        ];
+        let Some((_, cmd)) = SUBS
+            .iter()
+            .find(|(s, _)| args.get(1).is_some_and(|a| a == s))
+        else {
+            let mut f = flags("delivery", json_mode);
+            if f.parse(&args[1..], 0, usize::MAX).is_ok() && f.help() {
+                print!("{}", f.usage(&usage_line("delivery ls")));
+                return Some(ExitCode::Ok);
+            }
+            return Some(error(
+                f.json(),
+                raw,
+                store::usage("delivery needs new, submitted, received or ls"),
+                json!({}),
+            ));
+        };
+        (*cmd, &args[2..])
     } else {
         (raw, &args[1..])
     };
@@ -427,6 +510,10 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
         "next",
         "decide",
         "after",
+        "delivery new",
+        "delivery submitted",
+        "delivery received",
+        "delivery ls",
     ]
     .contains(&cmd)
     {
@@ -434,7 +521,7 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
     }
     let mut f = flags(cmd, json_mode);
     let (min, max) = match cmd {
-        "start" | "wait" | "handover" | "doc backfill" => (0, 0),
+        "start" | "wait" | "handover" | "doc backfill" | "delivery ls" => (0, 0),
         "decide" | "after" => (0, 1),
         "next" => (1, 2),
         "done" => (0, 1),
@@ -455,6 +542,13 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
             "ask: expected 1 to 1 positional arguments, got {}",
             f.positional.len()
         ));
+    }
+    if parsed.is_ok()
+        && cmd.starts_with("delivery ")
+        // A repeated help flag would run as a write locally but read as help to the hub.
+        && let Some(k) = repeated(tail, &["as", "session", "adapter", "help"])
+    {
+        parsed = Err(format!("{cmd}: --{k} given more than once"));
     }
     if let Err(e) = parsed {
         return Some(error(f.json(), raw, store::usage(e), json!({})));
@@ -597,6 +691,54 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
                 &kinds.join(","),
                 f.get_bool("keep"),
             )
+        }
+        "delivery new" | "delivery submitted" | "delivery received" | "delivery ls" => {
+            let as_id = f.get_int("as");
+            if f.was_set("as") && as_id <= 0 {
+                return Err(store::usage("--as must be a positive task id"));
+            }
+            if cmd == "delivery ls" {
+                return store::delivery::list(&open()?, as_id, f.get_bool("open"));
+            }
+            let session = if f.was_set("session") {
+                if f.get_int("session") < 0 {
+                    return Err(store::usage("--session must be 0 or an adopt event id"));
+                }
+                if as_id == 0 {
+                    return Err(store::usage("--session needs --as ROOT"));
+                }
+                Some(f.get_int("session"))
+            } else {
+                None
+            };
+            if as_id != 0 && session.is_none() {
+                return Err(store::usage(
+                    "--as ROOT needs --session GEN: the event id `taskr adopt` printed, 0 before any adopt",
+                ));
+            }
+            if cmd != "delivery new" {
+                let id = store::id(&p[0], "attempt id")?;
+                return if cmd == "delivery submitted" {
+                    store::delivery::submitted(&mut open()?, as_id, session, id)
+                } else {
+                    store::delivery::received(&mut open()?, as_id, session, id)
+                };
+            }
+            let id = store::id(&p[0], "event id")?;
+            let adapter = f.get_string("adapter");
+            if adapter.is_empty()
+                || adapter.len() > 32
+                || !adapter.as_bytes()[0].is_ascii_lowercase()
+                    && !adapter.as_bytes()[0].is_ascii_digit()
+                || !adapter
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))
+            {
+                return Err(store::usage(
+                    "delivery new needs --adapter NAME matching [a-z0-9][a-z0-9._-]{0,31}",
+                ));
+            }
+            store::delivery::new(&mut open()?, as_id, session, id, adapter)
         }
         "doc rm" => {
             let id = store::id(&p[0], "document id")?;

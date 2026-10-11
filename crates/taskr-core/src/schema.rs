@@ -4,7 +4,7 @@ use std::path::Path;
 pub const SCHEMA: &str = include_str!("../../../schema.sql");
 pub const SEARCH_TRIGGER: &str = include_str!("search-trigger.sql");
 pub const SEARCH_REBUILD: &str = include_str!("search-rebuild.sql");
-/// Rust-only tables (v2: `taskr after`); schema.sql stays the frozen Go schema.
+/// Rust-only tables (v2: `taskr after`, v3: `taskr delivery`); schema.sql stays the frozen Go schema.
 pub const SUBSCRIPTIONS: &str = "create table if not exists subscriptions (
   id             integer primary key,
   waiter_task_id integer not null references tasks(id),
@@ -16,9 +16,26 @@ pub const SUBSCRIPTIONS: &str = "create table if not exists subscriptions (
 );
 create index if not exists subscriptions_open on subscriptions(target) where fired_at is null;
 ";
-pub const SCHEMA_VERSION: i64 = 2;
+/// v3: `taskr delivery` attempts. A worker attempt binds a launch, a root's an adopt
+/// generation; machine is NULL hub-local, else the RPC caller.
+pub const DELIVERY_ATTEMPTS: &str = "create table if not exists delivery_attempts (
+  id           integer primary key,
+  event_id     integer not null references events(id),
+  task_id      integer not null references tasks(id),
+  launch_id    integer references launches(id),
+  session_gen  integer,
+  machine      text,
+  adapter      text not null,
+  created_at   text not null,
+  submitted_at text,
+  received_at  text,
+  check ((launch_id is null) != (session_gen is null))
+);
+create index if not exists delivery_attempts_task on delivery_attempts(task_id);
+";
+pub const SCHEMA_VERSION: i64 = 3;
 #[cfg(test)]
-const SCHEMA_HASH: &str = "1a248ec37a3a377fac87702a248b3ac120c23b50d686e0da9c9fb5553e4b54eb";
+const SCHEMA_HASH: &str = "86d8099e0b82cbd4191605109bd9a7605fe3edbe82ab224b69dc0dae2b3e23b1";
 
 pub fn open(path: &Path) -> rusqlite::Result<Connection> {
     let mut db = connect(path, rusqlite::OpenFlags::default())?;
@@ -50,6 +67,7 @@ pub fn migrate(db: &mut Connection) -> rusqlite::Result<()> {
     let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
     tx.execute_batch(SCHEMA)?;
     tx.execute_batch(SUBSCRIPTIONS)?;
+    tx.execute_batch(DELIVERY_ATTEMPTS)?;
     for (table, column, kind) in [
         ("tasks", "waiting_until", "text"),
         ("launches", "workspace_id", "text"),
@@ -179,7 +197,7 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
-    fn v1_ledger_migrates_to_v2_once_and_idempotently() {
+    fn v1_ledger_migrates_to_current_once_and_idempotently() {
         let root = std::env::temp_dir().join(format!("taskr-schema-v1-{}", std::process::id()));
         std::fs::create_dir(&root).unwrap();
         let path = root.join("ledger.db");
@@ -199,7 +217,7 @@ mod tests {
             .unwrap()
         };
         let want = (
-            2,
+            SCHEMA_VERSION,
             1,
             0,
             "CREATE INDEX subscriptions_open on subscriptions(target) where fired_at is null"
@@ -217,6 +235,71 @@ mod tests {
                 .unwrap(),
             "ok"
         );
+        drop(db);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn v2_ledger_migrates_to_v3_and_search_repair_keeps_attempts() {
+        let root = std::env::temp_dir().join(format!("taskr-schema-v2-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("ledger.db");
+        // A v2 ledger as #40 left it, with a task, an inbox cursor and a subscription.
+        let db = Connection::open(&path).unwrap();
+        db.execute_batch(SCHEMA).unwrap();
+        db.execute_batch(SUBSCRIPTIONS).unwrap();
+        db.execute_batch(SEARCH_REBUILD).unwrap();
+        db.pragma_update(None, "user_version", 2).unwrap();
+        db.execute_batch("insert into tasks(id,name,role,created_at,updated_at) values(1,'kept','orchestrator','t','t');
+            insert into events(id,task_id,recipient_task_id,kind,summary,created_at) values(5,1,1,'note','kept event','t');
+            update tasks set acked_event_id=5,pending_event_id=5 where id=1;
+            insert into subscriptions(waiter_task_id,target,kinds,created_at) values(1,'2','done','t');").unwrap();
+        drop(db);
+        let shape = |db: &Connection| {
+            db.query_row(
+                "select (select user_version from pragma_user_version), (select count(*) from events), (select acked_event_id||'/'||pending_event_id from tasks where id=1), (select count(*) from subscriptions), (select count(*) from delivery_attempts), (select count(*) from sqlite_master where name='delivery_attempts_task')",
+                [],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(3)?, r.get::<_, i64>(4)?, r.get::<_, i64>(5)?)),
+            )
+            .unwrap()
+        };
+        // A hub child of a daemon not yet restarted (open_migrated) migrates it once.
+        let db = crate::db::open_migrated(&path).unwrap();
+        assert_eq!(shape(&db), (3, 1, "5/5".into(), 1, 0, 1));
+        // Exactly one of launch_id and session_gen: the CHECK, not a foreign key, refuses.
+        db.execute(
+            "insert into launches(id,task_id,recorded_at) values(1,1,'t')",
+            [],
+        )
+        .unwrap();
+        for (launch, session) in [(None, None), (Some(1), Some(0))] {
+            let err = db.execute("insert into delivery_attempts(event_id,task_id,launch_id,session_gen,adapter,created_at) values(5,1,?,?,'x','t')", rusqlite::params![launch, session]).unwrap_err();
+            assert!(err.to_string().contains("CHECK constraint failed"), "{err}");
+        }
+        db.execute("insert into delivery_attempts(event_id,task_id,launch_id,adapter,created_at) values(5,1,1,'x','t')", []).unwrap();
+        db.execute("delete from delivery_attempts", []).unwrap();
+        db.execute("insert into delivery_attempts(event_id,task_id,session_gen,adapter,received_at,created_at) values(5,1,0,'x','r','t')", []).unwrap();
+        // A healthy v3 ledger skips migration: a dropped index stays dropped.
+        db.execute_batch("drop index delivery_attempts_task")
+            .unwrap();
+        drop(db);
+        let db = open(&path).unwrap();
+        assert_eq!(shape(&db), (3, 1, "5/5".into(), 1, 1, 0));
+        // Damaged search reruns the migration; the attempt row survives unchanged.
+        db.execute_batch("drop trigger search_events_insert")
+            .unwrap();
+        drop(db);
+        let db = open(&path).unwrap();
+        assert_eq!(shape(&db), (3, 1, "5/5".into(), 1, 1, 1));
+        assert_eq!(
+            db.query_row(
+                "select event_id||'/'||session_gen||'/'||received_at from delivery_attempts",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+            "5/0/r"
+        );
+        assert!(search_intact(&db).unwrap());
         drop(db);
         std::fs::remove_dir_all(root).unwrap();
     }
