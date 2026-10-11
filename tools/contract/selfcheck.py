@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check fixture cloning and logical row/FTS comparison without any taskr binary."""
 from pathlib import Path
+import shutil
 import sqlite3
 import tempfile
 import run as contract
@@ -89,7 +90,7 @@ with tempfile.TemporaryDirectory(prefix='taskr-contract-check-') as scratch:
         pass
     else:
         raise AssertionError('missing observation was accepted')
-    golden.session = golden.Session('run', True, directory, Path('/bin/true').resolve(), binary)
+    golden.session = golden.Session('run', True, directory, Path(shutil.which('true')).resolve(), binary)
     assert golden.normalize(golden.LOCAL_HOST) == golden.LOCAL_HOST
     assert golden.normalize('{"server_host":"'+golden.LOCAL_HOST+'"}') == '{"server_host":"<local-host>"}'
     golden.observe('gzip bytes', (0, b'dev\n', b''))
@@ -111,7 +112,7 @@ with tempfile.TemporaryDirectory(prefix='taskr-contract-check-') as scratch:
     with sqlite3.connect(copy) as db:
         db.execute("update tasks set name='changed again' where id=1")
     assert golden.digest(contract.logical(copy, normalized=True)) != golden.digest(before)
-    golden.session = golden.Session('replay', True, directory, Path('/bin/true').resolve(), binary)
+    golden.session = golden.Session('replay', True, directory, Path(shutil.which('true')).resolve(), binary)
     record = {'v': 1, 'lock': '42\n', 'identity': {'pid': 42, 'uid': 1000, 'start_time': '99'}}
     golden.observe('Go records', record)
     golden.finish()

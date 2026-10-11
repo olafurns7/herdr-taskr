@@ -1562,17 +1562,41 @@ impl HeldTool {
         );
     }
 }
+/// One `ps -o FIELD` value: the macOS stand-in for `/proc`.
+#[cfg(not(target_os = "linux"))]
+fn ps(pid: u32, field: &str) -> String {
+    std::process::Command::new("/bin/ps")
+        .args(["-o", field, "-p", &pid.to_string()])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()
+}
 /// Linux: a process's user plus system CPU in clock ticks.
+#[cfg(target_os = "linux")]
 fn cpu(pid: u32) -> u64 {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
     let fields: Vec<&str> = stat[stat.rfind(')').unwrap() + 2..].split(' ').collect();
     fields[11].parse::<u64>().unwrap() + fields[12].parse::<u64>().unwrap()
 }
+/// Elsewhere: `ps -o time=` is [M]M:SS.hh, in ticks of 1/100 s like Linux CLK_TCK.
+#[cfg(not(target_os = "linux"))]
+fn cpu(pid: u32) -> u64 {
+    let t = ps(pid, "time=");
+    let (m, s) = t.split_once(':').unwrap();
+    let (s, h) = s.split_once('.').unwrap();
+    (m.parse::<u64>().unwrap() * 60 + s.parse::<u64>().unwrap()) * 100 + h.parse::<u64>().unwrap()
+}
 /// Linux: a process's resident memory in KiB.
+#[cfg(target_os = "linux")]
 fn rss(pid: u32) -> u64 {
     let status = std::fs::read_to_string(format!("/proc/{pid}/status")).unwrap();
     let line = status.lines().find(|l| l.starts_with("VmRSS:")).unwrap();
     line.split_whitespace().nth(1).unwrap().parse().unwrap()
+}
+/// Elsewhere: `ps -o rss=` in KiB.
+#[cfg(not(target_os = "linux"))]
+fn rss(pid: u32) -> u64 {
+    ps(pid, "rss=").parse().unwrap()
 }
 const FLOOD_LINES: usize = 64;
 /// Writes FLOOD_LINES valid 512 KiB notifications (32 MiB) on its own thread, counting
