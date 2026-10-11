@@ -129,8 +129,28 @@ The release with `taskr after` raises the ledger schema to 2: one new table,
   and `subscriptions_open on subscriptions(target) where fired_at is null`
   if they are missing, and sets `user_version` to 2. Running it again changes
   nothing.
-- **Rollback** stays safe: an older binary opens a schema-2 ledger without
-  migrating and never reads the new table.
+- **Rollback** stays safe: an older binary's own migration leaves the new
+  table and `user_version` alone, and it never reads the table.
+
+### Release notes: ledger schema 3 and 4 (push)
+
+The push release raises the ledger schema to 4 with two new tables:
+`delivery_attempts` (schema 3) and `consumer_leases` (schema 4). No existing
+table changes. Every push adapter ships off. Push delivery is opt-in
+([push.md](push.md)), and plain `wait` and `ack` behave as before while no
+consumer lease is live.
+
+- **Restart the daemon on install**, as for schema 2. The migration runs in one
+  transaction: it creates `delivery_attempts` with its `delivery_attempts_task`
+  index, and `consumer_leases`, if they are missing. It then sets
+  `user_version` to 4. Running it again changes nothing.
+- **Upgrade every host, and every session's `taskr`**, before starting an
+  adapter. A queued Codex turn runs the session's own `taskr`, so an older
+  binary there cannot receipt (push.md, Codex prerequisites). On macOS, stop
+  the adapters before replacing the binary (push.md, macOS).
+- **Rollback** stays safe for the ledger: an older binary never reads the new
+  tables. Stop every adapter first, because an older `taskr wait` ignores the
+  consumer lease.
 
 ## tools/release-rust.sh
 

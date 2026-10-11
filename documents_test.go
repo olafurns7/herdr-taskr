@@ -68,6 +68,7 @@ func TestDocumentsSchema(t *testing.T) {
 	root := h.newTask("root", "orchestrator", 0)
 	docExec(t, db, `drop table documents`)
 	docExec(t, db, `drop table doc_blobs`)
+	docExec(t, db, `pragma user_version = 0`) // a pre-document ledger predates user_version
 	if code, _ := h.run(nil, "status", "--tree", id(root)); code != exitOK {
 		t.Fatal("selected CLI migration failed", code, h.lastStderr())
 	} // migration must be performed by the selected CLI
