@@ -995,7 +995,16 @@ mod tests {
         let held = lock(&dir, "send.lock", true).unwrap().unwrap();
         assert!(lock(&dir, "send.lock", true).unwrap().is_none());
         drop(held);
-        assert!(lock(&dir, "send.lock", true).unwrap().is_some());
+        // A child spawned by a concurrent test holds a copy of the lock's
+        // descriptor until it execs, so the retake may need a moment.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while lock(&dir, "send.lock", true).unwrap().is_none() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "send.lock not released"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         fs::write(root(&dir).join("queue/000002-bad.json"), b"{truncated").unwrap();
         let _lock = lock(&dir, "lock", false).unwrap();
         assert_eq!(quarantine(&dir, "queue").unwrap().len(), 1);
