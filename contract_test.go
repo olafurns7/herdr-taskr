@@ -290,7 +290,9 @@ func TestPromptFileSendsPathAndTextSendsLiteral(t *testing.T) {
 const (
 	wantImplementerContract = " Worker: run that got even if a hook did (dup = success); honor Progress; " +
 		"taskr ready TEXT --report PATH per slice; missing decision: taskr ask TEXT --blocking, stop dependent work, " +
-		"taskr wait --for answer, taskr ack EVENT_ID --as $TASKR_TASK; end: taskr done [TEXT] or taskr fail TEXT; " +
+		"taskr wait --for answer, taskr ack EVENT_ID --as $TASKR_TASK " +
+		"(push lane: end the turn, the answer arrives pushed, ack with its --fence); " +
+		"end: taskr done [TEXT] or taskr fail TEXT; " +
 		"write report at brief's path, reply with it and three lines; " +
 		"no commit, push, PR, issue-tracker write or agent start unless the brief allows; " +
 		"never sleep waiting: use taskr wait, and herdr pane wait-output only for a non-agent process; " +
@@ -298,7 +300,9 @@ const (
 	wantReviewerContract = " Worker: run that got even if a hook did (dup = success); " +
 		"reviewer: first load ~/.agents/skills/taskr/references/review.md; honor Progress; " +
 		"taskr ready TEXT --report PATH per slice; missing decision: taskr ask TEXT --blocking, stop dependent work, " +
-		"taskr wait --for answer, taskr ack EVENT_ID --as $TASKR_TASK; end: taskr done [TEXT] or taskr fail TEXT; " +
+		"taskr wait --for answer, taskr ack EVENT_ID --as $TASKR_TASK " +
+		"(push lane: end the turn, the answer arrives pushed, ack with its --fence); " +
+		"end: taskr done [TEXT] or taskr fail TEXT; " +
 		"write report at brief's path, reply with it and three lines; " +
 		"no commit, push, PR, issue-tracker write or agent start unless the brief allows; " +
 		"never sleep waiting: use taskr wait, and herdr pane wait-output only for a non-agent process; " +
@@ -336,8 +340,8 @@ func TestPromptFileCarriesWorkerContractByRole(t *testing.T) {
 		}
 	}
 	for _, role := range []string{"implementer", "researcher", "reviewer"} {
-		if n := len(workerContract(role)); n > 700 {
-			t.Errorf("%s contract is %d bytes, want at most 700", role, n)
+		if n := len(workerContract(role)); n > 800 {
+			t.Errorf("%s contract is %d bytes, want at most 800", role, n)
 		}
 	}
 }
