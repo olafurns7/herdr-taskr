@@ -262,6 +262,7 @@ pub fn write(db: &mut Connection, w: Write<'_>) -> Result<Value> {
         }
         if w.kind == "ask" {
             out["ask_id"] = json!(eid);
+            super::orch::relay_owner(tx, eid, None)?;
         }
         documents::capture_report(tx, t.id, eid, report.as_ref())?;
         Ok(out)

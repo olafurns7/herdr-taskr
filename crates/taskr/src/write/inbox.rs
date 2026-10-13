@@ -43,6 +43,8 @@ pub fn code(kind: &str) -> &str {
         "closed" => "c",
         "pr" => "pu",
         "after" => "af",
+        "owner_ask" => "oq",
+        "owner_closed" => "oc",
         other => other,
     }
 }
