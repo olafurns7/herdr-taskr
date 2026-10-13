@@ -10,6 +10,7 @@ var kindCodes = map[string]string{
 	"done": "d", "fail": "f", "herdr": "h", "note": "n", "start": "s",
 	"prompt": "p", "prompt_outcome": "po", "decision": "dc", "revoke": "rv",
 	"doc": "do", "ref": "rf", "next": "nx", "handover": "ho", "adopt": "ad", "launch": "l", "closed": "c",
+	"owner_ask": "oq", "owner_closed": "oc",
 }
 
 // Aliases apply only to the CLI envelope. Arbitrary data/kv/refs, hashes and

@@ -383,10 +383,85 @@ pub fn answer(
         {
             return Err(reject(format!("ask {ask} was answered concurrently")));
         }
+        relay_owner(tx, ask, Some(eid))?;
         Ok(
             json!({"ok":true,"ask_id":ask,"answer_id":eid,"task_id":tid,"delivered":false,"asker_waiting":t.waiting.is_some_and(|w|w>now())}),
         )
     })
+}
+/// Open roots with `hub=on`.
+fn hubs(tx: &Connection) -> Result<Vec<i64>> {
+    let mut stmt=tx.prepare("select t.id from tasks t where t.parent_id is null and t.status!='closed' and (select json_extract(e.data,'$.value') from events e where e.task_id=t.id and e.kind='ref' and json_extract(e.data,'$.key')='hub' order by e.id desc limit 1)='on' order by t.id")?;
+    let ids = stmt
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(ids)
+}
+/// Copies an owner ask (`answer` None) or its answer or withdraw to the single hub
+/// root's inbox as `owner_ask` / `owner_closed`. Every path that stores an ask or
+/// an answer calls this in the same transaction. No hub, several hubs, an asker
+/// in the hub's tree, or a close the hub never saw open: nothing.
+pub fn relay_owner(tx: &Connection, ask: i64, answer: Option<i64>) -> Result<()> {
+    let [hub] = hubs(tx)?[..] else {
+        return Ok(());
+    };
+    let (tid, summary, raw) = tx.query_row(
+        "select task_id,coalesce(summary,''),coalesce(data,'{}') from events where id=? and kind='ask'",
+        [ask],
+        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
+    )?;
+    let data: Value = serde_json::from_str(&raw).unwrap_or(json!({}));
+    let asker_root = root(tx, tid)?;
+    if data["owner"] != true || asker_root == hub {
+        return Ok(());
+    }
+    let Some(aid) = answer else {
+        let mut d = json!({"ask":ask,"root":asker_root,"blocking":data["blocking"]==true});
+        if let Some(q) = data.get("question") {
+            d["question"] = q.clone();
+        }
+        event(
+            tx,
+            Event {
+                task: tid,
+                to: Some(hub),
+                kind: "owner_ask",
+                summary: &summary,
+                data: Some(d),
+                related: Some(ask),
+                ..Event::default()
+            },
+        )?;
+        return Ok(());
+    };
+    let seen: bool = tx.query_row(
+        "select exists(select 1 from events where kind='owner_ask' and related_event_id=? and recipient_task_id=?)",
+        params![ask, hub],
+        |r| r.get(0),
+    )?;
+    if !seen {
+        return Ok(());
+    }
+    let (text, araw) = tx.query_row(
+        "select coalesce(summary,''),coalesce(data,'{}') from events where id=?",
+        [aid],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+    )?;
+    let adata: Value = serde_json::from_str(&araw).unwrap_or(json!({}));
+    let d = json!({"ask":ask,"answer":aid,"withdrawn":adata["withdrawn"]==true});
+    event(
+        tx,
+        Event {
+            task: tid,
+            to: Some(hub),
+            kind: "owner_closed",
+            summary: &text,
+            data: Some(d),
+            related: Some(ask),
+            ..Event::default()
+        },
+    )?;
+    Ok(())
 }
 pub fn set(db: &mut Connection, id: i64, pairs: &[(String, String)]) -> Result<Value> {
     transaction(db, |tx| {
@@ -406,6 +481,19 @@ pub fn set(db: &mut Connection, id: i64, pairs: &[(String, String)]) -> Result<V
             }
             if !value.is_empty() && super::tmp::bytes(value).is_none() {
                 return Err(usage("tmp bytes must be unsigned integer logical bytes"));
+            }
+        }
+        if let Some((_, v)) = pairs.iter().find(|(k, _)| k == "hub") {
+            if !matches!(v.as_str(), "on" | "") {
+                return Err(usage("hub must be on or empty"));
+            }
+            if t.parent.is_some() || t.launch.is_some() {
+                return Err(reject("hub is for a root orchestrator only"));
+            }
+            if v == "on"
+                && let Some(other) = hubs(tx)?.into_iter().find(|&h| h != id)
+            {
+                return Err(reject(format!("root {other} already has hub=on")));
             }
         }
         if pairs.iter().any(|(k, _)| k == "glance.state") {

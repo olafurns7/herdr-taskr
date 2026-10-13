@@ -18,6 +18,8 @@ How the loop holds the inbox, what a push carries and how it reconciles uncertai
 - One event at a time. The fenced wait offers the oldest pending event first, so a later event is not pushed while an earlier one is unacked. If the model never acks, pushes of that event stop after 3, and the inbox waits for an ack, a handoff or a restart.
 - The lease fences consumption. While an adapter holds it, a plain `taskr wait` or `ack` on the inbox is refused (exit 6) and names the holder.
 
+Owner asks from other campaigns: the hub root runs `taskr set ROOT hub=on` once (root only; a second open root with `hub=on` is refused with exit 6; `hub=` clears it). Every later owner ask raised outside the hub's own tree then also lands in the hub's inbox as `owner_ask` (code `oq`; data `ask`, `root`, `blocking`, and `question` when it has one), and its answer or withdraw as `owner_closed` (`oc`; data `ask`, `answer`, `withdrawn`), so a pushed hub sees them without polling `asks --open`. With no hub, or more than one, nothing is copied. Example: `wait --as 1 --for owner_ask,owner_closed`.
+
 Each attempt records an adapter label naming the transport, not the client: `claude-channel` for a notification line (Claude, and pi through the shim), `codex-queue` for the sidecar.
 
 ### macOS
