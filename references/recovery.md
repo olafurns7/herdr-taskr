@@ -9,7 +9,7 @@ Load this when a taskr command fails, a `no_receipt`, `model_capacity`, quota or
 - If a write was killed or interrupted, rerun the `retry with:` command from its announce line or exit-5 line (same key) before anything else.
 - For an ordinary command, rerun that exact line (same key) before anything else, including any wait. The server keeps each answer for 7 days by key and returns it again instead of running the command twice.
 - A key still running is retried within the same window; exit 5 "outcome unknown" after it ends: rerun the same line later. The same key with other arguments, or from another host, exits 6.
-- Reads and `wait` are never stored: rerun them plain.
+- Reads and `wait` are never stored: rerun reads plain; rerun `wait` only in a plain lane (see [Push lane](../SKILL.md#push-lane)).
 - A worker's `ask` that exited 5 and was not retried is not in the ledger: no answer will come. Retry it before you wait.
 - On a client host, the `prompt` relay uses fresh internal keys, ignores `--request-key` and is not retried automatically. On exit 5, keep any attempt id and check `taskr log` for the prompt event and the agent before resending.
 - `--request-key` is client mode only (exit 2 locally).
