@@ -10,11 +10,13 @@ This repository configures none of them: nothing here edits an `.mcp.json`, a se
 
 How the loop holds the inbox, what a push carries and how it reconciles uncertain writes: [mcp.md](mcp.md#channel). The Codex sidecar runs the same loop.
 
+Local adapters share 32 hint streams; beyond that they fall back to the 30 s poll and retry the stream with a 1–60 s backoff.
+
 ## What it promises
 
 - At least once, not exactly once. An event can reach the model more than once: up to 3 pushes per adapter process without a receipt, a restart starts a new budget, and a push already written or queued can arrive after a handoff. The event id identifies the work; the model checks the inbox before handling and does not repeat handled work.
 - Historical attempt volume does not enlarge the shared Claude/Codex push state response; `delivery ls` still lists the full audit history.
-- A push is not an ack, and not a receipt. The adapter records `delivery new` and `delivery submitted`; only the model records `delivery received` and acks after handling. Submitted means the notification line was written and flushed, or `codex queue` exited 0, nothing more. A Claude session that is not registered as a channel drops a notification silently. That case is visible as submitted attempts with no receipt (`taskr delivery ls --open`) and the event still pending.
+- A push is not an ack, and not a receipt. The adapter records `delivery new` and `delivery submitted`; only the model records `delivery received` and acks after handling. Submitted means the notification line was written and flushed, or `codex queue` exited 0, nothing more. A Claude session that is not registered as a channel drops a notification silently. `taskr delivery ls --open` lists attempts with no receipt, including attempts whose event was later acked through another attempt or a later ack; check `taskr inbox` to see whether the event is still pending.
 - A stall longer than the lease stops it. If the loop cannot renew within 60 s (a hub outage, a stuck command), it pushes nothing on the stale lease, the refused renew stops it for good, and the adapter must be restarted to resume pushes.
 - One event at a time. The fenced wait offers the oldest pending event first, so a later event is not pushed while an earlier one is unacked. If the model never acks, pushes of that event stop after 3, and the inbox waits for an ack, a handoff or a restart.
 - The lease fences consumption. While an adapter holds it, a plain `taskr wait` or `ack` on the inbox is refused (exit 6) and names the holder.
@@ -39,7 +41,7 @@ Register the server in the project's `.mcp.json` and start Claude with the devel
 claude --dangerously-load-development-channels server:taskr
 ```
 
-Use the project `.mcp.json`: in Claude Code 2.1.296, a server given only with `--mcp-config` was not registered as a channel by `server:<name>`. A worker session inherits `TASKR_TASK` and `TASKR_LAUNCH`; a root adds `"--as", "ROOT", "--session", "GEN"` to `args`, where GEN is the event id `taskr adopt` printed (0 before any adopt). Channels are a research preview: the flag shows a confirmation dialog, is ignored with `-p` and the SDK, needs claude.ai or Console API-key authentication (not Bedrock, Vertex or Foundry), and Team or Enterprise organizations must set `channelsEnabled`. Events that arrive while Claude is busy queue and are delivered together on the next turn.
+Use the project `.mcp.json`: in Claude Code 2.1.296, a server given only with `--mcp-config` was not registered as a channel by `server:<name>`. A worker session inherits `TASKR_TASK` and `TASKR_LAUNCH`; a root adds `"--as", "ROOT", "--session", "GEN"` to `args`, where GEN is the event id `taskr adopt` printed (0 before any adopt). Channels are a research preview: the flag shows a confirmation dialog, is ignored with `-p` and the SDK, needs claude.ai or Console API-key authentication (not Bedrock, Vertex or Foundry), and Team or Enterprise organizations must set `channelsEnabled`. Events that arrive while Claude is busy may surface in the same turn after a tool completes, or queue for the next turn. The model still records receipt and acks after handling; an attempt with no receipt is re-pushed after 120 s, within the attempt budget.
 
 The model sees `<channel source="taskr" event="E" attempt="A" fence="N" kind="K" task="S">TEXT</channel>`. TEXT names the server's `taskr_received`, `taskr_inbox`, `taskr_task` and `taskr_ack` tools first. Its CLI lines are a labelled fallback, only for when the tools are unavailable, and they need the task's taskr environment.
 
