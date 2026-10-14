@@ -47,6 +47,13 @@ pub(crate) const KEYS: &[Key] = &[
         GLANCE,
     ),
     key("Move", "tab", "next", "next pane; shift-tab back", CAMPAIGN),
+    key(
+        "View",
+        "1-4",
+        "panels",
+        "toggle asks, checks, campaigns, PRs (+ shown, - hidden)",
+        GLANCE,
+    ),
     key("Move", "1-5", "jump", "jump to a pane", CAMPAIGN),
     key("Move", "wheel", "scroll", "scroll", ALL),
     key(

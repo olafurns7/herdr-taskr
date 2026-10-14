@@ -84,6 +84,11 @@ fn detail(app: &mut App) {
     (app.row, app.detail, app.scroll) = (2, true, usize::MAX);
 }
 
+fn dashboard(app: &mut App) {
+    app.github = crate::github::demo();
+    glance(app);
+}
+
 fn glance(app: &mut App) {
     // docs-refresh changed since the owner last looked.
     app.changed = vec![4296];
@@ -198,6 +203,39 @@ pub fn all() -> Vec<Spec> {
         setup,
     };
     vec![
+        spec("dashboard", 120, 40, "", dashboard),
+        spec("dashboard", 120, 40, "-light", dashboard),
+        spec("dashboard", 46, 30, "", dashboard),
+        spec("dashboard", 46, 30, "-light", dashboard),
+        spec("dashboard", 46, 30, "-ascii", |app| {
+            dashboard(app);
+            app.ascii = true;
+            app.theme = theme::PLAIN;
+        }),
+        spec("dashboard", 46, 30, "-hidden", |app| {
+            dashboard(app);
+            app.config.panels[0] = false;
+        }),
+        spec("dashboard", 46, 30, "-off", |app| {
+            app.config.panels = [false; 4];
+            app.config_warning = Some("TUI config not saved; choices kept for this session".into());
+        }),
+        spec("dashboard", 46, 30, "-empty-ledger", |app| {
+            dashboard(app);
+            app.data = Data::default();
+        }),
+        spec("dashboard", 46, 30, "-failed-ledger", |app| {
+            dashboard(app);
+            no_data(app);
+        }),
+        spec("dashboard", 120, 40, "-stale-ledger", |app| {
+            dashboard(app);
+            stale(app);
+        }),
+        spec("dashboard", 46, 30, "-stale-prs", |app| {
+            dashboard(app);
+            app.github.sources[0].error = Some("GitHub unavailable");
+        }),
         spec("glance", 46, 30, "", glance),
         spec("glance", 70, 30, "", glance),
         spec("glance", 120, 40, "", glance),

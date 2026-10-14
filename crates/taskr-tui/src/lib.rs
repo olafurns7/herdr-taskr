@@ -6,7 +6,9 @@
 
 pub mod actions;
 pub mod client;
+pub mod config;
 pub mod frames;
+pub mod github;
 pub mod input;
 pub mod model;
 pub mod theme;
@@ -174,6 +176,9 @@ pub struct App {
     /// The slotr view's own read, apart from the glance's: `loaded` once slotr answered,
     /// `error` while it cannot be read. The last good pools stay in `data.slotr`.
     pub slotr: Fetch,
+    pub config: config::Config,
+    pub config_warning: Option<String>,
+    pub github: github::Dashboard,
 }
 
 impl App {
@@ -208,6 +213,9 @@ impl App {
             detail: false,
             ascii: false,
             slotr: Fetch::default(),
+            config: config::Config::default(),
+            config_warning: None,
+            github: github::Dashboard::default(),
         }
     }
 
@@ -216,6 +224,30 @@ impl App {
     pub(crate) fn view(&self) -> App {
         let mut v = self.clone();
         let q = self.filter.to_lowercase();
+        if self.screen == Screen::Glance {
+            let g = &mut v.data.glance;
+            v.counts = Some((g.needs_you.len(), g.attention.len()));
+            if !self.config.panels[0] {
+                g.needs_you.clear();
+            }
+            if !self.config.panels[1] {
+                g.attention.clear();
+            }
+            if !self.config.panels[2] {
+                g.campaigns.clear();
+                g.quiet.count = 0;
+            }
+            if !self.config.panels[3] {
+                v.github.sources.clear();
+            }
+            for source in &mut v.github.sources {
+                source.prs.retain(|p| {
+                    format!("{} {} {} #{}", p.repo, p.title, p.author, p.number)
+                        .to_lowercase()
+                        .contains(&q)
+                });
+            }
+        }
         if q.is_empty() {
             return v;
         }
@@ -235,7 +267,10 @@ impl App {
             }
             _ => {
                 let g = &mut v.data.glance;
-                v.counts = Some((g.needs_you.len(), g.attention.len()));
+                v.counts = Some(self.counts.unwrap_or((
+                    self.data.glance.needs_you.len(),
+                    self.data.glance.attention.len(),
+                )));
                 g.needs_you.retain(|a| has(&a.campaign));
                 g.attention.retain(|a| has(&a.campaign));
                 g.campaigns.retain(|c| has(&c.name));
@@ -246,7 +281,7 @@ impl App {
 
     /// Takes a new snapshot and keeps the cursor on the row it was on.
     pub fn snapshot(&mut self, glance: model::Glance) {
-        let at = |app: &App| glance::ids(&app.view().data.glance);
+        let at = |app: &App| glance::ids(&app.view());
         // ponytail: under the all-campaigns list or the slotr view `row` is that
         // screen's cursor, so the glance row saved for the way back is not followed.
         // The slotr view's cursor is `row` too.
@@ -302,6 +337,11 @@ impl App {
         if let Some(i) = before.and_then(|id| at(self).iter().position(|r| *r == id)) {
             self.row = i;
         }
+        if glance_row {
+            let len = at(self).len();
+            self.row = self.row.min(len.saturating_sub(1));
+            self.detail = self.detail && len > 0;
+        }
         // The detail pane shows another row now: it starts at its top.
         if glance_row && at(self).get(self.row) != was.as_ref() {
             match self.back.first_mut() {
@@ -309,6 +349,19 @@ impl App {
                 _ => self.scroll = 0,
             }
         }
+    }
+
+    pub(crate) fn restore_row(&mut self, before: Option<glance::RowId>) {
+        let ids = glance::ids(&self.view());
+        self.row = before
+            .as_ref()
+            .and_then(|id| ids.iter().position(|r| r == id))
+            .unwrap_or(self.row.min(ids.len().saturating_sub(1)));
+        if ids.get(self.row) != before.as_ref() {
+            self.scroll = 0;
+            self.click = None;
+        }
+        self.detail = self.detail && !ids.is_empty();
     }
 
     pub(crate) fn hit(&self, area: Rect, hit: Hit) {
@@ -403,6 +456,29 @@ pub fn draw(f: &mut Frame, app: &App) {
     // Under 8 rows the section rules leave no room for the rows they head.
     if area.width < 30 || area.height < 8 {
         ui::pill_only(f, app);
+        if app.screen == Screen::Glance && !app.config.panels.iter().any(|p| *p) && area.height > 1
+        {
+            f.render_widget(
+                Paragraph::new("1-4 show hidden panels"),
+                Rect {
+                    y: area.y + 1,
+                    height: 1,
+                    ..area
+                },
+            );
+            if area.height > 2
+                && let Some(warning) = &app.config_warning
+            {
+                f.render_widget(
+                    Paragraph::new(warning.as_str()),
+                    Rect {
+                        y: area.y + 2,
+                        height: 1,
+                        ..area
+                    },
+                );
+            }
+        }
     } else {
         screen(f, app);
         notice(f, app);

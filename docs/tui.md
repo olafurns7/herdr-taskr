@@ -39,10 +39,9 @@ one line of JSON.
 
 ![Glance, dark theme](images/glance-dark.png)
 
-The first screen has three sections, top to bottom:
+The first screen has four switchable panels, top to bottom:
 
-- **Needs you:** open owner asks. Red always means an open owner ask and
-  nothing else. `BLOCKING` marks an ask whose work has stopped for your answer.
+- **Needs you:** open owner asks. Red in the header means an open owner ask. `BLOCKING` marks an ask whose work has stopped for your answer.
   `HUB` marks a question the hub relayed from its own dialog
   (`taskr ask --dialog`). `◆` marks a structured ask (`taskr ask --question`),
   whose options carry descriptions and a recommendation; `◇` marks an ask
@@ -50,9 +49,61 @@ The first screen has three sections, top to bottom:
 - **To check:** things that may need a look but are not questions: a lead
   that went silent, a lead sitting on finished results, a host whose daemon
   stopped reporting. These are amber.
+- **Open PRs:** repository-wide open PRs read directly by the installed `gh` on
+  the TUI host, using that host's existing gh authentication. Each PR has one
+  square and a CI word, author and creation age. Failing checks are red only
+  inside this panel; the header verdict remains about owner asks. This differs
+  from campaign PR references and the hub watcher's tracked-PR observations.
 - **Campaigns:** every open campaign with its lead's state, one dot per
   lane, four hours of activity as a small graph, and its latest milestone.
   Quiet campaigns fold into one line at the bottom.
+
+Press `1` (asks), `2` (checks), `3` (campaigns), or `4` (Open PRs) in
+Glance to show or hide a panel. The switch row uses `+` for shown and `-`
+for hidden. All four start enabled. Hidden owner asks
+remain counted in the header. Hidden rows cannot receive actions. All panels
+can be hidden; `1`–`4` restore them. Campaign's `1`–`5` keys still select panes.
+
+Visibility and the repository list live in `$XDG_CONFIG_HOME/taskr/tui.json`,
+or `~/.config/taskr/tui.json` when XDG_CONFIG_HOME is unset:
+
+```json
+{"panels":[true,true,true,true],"repos":["trip-to-japan/trip"]}
+```
+
+Up to eight `owner/repo` names are accepted. Toggle saves preserve the repo
+list and replace this allowlisted config atomically with mode 0600. Bad or
+unreadable config uses defaults with a visible warning. Toggles then apply
+only to this session and preserve the existing file and warning; repair the
+config and restart to enable saving. A failed save keeps
+the runtime choices and shows a warning. Demo resolves no user config path,
+reads or writes no config, and runs no external tool. No private PR data or
+credentials are saved.
+
+Open PRs makes one bounded `gh pr list` invocation per visible repository
+every 60 seconds. `r` can request a refresh after five seconds, but cannot
+bypass failure backoff or a known rate-limit deadline. Hiding the panel or
+leaving Glance stops scheduled reads; an in-flight read can finish. Reads
+have a ten-second process deadline and bounded output. Failures retain the
+last good result with its own stale label; a first failure says unavailable.
+Ledger and PR freshness are independent. Errors show generic messages.
+
+Each query returns at most 100 PRs; at that limit the source says
+“first 100; more may exist.” Rows are failing, running, unknown, passing,
+then drafts, newest update first within each group. Passing means at least
+one observed successful check and no observed pending, failing or unknown
+outcome; neutral or skipped alone cannot prove passing. At 100 returned check
+contexts completeness is unknown, so passing is forbidden and the row says
+truncated. This is observed CI, never merge readiness or required-check
+approval. Cheap reviewDecision is shown when supplied; unresolved threads
+are not queried. The list shows a bounded window with an overflow count;
+`j`/`k` browse it without displacing all asks. No key runs commands from PRs
+or opens a browser.
+
+Scheduled cost is about 60 gh invocations per repo per hour per instance,
+plus manual refreshes. This is not a fixed network-request or GraphQL-point
+budget; several TUI instances multiply the traffic. Failure backoff caps at
+15 minutes except when a longer known provider deadline applies.
 
 The header shows which hub the data comes from, how old it is, and the
 verdict: **no owner action**, **N need you** or **N to check**. The pane on
@@ -112,6 +163,7 @@ pools stay, dimmed. Runs that wait on the old heavy flock show only as
 | `ctrl-d` `ctrl-u` | Half a page |
 | `PgDn` `PgUp` | A page (the focused detail, a document, the answer dialog) |
 | `tab`, `shift-tab` | Next or previous section, then the detail pane (glance), or pane (campaign) |
+| `1`-`4` | Show/hide a Glance panel (remembered) |
 | `1`-`5` | Jump to a pane (campaign) |
 | `Enter` | Go to the row's agent pane in Herdr |
 | `l` | Open the campaign |

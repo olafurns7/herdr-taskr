@@ -167,7 +167,15 @@ pub(crate) fn lines(app: &App, width: usize, height: usize) -> Vec<Line<'static>
 fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
     let (t, g) = (&app.theme, &app.data.glance);
     let mut hits: Vec<Option<usize>> = vec![];
-    let plan = plan(g, height, app.row);
+    let pr_height = pr_height(app, height);
+    let offset = g.needs_you.len() + g.attention.len();
+    let prs = app.github.rows();
+    let ledger_cursor = if app.row >= offset {
+        app.row.saturating_sub(prs.len())
+    } else {
+        app.row
+    };
+    let plan = plan(g, height.saturating_sub(pr_height), ledger_cursor);
     let body = width.saturating_sub(1);
     let second = |text: &str, color| {
         vec![
@@ -270,7 +278,18 @@ fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Op
         index += 1;
     }
 
+    let pr_start = out.len();
+    if pr_height > 0 {
+        hits.resize(out.len(), None);
+        let (lines, rows) = pr_lines(app, width, pr_height, index);
+        out.extend(lines);
+        hits.extend(rows);
+        index += prs.len();
+    }
+
+    let pr_end = out.len();
     if plan.tail == Tail::None {
+        dim_ledger(app, &mut out, pr_start..pr_end);
         hits.resize(out.len(), None);
         return (out, hits);
     }
@@ -391,6 +410,239 @@ fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Op
         Tail::None => {}
     }
     hits.resize(out.len(), None);
+    dim_ledger(app, &mut out, pr_start..pr_end);
+    (out, hits)
+}
+
+/// When section rules no longer fit, keep the selected identity visible in a scrolling
+/// one-line list. Its full action target is unchanged.
+fn compact_layout(
+    app: &App,
+    width: usize,
+    height: usize,
+) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
+    let ids = ids(app);
+    let start = (app.row + 1)
+        .saturating_sub(height)
+        .min(ids.len().saturating_sub(height));
+    let mut out = vec![];
+    let mut hits = vec![];
+    for i in (start..ids.len()).take(height) {
+        let mut at = app.clone();
+        at.row = i;
+        let (label, color) = match selected(&at) {
+            Selected::Ask(a) => (
+                format!("ask {} {}", a.campaign, one_line(&a.text)),
+                app.theme.need,
+            ),
+            Selected::Check(a) => (
+                format!(
+                    "check {} {}",
+                    check_name(&app.data.glance, a),
+                    one_line(&a.text)
+                ),
+                app.theme.check,
+            ),
+            Selected::Campaign(c) => (
+                format!("campaign {} {}", c.name, c.status_text()),
+                app.theme.text,
+            ),
+            Selected::Pr(p) => (
+                format!(
+                    "PR {}{} #{} {} @{}",
+                    p.ci.word(),
+                    if p.truncated { " truncated" } else { "" },
+                    p.number,
+                    p.title,
+                    p.author
+                ),
+                app.theme.sub,
+            ),
+            Selected::Nothing => continue,
+        };
+        let mut line = ui::row(
+            &app.theme,
+            vec![sp(clip(&label, width.saturating_sub(1)), color)],
+            i == app.row,
+            false,
+            color,
+            width,
+        );
+        if !matches!(ids[i], RowId::Pr(..)) && app.fetch.loaded && app.fetch.error.is_some() {
+            for span in &mut line.spans {
+                span.style.fg = Some(app.theme.dim);
+            }
+        }
+        out.push(line);
+        hits.push(Some(i));
+    }
+    (out, hits)
+}
+
+fn dim_ledger(app: &App, lines: &mut [Line<'_>], prs: Range<usize>) {
+    if app.fetch.loaded && app.fetch.error.is_some() {
+        for (i, line) in lines.iter_mut().enumerate() {
+            if !prs.contains(&i) {
+                for span in &mut line.spans {
+                    span.style.fg = Some(app.theme.dim);
+                }
+            }
+        }
+    }
+}
+
+fn pr_height(app: &App, height: usize) -> usize {
+    if !app.config.panels[3] || app.github.sources.is_empty() {
+        return 0;
+    }
+    let g = &app.data.glance;
+    let floor = usize::from(!g.needs_you.is_empty()) * 3
+        + usize::from(!g.attention.is_empty()) * 3
+        + usize::from(!g.campaigns.is_empty()) * 2;
+    let (cap, floor) = if floor == 0 {
+        (usize::MAX, 8)
+    } else {
+        (3, floor)
+    };
+    let rows = app.github.rows().len().min(cap);
+    (2 + app
+        .github
+        .sources
+        .iter()
+        .map(|s| 1 + usize::from(s.total == 100))
+        .sum::<usize>()
+        + 2 * rows
+        + usize::from(app.github.rows().len() > rows))
+    .min(height.saturating_sub(floor))
+}
+
+fn pr_lines(
+    app: &App,
+    width: usize,
+    height: usize,
+    offset: usize,
+) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
+    use crate::github::Ci;
+    let t = &app.theme;
+    let prs = app.github.rows();
+    let counts = [
+        Ci::Failing,
+        Ci::Running,
+        Ci::Unknown,
+        Ci::Passing,
+        Ci::Draft,
+    ]
+    .map(|ci| prs.iter().filter(|p| p.ci == ci).count());
+    let summary = if app.github.sources.iter().all(|s| s.at.is_none()) {
+        "CI counts unavailable".into()
+    } else {
+        let prefix = if !app.filter.is_empty() {
+            "filtered"
+        } else if app
+            .github
+            .sources
+            .iter()
+            .any(|s| s.at.is_none() || s.error.is_some())
+        {
+            "cached/partial"
+        } else {
+            "CI"
+        };
+        format!(
+            "{prefix}: {} fail {} run {} ? {} pass {} draft",
+            counts[0], counts[1], counts[2], counts[3], counts[4]
+        )
+    };
+    let mut out = vec![
+        ui::rule(t, "OPEN PRS", "observed CI", t.sub, width),
+        Line::from(sp(summary, t.sub)),
+    ];
+    let mut hits = vec![None, None];
+    for source in &app.github.sources {
+        out.push(Line::from(sp(
+            clip(&source.status(std::time::Instant::now()), width),
+            if source.error.is_some() {
+                t.check
+            } else {
+                t.text
+            },
+        )));
+        hits.push(None);
+        if source.total == 100 {
+            out.push(Line::from(sp(" first 100; more may exist", t.check)));
+            hits.push(None);
+        }
+    }
+    let remaining = height.saturating_sub(out.len());
+    let fit = (remaining / 2).min(prs.len());
+    let fit = if fit < prs.len() && remaining % 2 == 0 {
+        fit.saturating_sub(1)
+    } else {
+        fit
+    };
+    let cursor = app.row.checked_sub(offset).filter(|&i| i < prs.len());
+    let start = cursor
+        .map_or(0, |i| (i + 1).saturating_sub(fit))
+        .min(prs.len().saturating_sub(fit));
+    for (i, p) in prs.iter().enumerate().skip(start).take(fit) {
+        let color = match p.ci {
+            Ci::Failing => t.need,
+            Ci::Running => t.check,
+            Ci::Passing => t.ok,
+            Ci::Unknown | Ci::Draft => t.sub,
+        };
+        let mark = if app.ascii { "#" } else { "■" };
+        let title = format!(
+            "{mark} {}{} #{} {}",
+            p.ci.word(),
+            if p.truncated { " (truncated)" } else { "" },
+            p.number,
+            p.title
+        );
+        out.push(ui::row(
+            t,
+            vec![sp(clip(&title, width.saturating_sub(1)), color)],
+            app.row == offset + i,
+            false,
+            color,
+            width,
+        ));
+        let source = app.github.sources.iter().find(|s| s.repo == p.repo);
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let age = if p.created > 0 {
+            age(now.saturating_sub(p.created).saturating_mul(1000))
+        } else {
+            "age unknown".into()
+        };
+        let mut metadata = format!("  @{} · {} · {}", p.author, age, p.repo);
+        if !p.review.is_empty() {
+            metadata += &format!(" · {}", p.review);
+        }
+        if source.is_some_and(|s| s.error.is_some()) {
+            metadata += " · stale";
+        }
+        if p.truncated {
+            metadata += " · checks truncated";
+        }
+        out.push(ui::row(
+            t,
+            vec![sp(clip(&metadata, width.saturating_sub(1)), t.sub)],
+            app.row == offset + i,
+            false,
+            color,
+            width,
+        ));
+        hits.extend([Some(offset + i), Some(offset + i)]);
+    }
+    if fit < prs.len() {
+        out.push(Line::from(sp(
+            format!(" +{} outside view · j/k to browse", prs.len() - fit),
+            t.dim,
+        )));
+        hits.push(None);
+    }
+    out.truncate(height);
+    hits.truncate(height);
     (out, hits)
 }
 
@@ -400,34 +652,48 @@ pub(crate) enum RowId {
     Ask(i64),
     Check(i64, String),
     Campaign(i64),
+    Pr(String, u64),
 }
 
 /// Every row the cursor can be on, in cursor order.
-pub(crate) fn ids(g: &Glance) -> Vec<RowId> {
-    let asks = g.needs_you.iter().map(|a| RowId::Ask(a.ask_id));
+pub(crate) fn ids(app: &App) -> Vec<RowId> {
+    let g = &app.data.glance;
+    let asks = g
+        .needs_you
+        .iter()
+        .filter(|_| app.config.panels[0])
+        .map(|a| RowId::Ask(a.ask_id));
     let checks = g
         .attention
         .iter()
+        .filter(|_| app.config.panels[1])
         .map(|a| RowId::Check(a.root_id, a.kind.clone()));
-    let campaigns = g.campaigns.iter().filter(|c| !c.parked);
-    let parked = g.campaigns.iter().filter(|c| c.parked);
-    asks.chain(checks)
-        .chain(campaigns.chain(parked).map(|c| RowId::Campaign(c.id)))
-        .collect()
+    let prs = app
+        .github
+        .rows()
+        .into_iter()
+        .filter(|_| app.config.panels[3])
+        .map(|p| RowId::Pr(p.repo.clone(), p.number));
+    let campaigns = g
+        .campaigns
+        .iter()
+        .filter(|c| !c.parked)
+        .chain(g.campaigns.iter().filter(|c| c.parked))
+        .filter(|_| app.config.panels[2])
+        .map(|c| RowId::Campaign(c.id));
+    asks.chain(checks).chain(prs).chain(campaigns).collect()
 }
 
-/// Where each section starts, for Tab: asks, checks, campaigns.
-pub(crate) fn sections(g: &Glance) -> Vec<usize> {
-    let (asks, checks) = (g.needs_you.len(), g.attention.len());
+/// The same visible identities drive Tab, keyboard, mouse and snapshot restoration.
+pub(crate) fn sections(app: &App) -> Vec<usize> {
     let mut out = vec![];
-    if asks > 0 {
-        out.push(0);
-    }
-    if checks > 0 {
-        out.push(asks);
-    }
-    if !g.campaigns.is_empty() {
-        out.push(asks + checks);
+    let mut previous = None;
+    for (i, row) in ids(app).iter().enumerate() {
+        let kind = std::mem::discriminant(row);
+        if previous != Some(kind) {
+            out.push(i);
+        }
+        previous = Some(kind);
     }
     out
 }
@@ -437,27 +703,36 @@ pub(crate) enum Selected<'a> {
     Ask(&'a Need),
     Check(&'a Attention),
     Campaign(&'a CampaignRow),
+    Pr(&'a crate::github::Pr),
     Nothing,
 }
 
 pub(crate) fn selected(app: &App) -> Selected<'_> {
     let g = &app.data.glance;
-    let (asks, checks) = (g.needs_you.len(), g.attention.len());
-    if let Some(a) = g.needs_you.get(app.row) {
-        return Selected::Ask(a);
+    match ids(app).get(app.row) {
+        Some(RowId::Ask(id)) => g
+            .needs_you
+            .iter()
+            .find(|a| a.ask_id == *id)
+            .map_or(Selected::Nothing, Selected::Ask),
+        Some(RowId::Check(root, kind)) => g
+            .attention
+            .iter()
+            .find(|a| a.root_id == *root && a.kind == *kind)
+            .map_or(Selected::Nothing, Selected::Check),
+        Some(RowId::Campaign(id)) => g
+            .campaigns
+            .iter()
+            .find(|c| c.id == *id)
+            .map_or(Selected::Nothing, Selected::Campaign),
+        Some(RowId::Pr(repo, number)) => app
+            .github
+            .rows()
+            .into_iter()
+            .find(|p| p.repo == *repo && p.number == *number)
+            .map_or(Selected::Nothing, Selected::Pr),
+        None => Selected::Nothing,
     }
-    if let Some(a) = app.row.checked_sub(asks).and_then(|i| g.attention.get(i)) {
-        return Selected::Check(a);
-    }
-    let mut campaigns = g
-        .campaigns
-        .iter()
-        .filter(|c| !c.parked)
-        .chain(g.campaigns.iter().filter(|c| c.parked));
-    app.row
-        .checked_sub(asks + checks)
-        .and_then(|i| campaigns.nth(i))
-        .map_or(Selected::Nothing, Selected::Campaign)
 }
 
 /// The footer lists only the keys that do something for the selected row.
@@ -485,18 +760,21 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
             Some(hint("l", None)),
             Some(hint("p", None)),
         ],
+        Selected::Pr(_) => vec![Some(hint("r", None))],
         Selected::Nothing => vec![Some(hint("c", Some("all campaigns")))],
     }
     .into_iter()
     .flatten()
     .collect();
     if app.fetch.error.is_some() {
+        out.retain(|(key, _)| *key != "r");
         out.insert(0, hint("r", Some("retry")));
     }
     if app.detail && wide && !matches!(selected(app), Selected::Nothing) {
         out.splice(0..0, [hint("j k", Some("scroll")), hint("h", Some("list"))]);
     }
     if wide {
+        out.push(hint("1-4", None));
         out.extend([
             hint("/", None),
             hint("y", None),
@@ -507,6 +785,9 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
     } else {
         out.push(hint("?", None));
     }
+    if matches!(selected(app), Selected::Pr(_)) {
+        out.retain(|(key, _)| *key != "y");
+    }
     out
 }
 
@@ -515,8 +796,10 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
     let wide = area.width >= 100;
     let stale = app.fetch.error.as_deref().filter(|_| app.fetch.loaded);
-    let [head, notes, banner, body, foot] = Layout::vertical([
+    let [head, switches, warning, notes, banner, body, foot] = Layout::vertical([
         Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(u16::from(app.config_warning.is_some())),
         Constraint::Length(u16::from(g.owner_notes_pending > 0)),
         Constraint::Length(u16::from(stale.is_some())),
         Constraint::Min(0),
@@ -533,12 +816,37 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
             vec![]
         },
     );
+    let labels = ["asks", "checks", "camps", "PRs"];
+    let toggles = labels
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            format!(
+                "{} {}{}",
+                i + 1,
+                name,
+                if app.config.panels[i] { "+" } else { "-" }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" · ");
+    f.render_widget(Paragraph::new(Line::from(sp(toggles, t.sub))), switches);
+    if let Some(text) = &app.config_warning {
+        f.render_widget(
+            Paragraph::new(Line::from(sp(text.clone(), t.check))),
+            warning,
+        );
+    }
     // The migration count: dim, never red, gone at zero.
     let pending = format!(" {} notes still carry OWNER items", g.owner_notes_pending);
     f.render_widget(Paragraph::new(Line::from(sp(pending, t.dim))), notes);
     ui::footer(f, app, foot, &hints(app, wide));
 
-    if state(f, app, body) {
+    if !app.config.panels.iter().any(|p| *p) {
+        f.render_widget(
+            Paragraph::new("All panels hidden · press 1-4 to show").centered(),
+            body,
+        );
         return;
     }
     let mut list = body;
@@ -549,28 +857,79 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
         list = block.inner(Rect { width: 60, ..body });
         f.render_widget(block, Rect { width: 60, ..body });
     }
-    let (lines, hits) = layout(app, list.width as usize, list.height as usize);
-    // Folded campaigns are out of the cursor's reach; `c` lists them.
-    let p = plan(g, list.height as usize, app.row);
+    let mut compact = list.height < 8;
+    let ledger_state = g.needs_you.is_empty()
+        && g.attention.is_empty()
+        && g.campaigns.is_empty()
+        && g.quiet.count == 0;
+    let state_height = if ledger_state && (!compact || ids(app).is_empty()) {
+        (list.height as usize).saturating_sub(pr_height(app, list.height as usize))
+    } else {
+        0
+    };
+    if ledger_state && state_height > 0 {
+        state(
+            f,
+            app,
+            Rect {
+                height: state_height as u16,
+                ..list
+            },
+        );
+    }
+    let list_rows = Rect {
+        y: list.y + state_height as u16,
+        height: list.height.saturating_sub(state_height as u16),
+        ..list
+    };
+    let (mut lines, mut hits) = if ledger_state && !app.github.sources.is_empty() {
+        // The placeholder reserve was already removed from list_rows.
+        pr_lines(app, list_rows.width as usize, list_rows.height as usize, 0)
+    } else if compact {
+        compact_layout(app, list_rows.width as usize, list_rows.height as usize)
+    } else {
+        layout(app, list_rows.width as usize, list_rows.height as usize)
+    };
+    // Rules, warnings and independent source rows can exhaust a section's share.
+    // Fall back using the same identity when the expanded layout cannot draw it.
+    if !ids(app).is_empty() && !hits.contains(&Some(app.row)) {
+        compact = true;
+        (lines, hits) = compact_layout(app, list_rows.width as usize, list_rows.height as usize);
+    }
+    // Folded campaigns are out of the cursor's reach; the compact list scrolls every identity.
+    let p = plan(
+        g,
+        (list.height as usize).saturating_sub(pr_height(app, list.height as usize)),
+        if app.row >= g.needs_you.len() + g.attention.len() {
+            app.row.saturating_sub(app.github.rows().len())
+        } else {
+            app.row
+        },
+    );
     let parked = g.campaigns.iter().filter(|c| c.parked).count();
-    app.seen.borrow_mut().rows = g.needs_you.len()
-        + g.attention.len()
-        + p.shown
-        + if p.tail == Tail::Rows { parked } else { 0 };
-    for (y, row) in hits.iter().enumerate().take(list.height as usize) {
+    app.seen.borrow_mut().rows = if compact {
+        ids(app).len()
+    } else {
+        g.needs_you.len()
+            + g.attention.len()
+            + app.github.rows().len()
+            + p.shown
+            + if p.tail == Tail::Rows { parked } else { 0 }
+    };
+    for (y, row) in hits.iter().enumerate().take(list_rows.height as usize) {
         if let Some(row) = row {
             let line = Rect {
-                y: list.y + y as u16,
+                y: list_rows.y + y as u16,
                 height: 1,
                 ..list
             };
             app.hit(line, Hit::Row(*row));
         }
     }
-    f.render_widget(Paragraph::new(lines), list);
+    f.render_widget(Paragraph::new(lines), list_rows);
     if let Some(error) = stale {
         // The last frame stays, dimmed, and says so.
-        ui::dim(f, body, t.dim);
+
         let retry = format!(" · retry {}s", app.fetch.retry_in_s);
         let line = vec![
             bold(" ! ", t.check),
@@ -622,16 +981,23 @@ fn state(f: &mut Frame, app: &App, area: Rect) -> bool {
             ];
             let why = wrap(error, area.width.saturating_sub(4) as usize);
             lines.extend(why.into_iter().take(3).map(|l| Line::from(sp(l, t.sub))));
-            lines.push(Line::from(sp(
-                "No snapshot yet, so nothing is shown.",
-                t.sub,
-            )));
+            lines.push(Line::from(sp("No ledger snapshot yet.", t.sub)));
             lines.push(Line::raw(""));
             lines.push(Line::from(sp(
                 format!("try {} · next in {}s", fetch.tries, fetch.retry_in_s),
                 t.dim,
             )));
             lines
+        }
+        _ if (!app.config.panels[..3].iter().all(|p| *p) || !app.filter.is_empty())
+            && g.needs_you.is_empty()
+            && g.attention.is_empty()
+            && g.campaigns.is_empty() =>
+        {
+            vec![
+                Line::from(sp("No visible ledger rows", t.sub)),
+                Line::from(sp("1-3 show panels · / filters", t.dim)),
+            ]
         }
         _ if g.needs_you.is_empty()
             && g.attention.is_empty()
@@ -731,6 +1097,32 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
                 c.status_text().to_string(),
             )
         }
+        Selected::Pr(p) => (
+            format!("{} #{}", p.repo, p.number),
+            vec![Line::from(sp(
+                format!(
+                    "{} · @{}{}",
+                    p.ci.word(),
+                    p.author,
+                    if p.review.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" · {}", p.review)
+                    }
+                ),
+                t.sub,
+            ))],
+            format!(
+                "{}\n{}\nObserved checks only; not merge readiness.{}",
+                p.title,
+                p.repo,
+                if p.truncated {
+                    " Check list truncated; completeness unknown."
+                } else {
+                    ""
+                }
+            ),
+        ),
         Selected::Nothing => return,
     };
     // The pane's inside, as `ui::pane` will draw it, so the text wraps before the title
@@ -800,7 +1192,7 @@ fn activity(f: &mut Frame, app: &App, area: Rect) {
         Selected::Ask(a) => a.root_id,
         Selected::Check(a) => a.root_id,
         Selected::Campaign(c) => c.id,
-        Selected::Nothing => return,
+        Selected::Pr(_) | Selected::Nothing => return,
     };
     let Some(c) = g.campaigns.iter().find(|c| c.id == root) else {
         return;

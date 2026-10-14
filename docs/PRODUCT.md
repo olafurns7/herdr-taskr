@@ -12,7 +12,9 @@ terminal view. There is no web interface.
   the contract tests in `tools/contract/`. State is one SQLite ledger.
 - `taskr-tui`: Rust and ratatui, in `crates/taskr-tui`. It reads through the
   `taskr` command (`taskr --json glance`, `taskr campaign`, `taskr doc get`)
-  and writes only through `taskr answer` and `taskr set`.
+  and writes ledger state only through `taskr answer` and `taskr set`. Its
+  optional visible Open PRs panel reads repository-wide results directly through
+  local `gh`; panel/repository choices are saved in per-user `tui.json`.
 
 ## Users
 
@@ -51,12 +53,14 @@ handover/adopt, ref, hub, client host.
 ## Principles
 
 1. What needs the owner comes first and is unmistakable. Red means an open
-   owner ask and nothing else; when nothing needs the owner, the view says so.
+   owner ask in the header. The named Open PRs panel also uses red for failing
+   observed CI; this does not change the owner verdict. Hidden asks remain counted.
 2. Milestones over noise: each campaign shows its latest checkpoint; the raw
    event log is one key away.
 3. Compact and readable at a glance: aligned rows, explicit status marks with
    words, restrained colour, a 46-column layout for a split pane.
-4. Truthful: every signal comes from the ledger or Herdr's observed state.
+4. Truthful: every signal comes from the ledger, Herdr's observed state,
+   or explicitly named GitHub reads with their own freshness.
    Missing or old data is shown as stale, never guessed.
 5. Few writes: the view answers an ask and parks a campaign, each through the
    CLI; everything else happens where the agents are.

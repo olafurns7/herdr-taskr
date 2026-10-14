@@ -1,4 +1,5 @@
  taskr            ◓   ! stale 40s  2 need you
+1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+
  3 notes still carry OWNER items
  ! hub unreachable · showing 14:16 · retry 4s
  NEEDS YOU ──────────────────────────────── 2
@@ -15,7 +16,6 @@
    host stale: no heartbeat for 12 m
  CAMPAIGNS ─────────────────────────────── 10
  ◐ search-index      ●       ▁▁▁▁▁█▃       19s
-   Research complete: reports/ranking-option…
  ◐ auth-rotation     ●       ▁▁▁▄▄▁█       29s
  ○ billing-export    ●       ▁▂▁▁▄█▁       33s
 •○ docs-refresh      ●       ▁▁▁▁▁█▂        2m

@@ -1,0 +1,40 @@
+ taskr ❯ glance                                                                 hub atlas · ◓   ! stale 40s  2 need you
+1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+
+ 3 notes still carry OWNER items
+ ! hub unreachable · showing 14:16 · retry 4s
+╭ Glance ──────────────────────────────────────────────────╮╭ ask 61767 · tui-frames ──────────────────────────────────╮
+│ NEEDS YOU ──────────────────────────────────────────── 2 ││ BLOCKING · asker waiting · 41s ago · atlas w31:p1        │
+│▌? ◇ tui-frames           BLOCKING                  ⏎  41s││                                                          │
+│▌  Frames follow-up is ready: PR #212 (orphaned asks hid… ││ Frames follow-up is ready: PR #212 (orphaned asks        │
+│ ? ◇ ios-widgets                             laptop ↗   6m││ hidden, close warns). (A) merge #212 and release v2.4.1  │
+│   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash).… ││ now [recommended]; (B) merge, hold the release for the   │
+│ TO CHECK ───────────────────────────────────────────── 3 ││ next change.                                             │
+│ ! map-tiles-polish                            laptop   2h││                                                          │
+│   lead unregistered and silent                           ││ Options                                                  │
+│ ! infra-layout                                         2h││  A merge #212 and release v2.4.1 now  recommended        │
+│   lead idle with 3 results                               ││  B merge, hold the release for the next change           │
+│ ! host build-mini                               mini  12m││                                                          │
+│   host stale: no heartbeat for 12 m                      ││                                                          │
+│ OPEN PRS ─────────────────────────────────── observed CI ││                                                          │
+│CI: 1 fail 1 run 0 ? 1 pass 0 draft                       ││                                                          │
+│3 open; 0s ago · trip-to-japan/trip                       ││                                                          │
+│ ■ failing #42 Keep pending action labels readable        ││                                                          │
+│   @alex · 1h · trip-to-japan/trip                        ││                                                          │
+│ ■ running #41 Refresh campaign milestones                ││                                                          │
+│   @sam · 2h · trip-to-japan/trip                         ││                                                          │
+│ ■ checks passing #40 Clarify owner answer copy           ││                                                          │
+│   @alex · 3h · trip-to-japan/trip · approved             ││                                                          │
+│ CAMPAIGNS ─────────────────────────────────────────── 10 ││                                                          │
+│ ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃        19s││                                                          │
+│ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█        29s││                                                          │
+│ ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁        33s│╰──────────────────────────────────────────────────────────╯
+│•○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂         2m│╭ tui-frames · last 4 h ───────────────────────────────────╮
+│ ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█         3m││       ██      ██        ██      ██                       │
+│ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁  laptop  7m││       ██      ██  ██▂▂  ██▂▂    ██          ████         │
+│ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆         8m││     ▇▇██    ▇▇██▇▇████  ████▂▂  ██  ▄▄▇▇▂▂▄▄████         │
+│ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃        12m││                                                          │
+│ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁        14m││ lead ◐ working   lanes ●●●●○○                            │
+│ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁        54m││ last NOW: plan rev 3.1 sent; the trust rules and the     │
+│ · 1 parked · 2 quiet                                     ││ first frames are in flight.                              │
+╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
+ r retry   ⏎ go to lead   a answer   l open   1-4 panels   / filter   y copy   s slotr   ? help   q quit
