@@ -1,13 +1,12 @@
 //! Deterministic slow-consumer check: exercise the bounded body queue directly.
 use super::*;
 
-#[tokio::test]
-async fn overflow_resets_to_current_and_discards_old_notifications() {
+fn hub() -> Arc<Hub> {
     let (_, shutdown) = watch::channel(false);
-    let hub = Arc::new(Hub {
+    Arc::new(Hub {
         cfg: HubConfig {
             listeners: vec![],
-            db_path: PathBuf::new(),
+            db_path: PathBuf::from(":memory:"),
             clock: time::OffsetDateTime::now_utc,
             log: Arc::new(crate::daemon::Log::open(std::path::Path::new("/dev/null"))),
             identity: None,
@@ -21,7 +20,40 @@ async fn overflow_resets_to_current_and_discards_old_notifications() {
         shutdown,
         stored_requests: StdMutex::default(),
         reapers: Arc::default(),
-    });
+    })
+}
+
+#[tokio::test]
+async fn local_subscribers_share_32_streams_and_release_slots() {
+    let hub = hub();
+    let ip = "127.0.0.1".parse().unwrap();
+    let request = || {
+        Request::builder()
+            .uri("/api/events")
+            .header("x-taskr-rpc", "1")
+            .body(Body::empty())
+            .unwrap()
+    };
+    let mut subscribers = Vec::new();
+    for n in 1..=32 {
+        let response = handle(&hub, request(), ip, true).await;
+        assert_eq!(response.status(), StatusCode::OK, "local subscriber {n}");
+        subscribers.push(response);
+    }
+    let response = handle(&hub, request(), "::1".parse().unwrap(), true).await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(hub.events.local_slots.available_permits(), 0);
+    subscribers.pop();
+    let response = handle(&hub, request(), ip, true).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    drop(response);
+    drop(subscribers);
+    assert_eq!(hub.events.local_slots.available_permits(), 32);
+}
+
+#[tokio::test]
+async fn overflow_resets_to_current_and_discards_old_notifications() {
+    let hub = hub();
     let receiver = hub.events.inner.lock().unwrap().send.subscribe();
     let mut body = EventBody {
         hub: hub.clone(),
@@ -88,25 +120,19 @@ fn one_watcher_and_cap_across_loopback_and_tailnet_hubs() {
     assert!(Arc::ptr_eq(&local, &remote));
     assert!(!local.inner.lock().unwrap().running);
     let ip = "127.0.0.1".parse().unwrap();
-    let mut permits: Vec<_> = (0..IP_CAP)
+    let permits: Vec<_> = (0..LOCAL_CAP)
         .map(|_| local.acquire(ip, true).unwrap())
         .collect();
     assert!(remote.acquire(ip, true).is_none());
-    assert!(remote.acquire(ip, false).is_none());
     assert_eq!(remote.remote_slots.available_permits(), REMOTE_CAP);
-    for _ in 0..IP_CAP {
-        permits.push(local.acquire("127.0.0.2".parse().unwrap(), true).unwrap());
-    }
     assert!(local.acquire("127.0.0.3".parse().unwrap(), true).is_none());
     let mut remote_permits = Vec::new();
     for n in 1..=6 {
+        let ip = format!("192.0.2.{n}").parse().unwrap();
         for _ in 0..IP_CAP {
-            remote_permits.push(
-                remote
-                    .acquire(format!("192.0.2.{n}").parse().unwrap(), false)
-                    .unwrap(),
-            );
+            remote_permits.push(remote.acquire(ip, false).unwrap());
         }
+        assert!(remote.acquire(ip, false).is_none());
     }
     assert_eq!(remote.remote_slots.available_permits(), 0);
     assert!(

@@ -257,10 +257,10 @@ def run(binary, idle):
                 s = Subscriber(cell); s.event(); subs.append(s)
             s = Subscriber(cell, code=503); s.close()
             # Filling one remote IP must leave the separate loopback pool usable.
-            for _ in range(4):
+            for _ in range(32):
                 s = Subscriber(cell, url=local_url); s.event(); subs.append(s)
             s = Subscriber(cell, url=local_url, code=503); s.close()
-            results['per_ip_cap_4_and_separate_pools'] = True
+            results['remote_per_ip_cap_4_and_local_pool_32'] = True
             for s in subs:
                 s.close()
             subs.clear()

@@ -9,7 +9,7 @@ use std::{
 };
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, broadcast};
 
-const LOCAL_CAP: usize = 8;
+const LOCAL_CAP: usize = 32;
 const REMOTE_CAP: usize = 24;
 const IP_CAP: usize = 4;
 const MAX_AGE: Duration = Duration::from_secs(10 * 60);
@@ -102,13 +102,16 @@ impl Events {
         &self,
         ip: std::net::IpAddr,
         local: bool,
-    ) -> Option<(OwnedSemaphorePermit, OwnedSemaphorePermit)> {
+    ) -> Option<(OwnedSemaphorePermit, Option<OwnedSemaphorePermit>)> {
         let pool = if local {
             &self.local_slots
         } else {
             &self.remote_slots
         };
         let permit = pool.clone().try_acquire_owned().ok()?;
+        if local {
+            return Some((permit, None));
+        }
         let mut peers = self.ip_slots.lock().expect("event peers");
         peers.retain(|_, slots| slots.strong_count() > 0);
         let slots = peers
@@ -117,7 +120,7 @@ impl Events {
             .unwrap_or_else(|| Arc::new(Semaphore::new(IP_CAP)));
         let peer = slots.clone().try_acquire_owned().ok()?;
         peers.insert(ip, Arc::downgrade(&slots));
-        Some((permit, peer))
+        Some((permit, Some(peer)))
     }
 }
 fn read(db: &db::Connection) -> Result<Change, String> {
@@ -314,7 +317,7 @@ fn receiving(
 }
 struct EventBody {
     hub: Arc<Hub>,
-    _permit: (OwnedSemaphorePermit, OwnedSemaphorePermit),
+    _permit: (OwnedSemaphorePermit, Option<OwnedSemaphorePermit>),
     initial: Option<Change>,
     receive: Pin<Box<dyn Future<Output = Received> + Send>>,
     keepalive: Pin<Box<tokio::time::Sleep>>,
