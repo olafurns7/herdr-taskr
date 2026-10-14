@@ -1759,3 +1759,50 @@ fn the_canary_selftest_passes_and_refuses_unowned_state() {
         assert_eq!(code, Some(2), "{args:?}: {out}");
     }
 }
+
+#[test]
+fn queue_push_reads_bounded_state_instead_of_the_full_audit_history() {
+    let h = Harness::new();
+    let (_hub, port) = start_hub(&h);
+    let (port, seen) = recorder(port, None);
+    let (_, w, env) = client_lane(&h, port);
+    let launch = env
+        .iter()
+        .find(|(k, _)| k == "TASKR_LAUNCH")
+        .unwrap()
+        .1
+        .clone();
+    let old = insert_event(&h, "1", &w, "note", "old acked event", "{}");
+    let mut db = h.conn();
+    let tx = db.transaction().unwrap();
+    tx.execute(
+        "update tasks set acked_event_id=? where id=?",
+        taskr_core::db::params![old, w],
+    )
+    .unwrap();
+    for _ in 0..1000 {
+        tx.execute("insert into delivery_attempts(event_id,task_id,launch_id,machine,adapter,created_at,received_at) values(?,?,?,'host-a','codex-queue','t','r')", taskr_core::db::params![old, w, launch]).unwrap();
+    }
+    tx.commit().unwrap();
+    let e = insert_event(&h, "1", &w, "note", "after history", "{}");
+    let state = h.ok(&env, &["delivery", "state", &e, "--adapter", "codex-queue"]);
+    assert_eq!(
+        state,
+        json!({"received":false,"watermark":0,"attempt_id":null})
+    );
+    assert!(state.to_string().len() < 100);
+    let p = Push::start(&h, &env, &[], SCALE);
+    let fence = held(&h, &w);
+    let call = wait_calls(&h, 1, Duration::from_secs(20)).remove(0);
+    assert!(call.argv[4].starts_with(&format!("taskr event {e} ")));
+    let a = attempt_of(&call.argv[4]);
+    h.ok(&env, &["delivery", "received", &a]);
+    h.ok(&env, &["ack", &e, "--as", &w, "--fence", &fence]);
+    assert_eq!(attempts(&h, &e), [format!("{a}|codex-queue|received")]);
+    assert_eq!(cursors(&h, &w), format!("{e}|-|-"));
+    assert_eq!(p.close().0, Some(0));
+    let requests: Vec<_> = seen.try_iter().collect();
+    let has = |argv: &[String], sub: &str| argv.windows(2).any(|w| w == ["delivery", sub]);
+    assert!(requests.iter().filter(|argv| has(argv, "state")).count() >= 2);
+    assert!(requests.iter().all(|argv| !has(argv, "ls")), "{requests:?}");
+}
