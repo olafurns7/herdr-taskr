@@ -1399,12 +1399,13 @@ fn eof_during_a_tool_stops_new_pushes_and_the_tool_still_finishes() {
     let h = Harness::new();
     let held_tool = HeldTool::new(&h);
     let w = held_tool.w.clone();
-    let mut c = Chan::start(&h, &held_tool.worker, &[], SCALE);
+    // Keep the lease live through the 3 s parked CPU check so EOF releases it.
+    let mut c = Chan::start(&h, &held_tool.worker, &[], SCALE / 2);
     assert_eq!(held(&h, &w), "1");
     held_tool.call(&mut c);
     drop(c.stdin.take());
-    // An event that did not exist at EOF is never offered or pushed, and the parked
-    // loop does not spin while the tool is held past its renew and check deadlines.
+    // A wait started before EOF may still offer this event, but never attempts or
+    // pushes it; the parked loop does not spin past its renew and check deadlines.
     let e = insert_event(&h, "1", &w, "note", "after eof", "{}");
     let before = cpu(c.child.id());
     std::thread::sleep(Duration::from_secs(3));
@@ -1427,7 +1428,22 @@ fn eof_during_a_tool_stops_new_pushes_and_the_tool_still_finishes() {
     let (code, err) = c.close();
     assert_eq!(code, Some(0), "{err}");
     assert!(attempts(&h, &e).is_empty());
-    assert_eq!(cursors(&h, &w), "0|-|-", "the event was offered after EOF");
+    assert!(err.contains("released the inbox lease, fence 1"), "{err}");
+    assert_eq!(lease(&h, &w), "1|-");
+    let cursor = cursors(&h, &w);
+    assert!(
+        cursor == "0|-|-" || cursor == format!("0|{e}|-"),
+        "{cursor}"
+    );
+    let later = h.ok(&held_tool.worker, &["wait", "--timeout", "0"]);
+    assert_eq!(later["event"]["id"], json!(n(&e)), "{later}");
+    assert_eq!(later["replay"], json!(cursor == format!("0|{e}|-")));
+    let replay = h.ok(&held_tool.worker, &["wait", "--timeout", "0"]);
+    assert_eq!(replay["event"]["id"], json!(n(&e)), "{replay}");
+    assert_eq!(replay["replay"], true, "{replay}");
+    h.ok(&held_tool.worker, &["ack", &e, "--as", &w]);
+    assert_eq!(cursors(&h, &w), format!("{e}|-|-"));
+    assert!(attempts(&h, &e).is_empty());
 }
 
 #[test]
