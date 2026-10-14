@@ -352,8 +352,8 @@ struct Track {
 enum Attempt {
     Known(i64),
     /// An uncertain `delivery new`: its request key on a client host; on a ledger host
-    /// the attempts of E that existed before it, which can never be its result.
-    Uncertain(Option<String>, Vec<i64>),
+    /// the maximum attempt id before it, below any row it could have inserted.
+    Uncertain(Option<String>, i64),
 }
 
 struct Loop {
@@ -858,39 +858,48 @@ impl Loop {
             return;
         }
         // Any receipt of E under this binding, from any loop instance, suppresses it.
-        let ls = self.exec(self.argv(&["delivery", "ls"], false), None);
-        let Some(rows) = ls.value["attempts"]
-            .as_array()
-            .filter(|_| ls.outcome == "committed")
-        else {
-            return log(format!("delivery ls {}: {}", ls.outcome, ls.error()));
+        let after = match self.attempt {
+            Some((pe, Attempt::Uncertain(None, old))) if pe == e => old,
+            _ => 0,
         };
-        let rows: Vec<&Value> = rows
-            .iter()
-            .filter(|r| r["event_id"] == e && self.ours(r))
-            .collect();
-        if rows.iter().any(|r| r["state"] == "received") {
+        let state = self.exec(
+            self.argv(
+                &[
+                    "delivery",
+                    "state",
+                    &e.to_string(),
+                    "--adapter",
+                    self.sink.adapter(),
+                    "--after",
+                    &after.to_string(),
+                ],
+                true,
+            ),
+            None,
+        );
+        let Some(before) = state.value["watermark"]
+            .as_i64()
+            .filter(|_| state.outcome == "committed")
+        else {
+            return log(format!(
+                "delivery state {}: {}",
+                state.outcome,
+                state.error()
+            ));
+        };
+        if state.value["received"] == true {
             self.tracks.entry(e).or_default().received = true;
             return;
         }
-        let before: Vec<i64> = rows
-            .iter()
-            .filter_map(|r| r["attempt_id"].as_i64())
-            .collect();
         let attempt = match self.attempt.take() {
             Some((pe, Attempt::Known(a))) if pe == e => Some(a),
             Some((pe, Attempt::Uncertain(Some(key), _))) if pe == e => {
                 self.new_attempt(e, fence, Some(key), before)
             }
-            // A ledger host: the uncertain insert's child has exited, so this complete
-            // read settles it. Only a row that appeared since it began is its result;
-            // none means it did not commit.
-            Some((pe, Attempt::Uncertain(None, old))) if pe == e => rows
-                .iter()
-                .filter(|r| r["adapter"] == self.sink.adapter() && r["state"] == "attempted")
-                .filter_map(|r| r["attempt_id"].as_i64())
-                .filter(|a| !old.contains(a))
-                .max()
+            // The local child's exit settles the insert: only an eligible row above
+            // its pre-insert watermark can be its result.
+            Some((pe, Attempt::Uncertain(None, _))) if pe == e => state.value["attempt_id"]
+                .as_i64()
                 .or_else(|| self.new_attempt(e, fence, None, before)),
             _ => self.new_attempt(e, fence, None, before),
         };
@@ -910,7 +919,7 @@ impl Loop {
         e: i64,
         fence: i64,
         retry: Option<String>,
-        before: Vec<i64>,
+        before: i64,
     ) -> Option<i64> {
         if self.quiet() {
             // A pause is reversible: an unresolved operation keeps its key for the next

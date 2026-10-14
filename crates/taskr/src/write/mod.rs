@@ -33,7 +33,8 @@ pub fn flags(cmd: &str, json: bool) -> FlagSet {
                 .bool("list", false, "list the --as root's subscriptions")
                 .int("cancel", 0, "cancel this subscription id");
         }
-        "delivery new" | "delivery submitted" | "delivery received" | "delivery ls" => {
+        "delivery new" | "delivery submitted" | "delivery received" | "delivery ls"
+        | "delivery state" => {
             f.int(
                 "as",
                 0,
@@ -46,6 +47,13 @@ pub fn flags(cmd: &str, json: bool) -> FlagSet {
                     "session",
                     0,
                     "with --as: the root's generation, the event id `taskr adopt` printed (0 before any adopt)",
+                );
+            }
+            if cmd == "delivery state" {
+                f.string("adapter", "", "the delivering adapter").int(
+                    "after",
+                    0,
+                    "attempt watermark before an uncertain insert",
                 );
             }
             if cmd == "delivery new" {
@@ -463,6 +471,7 @@ pub fn emit(cmd: &str, json_mode: bool, v: &Value) {
                 }
             ),
         },
+        "delivery state" => println!("j1 {}", compact_json(v).expect("JSON")),
         "delivery ls" => {
             for r in v["attempts"].as_array().expect("attempts") {
                 println!("j1 {}", compact_json(r).expect("JSON"));
@@ -545,11 +554,12 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
             &args[2..],
         )
     } else if raw == "delivery" || raw == "consumer" {
-        const SUBS: [(&str, &str); 8] = [
+        const SUBS: [(&str, &str); 9] = [
             ("new", "delivery new"),
             ("submitted", "delivery submitted"),
             ("received", "delivery received"),
             ("ls", "delivery ls"),
+            ("state", "delivery state"),
             ("take", "consumer take"),
             ("renew", "consumer renew"),
             ("release", "consumer release"),
@@ -616,6 +626,7 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
         "delivery submitted",
         "delivery received",
         "delivery ls",
+        "delivery state",
         "consumer take",
         "consumer renew",
         "consumer release",
@@ -652,7 +663,9 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
     }
     // A repeated help flag would run as a write locally but read as help to the hub.
     let once: &[&str] = match cmd {
-        _ if cmd.starts_with("delivery ") => &["as", "session", "adapter", "fence", "help"],
+        _ if cmd.starts_with("delivery ") => {
+            &["as", "session", "adapter", "fence", "after", "help"]
+        }
         _ if cmd.starts_with("consumer ") => {
             &["as", "session", "holder", "ttl", "fence", "force", "help"]
         }
@@ -848,7 +861,8 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
                 f.get_bool("keep"),
             )
         }
-        "delivery new" | "delivery submitted" | "delivery received" | "delivery ls" => {
+        "delivery new" | "delivery submitted" | "delivery received" | "delivery ls"
+        | "delivery state" => {
             let as_id = f.get_int("as");
             if f.was_set("as") && as_id <= 0 {
                 return Err(store::usage("--as must be a positive task id"));
@@ -857,6 +871,17 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
                 return store::delivery::list(&open()?, as_id, f.get_bool("open"));
             }
             let session = root_session(f, as_id)?;
+            if cmd == "delivery state" {
+                let id = store::id(&p[0], "event id")?;
+                let adapter = f.get_string("adapter");
+                let after = f.get_int("after");
+                if !token(adapter) || after < 0 {
+                    return Err(store::usage(
+                        "delivery state needs --adapter NAME and nonnegative --after",
+                    ));
+                }
+                return store::delivery::state(&open()?, as_id, session, id, adapter, after);
+            }
             if cmd != "delivery new" {
                 let id = store::id(&p[0], "attempt id")?;
                 return if cmd == "delivery submitted" {

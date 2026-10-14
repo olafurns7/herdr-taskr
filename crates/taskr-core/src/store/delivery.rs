@@ -247,3 +247,28 @@ pub fn list(db: &Connection, as_id: i64, open: bool) -> Result<Value> {
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(json!({"attempts":rows}))
 }
+
+/// Internal push read: constant-size state for the caller's event, binding and host.
+pub fn state(
+    db: &Connection,
+    as_id: i64,
+    session: Option<i64>,
+    event: i64,
+    adapter: &str,
+    after: i64,
+) -> Result<Value> {
+    let (t, binding) = identify(db, as_id, session)?;
+    let (launch, generation) = match binding {
+        Binding::Launch(l) => (Some(l), None),
+        Binding::Session(g) => (None, Some(g)),
+    };
+    let (received, watermark, attempt): (bool, i64, Option<i64>) = db.query_row(
+        "select coalesce(max(received_at is not null),0), coalesce(max(id),0),
+                max(case when id>? and adapter=? and submitted_at is null and received_at is null then id end)
+         from delivery_attempts
+         where task_id=? and event_id=? and launch_id is ? and session_gen is ? and machine is ?",
+        params![after, adapter, t.id, event, launch, generation, caller_machine()],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
+    Ok(json!({"received":received,"watermark":watermark,"attempt_id":attempt}))
+}

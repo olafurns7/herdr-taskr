@@ -329,6 +329,13 @@ fn root_receipts_are_fenced_by_the_adopt_generation() {
         true
     );
     assert_eq!(cursors(&h), before);
+    assert_eq!(
+        call(
+            &["delivery", "state", &q, "--adapter", "claude-channel"],
+            "0"
+        )["received"],
+        true
+    );
     refuse(&["delivery", "received", &ra], "7", 6);
     // GEN omitted, --as with a launch, or an env-only root identity.
     rejected(
@@ -378,6 +385,18 @@ fn root_receipts_are_fenced_by_the_adopt_generation() {
     assert_eq!(cursors(&h), before, "adopt keeps the cursors");
     refuse(&["delivery", "received", &ra], "0", 6);
     refuse(&["delivery", "new", &q, "--adapter", "x"], "0", 6);
+    refuse(
+        &["delivery", "state", &q, "--adapter", "claude-channel"],
+        "0",
+        6,
+    );
+    assert_eq!(
+        call(
+            &["delivery", "state", &q, "--adapter", "claude-channel"],
+            &g
+        ),
+        serde_json::json!({"received":false,"watermark":0,"attempt_id":null})
+    );
     refuse(&["delivery", "submitted", &ra], &g, 6);
     let rb = id(
         &call(&["delivery", "new", &q, "--adapter", "claude-channel"], &g),
@@ -1064,5 +1083,137 @@ fn a_dropped_reply_replays_one_attempt_and_repeated_help_never_writes() {
             "--help=false",
         ],
         2,
+    );
+}
+
+#[test]
+fn internal_state_scopes_receipts_and_reconciles_only_new_eligible_attempts() {
+    let h = Harness::new();
+    let (w, _, env) = h.lane("claude", "implementer");
+    let q = id(&h.ok(&env, &["ask", "state?"]), "ask_id");
+    let e = id(&h.ok(&[], &["answer", &q, "yes"]), "answer_id");
+    let state = |after: &str| {
+        h.ok(
+            &env,
+            &[
+                "delivery",
+                "state",
+                &e,
+                "--adapter",
+                "claude-channel",
+                "--after",
+                after,
+            ],
+        )
+    };
+    assert_eq!(
+        state("0"),
+        serde_json::json!({"received":false,"watermark":0,"attempt_id":null})
+    );
+    let new = |adapter: &str| {
+        id(
+            &h.ok(&env, &["delivery", "new", &e, "--adapter", adapter]),
+            "attempt_id",
+        )
+    };
+    let old = new("claude-channel");
+    assert_eq!(state(&old)["attempt_id"], serde_json::Value::Null);
+    let eligible = new("claude-channel");
+    let other = new("codex-queue");
+    let submitted = new("claude-channel");
+    h.ok(&env, &["delivery", "submitted", &submitted]);
+    assert_eq!(
+        state(&old),
+        serde_json::json!({"received":false,"watermark":submitted.parse::<i64>().unwrap(),"attempt_id":eligible.parse::<i64>().unwrap()})
+    );
+    // A foreign host's receipt is audit history, not this loop's receipt or watermark.
+    let foreign = new("claude-channel");
+    h.conn()
+        .execute(
+            "update delivery_attempts set machine='other-host',received_at='r' where id=?",
+            [&foreign],
+        )
+        .unwrap();
+    assert_eq!(state(&old)["received"], false);
+    assert_eq!(
+        state(&old)["watermark"].as_i64().unwrap().to_string(),
+        submitted
+    );
+    // Receipt suppression spans adapters; a receipt before submitted is enough.
+    h.ok(&env, &["delivery", "received", &other]);
+    assert_eq!(state(&old)["received"], true);
+    assert_eq!(state(&eligible)["attempt_id"], serde_json::Value::Null);
+    // Identity is derived from the caller, never from a supplied task or launch.
+    rejected(
+        &h,
+        &env,
+        &[
+            "delivery",
+            "state",
+            &e,
+            "--adapter",
+            "claude-channel",
+            "--as",
+            &w.to_string(),
+            "--session",
+            "0",
+        ],
+        6,
+    );
+    rejected(
+        &h,
+        &env,
+        &[
+            "delivery",
+            "state",
+            &e,
+            "--adapter",
+            "claude-channel",
+            "--after",
+            "-1",
+        ],
+        2,
+    );
+    let next = id(
+        &h.ok(
+            &[],
+            &[
+                "launch",
+                &w.to_string(),
+                "--provider",
+                "claude",
+                "--model",
+                "test",
+                "--effort",
+                "medium",
+            ],
+        ),
+        "launch_id",
+    );
+    rejected(
+        &h,
+        &env,
+        &["delivery", "state", &e, "--adapter", "claude-channel"],
+        6,
+    );
+    let next_env: Env = env
+        .iter()
+        .map(|(k, v)| {
+            (
+                k.clone(),
+                if k == "TASKR_LAUNCH" {
+                    next.clone()
+                } else {
+                    v.clone()
+                },
+            )
+        })
+        .collect();
+    assert_eq!(
+        h.ok(
+            &next_env,
+            &["delivery", "state", &e, "--adapter", "claude-channel"]
+        ),
+        serde_json::json!({"received":false,"watermark":0,"attempt_id":null})
     );
 }

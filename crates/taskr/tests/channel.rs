@@ -1159,6 +1159,14 @@ fn lost_replies_reconcile_with_their_own_keys_and_a_receipt_may_precede_submitte
             Act::Pass
         }),
     );
+    let e = insert_event(&h, "1", &w, "note", "lost replies", "{}");
+    let old = id(
+        &h.ok(
+            &worker,
+            &["delivery", "new", &e, "--adapter", "claude-channel"],
+        ),
+        "attempt_id",
+    );
     client(&h, &format!("http://[::1]:{p}"));
     let mut c = Chan::start(&h, &worker, &[], SCALE);
     // The lost take is retried with its own key and verified: one take, fence 1.
@@ -1166,7 +1174,6 @@ fn lost_replies_reconcile_with_their_own_keys_and_a_receipt_may_precede_submitte
     until("the verified take", Duration::from_secs(20), || {
         c.stderr().contains("holds the inbox lease with fence 1")
     });
-    let e = insert_event(&h, "1", &w, "note", "lost replies", "{}");
     let (_, push) = c.expect_push(Duration::from_secs(20));
     let a = meta(&push, "attempt");
     // The model's receipt lands before the dropped `submitted` is retried.
@@ -1179,7 +1186,11 @@ fn lost_replies_reconcile_with_their_own_keys_and_a_receipt_may_precede_submitte
         )
         .is_empty()
     });
-    assert_eq!(attempts(&h, &e), [format!("{a}|received")]);
+    assert_ne!(a, old);
+    assert_eq!(
+        attempts(&h, &e),
+        [format!("{old}|attempted"), format!("{a}|received")]
+    );
     let order = text(
         &h,
         &format!("select (received_at<=submitted_at)||'' from delivery_attempts where id={a}"),
@@ -1715,7 +1726,7 @@ fn eof_behind_a_full_queue_never_pushes_and_releases() {
 fn a_backlog_pause_keeps_an_unresolved_new_and_its_key() {
     let h = Harness::new();
     // The first attempt commits and its reply is lost; the reconciling check's
-    // `delivery ls` reply is held until the stdin queue is full.
+    // `delivery state` reply is held until the stdin queue is full.
     let (held_ls, saw_ls) = mpsc::channel::<()>();
     let (allow_ls, gate) = mpsc::channel::<()>();
     let (held_ls, gate) = (Mutex::new(held_ls), Arc::new(Mutex::new(gate)));
@@ -1723,7 +1734,7 @@ fn a_backlog_pause_keeps_an_unresolved_new_and_its_key() {
         &h,
         vec![
             nth(&["delivery", "new"], 0, || Act::LoseReply),
-            nth(&["delivery", "ls"], 1, move || {
+            nth(&["delivery", "state"], 1, move || {
                 let _ = held_ls.lock().unwrap().send(());
                 let gate = gate.clone();
                 Act::After(Box::new(move || {
@@ -1755,4 +1766,42 @@ fn a_backlog_pause_keeps_an_unresolved_new_and_its_key() {
     let seen: Vec<Value> = held_tool.requests.try_iter().collect();
     let k = keys(&seen, &["delivery", "new"]);
     assert!(k.len() >= 2 && k.iter().all(|x| *x == k[0]), "{k:?}");
+}
+
+#[test]
+fn history_above_the_output_cap_still_pushes_receives_and_acks() {
+    let h = Harness::new();
+    let (w, launch, env) = h.lane("claude", "implementer");
+    let ws = w.to_string();
+    let old = insert_event(&h, "1", &ws, "note", "old acked event", "{}");
+    let mut db = h.conn();
+    let tx = db.transaction().unwrap();
+    tx.execute(
+        "update tasks set acked_event_id=?,pending_event_id=null where id=?",
+        taskr_core::db::params![old, w],
+    )
+    .unwrap();
+    for _ in 0..40000 {
+        tx.execute("insert into delivery_attempts(event_id,task_id,launch_id,adapter,created_at,submitted_at,received_at) values(?,?,?,'claude-channel','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z')", taskr_core::db::params![old, w, launch]).unwrap();
+    }
+    tx.commit().unwrap();
+    let out = h.output(&env, &["--json", "delivery", "ls"], b"");
+    assert!(out.status.success());
+    assert!(out.stdout.len() > 8 << 20);
+    println!("historical delivery JSON: {} bytes", out.stdout.len());
+    let e = insert_event(&h, "1", &ws, "note", "new event", "{}");
+    let mut c = Chan::start(&h, &env, &[], SCALE);
+    let (_, push) = c.expect_push(Duration::from_secs(20));
+    assert_eq!(meta(&push, "event"), e);
+    let a = meta(&push, "attempt");
+    let r = c.call("taskr_received", json!({"attempt":n(&a)}));
+    assert_eq!(r["structuredContent"]["outcome"], "committed");
+    let r = c.call(
+        "taskr_ack",
+        json!({"event":n(&e),"fence":n(&meta(&push, "fence"))}),
+    );
+    assert_eq!(r["structuredContent"]["outcome"], "committed");
+    assert_eq!(attempts(&h, &e), [format!("{a}|received")]);
+    assert_eq!(cursors(&h, &ws), format!("{e}|-|-"));
+    assert_eq!(c.close().0, Some(0));
 }

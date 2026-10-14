@@ -13,6 +13,7 @@ How the loop holds the inbox, what a push carries and how it reconciles uncertai
 ## What it promises
 
 - At least once, not exactly once. An event can reach the model more than once: up to 3 pushes per adapter process without a receipt, a restart starts a new budget, and a push already written or queued can arrive after a handoff. The event id identifies the work; the model checks the inbox before handling and does not repeat handled work.
+- Historical attempt volume does not enlarge the shared Claude/Codex push state response; `delivery ls` still lists the full audit history.
 - A push is not an ack, and not a receipt. The adapter records `delivery new` and `delivery submitted`; only the model records `delivery received` and acks after handling. Submitted means the notification line was written and flushed, or `codex queue` exited 0, nothing more. A Claude session that is not registered as a channel drops a notification silently. That case is visible as submitted attempts with no receipt (`taskr delivery ls --open`) and the event still pending.
 - A stall longer than the lease stops it. If the loop cannot renew within 60 s (a hub outage, a stuck command), it pushes nothing on the stale lease, the refused renew stops it for good, and the adapter must be restarted to resume pushes.
 - One event at a time. The fenced wait offers the oldest pending event first, so a later event is not pushed while an earlier one is unacked. If the model never acks, pushes of that event stop after 3, and the inbox waits for an ack, a handoff or a restart.

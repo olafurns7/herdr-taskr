@@ -99,7 +99,10 @@ pub(super) fn stored(argv: &[String]) -> bool {
             && args.iter().take_while(|s| s.as_str() != "--").any(|s| {
                 s.starts_with('-') && matches!(s.trim_start_matches('-'), "list" | "list=true")
             }))
-        && !(name == "delivery" && args.first().is_none_or(|s| s == "ls"))
+        && !(name == "delivery"
+            && args
+                .first()
+                .is_none_or(|s| matches!(s.as_str(), "ls" | "state")))
         && !(name == "consumer" && args.first().is_none_or(|s| s == "show"))
         && !wants_help(args)
 }
@@ -137,7 +140,7 @@ pub(super) fn check_args(argv: &[String]) -> Result<(), String> {
     });
     let once: &[&str] = match name {
         "inbox" => &["as", "limit", "help"],
-        "delivery" => &["as", "session", "adapter", "fence", "help"],
+        "delivery" => &["as", "session", "adapter", "fence", "after", "help"],
         "consumer" => &["as", "session", "holder", "ttl", "fence", "force", "help"],
         "wait" | "ack" if fenced => &["fence", "session", "help"],
         _ => &[],
@@ -487,6 +490,7 @@ mod tests {
             vec!["_host", "observe"],
             vec!["after", "--list", "--as", "1"],
             vec!["delivery", "ls", "--as", "1"],
+            vec!["delivery", "state", "9", "--adapter", "x"],
             vec!["--json", "delivery", "ls", "--open"],
             vec!["delivery"],
             vec!["delivery", "--help"],
@@ -497,7 +501,7 @@ mod tests {
         assert!(stored(&argv(&["note", "--", "--help"])));
         assert!(stored(&argv(&["after", "7", "--as", "1"])));
         assert!(stored(&argv(&["after", "--cancel", "3"])));
-        // delivery's writes are stored (a same-key retry replays); ls is a fresh read.
+        // Delivery writes are stored; ls and the internal state are fresh reads.
         for sub in ["new", "submitted", "received"] {
             assert!(stored(&argv(&[
                 "delivery",
@@ -515,6 +519,16 @@ mod tests {
         ])));
         for repeat in [
             vec!["delivery", "new", "9", "--as", "1", "--as=1"],
+            vec![
+                "delivery",
+                "state",
+                "9",
+                "--adapter",
+                "x",
+                "--after",
+                "0",
+                "--after=1",
+            ],
             vec!["delivery", "received", "3", "--session=0", "-session", "0"],
             vec!["delivery", "new", "9", "--adapter", "x", "--adapter", "x"],
             vec!["delivery", "new", "9", "--help", "--help=false"],
