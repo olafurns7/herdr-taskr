@@ -1,5 +1,5 @@
  taskr ❯ glance                                                                 hub atlas · ◓   ! stale 40s  2 need you
-1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+
+1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log-
  3 notes still carry OWNER items
  ! hub unreachable · showing 14:16 · retry 4s
 ╭ Glance ──────────────────────────────────────────────────╮╭ ask 61767 · tui-frames ──────────────────────────────────╮
@@ -37,4 +37,4 @@
 │ CAMPAIGNS ─────────────────────────────────────────── 10 ││ last NOW: plan rev 3.1 sent; the trust rules and the     │
 │ +13 more · c shows all                                   ││ first frames are in flight.                              │
 ╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
- r retry   ⏎ go to lead   a answer   l open   1-6 panels   / filter   y copy   s slotr   ? help   q quit
+ r retry   ⏎ go to lead   a answer   l open   1-9 panels   / filter   y copy   s slotr   ? help   q quit

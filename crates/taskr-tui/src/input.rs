@@ -296,10 +296,14 @@ fn open(app: &mut App, root: i64, name: &str) -> Effect {
     } else {
         app.status = Some(format!("reading {name}"));
     }
+    // The latest deliberate open wins; an earlier one's reply is dropped when it lands.
+    app.scope.generation += 1;
+    app.scope.want = Some((root, app.screen, app.back.len()));
     Effect::Run(Job::Campaign {
         root,
         name: name.to_string(),
         open: !loaded,
+        seq: app.scope.generation,
     })
 }
 
@@ -324,6 +328,7 @@ pub fn follow(app: &App) -> Option<Job> {
         root: root.id,
         name: root.name.clone(),
         open: false,
+        seq: app.scope.generation,
     })
 }
 
@@ -385,7 +390,7 @@ fn park(app: &mut App, root: i64, name: &str, parked: bool) -> Effect {
 }
 
 fn glance_key(app: &mut App, code: KeyCode) -> Effect {
-    if let KeyCode::Char(n @ '1'..='6') = code {
+    if let KeyCode::Char(n @ '1'..='9') = code {
         let before = glance::ids(&app.view()).get(app.row).cloned();
         let index = n as usize - '1' as usize;
         app.config.panels[index] = !app.config.panels[index];
@@ -416,6 +421,18 @@ fn glance_key(app: &mut App, code: KeyCode) -> Effect {
             (&g.now, &g.now, 0, &g.now)
         }
         Selected::Pr(_) | Selected::Author(_) | Selected::Run(_) => return Effect::None,
+        // Decisions, Fleet and the decision log only inform: `o` reads their campaign,
+        // and nothing else here focuses, answers, parks, copies or writes.
+        Selected::Decision(_) | Selected::Logged(_) | Selected::Fleet(_)
+            if matches!(code, KeyCode::Tab | KeyCode::BackTab | KeyCode::Char('c')) =>
+        {
+            (&g.now, &g.now, 0, &g.now)
+        }
+        Selected::Decision(_) | Selected::Logged(_) => {
+            let c = &view.data.campaign.root;
+            return info_key(app, code, c.id, &c.name);
+        }
+        Selected::Fleet(c) => return info_key(app, code, c.id, &c.name),
         Selected::Nothing if code == KeyCode::Char('c') => (&g.now, &g.now, 0, &g.now),
         Selected::Nothing => return Effect::None,
     };
@@ -464,6 +481,19 @@ fn glance_key(app: &mut App, code: KeyCode) -> Effect {
         _ => {}
     }
     Effect::None
+}
+
+/// A Decisions, Fleet or decision-log row: `o` opens (re-reads) its campaign, as `l` does
+/// on a campaign row. The other row keys do nothing here.
+fn info_key(app: &mut App, code: KeyCode, root: i64, name: &str) -> Effect {
+    match code {
+        KeyCode::Char('o') => open(app, root, name),
+        KeyCode::Enter | KeyCode::Right | KeyCode::Char('a' | 'p' | 'l' | 'y') => say(
+            app,
+            "an informational row: o opens its campaign; nothing else acts here",
+        ),
+        _ => Effect::None,
+    }
 }
 
 fn campaign_key(app: &mut App, code: KeyCode) -> Effect {
@@ -677,19 +707,16 @@ pub fn done(app: &mut App, job: &Job, result: Result<Done, String>) {
         }
         return;
     }
+    if let Job::Campaign {
+        root,
+        name,
+        open,
+        seq,
+    } = job
+    {
+        return campaign_done(app, (*root, name.as_str(), *open, *seq), showing, result);
+    }
     app.status = match (job, result) {
-        (Job::Campaign { root, open, .. }, Ok(Done::Campaign(campaign))) => {
-            if *open && !showing {
-                app.data.campaign = *campaign;
-                app.go(Screen::Campaign);
-                (app.pane, app.lane) = (0, 0);
-            } else if showing && app.data.campaign.root.id == *root {
-                // A refresh under the view: the cursor stays where it can.
-                app.lane = app.lane.min(campaign.lanes.len());
-                app.data.campaign = *campaign;
-            }
-            None
-        }
         (Job::Doc { row }, Ok(Done::Doc(body))) => {
             app.data.doc = Doc {
                 id: row.id,
@@ -721,6 +748,72 @@ pub fn done(app: &mut App, job: &Job, result: Result<Done, String>) {
             Some(format!("! {} failed: {error}", job.label()))
         }
     };
+}
+
+/// A campaign read came back. Only the latest deliberate open, or a refresh asked for since,
+/// counts; it must be the campaign asked for. An open shows only from the screen it was asked
+/// on. What lands becomes the cached campaign panels 7 and 9 read, with its own age.
+fn campaign_done(
+    app: &mut App,
+    (root, name, open, seq): (i64, &str, bool, u64),
+    showing: bool,
+    result: Result<Done, String>,
+) {
+    if seq < app.scope.generation {
+        return;
+    }
+    // The glance row, wherever it waits, stays on its identity when the read lands.
+    let before = {
+        let view = app.glance_view();
+        glance::ids(&view).get(view.row).cloned()
+    };
+    let wanted = app.scope.want.filter(|w| w.0 == root);
+    if wanted.is_some() {
+        app.scope.want = None;
+    }
+    let result = match result {
+        Ok(Done::Campaign(c)) if c.root.id == root => Ok(c),
+        Ok(Done::Campaign(c)) => Err(format!("the ledger sent campaign {}", c.root.id)),
+        Ok(_) => Err("the ledger sent no campaign".into()),
+        Err(error) => Err(error),
+    };
+    let scoped = app.scope.read_at.is_some() && app.data.campaign.root.id == root;
+    let campaign = match result {
+        Ok(c) => c,
+        Err(error) => {
+            if wanted.is_some() || scoped {
+                app.scope.error = Some(format!("reading {name} failed: {error}"));
+            }
+            app.status = Some(format!("! read {name} failed: {error}"));
+            return;
+        }
+    };
+    app.status = None;
+    let here =
+        wanted.is_some_and(|(_, screen, depth)| (screen, depth) == (app.screen, app.back.len()));
+    if open && !showing {
+        if !here {
+            app.status = Some(format!(
+                "{name} was read after the view moved on; l opens it"
+            ));
+            return;
+        }
+        app.data.campaign = *campaign;
+        app.go(Screen::Campaign);
+        (app.pane, app.lane) = (0, 0);
+    } else if app.data.campaign.root.id == root && (showing || wanted.is_some()) {
+        // A refresh under the view: the cursor stays where it can.
+        app.lane = app.lane.min(campaign.lanes.len());
+        app.data.campaign = *campaign;
+    } else {
+        return;
+    }
+    if wanted.is_some() || scoped {
+        app.scope.read_at = Some(app.observed_at);
+        app.scope.error = None;
+        app.restore_row(before);
+        app.click = None;
+    }
 }
 
 /// The key a footer hint stands for.
@@ -1602,7 +1695,7 @@ mod tests {
             }
             let text = p.text();
             assert!(text.contains("hidden asks"), "{height}: {text}");
-            assert!(text.contains("1-6"), "recovery hint at {height}: {text}");
+            assert!(text.contains("1-9"), "recovery hint at {height}: {text}");
             if height >= 8 {
                 assert!(
                     text.contains("4 PRs-"),
@@ -1839,7 +1932,7 @@ mod tests {
                 p.code(KeyCode::Char(n));
             }
             assert!(glance::ids(&p.app.view()).is_empty());
-            assert!(p.text().contains("1-6"));
+            assert!(p.text().contains("1-9"));
             p.code(KeyCode::Char('5'));
             assert!(matches!(
                 glance::selected(&p.app.view()),
@@ -1901,6 +1994,7 @@ mod tests {
             root: 1,
             name: "demo-checkout".into(),
             open: true,
+            seq: 1,
         };
         p.app.data.campaign = crate::model::Campaign::default();
         p.text();
@@ -1934,7 +2028,8 @@ mod tests {
             Job::Campaign {
                 root: 1,
                 name: "demo-checkout".into(),
-                open: false
+                open: false,
+                seq: 1,
             }
         );
         let mut newer = sample.campaign.clone();
@@ -2261,5 +2356,404 @@ mod tests {
         let old = "taskr: unknown command slotr".to_string();
         done(&mut p.app, &Job::Slotr, Err(old));
         assert!(p.text().contains("older than taskr slotr: update both"));
+    }
+
+    fn row_of(p: &Pane, id: &glance::RowId) -> usize {
+        glance::ids(&p.app.view())
+            .iter()
+            .position(|r| r == id)
+            .unwrap_or_else(|| panic!("{id:?} is not a row"))
+    }
+
+    fn drawn(p: &Pane, i: usize) -> bool {
+        p.app
+            .seen
+            .borrow()
+            .hits
+            .iter()
+            .any(|(_, hit)| *hit == Hit::Row(i))
+    }
+
+    /// `l` on a campaign row, as the owner presses it; the read is not served.
+    fn ask_read(p: &mut Pane, id: i64) -> Job {
+        p.app.row = row_of(p, &glance::RowId::Campaign(id));
+        p.text();
+        match press(&mut p.app, KeyCode::Char('l')) {
+            Effect::Run(job) => job,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn read(id: i64, name: &str, decision: &str) -> Result<Done, String> {
+        let mut c = crate::model::Campaign::default();
+        (c.root.id, c.root.name) = (id, name.into());
+        c.decisions = vec![crate::model::Event {
+            id: 7,
+            kind: "decision".into(),
+            text: decision.into(),
+            ..Default::default()
+        }];
+        Ok(Done::Campaign(Box::new(c)))
+    }
+
+    #[test]
+    fn ledger_panels_scope_only_a_deliberate_open_and_age_by_its_read() {
+        let now = 1_792_000_000;
+        let mut p = Pane::new(120, 40);
+        p.app.observed_at = now;
+        for n in ['7', '8', '9'] {
+            assert_eq!(p.code(KeyCode::Char(n)), Effect::SaveConfig);
+        }
+        assert_eq!(p.app.config.panels[6..], [true; 3]);
+        let text = p.text();
+        assert!(text.contains("Select a campaign and press l"), "{text}");
+        assert!(text.contains("7 Decisions+ · 8 Fleet+ · 9 Log+"), "{text}");
+        // Moving over campaigns neither scopes nor reads; Glance r reads only the glance.
+        for _ in 0..12 {
+            assert_eq!(p.code(KeyCode::Char('j')), Effect::None);
+        }
+        assert_eq!(p.code(KeyCode::Char('r')), Effect::Refresh);
+        assert!(p.app.scope.read_at.is_none() && follow(&p.app).is_none());
+        let scoped = |p: &Pane| {
+            glance::ids(&p.app.view())
+                .iter()
+                .any(|r| matches!(r, glance::RowId::Decision(..) | glance::RowId::Logged(..)))
+        };
+        assert!(!scoped(&p));
+        // The demo serves the read: `l` shows the campaign, Esc returns to the panels.
+        p.app.config.panels[6..].fill(false);
+        p.app.row = row_of(&p, &glance::RowId::Campaign(4120));
+        p.keys("l");
+        assert_eq!(p.app.screen, Screen::Campaign);
+        p.keys("\x1b");
+        p.app.config.panels[6..].fill(true);
+        assert_eq!(
+            (p.app.screen, p.app.scope.read_at),
+            (Screen::Glance, Some(now))
+        );
+        assert!(p.text().contains("tui-frames #4120 · read 0s ago"));
+        let ids = glance::ids(&p.app.view());
+        // The same event in force and in the log sample: two identities.
+        assert!(ids.contains(&glance::RowId::Decision(4120, 61301)));
+        assert!(ids.contains(&glance::RowId::Logged(4120, 61301)));
+        assert!(follow(&p.app).is_none());
+        // The panels' age follows the read, and a new minute asks for a frame.
+        assert!(p.app.advance_time(now + 120, Instant::now()));
+        assert!(p.text().contains("read 2m ago"));
+        assert!(!p.app.advance_time(now + 125, Instant::now()));
+        p.app.config.panels[6] = false;
+        p.app.config.panels[8] = false;
+        assert!(!p.app.advance_time(now + 300, Instant::now()));
+    }
+
+    #[test]
+    fn superseded_mismatched_cancelled_and_failed_reads_never_retarget() {
+        let mut p = Pane::new(120, 40);
+        p.app.data.campaign = crate::model::Campaign::default();
+        let first = ask_read(&mut p, 4310);
+        let second = ask_read(&mut p, 4288);
+        // The earlier open's reply lands after a later one was asked for: dropped.
+        done(&mut p.app, &first, read(4310, "search-index", "old"));
+        assert_eq!(
+            (
+                p.app.screen,
+                p.app.scope.read_at,
+                p.app.data.campaign.root.id
+            ),
+            (Screen::Glance, None, 0)
+        );
+        // A reply for another campaign than the one asked for is an error.
+        done(&mut p.app, &second, read(999, "other", "wrong"));
+        assert_eq!(
+            (p.app.screen, p.app.data.campaign.root.id),
+            (Screen::Glance, 0)
+        );
+        assert!(p.status().starts_with("! read auth-rotation failed"));
+        assert!(
+            p.app
+                .scope
+                .error
+                .as_deref()
+                .unwrap()
+                .starts_with("reading auth-rotation failed")
+        );
+        // The owner moved on to the help: the reply shows nothing and changes nothing.
+        let third = ask_read(&mut p, 4288);
+        p.keys("?");
+        done(
+            &mut p.app,
+            &third,
+            read(4288, "auth-rotation", "keep the cache"),
+        );
+        assert_eq!(
+            (
+                p.app.screen,
+                p.app.scope.read_at,
+                p.app.data.campaign.root.id
+            ),
+            (Screen::Help, None, 0)
+        );
+        assert!(p.status().contains("l opens it"), "{}", p.status());
+        p.keys("\x1b");
+        let fourth = ask_read(&mut p, 4288);
+        done(
+            &mut p.app,
+            &fourth,
+            read(4288, "auth-rotation", "keep the cache"),
+        );
+        assert_eq!(p.app.screen, Screen::Campaign);
+        assert!(p.app.scope.read_at.is_some() && p.app.scope.error.is_none());
+        p.keys("\x1b");
+        p.app.config.panels[6] = true;
+        let text = p.text();
+        assert!(text.contains("auth-rotation #4288") && text.contains("keep the cache"));
+        // A failed read again keeps the last good one on hand, and says so.
+        let read_at = p.app.scope.read_at;
+        let fifth = ask_read(&mut p, 4288);
+        p.keys("\x1b");
+        done(&mut p.app, &fifth, Err("boom".into()));
+        assert_eq!(p.app.scope.read_at, read_at);
+        let text = p.text();
+        assert!(
+            text.contains("reading auth-rotation failed: boom") && text.contains("keep the cache"),
+            "{text}"
+        );
+        // A refresh asked for before the latest open cannot replace it.
+        let stale = Job::Campaign {
+            root: 4288,
+            name: "auth-rotation".into(),
+            open: false,
+            seq: 1,
+        };
+        done(&mut p.app, &stale, read(4288, "auth-rotation", "stale"));
+        assert!(p.text().contains("keep the cache"));
+        assert_eq!(p.app.screen, Screen::Glance);
+    }
+
+    #[test]
+    fn informational_rows_only_open_their_campaign() {
+        let mut p = Pane::new(120, 40);
+        p.app.config.panels[6..].fill(true);
+        p.app.scope.read_at = Some(p.app.observed_at);
+        let ids = glance::ids(&p.app.view());
+        let rows = [
+            ids.iter()
+                .find(|r| matches!(r, glance::RowId::Decision(..))),
+            ids.iter().find(|r| matches!(r, glance::RowId::Fleet(_))),
+            ids.iter().find(|r| matches!(r, glance::RowId::Logged(..))),
+        ];
+        for id in rows.map(|r| r.unwrap().clone()) {
+            p.app.row = row_of(&p, &id);
+            p.text();
+            assert!(drawn(&p, p.app.row), "{id:?}");
+            let hints = glance::hints(&p.app.view(), true);
+            assert!(hints.iter().any(|(k, _)| *k == "o"), "{hints:?}");
+            assert!(
+                !hints.iter().any(|(k, _)| ["y", "⏎", "a", "p"].contains(k)),
+                "{hints:?}"
+            );
+            for code in [
+                KeyCode::Enter,
+                KeyCode::Right,
+                KeyCode::Char('a'),
+                KeyCode::Char('p'),
+                KeyCode::Char('l'),
+                KeyCode::Char('y'),
+            ] {
+                p.text();
+                assert_eq!(press(&mut p.app, code), Effect::None, "{id:?} {code:?}");
+                assert!(p.status().contains("informational"), "{}", p.status());
+            }
+            assert!(p.app.pending.is_none() && p.app.ask.is_none());
+            assert_eq!(p.app.screen, Screen::Glance);
+            p.text();
+            let Effect::Run(Job::Campaign { root, .. }) = press(&mut p.app, KeyCode::Char('o'))
+            else {
+                panic!("o reads the row's campaign")
+            };
+            let want = match id {
+                glance::RowId::Fleet(root) => root,
+                _ => 4120,
+            };
+            assert_eq!(root, want);
+            if p.app.screen != Screen::Glance {
+                p.app.close();
+            }
+        }
+    }
+
+    #[test]
+    fn fleet_reads_the_listed_snapshot_whatever_panel_3_shows() {
+        let mut p = Pane::new(120, 40);
+        p.app.config.panels[2] = false;
+        p.app.config.panels[7] = true;
+        let listed = p.app.data.glance.campaigns.len();
+        p.app.data.glance.campaigns[0].lanes.known = [true, false, false];
+        let ids = glance::ids(&p.app.view());
+        assert!(!ids.iter().any(|r| matches!(r, glance::RowId::Campaign(_))));
+        let fleet = ids
+            .iter()
+            .filter(|r| matches!(r, glance::RowId::Fleet(_)))
+            .count();
+        assert_eq!(fleet, listed);
+        let text = p.text();
+        assert!(
+            text.contains("FLEET") && text.contains(&format!("{listed} listed")),
+            "{text}"
+        );
+        // A count the snapshot left out is unknown, in the row and in the totals.
+        assert!(
+            text.contains("+? ready") && text.contains("? ready ? open"),
+            "{text}"
+        );
+        p.keys("/auth\n");
+        assert!(p.text().contains("filtered: 1 listed"));
+        p.keys("\x1b");
+        p.app.fetch.error = Some("hub unreachable".into());
+        assert!(p.text().contains("! ledger stale"));
+        p.app.fetch = crate::Fetch::default();
+        assert!(p.text().contains("Ledger not read yet; counts unknown"));
+        p.app.fetch.loaded = true;
+        p.app.data.glance.campaigns.clear();
+        p.app.data.glance.quiet = Default::default();
+        assert!(p.text().contains("not a fleet-wide idle claim"));
+    }
+
+    #[test]
+    fn ledger_panels_preview_under_listed_asks_and_fill_an_empty_ledger() {
+        let mut p = Pane::new(120, 40);
+        p.app.config.panels[6..].fill(true);
+        p.app.scope.read_at = Some(p.app.observed_at);
+        let decision = p.app.data.campaign.decisions[0].clone();
+        p.app.data.campaign.decisions = (1..=14)
+            .map(|id| crate::model::Event {
+                id,
+                ..decision.clone()
+            })
+            .collect();
+        let text = p.text();
+        // Owner asks and checks keep every row; 7-9 preview three rows each, and all show.
+        // The wide list is the left 60 columns; the detail pane shares its lines.
+        for rule in ["NEEDS YOU", "TO CHECK"] {
+            let line = text.lines().find(|l| l.contains(rule)).unwrap();
+            let list: String = line.chars().take(60).collect();
+            assert!(!list.contains('/'), "{rule} is windowed:\n{text}");
+        }
+        for rule in ["DECISIONS · PLAN", "FLEET", "DECISION LOG"] {
+            assert!(text.contains(rule), "{rule} missing:\n{text}");
+        }
+        assert!(
+            text.contains("+11 outside view") && text.contains("+8 outside view"),
+            "{text}"
+        );
+        // With asks, checks and campaigns hidden Fleet fills the pane; the state keeps
+        // only its own two lines and says what is hidden, not that no ledger rows show.
+        let mut p = Pane::new(46, 30);
+        p.app.config.panels[..3].fill(false);
+        p.app.config.panels[7] = true;
+        let text = p.text();
+        assert!(
+            text.contains("Asks, checks and campaigns hidden")
+                && text.contains("1-3 show them")
+                && !text.contains("No visible ledger rows"),
+            "{text}"
+        );
+        assert!(
+            text.contains("legacy-importer") && !text.contains("outside view"),
+            "{text}"
+        );
+        // A filter that empties asks, checks and campaigns says so, not that they are hidden.
+        // Decisions stay under it: the filter leaves one campaign's decisions. Quiet
+        // campaigns are not filtered and keep the CAMPAIGNS row, so the fixture has none.
+        p.app.config.panels[..3].fill(true);
+        p.app.config.panels[6] = true;
+        p.app.data.glance.quiet.count = 0;
+        p.app.filter = "no-such-campaign".into();
+        let text = p.text();
+        assert!(
+            text.contains("No matching asks, checks or campaigns")
+                && text.contains("Esc clears the filter")
+                && text.contains("DECISIONS")
+                && !text.contains("No visible ledger rows"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn hidden_ledger_switches_cost_the_narrow_glance_no_row() {
+        let mut p = Pane::new(46, 30);
+        let lines = |p: &mut Pane| p.text().lines().map(String::from).collect::<Vec<_>>();
+        let text = lines(&mut p);
+        assert_eq!(
+            text[2], "4 PRs+ · 5 Shipped+ · 6 Build+ · 7-9 off",
+            "{text:?}"
+        );
+        assert!(!text[3].contains("Fleet"), "{text:?}");
+        assert_eq!(p.code(KeyCode::Char('8')), Effect::SaveConfig);
+        let text = lines(&mut p);
+        assert_eq!(text[3], "7 Decisions- · 8 Fleet+ · 9 Log-", "{text:?}");
+    }
+
+    #[test]
+    fn a_snapshot_under_the_help_keeps_the_fleet_selection() {
+        let mut p = Pane::new(120, 40);
+        p.app.config.panels[7] = true;
+        let id = glance::RowId::Fleet(4288);
+        p.app.row = row_of(&p, &id);
+        p.keys("?");
+        let mut snapshot = p.app.data.glance.clone();
+        snapshot.campaigns.reverse();
+        p.app.snapshot(snapshot);
+        p.keys("\x1b");
+        assert_eq!(glance::ids(&p.app.view())[p.app.row], id);
+    }
+
+    #[test]
+    fn every_ledger_identity_is_reachable_and_earlier_panels_keep_priority() {
+        for width in [46, 120] {
+            for height in 7..=40 {
+                let mut p = Pane::new(width, height);
+                p.app.github = crate::github::demo();
+                p.app.shipped = crate::github::demo_shipped(p.app.observed_at);
+                p.app.builds = crate::github::demo_builds(p.app.observed_at);
+                p.app.config.panels[6..].fill(true);
+                p.app.scope.read_at = Some(p.app.observed_at);
+                let ids = glance::ids(&p.app.view());
+                for id in [
+                    glance::RowId::Decision(4120, 61301),
+                    glance::RowId::Fleet(4120),
+                    glance::RowId::Logged(4120, 61301),
+                ] {
+                    assert!(ids.contains(&id), "{id:?}");
+                }
+                for (i, id) in ids.iter().enumerate() {
+                    p.app.row = i;
+                    let text = p.text();
+                    if height >= 8 {
+                        assert!(drawn(&p, i), "{width}x{height}/{id:?}:\n{text}");
+                    }
+                    // A lower panel never shows while a higher one is gone.
+                    let order = [
+                        "NEEDS YOU",
+                        "OPEN PRS",
+                        "SHIPPED",
+                        "BUILD QUEUE",
+                        "DECISIONS · PLAN",
+                        "FLEET",
+                        "DECISION LOG",
+                    ];
+                    for (later, name) in order.iter().enumerate().skip(1) {
+                        if text.contains(name) {
+                            for earlier in &order[..later] {
+                                assert!(
+                                    text.contains(earlier),
+                                    "{width}x{height} row {i}: {name} without {earlier}:\n{text}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

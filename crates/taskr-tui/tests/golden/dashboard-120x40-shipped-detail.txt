@@ -1,5 +1,5 @@
  taskr ❯ glance                                                           hub atlas · 2s ago   ● 2 need you  3 to check
-1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+
+1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log-
  3 notes still carry OWNER items
 ╭ Glance ──────────────────────────────────────────────────╮╭ Shipped · @alex ─────────────────────────────────────────╮
 │ NEEDS YOU ──────────────────────────────────────────── 2 ││ 2 observed / rolling 24h                                 │
@@ -37,4 +37,4 @@
 │ ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃        19s│
 │ +12 more · c shows all                                   │
 ╰──────────────────────────────────────────────────────────╯
- r refresh   1-6 panels   / filter   s slotr   ? help   q quit
+ r refresh   1-9 panels   / filter   s slotr   ? help   q quit
