@@ -39,7 +39,7 @@ one line of JSON.
 
 ![Glance, dark theme](images/glance-dark.png)
 
-The first screen has four switchable panels, top to bottom:
+The first screen has six switchable panels, top to bottom:
 
 - **Needs you:** open owner asks. Red in the header means an open owner ask. `BLOCKING` marks an ask whose work has stopped for your answer.
   `HUB` marks a question the hub relayed from its own dialog
@@ -54,23 +54,32 @@ The first screen has four switchable panels, top to bottom:
   square and a CI word, author and creation age. Failing checks are red only
   inside this panel; the header verdict remains about owner asks. This differs
   from campaign PR references and the hub watcher's tracked-PR observations.
+- **Shipped:** cached PRs merged within the rolling last 24 hours, grouped by
+  author across configured repos. Counts are observed samples; author details list
+  titles, repo and PR number. The window expires on the existing UI tick, without
+  fetching or changing the identity of an unrelated selection.
+- **Build queue:** observed running and queued GitHub Actions runs, workflow,
+  branch, age and exact state. Unknown states are disclosed separately.
 - **Campaigns:** every open campaign with its lead's state, one dot per
   lane, four hours of activity as a small graph, and its latest milestone.
   Quiet campaigns fold into one line at the bottom.
 
-Press `1` (asks), `2` (checks), `3` (campaigns), or `4` (Open PRs) in
+Press `1` (asks), `2` (checks), `3` (campaigns), `4` (Open PRs), `5` (Shipped), or `6` (Build queue) in
 Glance to show or hide a panel. The switch row uses `+` for shown and `-`
-for hidden. All four start enabled. Hidden owner asks
+for hidden. All six start enabled. Hidden owner asks
 remain counted in the header. Hidden rows cannot receive actions. All panels
-can be hidden; `1`–`4` restore them. Campaign's `1`–`5` keys still select panes.
+can be hidden; `1`–`6` restore them. Campaign's `1`–`5` keys still select panes.
 
 Visibility and the repository list live in `$XDG_CONFIG_HOME/taskr/tui.json`,
 or `~/.config/taskr/tui.json` when XDG_CONFIG_HOME is unset:
 
 ```json
-{"panels":[true,true,true,true],"repos":["trip-to-japan/trip"]}
+{"panels":[true,true,true,true,true,true],"repos":["trip-to-japan/trip"]}
 ```
 
+Existing four-boolean configs keep their choices and repo list, appending
+Shipped and Build queue enabled. Saves use six booleans. Other lengths or
+non-boolean entries are invalid and retain the bad-config preservation guard.
 Up to eight `owner/repo` names are accepted. Toggle saves preserve the repo
 list and replace this allowlisted config atomically with mode 0600. Bad or
 unreadable config uses defaults with a visible warning. Toggles then apply
@@ -86,7 +95,7 @@ bypass failure backoff or a known rate-limit deadline. Hiding the panel or
 leaving Glance stops scheduled reads; an in-flight read can finish. Reads
 have a ten-second process deadline and bounded output. Failures retain the
 last good result with its own stale label; a first failure says unavailable.
-Ledger and PR freshness are independent. Errors show generic messages.
+Ledger, Open PRs, Shipped and Build queue freshness are independent. Errors show generic messages.
 
 Each query returns at most 100 PRs; at that limit the source says
 “first 100; more may exist.” Rows are failing, running, unknown, passing,
@@ -100,8 +109,27 @@ are not queried. The list shows a bounded window with an overflow count;
 `j`/`k` browse it without displacing all asks. No key runs commands from PRs
 or opens a browser.
 
-Scheduled cost is about 60 gh invocations per repo per hour per instance,
-plus manual refreshes. This is not a fixed network-request or GraphQL-point
+Shipped makes one `gh pr list --state merged --limit 100 --search
+merged:>=<UTC-cutoff> --json number,title,author,mergedAt` call per repo every
+120 seconds while visible. Invalid and future merge timestamps are excluded;
+local window filtering also expires cached rows. At 100 returned items the
+source still says “first 100; more may exist” even after window expiry.
+
+Build queue makes one `gh run list --repo OWNER/REPO --limit 100 --json
+databaseId,status,conclusion,createdAt,updatedAt,workflowName,headBranch,url`
+call per repo every 60 seconds while visible. Active states are `in_progress`,
+`queued`, `waiting`, `pending`, and `requested`; completed runs are excluded.
+It always labels the latest100-run sample, including underfull results and
+zero active observations. Older active runs may be missing: zero observed
+never means the repository is idle. No per-status or per-PR queries are made.
+These informational rows cannot answer, park, focus agent panes or mutate
+ledger data. All external sources share the same timeout, throttle and failure
+backoff rules, with at most one in-flight call per source/repo (24 at eight
+repos). Auth remains local to the TUI host; nothing private is cached to disk.
+
+Scheduled cost is about 60 Open PR + 30 Shipped + 60 Build queue = 150 gh
+invocations per repo per hour per instance (1,200 at eight repos), plus manual
+refreshes. This is not a fixed network-request or GraphQL-point
 budget; several TUI instances multiply the traffic. Failure backoff caps at
 15 minutes except when a longer known provider deadline applies.
 

@@ -10,15 +10,26 @@ use std::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    pub panels: [bool; 4],
+    #[serde(deserialize_with = "panels")]
+    pub panels: [bool; 6],
     pub repos: Vec<String>,
 }
 impl Default for Config {
     fn default() -> Self {
         Self {
-            panels: [true; 4],
+            panels: [true; 6],
             repos: vec!["trip-to-japan/trip".into()],
         }
+    }
+}
+fn panels<'de, D: serde::Deserializer<'de>>(d: D) -> Result<[bool; 6], D::Error> {
+    let values = Vec::<bool>::deserialize(d)?;
+    match values.as_slice() {
+        [a, b, c, d] => Ok([*a, *b, *c, *d, true, true]),
+        [a, b, c, d, e, f] => Ok([*a, *b, *c, *d, *e, *f]),
+        _ => Err(serde::de::Error::custom(
+            "expected four or six panel booleans",
+        )),
     }
 }
 pub fn repo_valid(repo: &str) -> bool {
@@ -112,19 +123,39 @@ pub fn path() -> Option<PathBuf> {
 mod tests {
     use super::*;
     #[test]
+    fn four_panel_migration_preserves_choices_and_repos() {
+        let c: Config =
+            serde_json::from_str(r#"{"panels":[false,true,false,true],"repos":["kept/private"]}"#)
+                .unwrap();
+        assert_eq!(c.panels, [false, true, false, true, true, true]);
+        assert_eq!(c.repos, ["kept/private"]);
+        let read: Config = serde_json::from_slice(&serde_json::to_vec(&c).unwrap()).unwrap();
+        assert_eq!(read.panels, c.panels);
+        assert_eq!(Config::default().panels, [true; 6]);
+        for values in [
+            "[]",
+            "[true]",
+            "[true,true,true,true,true]",
+            "[true,true,true,true,true,true,true]",
+            "[true,true,true,1]",
+        ] {
+            assert!(serde_json::from_str::<Config>(&format!(r#"{{"panels":{values}}}"#)).is_err());
+        }
+    }
+    #[test]
     fn roundtrip_defaults_bad_and_failed_paths() {
         let dir = env::temp_dir().join(format!("taskr-tui-config-{}", std::process::id()));
         let path = dir.join("tui.json");
         let _ = fs::remove_dir_all(&dir);
         assert!(Config::load(&path).1.is_none());
         let c = Config {
-            panels: [false; 4],
+            panels: [false; 6],
             repos: vec!["owner/other.repo".into()],
         };
         c.save(&path).unwrap();
         let (read, warning) = Config::load(&path);
         assert!(warning.is_none());
-        assert_eq!(read.panels, [false; 4]);
+        assert_eq!(read.panels, [false; 6]);
         assert_eq!(read.repos, c.repos);
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(

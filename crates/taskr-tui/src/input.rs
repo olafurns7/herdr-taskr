@@ -385,7 +385,7 @@ fn park(app: &mut App, root: i64, name: &str, parked: bool) -> Effect {
 }
 
 fn glance_key(app: &mut App, code: KeyCode) -> Effect {
-    if let KeyCode::Char(n @ '1'..='4') = code {
+    if let KeyCode::Char(n @ '1'..='6') = code {
         let before = glance::ids(&app.view()).get(app.row).cloned();
         let index = n as usize - '1' as usize;
         app.config.panels[index] = !app.config.panels[index];
@@ -410,10 +410,12 @@ fn glance_key(app: &mut App, code: KeyCode) -> Effect {
         Selected::Ask(a) => (&a.host, &a.pane_id, a.root_id, &a.campaign),
         Selected::Check(a) => (&a.host, &a.pane_id, a.root_id, &a.campaign),
         Selected::Campaign(c) => (&c.host, &c.pane_id, c.id, &c.name),
-        Selected::Pr(_) if matches!(code, KeyCode::Tab | KeyCode::BackTab | KeyCode::Char('c')) => {
+        Selected::Pr(_) | Selected::Author(_) | Selected::Run(_)
+            if matches!(code, KeyCode::Tab | KeyCode::BackTab | KeyCode::Char('c')) =>
+        {
             (&g.now, &g.now, 0, &g.now)
         }
-        Selected::Pr(_) => return Effect::None,
+        Selected::Pr(_) | Selected::Author(_) | Selected::Run(_) => return Effect::None,
         Selected::Nothing if code == KeyCode::Char('c') => (&g.now, &g.now, 0, &g.now),
         Selected::Nothing => return Effect::None,
     };
@@ -1595,12 +1597,12 @@ mod tests {
             let mut p = Pane::new(46, height);
             p.app.github = crate::github::demo();
             p.app.config_warning = Some("TUI config invalid; using defaults".into());
-            for n in '1'..='4' {
+            for n in '1'..='6' {
                 assert_eq!(p.code(KeyCode::Char(n)), Effect::SaveConfig);
             }
             let text = p.text();
             assert!(text.contains("hidden asks"), "{height}: {text}");
-            assert!(text.contains("1-4"), "recovery hint at {height}: {text}");
+            assert!(text.contains("1-6"), "recovery hint at {height}: {text}");
             if height >= 8 {
                 assert!(
                     text.contains("4 PRs-"),
@@ -1656,6 +1658,197 @@ mod tests {
         p.code(KeyCode::Enter);
         assert!(glance::ids(&p.app.view()).is_empty());
         assert_eq!(p.keys("a"), Effect::None);
+    }
+
+    #[test]
+    fn source_index_shift_clears_click_before_it_can_focus_another_campaign() {
+        let mut p = Pane::new(120, 40);
+        p.app.builds = crate::github::demo_builds(p.app.observed_at);
+        let ids = glance::ids(&p.app.view());
+        let i = ids
+            .iter()
+            .position(|r| matches!(r, glance::RowId::Campaign(_)))
+            .unwrap();
+        p.app.row = i;
+        p.text();
+        let area = p
+            .app
+            .seen
+            .borrow()
+            .hits
+            .iter()
+            .find(|(_, hit)| *hit == Hit::Row(i))
+            .unwrap()
+            .0;
+        assert_eq!(p.click(area.x, area.y), Effect::None);
+        assert!(p.app.click.is_some());
+        p.app.scroll = 4;
+        p.app.builds.sources[0].runs.pop();
+        p.app.restore_row(Some(ids[i].clone()));
+        assert_eq!(p.app.row, i - 1);
+        assert_eq!(glance::ids(&p.app.view())[p.app.row], ids[i]);
+        assert_eq!(p.app.scroll, 0);
+        assert!(p.app.click.is_none());
+        p.text();
+        let area = p
+            .app
+            .seen
+            .borrow()
+            .hits
+            .iter()
+            .find(|(_, hit)| *hit == Hit::Row(i))
+            .unwrap()
+            .0;
+        assert_eq!(p.click(area.x, area.y), Effect::None);
+        assert_eq!(p.app.row, i);
+        assert!(p.app.pending.is_none() && p.app.ask.is_none());
+        assert_eq!(p.app.screen, Screen::Glance);
+    }
+
+    #[test]
+    fn shipped_expiry_is_a_controlled_view_transition_without_fetch() {
+        let mut p = Pane::new(120, 40);
+        let now = 1_792_000_000;
+        p.app.observed_at = now;
+        p.app.shipped = crate::github::demo_shipped(now);
+        for s in &mut p.app.shipped.sources {
+            s.merged.retain(|r| r.author == "alex");
+            for r in &mut s.merged {
+                r.merged = now - 86400;
+            }
+        }
+        let campaign = glance::ids(&p.app.view())
+            .into_iter()
+            .find(|r| matches!(r, glance::RowId::Campaign(_)))
+            .unwrap();
+        p.app.row = glance::ids(&p.app.view())
+            .iter()
+            .position(|r| *r == campaign)
+            .unwrap();
+        assert!(p.text().contains("@alex · 2 PRs observed"));
+        assert!(p.app.advance_time(now + 1, Instant::now()));
+        assert_eq!(glance::ids(&p.app.view())[p.app.row], campaign);
+        assert!(p.app.seen.borrow().hits.is_empty());
+        assert!(!p.text().contains("@alex · 2 PRs observed"));
+        assert!(!p.app.advance_time(now + 2, Instant::now()));
+
+        p.app.observed_at = now;
+        p.app.row = glance::ids(&p.app.view())
+            .iter()
+            .position(|r| matches!(r, glance::RowId::Author(_)))
+            .unwrap();
+        p.text();
+        let rect = p
+            .app
+            .seen
+            .borrow()
+            .hits
+            .iter()
+            .find(|(_, hit)| *hit == Hit::Row(p.app.row))
+            .unwrap()
+            .0;
+        p.app.click = Some((Instant::now(), Hit::Row(p.app.row)));
+        p.app.detail = true;
+        p.app.scroll = 4;
+        assert!(p.app.advance_time(now + 1, Instant::now()));
+        assert!(p.app.click.is_none());
+        assert_eq!(p.app.scroll, 0);
+        for key in [
+            KeyCode::Enter,
+            KeyCode::Char('a'),
+            KeyCode::Char('p'),
+            KeyCode::Char('l'),
+        ] {
+            assert_eq!(press(&mut p.app, key), Effect::None);
+        }
+        let click = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: rect.x,
+            row: rect.y,
+            modifiers: KeyModifiers::NONE,
+        };
+        assert_eq!(mouse(&mut p.app, click, Instant::now()), Effect::None);
+        assert!(p.app.pending.is_none() && p.app.ask.is_none());
+        assert_eq!(p.app.screen, Screen::Glance);
+        assert!(!p.text().contains("@alex · 2 PRs observed"));
+    }
+
+    #[test]
+    fn expiry_under_help_preserves_the_underlying_campaign_selection() {
+        let mut p = Pane::new(120, 40);
+        let now = 1_792_000_000;
+        p.app.observed_at = now;
+        p.app.shipped = crate::github::demo_shipped(now);
+        for s in &mut p.app.shipped.sources {
+            for r in &mut s.merged {
+                r.merged = now - 86400;
+            }
+        }
+        let id = glance::ids(&p.app.view())
+            .into_iter()
+            .find(|r| matches!(r, glance::RowId::Campaign(_)))
+            .unwrap();
+        p.app.row = glance::ids(&p.app.view())
+            .iter()
+            .position(|r| *r == id)
+            .unwrap();
+        p.keys("?");
+        assert_eq!(p.app.screen, Screen::Help);
+        assert!(p.app.advance_time(now + 1, Instant::now()));
+        p.keys("\x1b");
+        assert_eq!(p.app.screen, Screen::Glance);
+        assert_eq!(glance::ids(&p.app.view())[p.app.row], id);
+    }
+
+    #[test]
+    fn six_panel_rows_are_reachable_and_external_rows_never_act_on_ledger() {
+        for height in [7, 8, 9, 12, 20, 30, 40] {
+            let mut p = Pane::new(46, height);
+            p.app.github = crate::github::demo();
+            p.app.shipped = crate::github::demo_shipped(p.app.observed_at);
+            p.app.builds = crate::github::demo_builds(p.app.observed_at);
+            let ids = glance::ids(&p.app.view());
+            for (i, id) in ids.iter().enumerate() {
+                p.app.row = i;
+                let text = p.text();
+                if height >= 8 {
+                    assert!(
+                        p.app
+                            .seen
+                            .borrow()
+                            .hits
+                            .iter()
+                            .any(|(_, hit)| *hit == Hit::Row(i)),
+                        "{height}/{id:?}: {text}"
+                    );
+                }
+                if matches!(id, glance::RowId::Author(_) | glance::RowId::Run(..)) || height < 8 {
+                    for code in [
+                        KeyCode::Enter,
+                        KeyCode::Char('a'),
+                        KeyCode::Char('p'),
+                        KeyCode::Char('l'),
+                        KeyCode::Char('y'),
+                    ] {
+                        assert_eq!(press(&mut p.app, code), Effect::None, "{height}/{id:?}");
+                    }
+                    assert!(p.app.ask.is_none() && p.app.pending.is_none());
+                }
+            }
+            for n in '1'..='6' {
+                p.code(KeyCode::Char(n));
+            }
+            assert!(glance::ids(&p.app.view()).is_empty());
+            assert!(p.text().contains("1-6"));
+            p.code(KeyCode::Char('5'));
+            assert!(matches!(
+                glance::selected(&p.app.view()),
+                Selected::Author(_)
+            ));
+            p.code(KeyCode::Char('5'));
+            p.code(KeyCode::Char('6'));
+            assert!(matches!(glance::selected(&p.app.view()), Selected::Run(_)));
+        }
     }
 
     #[test]

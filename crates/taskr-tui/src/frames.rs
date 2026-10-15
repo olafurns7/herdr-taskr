@@ -85,7 +85,13 @@ fn detail(app: &mut App) {
 }
 
 fn dashboard(app: &mut App) {
+    app.observed_at = 1_792_000_000;
     app.github = crate::github::demo();
+    for (i, pr) in app.github.sources[0].prs.iter_mut().enumerate() {
+        pr.created = app.observed_at - (i as i64 + 1) * 3600;
+    }
+    app.shipped = crate::github::demo_shipped(app.observed_at);
+    app.builds = crate::github::demo_builds(app.observed_at);
     glance(app);
 }
 
@@ -217,7 +223,7 @@ pub fn all() -> Vec<Spec> {
             app.config.panels[0] = false;
         }),
         spec("dashboard", 46, 30, "-off", |app| {
-            app.config.panels = [false; 4];
+            app.config.panels = [false; 6];
             app.config_warning = Some("TUI config not saved; choices kept for this session".into());
         }),
         spec("dashboard", 46, 30, "-empty-ledger", |app| {
@@ -235,6 +241,37 @@ pub fn all() -> Vec<Spec> {
         spec("dashboard", 46, 30, "-stale-prs", |app| {
             dashboard(app);
             app.github.sources[0].error = Some("GitHub unavailable");
+        }),
+        spec("dashboard", 46, 30, "-stale-shipped", |app| {
+            dashboard(app);
+            app.shipped.sources[0].error = Some("GitHub unavailable");
+        }),
+        spec("dashboard", 120, 40, "-stale-builds", |app| {
+            dashboard(app);
+            app.builds.sources[0].error = Some("GitHub unavailable");
+        }),
+        spec("dashboard", 46, 30, "-failed-sources", |app| {
+            dashboard(app);
+            app.shipped =
+                crate::github::Dashboard::for_kind(&app.config.repos, crate::github::Kind::Shipped);
+            app.builds =
+                crate::github::Dashboard::for_kind(&app.config.repos, crate::github::Kind::Build);
+            app.shipped.sources[0].error = Some("GitHub unavailable");
+            app.builds.sources[0].error = Some("GitHub authentication required");
+        }),
+        spec("dashboard", 120, 40, "-shipped-detail", |app| {
+            dashboard(app);
+            app.row = crate::glance::ids(&app.view())
+                .iter()
+                .position(|r| matches!(r, crate::glance::RowId::Author(_)))
+                .unwrap();
+        }),
+        spec("dashboard", 120, 40, "-build-detail", |app| {
+            dashboard(app);
+            app.row = crate::glance::ids(&app.view())
+                .iter()
+                .position(|r| matches!(r, crate::glance::RowId::Run(..)))
+                .unwrap();
         }),
         spec("glance", 46, 30, "", glance),
         spec("glance", 70, 30, "", glance),
