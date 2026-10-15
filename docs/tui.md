@@ -6,8 +6,8 @@ and on client hosts alike.
 
 ## Get it
 
-There is no prebuilt download yet (one is planned). Build it from a clone of
-this repository:
+`install.sh` installs `taskr-tui` beside `taskr` (see the [install guide](install.md)).
+Or build it from a clone of this repository:
 
 ```sh
 cargo install --path crates/taskr-tui

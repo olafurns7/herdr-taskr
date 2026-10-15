@@ -62,6 +62,9 @@ for cmd in help status; do
         PATH="$stage/bin:/usr/bin:/bin" HERDR_SOCKET_PATH="$stage/home/absent.sock" \
         "$stage/taskr-rust-$native" "$cmd"
 done
+env -i HOME="$stage/home" TASKR_DB="$stage/home/smoke.db" \
+    PATH="$stage/bin:/usr/bin:/bin" HERDR_SOCKET_PATH="$stage/home/absent.sock" \
+    "$stage/taskr-tui-rust-$native" --help >/dev/null
 for target in $targets; do
     for binary in taskr taskr-tui; do
         mv -f "$stage/$binary-rust-$target" "dist-rust/$binary-rust-$target"

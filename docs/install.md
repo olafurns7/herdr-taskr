@@ -134,26 +134,30 @@ Apply changes with `taskr daemon --restart`; verify `taskr daemon --status` show
 
 ## 8. The terminal view (optional)
 
-`taskr-tui` is the owner's view of the ledger. It has no release asset yet (one is planned), so it is built from source and needs a Rust toolchain. Offer it; skip it if the user declines or has no `cargo`.
+`taskr-tui` is the owner's view of the ledger. `install.sh` installs it beside `taskr`; set `TASKR_NO_TUI=1` to opt out. Check it with:
 ```sh
-git clone https://github.com/olafurns7/herdr-taskr && cd herdr-taskr
-cargo install --path crates/taskr-tui
 taskr-tui --demo
 ```
 Expect a full-screen view of invented data; `?` lists the keys and `q` quits. `taskr-tui` without `--demo` shows the user's ledger. See [tui.md](tui.md).
+
+To build from source instead, with a Rust toolchain:
+```sh
+git clone https://github.com/olafurns7/herdr-taskr && cd herdr-taskr
+cargo install --path crates/taskr-tui
+```
 
 ## 9. Uninstall
 
 Only uninstall if requested. Run `herdr plugin unlink olafurns7.taskr`, then `taskr daemon --status`; use the reported PID to check `ps -p <pid> -o command=` shows `taskr daemon`, then stop that daemon with `kill <pid>`. Stop and report if the command does not match.
 Remove only skill symlinks that resolve to the installed skill, then the installed taskr binary, `$HOME/.local/share/taskr/plugin`, and the installed skill directory. Use custom paths if configured. Preserve `$HOME/.local/state/taskr` and all reports.
-Verify `herdr plugin list --json` lacks olafurns7.taskr and `test ! -e "${TASKR_INSTALL_DIR:-$HOME/.local/bin}/taskr"` succeeds. Expect the plugin and binary removed, with ledger history intact. If `taskr-tui` was installed, remove it with `cargo uninstall taskr-tui`. Report removal and stop here; step 10 applies to installation.
+Verify `herdr plugin list --json` lacks olafurns7.taskr and `test ! -e "${TASKR_INSTALL_DIR:-$HOME/.local/bin}/taskr"` succeeds. Expect the plugin and binary removed, with ledger history intact. Remove `taskr-tui` with `rm -f "${TASKR_INSTALL_DIR:-$HOME/.local/bin}/taskr-tui"` and verify with `test ! -e "${TASKR_INSTALL_DIR:-$HOME/.local/bin}/taskr-tui"`. Report removal and stop here; step 10 applies to installation.
 
 ## 10. Report to the user
 
 Run `taskr version` and `taskr daemon --status` again; expect matching installed/running versions. Report:
 ```text
 Installed: <version>; daemon: <running/stale/offline>; role: <local/hub/client>.
-Terminal view: <taskr-tui installed / not installed: cargo install --path crates/taskr-tui>.
+Terminal view: <taskr-tui installed / not installed>.
 Skills linked: <paths or conflicts>; hooks: <yes/no, harness>.
 Start: tell your orchestrator agent to load the taskr skill, then delegate work through Herdr and taskr.
 ```

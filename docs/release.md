@@ -104,7 +104,7 @@ Copy `dist-rust/taskr-rust-aarch64-apple-darwin`,
 `dist-rust/taskr-tui-rust-aarch64-apple-darwin`,
 `dist-rust/taskr-tui-rust-x86_64-apple-darwin` and `dist-rust/SHA256SUMS` into a
 directory and pass it with `--darwin-from DIR`. It is checked (checksums,
-Mach-O type, tag, no test-only hook) before the gate.
+Mach-O type, tag for `taskr` only, no test-only hook) before the gate.
 `./release.sh <tag> --darwin-only` does the same build over ssh into
 `dist-darwin/`.
 
