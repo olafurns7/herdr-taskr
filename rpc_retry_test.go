@@ -371,6 +371,11 @@ func TestRetryNonRetryable(t *testing.T) {
 			var attempts atomic.Int32
 			url, ln, srv := retryEndpoint(t, r, func(w http.ResponseWriter, q *http.Request) {
 				attempts.Add(1)
+				// An unread request body can reset the connection and truncate the reply.
+				if _, err := io.Copy(io.Discard, q.Body); err != nil {
+					t.Error(err)
+					return
+				}
 				w.WriteHeader(tc.status)
 				io.WriteString(w, tc.body)
 			})
