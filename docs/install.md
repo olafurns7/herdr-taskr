@@ -20,10 +20,13 @@ Expect Darwin or Linux, arm64/aarch64 or x86_64/amd64, and all tools found. Comp
 
 ## 2. Install
 
+Pin the release. `taskr-tui` ships from v0.21.0 on, and new releases start as GitHub prereleases. `releases/latest` skips prereleases, so it may lag behind the newest prerelease; it has installed v0.18.0, without `taskr-tui` and without saying so. Use `TASKR_VERSION=v0.22.0` or newer; `curl -fsSL 'https://api.github.com/repos/olafurns7/herdr-taskr/releases?per_page=1' | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p'` prints the newest tag.
+
 Use curl without signing in. Do not pipe to sh: a partial download could execute before failure is reported.
 ```sh
+export TASKR_VERSION=v0.22.0   # or a newer tag
 curl -fsSL -o taskr-install.sh \
-  https://github.com/olafurns7/herdr-taskr/releases/latest/download/install.sh &&
+  "https://github.com/olafurns7/herdr-taskr/releases/download/$TASKR_VERSION/install.sh" &&
   test -s taskr-install.sh &&
   TASKR_LINK_SKILLS=1 sh taskr-install.sh &&
   PATH="$HOME/.local/bin:$PATH" taskr version
@@ -31,19 +34,20 @@ curl -fsSL -o taskr-install.sh \
 Alternatively, use GitHub CLI:
 ```sh
 # Download the installer through GitHub CLI, then install and link agent skills.
-gh api repos/olafurns7/herdr-taskr/contents/install.sh \
+export TASKR_VERSION=v0.22.0   # or a newer tag
+gh api "repos/olafurns7/herdr-taskr/contents/install.sh?ref=$TASKR_VERSION" \
   -H 'Accept: application/vnd.github.raw+json' > taskr-install.sh &&
   test -s taskr-install.sh &&
   TASKR_LINK_SKILLS=1 sh taskr-install.sh &&
   PATH="$HOME/.local/bin:$PATH" taskr version
 ```
 Then remove taskr-install.sh.
-Expect checksum verification for the binary, skill archive, and plugin archive, then a release version. On checksum or download failure, stop; do not run the partial installer.
+Expect checksum verification for the binary, the `taskr-tui` binary, the skill archive, and the plugin archive, then the pinned release version. On checksum or download failure, stop; do not run the partial installer.
 
 | Option | Effect |
 | --- | --- |
 | `TASKR_INSTALL_DIR` | Binary directory; default `$HOME/.local/bin`. Export it before installing; use that directory in PATH and Herdr's plugin environment. |
-| `TASKR_VERSION` | Release tag; unset selects latest. Export a user-selected tag before running either snippet. A new release starts as a GitHub prerelease, and `releases/latest` skips prereleases, so a prerelease installs only when `TASKR_VERSION` names its tag. |
+| `TASKR_VERSION` | Release tag; unset selects `releases/latest`, which skips prereleases and may lag behind the newest one (it has given v0.18.0, without `taskr-tui`). A prerelease installs only when `TASKR_VERSION` names its tag. |
 | `TASKR_LINK_SKILLS=1` | Link the installed skill into existing agent config directories; preserve conflicts. |
 | `TASKR_SKILL_DIR` | Skill directory; default `$HOME/.agents/skills/taskr`. |
 | `TASKR_NO_SKILL=1` / `TASKR_NO_PLUGIN=1` | Skip the corresponding archive and setup. |
@@ -134,7 +138,7 @@ Apply changes with `taskr daemon --restart`; verify `taskr daemon --status` show
 
 ## 8. The terminal view (optional)
 
-`taskr-tui` is the owner's view of the ledger. `install.sh` installs it beside `taskr`; set `TASKR_NO_TUI=1` to opt out. Check it with:
+`taskr-tui` is the owner's view of the ledger. `install.sh` from v0.21.0 on installs it beside `taskr`; set `TASKR_NO_TUI=1` to opt out. An older release, such as v0.18.0 from `releases/latest`, installs no `taskr-tui`: reinstall with `TASKR_VERSION` pinned (step 2). Check it with:
 ```sh
 taskr-tui --demo
 ```
