@@ -22,7 +22,7 @@ use ratatui::crossterm::{
     execute, terminal,
 };
 use taskr_tui::{
-    App, Screen, actions, client, config, frames, github,
+    App, Screen, actions, client, config, frames, github, health,
     input::{self, Effect},
     model::Data,
     theme,
@@ -148,6 +148,11 @@ fn main() -> ExitCode {
     } else {
         github::Dashboard::for_kind(&[github::ISSUES_REPO.into()], github::Kind::Issues)
     };
+    // Demo shows an invented note and never reads.
+    if options.demo {
+        app.health = health::demo(app.observed_at);
+    }
+    let mut hub_health = health::Poller::new(health::command);
     let mut issues = github::Poller::new(github::Kind::Issues);
     let mut shipped = github::Poller::new(github::Kind::Shipped);
     let mut builds = github::Poller::new(github::Kind::Build);
@@ -238,6 +243,9 @@ fn main() -> ExitCode {
                 // Manual `r` reaches it, but its admission budget ignores manual.
                 let issues_visible = glance && app.config.panels[9];
                 dirty |= issues.tick(&mut app, now, issues_visible, pr_manual);
+                // Its own minute budget; manual `r` does not reach it.
+                let health_visible = glance && app.config.panels[10];
+                dirty |= hub_health.tick(&mut app, now, health_visible);
             }
             pr_manual = false;
             if app.screen != Screen::Slotr {
@@ -261,7 +269,8 @@ fn main() -> ExitCode {
                     .into_iter()
                     .flat_map(|d| &d.sources)
                     .map(|s| s.status(now))
-                    .collect::<String>();
+                    .collect::<String>()
+                + &app.health.face(app.observed_at);
             if dirty || faces != face {
                 taskr_tui::frame(&mut terminal, &app, &mut shown)?;
                 (face, dirty) = (faces, false);
@@ -312,6 +321,7 @@ fn main() -> ExitCode {
     drop(shipped);
     drop(builds);
     drop(issues);
+    drop(hub_health);
     if let Some(events) = &events {
         events.stop();
     }

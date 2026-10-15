@@ -2,6 +2,7 @@
 1 asks+ · 2 checks+ · 3 camps+
 4 PRs- · 5 Shipped- · 6 Build-
 7 Decisions+ · 8 Fleet+ · 9 Log+ · 0 Issues-
+H Health-
  3 notes still carry OWNER items
  ! hub unreachable · showing 14:16 · retry 4s
  NEEDS YOU ────────────────────────────── 1/2
@@ -23,8 +24,7 @@ plan v11 · 1 decisions, 2 closed lanes since …
 ! ledger stale · as of 14:16
  search-index · 1 working ? ready ? open · le…
  auth-rotation · 0 working 1 ready 1 open · l…
- billing-export · 1 working 0 ready 1 open · …
- +8 outside view · j/k to browse
+ +9 outside view · j/k to browse
  CAMPAIGNS ─────────────────────────────── 10
  +13 more · c shows all
  r retry   ⏎ go   a answer   l open   ? help

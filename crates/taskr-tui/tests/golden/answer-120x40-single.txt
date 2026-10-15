@@ -1,32 +1,32 @@
  taskr ❯ glance                                                           hub atlas · 2s ago   ● 5 need you  3 to check
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
+H Health-
  3 notes still carry OWNER items
 ╭ Glance ──────────────────────────────────────────────────╮╭ ask 61790 · auth-rotation ───────────────────────────────╮
 │ NEEDS YOU ──────────────────────────────────────────── 5 ││ BLOCKING · asker waiting · 2m ago · atlas w20:p1         │
 │ ? ◆ fleet-hub            BLOCKING HUB              ⏎  25s││                                                          │
-│   Release: Cut the v3.2 release today, or wait for the … ││ Tokens: Which signing scheme should the rotated service  │
-│▌? ◆ auth-rotation ╭ Answer ask 61790 · auth-rotation ────────────────────────────────────────────╮                   │
-│▌  Tokens: Which si│                                                                              │                   │
-│ ? ◆ docs-refresh  │  Tokens: Which signing scheme should the rotated service tokens use?         │                   │
-│   Translations lan│                                                                              │                   │
-│ ? ◇ tui-frames    │   ❯ A  Ed25519  ★ recommended                                                │client library we  │
-│   Frames follow-up│        Short keys and fast checks; every client library we ship supports     │                   │
-│ ? ◇ ios-widgets   │        it already.                                                           │                   │
-│   WIDGET BATCH: 19│     B  RSA-2048                                                              │nt changes, but    │
-│ TO CHECK ─────────│        Matches today's tokens, so no client changes, but rotation takes      │                   │
-│ ! map-tiles-polish│        four times as long.                                                   │                   │
-│   lead unregistere│     C  HMAC-SHA256                                                           │r then holds the   │
-│ ! infra-layout    │        Simplest to run, but every verifier then holds the signing secret.    │                   │
-│   lead idle with 3│     …  write your own answer                                                 │                   │
-│ ! host build-mini │                                                                              │                   │
-│   host stale: no h│  ──────────────────────────────────────────────────────────────────────────  │                   │
-│ CAMPAIGNS ────────│   answer  A: Ed25519                                                         │                   │
-│ ◐ search-index    │                                                                              │                   │
-│   Research complet│   j k choose    tab add a note    ⏎ review before sending    esc cancel      │                   │
+│   Release: Cut the╭ Answer ask 61790 · auth-rotation ────────────────────────────────────────────╮e rotated service  │
+│▌? ◆ auth-rotation │                                                                              │                   │
+│▌  Tokens: Which si│  Tokens: Which signing scheme should the rotated service tokens use?         │                   │
+│ ? ◆ docs-refresh  │                                                                              │                   │
+│   Translations lan│   ❯ A  Ed25519  ★ recommended                                                │                   │
+│ ? ◇ tui-frames    │        Short keys and fast checks; every client library we ship supports     │client library we  │
+│   Frames follow-up│        it already.                                                           │                   │
+│ ? ◇ ios-widgets   │     B  RSA-2048                                                              │                   │
+│   WIDGET BATCH: 19│        Matches today's tokens, so no client changes, but rotation takes      │nt changes, but    │
+│ TO CHECK ─────────│        four times as long.                                                   │                   │
+│ ! map-tiles-polish│     C  HMAC-SHA256                                                           │                   │
+│   lead unregistere│        Simplest to run, but every verifier then holds the signing secret.    │r then holds the   │
+│ ! infra-layout    │     …  write your own answer                                                 │                   │
+│   lead idle with 3│                                                                              │                   │
+│ ! host build-mini │  ──────────────────────────────────────────────────────────────────────────  │                   │
+│   host stale: no h│   answer  A: Ed25519                                                         │                   │
+│ CAMPAIGNS ────────│                                                                              │                   │
+│ ◐ search-index    │   j k choose    tab add a note    ⏎ review before sending    esc cancel      │                   │
+│   Research complet│                                                                              │                   │
 │ ◐ auth-rotation   │                                                                              │                   │
 │   Implementation s│                                                                              │                   │
 │ ○ billing-export  │                                                                              │                   │
-│   FYI 61448 from s│                                                                              │                   │
 │ ○ docs-refresh    │                                                                              │───────────────────╯
 │ ○ checkout-flow   │                                                                              │───────────────────╮
 │ ◐ ios-widgets     │                                                                              │        ██         │
@@ -37,4 +37,4 @@
 │ ‖ legacy-importer                              parked  3h││ last Implementation slice: key rollover job, fake-clock  │
 │ · 2 quiet                                                ││ tests, installer and operator docs                       │
 ╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
- ⏎ go to lead   a answer   l open   0-9 panels   / filter   y copy   s slotr   ? help   q quit
+ ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   y copy   s slotr   q quit   ? help

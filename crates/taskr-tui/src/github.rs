@@ -551,7 +551,7 @@ fn failure(code: Option<i32>, stderr: &[u8], now: i64) -> Failure {
 /// Nonblocking socket-backed pipes keep the deadline on the child lifetime, including
 /// a process that closes stdout without exiting. No pipe-reader threads can outlive it.
 /// The deadline is absolute, so the two Issues reads share one through child exit.
-fn output(
+pub(crate) fn output(
     mut command: Command,
     deadline: Instant,
     cancel: &AtomicBool,

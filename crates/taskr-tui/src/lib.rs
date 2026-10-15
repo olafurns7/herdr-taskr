@@ -9,6 +9,7 @@ pub mod client;
 pub mod config;
 pub mod frames;
 pub mod github;
+pub mod health;
 pub mod input;
 pub mod model;
 pub mod theme;
@@ -207,6 +208,8 @@ pub struct App {
     pub builds: github::Dashboard,
     /// Issues by assignee (panel 0): the fixed repository only, never `config.repos`.
     pub issues: github::Dashboard,
+    /// Health (panel H): the hub's latest HEALTH note, read by its own poller.
+    pub health: health::Health,
     /// One clock observation shared by the rendered view and its input identities.
     pub observed_at: i64,
     pub observed_tick: Instant,
@@ -254,6 +257,7 @@ impl App {
             shipped: github::Dashboard::default(),
             builds: github::Dashboard::default(),
             issues: github::Dashboard::default(),
+            health: health::Health::default(),
             observed_at: time::OffsetDateTime::now_utc().unix_timestamp(),
             observed_tick: Instant::now(),
             scope: Scope::default(),
@@ -609,7 +613,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         if app.screen == Screen::Glance && !app.config.panels.iter().any(|p| *p) && area.height > 1
         {
             f.render_widget(
-                Paragraph::new("1-9, 0 show hidden panels"),
+                Paragraph::new("1-9, 0, H show hidden panels"),
                 Rect {
                     y: area.y + 1,
                     height: 1,

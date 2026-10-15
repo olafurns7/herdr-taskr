@@ -11,8 +11,9 @@ use std::{
 #[serde(default)]
 pub struct Config {
     #[serde(deserialize_with = "panels")]
-    /// Asks, checks, campaigns, PRs, Shipped, Build, Decisions, Fleet, Decision log, Issues.
-    pub panels: [bool; 10],
+    /// Asks, checks, campaigns, PRs, Shipped, Build, Decisions, Fleet, Decision log, Issues,
+    /// Health.
+    pub panels: [bool; 11],
     pub repos: Vec<String>,
 }
 impl Default for Config {
@@ -23,16 +24,16 @@ impl Default for Config {
         }
     }
 }
-/// The six earlier panels on, the three ledger panels (7-9) and Issues (key 0) off.
-pub const DEFAULT_PANELS: [bool; 10] = [
-    true, true, true, true, true, true, false, false, false, false,
+/// The six earlier panels on, the three ledger panels (7-9), Issues (0) and Health (H) off.
+pub const DEFAULT_PANELS: [bool; 11] = [
+    true, true, true, true, true, true, false, false, false, false, false,
 ];
 /// An older file's choices are kept; the panels it predates take their defaults.
-fn panels<'de, D: serde::Deserializer<'de>>(d: D) -> Result<[bool; 10], D::Error> {
+fn panels<'de, D: serde::Deserializer<'de>>(d: D) -> Result<[bool; 11], D::Error> {
     let values = Vec::<bool>::deserialize(d)?;
-    if ![4, 6, 9, 10].contains(&values.len()) {
+    if ![4, 6, 9, 10, 11].contains(&values.len()) {
         return Err(serde::de::Error::custom(
-            "expected four, six, nine or ten panel booleans",
+            "expected four, six, nine, ten or eleven panel booleans",
         ));
     }
     let mut out = DEFAULT_PANELS;
@@ -137,7 +138,7 @@ mod tests {
         assert_eq!(
             c.panels,
             [
-                false, true, false, true, true, true, false, false, false, false
+                false, true, false, true, true, true, false, false, false, false, false
             ]
         );
         assert_eq!(c.repos, ["kept/private"]);
@@ -146,7 +147,7 @@ mod tests {
         assert_eq!(
             Config::default().panels,
             [
-                true, true, true, true, true, true, false, false, false, false
+                true, true, true, true, true, true, false, false, false, false, false
             ]
         );
         let six: Config = serde_json::from_str(
@@ -157,7 +158,7 @@ mod tests {
             (six.panels, six.repos),
             (
                 [
-                    false, true, false, true, false, true, false, false, false, false
+                    false, true, false, true, false, true, false, false, false, false, false
                 ],
                 vec!["kept/six".to_string()]
             )
@@ -165,25 +166,38 @@ mod tests {
         let nine = [true, false, true, false, true, false, true, true, false];
         let c: Config = serde_json::from_value(serde_json::json!({"panels": nine})).unwrap();
         let read: Config = serde_json::from_slice(&serde_json::to_vec(&c).unwrap()).unwrap();
-        // A nine-boolean file predates Issues (key 0): it starts hidden.
-        let mut ten = [false; 10];
-        ten[..9].copy_from_slice(&nine);
-        assert_eq!((c.panels, read.panels), (ten, ten));
-        // Formerly malformed, ten booleans are now the current shape and keep the last one.
-        ten[9] = true;
-        let c: Config = serde_json::from_value(serde_json::json!({"panels": ten})).unwrap();
+        // A nine-boolean file predates Issues (key 0) and Health (H): they start hidden.
+        let mut all = [false; 11];
+        all[..9].copy_from_slice(&nine);
+        assert_eq!((c.panels, read.panels), (all, all));
+        // Ten booleans predate Health only: Issues keeps its choice, Health starts hidden.
+        all[9] = true;
+        let c: Config = serde_json::from_value(serde_json::json!({"panels": &all[..10]})).unwrap();
         let read: Config = serde_json::from_slice(&serde_json::to_vec(&c).unwrap()).unwrap();
-        assert_eq!((c.panels, read.panels), (ten, ten));
+        assert_eq!((c.panels, read.panels), (all, all));
+        // Formerly malformed, eleven booleans are now the current shape and keep the last one.
+        all[10] = true;
+        let c: Config = serde_json::from_value(serde_json::json!({"panels": all})).unwrap();
+        let read: Config = serde_json::from_slice(&serde_json::to_vec(&c).unwrap()).unwrap();
+        assert_eq!((c.panels, read.panels), (all, all));
+        assert_eq!(
+            serde_json::to_value(&c).unwrap()["panels"]
+                .as_array()
+                .unwrap()
+                .len(),
+            11
+        );
         for values in [
             "[]",
             "[true]",
             "[true,true,true,true,true]",
             "[true,true,true,true,true,true,true]",
             "[true,true,true,true,true,true,true,true]",
-            "[true,true,true,true,true,true,true,true,true,true,true]",
+            "[true,true,true,true,true,true,true,true,true,true,true,true]",
             "[true,true,true,1]",
             "[true,true,true,true,true,true,true,true,1]",
             "[true,true,true,true,true,true,true,true,true,1]",
+            "[true,true,true,true,true,true,true,true,true,true,1]",
         ] {
             assert!(serde_json::from_str::<Config>(&format!(r#"{{"panels":{values}}}"#)).is_err());
         }
@@ -195,13 +209,13 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         assert!(Config::load(&path).1.is_none());
         let c = Config {
-            panels: [false; 10],
+            panels: [false; 11],
             repos: vec!["owner/other.repo".into()],
         };
         c.save(&path).unwrap();
         let (read, warning) = Config::load(&path);
         assert!(warning.is_none());
-        assert_eq!(read.panels, [false; 10]);
+        assert_eq!(read.panels, [false; 11]);
         assert_eq!(read.repos, c.repos);
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(

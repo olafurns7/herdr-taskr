@@ -22,16 +22,18 @@ use crate::{
 };
 
 /// The panels between the checks and the campaigns, in priority order: GitHub's three,
-/// then the ledger's Decisions (7), Fleet (8) and Decision log (9), then Issues (0).
+/// then the ledger's Decisions (7), Fleet (8) and Decision log (9), then Issues (0), then
+/// Health (H).
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Panel {
     Gh(Kind),
     Decisions,
     Fleet,
     Log,
+    Health,
 }
 
-const PANELS: [Panel; 7] = [
+const PANELS: [Panel; 8] = [
     Panel::Gh(Kind::Open),
     Panel::Gh(Kind::Shipped),
     Panel::Gh(Kind::Build),
@@ -39,6 +41,7 @@ const PANELS: [Panel; 7] = [
     Panel::Fleet,
     Panel::Log,
     Panel::Gh(Kind::Issues),
+    Panel::Health,
 ];
 
 /// The panels on screen. A hidden GitHub panel's sources are cleared by `App::view`.
@@ -50,8 +53,14 @@ fn shown(app: &App) -> Vec<Panel> {
             Panel::Decisions => app.config.panels[6],
             Panel::Fleet => app.config.panels[7],
             Panel::Log => app.config.panels[8],
+            Panel::Health => app.config.panels[10],
         })
         .collect()
+}
+
+/// The panels drawn from a campaign read or the glance, apart from the external sources.
+fn ledger_panel(panel: &Panel) -> bool {
+    matches!(panel, Panel::Decisions | Panel::Fleet | Panel::Log)
 }
 
 /// Cursor rows a panel adds.
@@ -64,6 +73,8 @@ fn row_count(app: &App, panel: Panel) -> usize {
         Panel::Decisions => decisions(app).len(),
         Panel::Fleet => app.fleet.len(),
         Panel::Log => logged(app).len(),
+        // One row, the fixed repository and environment, whatever the reads found.
+        Panel::Health => usize::from(app.config.panels[10]),
     }
 }
 
@@ -239,7 +250,7 @@ pub(crate) fn lines(app: &App, width: usize, height: usize) -> Vec<Line<'static>
 fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
     let (t, g) = (&app.theme, &app.data.glance);
     let mut hits: Vec<Option<usize>> = vec![];
-    let pr_height = external_height(app, height);
+    let pr_height = external_height(app, width, height);
     let offset = g.needs_you.len() + g.attention.len();
     let external_count = external_count(app);
     let ledger_cursor = if app.row >= offset {
@@ -578,6 +589,11 @@ fn compact_layout(
                     app.theme.text,
                 )
             }
+            Selected::Health => (
+                // Stale, unknown or "as of" comes first: a narrow row clips its end.
+                format!("Health · {}", app.health.label(app.observed_at)),
+                health_color(app),
+            ),
             Selected::Assignee(g) => (
                 // The stale cue comes first: a narrow row clips its end.
                 format!(
@@ -615,6 +631,7 @@ fn compact_layout(
                 | RowId::Decision(..)
                 | RowId::Logged(..)
                 | RowId::Assignee(..)
+                | RowId::Health(..)
         ) && app.fetch.loaded
             && app.fetch.error.is_some()
         {
@@ -640,8 +657,17 @@ fn dim_ledger(app: &App, lines: &mut [Line<'_>], prs: Range<usize>) {
     }
 }
 
-/// Full panel demand and the header/status/overflow minimum retained for later kinds.
-fn external_budget(app: &App, panel: Panel) -> (usize, usize) {
+/// Full panel demand and the header/status/overflow minimum retained for later kinds, at
+/// the list's width (only Health wraps).
+fn external_budget(app: &App, panel: Panel, width: usize) -> (usize, usize) {
+    if panel == Panel::Health {
+        // Every wrapped line; the minimum is the rule, the source line and the row's first.
+        return if app.config.panels[10] {
+            (health_lines(app, width, usize::MAX, 0).0.len(), 3)
+        } else {
+            (0, 0)
+        };
+    }
     let Panel::Gh(kind) = panel else {
         if !shown(app).contains(&panel) {
             return (0, 0);
@@ -698,7 +724,7 @@ fn ledger_rows(app: &App) -> bool {
 fn external_count(app: &App) -> usize {
     PANELS.into_iter().map(|p| row_count(app, p)).sum()
 }
-fn external_height(app: &App, height: usize) -> usize {
+fn external_height(app: &App, width: usize, height: usize) -> usize {
     let g = &app.data.glance;
     let floor = usize::from(!g.needs_you.is_empty()) * 3
         + usize::from(!g.attention.is_empty()) * 3
@@ -706,11 +732,11 @@ fn external_height(app: &App, height: usize) -> usize {
     let floor = if floor == 0 { 8 } else { floor };
     let wanted: usize = PANELS
         .into_iter()
-        .map(|panel| external_budget(app, panel).0)
+        .map(|panel| external_budget(app, panel, width).0)
         .sum();
     let available = wanted.min(height.saturating_sub(floor));
     // A two-line row plus its overflow hint may leave one unusable line; return it to the ledger.
-    external_lines(app, 1, available, g.needs_you.len() + g.attention.len())
+    external_lines(app, width, available, g.needs_you.len() + g.attention.len())
         .0
         .len()
 }
@@ -726,7 +752,7 @@ fn external_lines(
     let keep = kinds
         .iter()
         .take_while(|kind| {
-            minimum += external_budget(app, **kind).1;
+            minimum += external_budget(app, **kind, width).1;
             minimum <= height
         })
         .count()
@@ -739,14 +765,15 @@ fn external_lines(
     for (i, kind) in kinds.iter().enumerate() {
         let later_min: usize = kinds[i + 1..]
             .iter()
-            .map(|kind| external_budget(app, *kind).1)
+            .map(|kind| external_budget(app, *kind, width).1)
             .sum();
-        let share = external_budget(app, *kind)
+        let share = external_budget(app, *kind, width)
             .0
             .min(remaining.saturating_sub(later_min));
         let (lines, rows) = match kind {
             Panel::Gh(Kind::Open) => pr_lines(app, width, share, offset),
             Panel::Gh(kind) => observed_lines(app, *kind, width, share, offset),
+            Panel::Health => health_lines(app, width, share, offset),
             _ => cached_lines(app, *kind, width, share, offset),
         };
         remaining = remaining.saturating_sub(lines.len());
@@ -754,6 +781,63 @@ fn external_lines(
         hits.extend(rows);
         offset += row_count(app, *kind);
     }
+    (out, hits)
+}
+
+/// Failed deploys, new Sentry issues and a stale read take the attention colour, never red;
+/// pending and unknown stay neutral.
+fn health_color(app: &App) -> Color {
+    if app.health.attention() || app.health.error.is_some() {
+        app.theme.check
+    } else {
+        app.theme.sub
+    }
+}
+
+/// Health: which read it is, the one informational row, then the report's own clocks. Each
+/// wraps rather than clips, so a narrow pane still reaches every value; the cursor's hit is
+/// the row's first line only.
+fn health_lines(
+    app: &App,
+    width: usize,
+    height: usize,
+    offset: usize,
+) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
+    let (t, h) = (&app.theme, &app.health);
+    let color = health_color(app);
+    // The rule, the source line and the row's first line are the panel's minimum.
+    let mut out = vec![
+        ui::rule(t, "HEALTH", "hub report · production", t.sub, width),
+        Line::from(sp(
+            clip(&h.state(), width),
+            if h.error.is_some() { t.check } else { t.sub },
+        )),
+    ];
+    let mut hits = vec![None, None];
+    // A height-cut block ends in `…` rather than on a bare key; full demand uses usize::MAX.
+    let label = ui::wrap_max(
+        &h.label(app.observed_at),
+        width.saturating_sub(1),
+        height.saturating_sub(2).max(1),
+    );
+    for (i, line) in label.into_iter().enumerate() {
+        let row = ui::row(
+            t,
+            vec![sp(line, color)],
+            app.row == offset,
+            false,
+            color,
+            width,
+        );
+        out.push(row);
+        hits.push((i == 0).then_some(offset));
+    }
+    for line in ui::wrap_max(&h.source(), width, height.saturating_sub(out.len())) {
+        out.push(Line::from(sp(line, t.dim)));
+        hits.push(None);
+    }
+    out.truncate(height);
+    hits.truncate(height);
     (out, hits)
 }
 
@@ -1288,6 +1372,8 @@ pub(crate) enum RowId {
     Logged(i64, i64),
     /// An Issues group: repository and raw login; None is Unassigned, apart from any login.
     Assignee(String, Option<String>),
+    /// Health's row: its fixed repository and environment, never the note it shows.
+    Health(&'static str, &'static str),
 }
 
 /// Every row the cursor can be on, in cursor order.
@@ -1338,6 +1424,8 @@ pub(crate) fn ids(app: &App) -> Vec<RowId> {
         .into_iter()
         .filter(|_| app.config.panels[9])
         .map(|g| RowId::Assignee(g.repo, g.login));
+    let health =
+        app.config.panels[10].then_some(RowId::Health(crate::health::REPO, crate::health::ENV));
     asks.chain(checks)
         .chain(prs)
         .chain(authors)
@@ -1346,6 +1434,7 @@ pub(crate) fn ids(app: &App) -> Vec<RowId> {
         .chain(fleet)
         .chain(logged)
         .chain(assignees)
+        .chain(health)
         .chain(campaigns)
         .collect()
 }
@@ -1376,6 +1465,7 @@ pub(crate) enum Selected<'a> {
     Logged(&'a Event),
     Fleet(&'a CampaignRow),
     Assignee(crate::github::Group),
+    Health,
     Nothing,
 }
 
@@ -1429,6 +1519,7 @@ pub(crate) fn selected(app: &App) -> Selected<'_> {
             .into_iter()
             .find(|g| g.repo == *repo && g.login == *login)
             .map_or(Selected::Nothing, Selected::Assignee),
+        Some(RowId::Health(..)) => Selected::Health,
         None => Selected::Nothing,
     }
 }
@@ -1463,7 +1554,7 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
             vec![Some(hint("o", Some("open campaign")))]
         }
         // Informational: traversal and help only.
-        Selected::Assignee(_) => vec![],
+        Selected::Assignee(_) | Selected::Health => vec![],
         Selected::Nothing => vec![Some(hint("c", Some("all campaigns")))],
     }
     .into_iter()
@@ -1477,13 +1568,15 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
         out.splice(0..0, [hint("j k", Some("scroll")), hint("h", Some("list"))]);
     }
     if wide {
-        out.push(hint("0-9", None));
+        // `?` last: the footer keeps its last hint when the others give way.
         out.extend([
+            hint("0-9", None),
+            hint("H", None),
             hint("/", None),
             hint("y", None),
             hint("s", None),
-            hint("?", None),
             hint("q", None),
+            hint("?", None),
         ]);
     } else {
         out.push(hint("?", None));
@@ -1497,6 +1590,7 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
             | Selected::Logged(_)
             | Selected::Fleet(_)
             | Selected::Assignee(_)
+            | Selected::Health
     ) {
         out.retain(|(key, _)| *key != "y");
     }
@@ -1543,7 +1637,7 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
 
     if !app.config.panels.iter().any(|p| *p) {
         f.render_widget(
-            Paragraph::new("All panels hidden · press 1-9 or 0 to show").centered(),
+            Paragraph::new("All panels hidden · press 1-9, 0 or H to show").centered(),
             body,
         );
         return;
@@ -1562,10 +1656,13 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
         && g.campaigns.is_empty()
         && g.quiet.count == 0;
     let state_height = if ledger_state && (!compact || ids(app).is_empty()) {
-        let reserve =
-            (list.height as usize).saturating_sub(external_height(app, list.height as usize));
+        let reserve = (list.height as usize).saturating_sub(external_height(
+            app,
+            list.width as usize,
+            list.height as usize,
+        ));
         // Under panels 7-9 the state keeps only the lines it draws; they take the rest.
-        if shown(app).iter().any(|p| !matches!(p, Panel::Gh(_))) {
+        if shown(app).iter().any(ledger_panel) {
             reserve.min(state_lines(app, list.width as usize).map_or(0, |(l, _)| l.len()))
         } else {
             reserve
@@ -1605,7 +1702,11 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     // Folded campaigns are out of the cursor's reach; the compact list scrolls every identity.
     let p = plan(
         g,
-        (list.height as usize).saturating_sub(external_height(app, list.height as usize)),
+        (list.height as usize).saturating_sub(external_height(
+            app,
+            list.width as usize,
+            list.height as usize,
+        )),
         if app.row >= g.needs_you.len() + g.attention.len() {
             app.row.saturating_sub(external_count(app))
         } else {
@@ -1657,35 +1758,34 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     }
 }
 
-/// The panel switches: one line when wide, else 1-3, 4-6 and 7-9,0 on lines of their own
-/// (7-9 and 0 folded into the second while all hidden), each wrapped to the width.
+/// The panel switches: one line when wide, else 1-3, 4-6 and 7-9,0,H on lines of their own
+/// (7-9, 0 and H folded into the second while all hidden), each wrapped to the width.
 fn toggles(app: &App, width: usize, wide: bool) -> Vec<Line<'static>> {
-    const LABELS: [&str; 10] = [
-        "asks",
-        "checks",
-        "camps",
-        "PRs",
-        "Shipped",
-        "Build",
-        "Decisions",
-        "Fleet",
-        "Log",
-        "Issues",
+    // Each switch names its own key: H is not an eleventh digit.
+    const LABELS: [(&str, &str); 11] = [
+        ("1", "asks"),
+        ("2", "checks"),
+        ("3", "camps"),
+        ("4", "PRs"),
+        ("5", "Shipped"),
+        ("6", "Build"),
+        ("7", "Decisions"),
+        ("8", "Fleet"),
+        ("9", "Log"),
+        ("0", "Issues"),
+        ("H", "Health"),
     ];
     let mut parts: Vec<String> = LABELS
         .iter()
-        .enumerate()
-        .map(|(i, name)| {
-            let on = if app.config.panels[i] { "+" } else { "-" };
-            format!("{} {name}{on}", (i + 1) % 10)
-        })
+        .zip(app.config.panels)
+        .map(|((key, name), on)| format!("{key} {name}{}", if on { "+" } else { "-" }))
         .collect();
-    // Narrow, 7-9 and 0 all hidden (the default) cost no extra line: the six-panel layout
-    // keeps its rows. The help names them.
+    // Narrow, 7-9, 0 and H all hidden (the default) cost no extra line: the six-panel
+    // layout keeps its rows. The help names them.
     let folded = !wide && !app.config.panels[6..].iter().any(|p| *p);
     if folded {
         parts.truncate(6);
-        parts.push("7-9,0 off".into());
+        parts.push("7-9,0,H off".into());
     }
     let groups: Vec<&[String]> = if wide {
         vec![&parts[..]]
@@ -1772,7 +1872,7 @@ fn state_lines(app: &App, w: usize) -> Option<(Vec<Line<'static>>, bool)> {
             && g.campaigns.is_empty() =>
         {
             // Above panels 7-9 the line names what is missing; their own rows follow.
-            let first = if !shown(app).iter().any(|p| !matches!(p, Panel::Gh(_))) {
+            let first = if !shown(app).iter().any(ledger_panel) {
                 "No visible ledger rows"
             } else if !app.filter.is_empty() {
                 "No matching asks, checks or campaigns"
@@ -2028,6 +2128,11 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
                     .join("\n")
             ),
         ),
+        Selected::Health => (
+            format!("Health · {} {}", crate::health::REPO, crate::health::ENV),
+            vec![Line::from(sp(app.health.state(), health_color(app)))],
+            app.health.detail(app.observed_at),
+        ),
         Selected::Nothing => return,
     };
     // The pane's inside, as `ui::pane` will draw it, so the text wraps before the title
@@ -2102,6 +2207,7 @@ fn activity(f: &mut Frame, app: &App, area: Rect) {
         | Selected::Author(_)
         | Selected::Run(_)
         | Selected::Assignee(_)
+        | Selected::Health
         | Selected::Nothing => return,
     };
     let Some(c) = g.campaigns.iter().find(|c| c.id == root) else {

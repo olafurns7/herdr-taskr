@@ -2,6 +2,7 @@
 1 asks+ · 2 checks+ · 3 camps+
 4 PRs- · 5 Shipped- · 6 Build-
 7 Decisions+ · 8 Fleet+ · 9 Log+ · 0 Issues-
+H Health-
  3 notes still carry OWNER items
  NEEDS YOU ────────────────────────────── 1/2
 ▌? ◇ tui-frames           BLOCKING      ⏎  41s
@@ -19,8 +20,7 @@ plan v11 · 1 decisions, 2 closed lanes since …
 11 listed · 13 working 5 ready 22 open
 2 quiet not listed; no counts
  search-index · 1 working 0 ready 1 open · le…
- auth-rotation · 0 working 1 ready 1 open · l…
- +9 outside view · j/k to browse
+ +10 outside view · j/k to browse
  DECISION LOG ───────────────── recent sample
 tui-frames #4120 · read 3m ago
 recent log sample (up to 100 events): decisio…

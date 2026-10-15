@@ -39,7 +39,7 @@ one line of JSON.
 
 ![Glance, dark theme](images/glance-dark.png)
 
-The first screen has ten switchable panels, top to bottom:
+The first screen has eleven switchable panels, top to bottom:
 
 - **Needs you:** open owner asks. Red in the header means an open owner ask. `BLOCKING` marks an ask whose work has stopped for your answer.
   `HUB` marks a question the hub relayed from its own dialog
@@ -80,31 +80,40 @@ The first screen has ten switchable panels, top to bottom:
   several assignees counts in each group, so groups overlap; the headline
   counts unique issues. Groups with blocked issues use the amber attention
   colour, never red. Rows are informational: no key acts on them.
+- **Health (H):** the hub's latest `HEALTH` note for `trip-to-japan/trip`
+  `production`: the reported SHA, deploy state, Sentry state or issue IDs, the
+  checked time with its age, the source note ID and the rollback note ID. It is
+  a hub report as of its checked time, not live production state: it never
+  calls the environment healthy, does not compare the SHA with `main`, and
+  does not resolve or act on the rollback note. A failed deploy or new Sentry
+  issues use the amber attention colour, never red; pending and unknown stay
+  neutral. One informational row; no key acts on it.
 - **Campaigns:** every open campaign with its lead's state, one dot per
   lane, four hours of activity as a small graph, and its latest milestone.
   Quiet campaigns fold into one line at the bottom.
 
 Press `1` (asks), `2` (checks), `3` (campaigns), `4` (Open PRs), `5` (Shipped), `6` (Build queue),
-`7` (Decisions), `8` (Fleet), `9` (Decision log) or `0` (Issues) in
-Glance to show or hide a panel. The switch row uses `+` for shown and `-`
-for hidden. The first six start enabled, 7-9 and 0 hidden; narrow, the
-hidden four fold into `7-9,0 off`. Hidden owner asks
+`7` (Decisions), `8` (Fleet), `9` (Decision log), `0` (Issues) or uppercase `H`
+(Health) in Glance to show or hide a panel; lowercase `h` stays back. The
+switch row uses `+` for shown and `-` for hidden. The first six start
+enabled, 7-9, 0 and H hidden; narrow, the hidden five fold into
+`7-9,0,H off`. Hidden owner asks
 remain counted in the header. Hidden rows cannot receive actions. Rows of
 7-9 are informational: only `o` acts on them, opening their campaign. `/`
 filters Fleet by name, not 7 or 9. All panels
-can be hidden; `1`–`9` and `0` restore them. Campaign's `1`–`5` keys still select panes.
+can be hidden; `1`–`9`, `0` and `H` restore them. Campaign's `1`–`5` keys still select panes.
 
 Visibility and the repository list live in `$XDG_CONFIG_HOME/taskr/tui.json`,
 or `~/.config/taskr/tui.json` when XDG_CONFIG_HOME is unset:
 
 ```json
-{"panels":[true,true,true,true,true,true,false,false,false,false],"repos":["trip-to-japan/trip"]}
+{"panels":[true,true,true,true,true,true,false,false,false,false,false],"repos":["trip-to-japan/trip"]}
 ```
 
-Existing four-, six- and nine-boolean configs keep their choices and repo
-list; the panels they predate take their defaults (Shipped and Build queue
-enabled, 7-9 and Issues hidden). Saves use ten booleans. The `repos` list
-does not change the Issues repository. Other lengths or
+Existing four-, six-, nine- and ten-boolean configs keep their choices and
+repo list; the panels they predate take their defaults (Shipped and Build
+queue enabled, 7-9, Issues and Health hidden). Saves use eleven booleans.
+The `repos` list does not change the Issues or Health repository. Other lengths or
 non-boolean entries are invalid and retain the bad-config preservation guard.
 Up to eight `owner/repo` names are accepted. Toggle saves preserve the repo
 list and replace this allowlisted config atomically with mode 0600. Bad or
@@ -168,9 +177,33 @@ not atomic; an issue seen in both keeps its later update. Closed counts use
 `closedAt` and expire on the UI clock without a fetch. Never enabled, hidden
 or in demo it makes no calls.
 
+Health makes one `taskr --json log 2899 --limit 100` call (the `taskr` that
+`TASKR_BIN` names, without the lane's `TASKR_TASK` or `TASKR_LAUNCH`), at
+most once a minute while visible; `r` does not hurry it, hiding and showing
+does not reset the minute, and failures back off from one minute, doubling
+to 15.
+One read runs at a time, with a ten-second deadline through parsing and the
+same output bound; it makes no `gh` or third-party call. The newest root
+`note` event whose summary starts exactly `HEALTH ` decides (a note without
+text is not a candidate): it must be one
+line of exactly the seven keys `repo env sha deploy sentry checked
+rollback`, any order, single spaces, printable ASCII, for this repository
+and environment, a ten-digit hex SHA, `live|failed|pending`,
+`clean|pending|new:<IDs>`, a UTC `checked` time not after the read, and a
+positive rollback note ID. A malformed latest note, one for another
+repository or environment, a future checked time, or no such note in the
+last 100 hub events shows unknown and replaces any earlier report; an older
+note never stands in for it. A failed or malformed read keeps the last
+result, labelled stale; a first failure says unavailable. Every message is
+generic. A newer note with an older checked time still wins, and shows its
+age; there is no expiry, because the hub writes after deploy checks, not on
+a schedule. Never enabled, hidden or in demo it reads nothing (demo shows an
+invented note).
+
 Scheduled cost is about 60 Open PR + 30 Shipped + 60 Build queue = 150 gh
 invocations per repo per hour per instance (1,200 at eight repos), plus at
-most 24 for Issues (one repository) and manual refreshes. This is not a fixed network-request or GraphQL-point
+most 24 for Issues (one repository) and manual refreshes. Health adds at
+most 60 `taskr` reads per hour per instance and no `gh` calls. This is not a fixed network-request or GraphQL-point
 budget; several TUI instances multiply the traffic. Failure backoff caps at
 15 minutes except when a longer known provider deadline applies.
 
@@ -232,7 +265,7 @@ pools stay, dimmed. Runs that wait on the old heavy flock show only as
 | `ctrl-d` `ctrl-u` | Half a page |
 | `PgDn` `PgUp` | A page (the focused detail, a document, the answer dialog) |
 | `tab`, `shift-tab` | Next or previous section, then the detail pane (glance), or pane (campaign) |
-| `1`-`9`, `0` | Show/hide a Glance panel (remembered; `0` is Issues) |
+| `1`-`9`, `0`, `H` | Show/hide a Glance panel (remembered; `0` is Issues, `H` Health) |
 | `1`-`5` | Jump to a pane (campaign) |
 | `Enter` | Go to the row's agent pane in Herdr |
 | `l` | Open the campaign |

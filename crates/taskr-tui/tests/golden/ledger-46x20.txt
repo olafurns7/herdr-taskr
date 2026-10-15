@@ -2,6 +2,7 @@
 1 asks+ · 2 checks+ · 3 camps+
 4 PRs- · 5 Shipped- · 6 Build-
 7 Decisions+ · 8 Fleet+ · 9 Log+ · 0 Issues-
+H Health-
  3 notes still carry OWNER items
  NEEDS YOU ────────────────────────────── 1/2
 ▌? ◇ tui-frames           BLOCKING      ⏎  41s
@@ -13,8 +14,7 @@
 tui-frames #4120 · read 3m ago
 goal: tui-frames: a small terminal view of ev…
 plan v11 · 1 decisions, 2 closed lanes since …
- ◆ #61301 D4: one binary for the view and the…
- ◆ #60790 Trust rule 1: red is an open owner …
+ +2 outside view · j/k to browse
  CAMPAIGNS ─────────────────────────────── 10
  +13 more · c shows all
  ⏎ go   a answer   l open   ? help

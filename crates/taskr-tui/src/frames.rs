@@ -118,6 +118,27 @@ fn first_group(app: &mut App) {
         .unwrap();
 }
 
+/// Health (key H) on with an invented hub note through the real parser, the cursor on its
+/// row. Every other panel keeps its default.
+fn health(app: &mut App) {
+    health_note(app, crate::health::CLEAN);
+}
+
+fn health_note(app: &mut App, payload: &str) {
+    dashboard(app);
+    app.config.panels[10] = true;
+    app.health = crate::health::sample(app.observed_at, payload);
+    health_row(app);
+}
+
+/// The cursor on Health's row, after any toggle that moves the rows.
+fn health_row(app: &mut App) {
+    app.row = crate::glance::ids(&app.view())
+        .iter()
+        .position(|r| matches!(r, crate::glance::RowId::Health(..)))
+        .unwrap();
+}
+
 /// The same with GitHub's panels off: what a narrow pane shows of the ledger's.
 fn ledger_only(app: &mut App) {
     ledger(app);
@@ -252,7 +273,7 @@ pub fn all() -> Vec<Spec> {
             app.config.panels[0] = false;
         }),
         spec("dashboard", 46, 30, "-off", |app| {
-            app.config.panels = [false; 10];
+            app.config.panels = [false; 11];
             app.config_warning = Some("TUI config not saved; choices kept for this session".into());
         }),
         spec("dashboard", 46, 30, "-empty-ledger", |app| {
@@ -329,7 +350,7 @@ pub fn all() -> Vec<Spec> {
         spec("issues", 120, 40, "-overflow", |app| {
             // Every ledger panel on: Issues keeps its minimum below them, then scrolls.
             issues(app);
-            app.config.panels[6..].fill(true);
+            app.config.panels[6..10].fill(true);
             app.scope.read_at = Some(app.observed_at - 180);
             app.issues.sources[0].total = 100;
             app.issues.sources[0].closed_total = 100;
@@ -342,6 +363,61 @@ pub fn all() -> Vec<Spec> {
             app.issues.sources[0].total = 100;
             app.issues.sources[0].closed_total = 100;
             first_group(app);
+        }),
+        spec("health", 120, 40, "", health),
+        spec("health", 120, 40, "-light", health),
+        spec("health", 46, 30, "", health),
+        spec("health", 46, 30, "-light", health),
+        spec("health", 46, 20, "", health),
+        spec("health", 46, 30, "-pending", |app| {
+            health_note(
+                app,
+                &crate::health::CLEAN
+                    .replace("deploy=live", "deploy=pending")
+                    .replace("sentry=clean", "sentry=pending"),
+            );
+        }),
+        spec("health", 46, 30, "-failed", |app| {
+            health_note(
+                app,
+                &crate::health::CLEAN.replace("deploy=live", "deploy=failed"),
+            );
+        }),
+        spec("health", 120, 40, "-new", |app| {
+            health_note(
+                app,
+                &crate::health::CLEAN.replace("sentry=clean", "sentry=new:TRIP-12,TRIP-14"),
+            );
+        }),
+        spec("health", 46, 30, "-no-note", |app| {
+            health_note(app, "deploy check started");
+        }),
+        spec("health", 46, 30, "-malformed", |app| {
+            health_note(app, "HEALTH repo=trip-to-japan/trip env=production");
+        }),
+        spec("health", 46, 30, "-stale", |app| {
+            // Controlled export: the last report kept after a failed read.
+            health(app);
+            app.health.error = Some(crate::health::UNAVAILABLE);
+        }),
+        spec("health", 46, 20, "-stale", |app| {
+            // Narrow and short: the compact row says stale before anything it clips.
+            health(app);
+            app.health.error = Some(crate::health::UNAVAILABLE);
+        }),
+        spec("health", 46, 30, "-unavailable", |app| {
+            // The first read failed: unknown, never a report.
+            health(app);
+            app.health = crate::health::Health::default();
+            app.health.error = Some(crate::health::UNAVAILABLE);
+        }),
+        spec("health", 120, 40, "-overflow", |app| {
+            // Every panel on: Health keeps its place last, after Issues.
+            health(app);
+            app.config.panels[6..].fill(true);
+            app.scope.read_at = Some(app.observed_at - 180);
+            app.issues = crate::github::demo_issues(app.observed_at);
+            health_row(app);
         }),
         spec("ledger", 120, 40, "", |app| {
             ledger(app);
