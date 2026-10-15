@@ -6,11 +6,68 @@ Push adapters deliver a task's inbox events into an idle or busy agent session i
 - the same server behind pi's `adapters/pi/taskr-push.ts` extension;
 - `taskr push codex`, a sidecar process that queues each event into one Codex thread with `codex queue`.
 
-This repository configures none of them: nothing here edits an `.mcp.json`, a settings file, `~/.codex/config.toml`, a native home, a Herdr launch flag or an install. This page says how an owner would opt in, what a push promises, and what is still unproved. Enabling any adapter for real sessions needs an owner decision first.
+Installation configures none of them. The optional [worker launcher](#start-a-herdr-worker) can create a private Claude MCP config and pass its channel flag when explicitly given `--push`; it edits no existing settings. This page says how an owner would opt in, what a push promises, and what is still unproved. Enabling any adapter for real sessions needs an owner decision first.
 
 How the loop holds the inbox, what a push carries and how it reconciles uncertain writes: [mcp.md](mcp.md#channel). The Codex sidecar runs the same loop.
 
 Local adapters share 32 hint streams; beyond that they fall back to the 30 s poll and retry the stream with a 1–60 s backoff.
+
+## Start a Herdr worker
+
+From a source checkout, `adapters/herdr/taskr-herdr-launch` registers a worker,
+exports its task and launch IDs into an existing pane, starts the chosen agent,
+then sends its brief through `taskr prompt`. It needs `taskr`, `herdr`, `jq` and
+the chosen agent on PATH, with Herdr already running on the same host. The
+installer does not install this script. Select an unused pane at its shell prompt;
+the launcher clears pending shell input with Ctrl-C. It creates no tabs or
+workspaces and never starts or restarts the Herdr server itself.
+
+```sh
+sh adapters/herdr/taskr-herdr-launch \
+  --name worker-api --role implementer --parent 42 \
+  --model chosen-model --effort medium --report "$PWD/worker-report.md" \
+  claude WORKER_PANE "$PWD/worker-brief.md" -- \
+  --model chosen-model --effort medium
+```
+
+Replace the parent ID, pane ID, model and paths. The interface is:
+
+```text
+taskr-herdr-launch [--push] --name NAME --role ROLE --parent ID --model MODEL --effort E --report PATH [--provider P] KIND PANE BRIEF -- [AGENT_ARGS...]
+```
+
+KIND is `claude`, `codex`, `pi` or `opencode`; the provider metadata defaults to
+KIND. ROLE is `implementer`, `reviewer`, `researcher`, `sub-orchestrator` or
+`gate`. The report path must be absolute and the brief must exist locally.
+Everything after `--` is passed literally to `herdr agent start` as the agent's
+native arguments; omit the executable name. The model and effort flags before
+KIND record metadata: supply matching native arguments after `--`. No model,
+account, permission, trust, name-prefix or fleet policy is selected for you.
+Any needed trust or permission prompts must be handled by the caller's native
+agent configuration; the launcher only confirms the push dialog below.
+
+For Claude, add `--push` before KIND to opt in to a private MCP config and the
+development-channel flag. The config is mode 0600 inside a fresh mode 0700
+`$HOME/.taskr-herdr-push.XXXXXX` directory; it never edits project `.mcp.json`.
+If agent startup fails and the visible pane contains `Loading development
+channels`, the launcher sends Enter and waits for the agent to become idle
+before delivering the brief. Other startup failures stop the launch.
+
+Success prints `task=ID launch=ID pane=PANE`, plus `config=PATH` with `--push`.
+Failures name the step and print any IDs and config already created. They stop
+without retry or rollback: a registered task, running agent or config may
+remain. Inspect those IDs before trying again; do not blindly launch a duplicate.
+Keep the private config until Claude exits, then remove that file and its empty
+directory. A successful launch proves neither push receipt nor worker completion.
+
+`--push` is rejected for other kinds before registration. For pi, pass the
+[extension](#pi) as a native argument. For Codex, run `taskr start` in the
+worker and start the [sidecar](#codex) separately with the printed task and
+launch IDs. The launcher creates no sidecar and adds no hooks. These are explicit
+opt-ins; an ordinary launch changes no agent configuration.
+
+`sh adapters/herdr/check.sh` checks the sequence, arguments, exports, permissions
+and refusals with fake commands only; it starts no real Herdr or agent.
 
 ## What it promises
 
