@@ -44,10 +44,20 @@ def check(cell, kind):
     started = time.monotonic()
     with socket.create_connection(('::1', port), timeout=15) as stream:
         if kind == 'headers':
+            connected = time.monotonic()
             stream.sendall(b'POST /api/rpc HTTP/1.1\r\nHost:')
-            stream.recv(4096)
-            elapsed = time.monotonic() - started
-            assert 4.5 <= elapsed <= 7, (kind, elapsed)
+            try:
+                received = stream.recv(4096)
+            except OSError as error:
+                received = error
+            finished = time.monotonic()
+            elapsed = finished - started
+            assert not isinstance(received, OSError) and 4.5 <= elapsed <= 7, {
+                'check': kind, 'hub': type(cell).__name__,
+                'connect_seconds': connected - started,
+                'send_to_recv_seconds': finished - connected,
+                'recv': repr(received), 'total_seconds': elapsed,
+            }
         elif kind == 'body':
             stream.sendall(b'POST /api/rpc HTTP/1.1\r\nHost:')
             select.select([], [], [], 4)
