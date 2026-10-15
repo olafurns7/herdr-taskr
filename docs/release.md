@@ -3,10 +3,8 @@
 Releases are built on a maintainer's machine. There are no GitHub Actions:
 nothing builds or publishes on push.
 
-The released `taskr` is the Rust build (`crates/taskr`). The Go sources at the
-repository root stay until the Rust test port is complete; until then they only
-serve as a test oracle in the release gate (see the contract tests in
-`tools/contract/`).
+The released `taskr` is the Rust build (`crates/taskr`). The contract tests in
+`tools/contract/` compare it with stored golden fixtures.
 
 ## release.sh
 
@@ -27,10 +25,7 @@ is refused. The script runs on Linux and:
    missing tool it prints the install block from `tools/contract/README.md`.
 2. **Gate.** `cargo fmt --check`, then `cargo clippy -D warnings` and
    `cargo test --workspace`, each with default features and with
-   `--features contract`. While Go exists, the Go adapter suite also runs
-   against the contract build (`TASKR_BIN`) under `/tmp/taskr-test.lock`: all
-   196 binary-eligible tests must pass, and the only other outcome allowed is
-   `skipped-internals`. Tests run with a scratch HOME and ledger under
+   `--features contract`. Tests run with a scratch HOME and ledger under
    `.scratch/release/`, without task identity or any inherited `TASKR_CONTRACT_*`
    filter.
 3. **Linux half.** `tools/release-rust.sh` with `TASKR_VERSION=<tag>`: static
@@ -86,9 +81,8 @@ refuses a tag older than it, so `latest` never moves back. `TASKR_RELEASE_GH`
 replaces the `gh` command; tests set it to a fake.
 
 `sh tools/release-test.sh` runs the refusal tests (imported Darwin checksums,
-architectures and test-only hooks, Linux static linkage, the adapter summary,
-an older `--promote`) and checks complete packaging in all three Darwin modes
-with fakes.
+architectures and test-only hooks, Linux static linkage, an older `--promote`)
+and checks complete packaging in all three Darwin modes with fakes.
 
 ### Without the Mac
 
@@ -113,8 +107,7 @@ Mach-O type, tag for `taskr` only, no test-only hook) before the gate.
 On the Linux host: `git`, Rust from `rust-toolchain.toml` (1.99.0 with the
 musl and darwin targets), `zig` and `cargo-zigbuild` (user-space install in
 `tools/contract/README.md`), `python3`, `file`, `strings`, `sha256sum`, `tar`,
-`ssh`, and while Go exists, `go` and `flock`. Publishing needs an authenticated
-`gh`. On the Mac: Rust from `rust-toolchain.toml` with both darwin targets, and
+`ssh`. Publishing needs an authenticated `gh`. On the Mac: Rust from `rust-toolchain.toml` with both darwin targets, and
 `python3` (the command-line tools).
 
 ### Rollback

@@ -19,7 +19,6 @@ def main():
     modes = parser.add_mutually_exclusive_group(required=True)
     modes.add_argument('--record', type=Path)
     modes.add_argument('--expect', type=Path)
-    parser.add_argument('--production-go', type=Path, help='production Go binary for sanitized restart/local-child probes')
     parser.add_argument('--rust', type=Path, required=True)
     args = parser.parse_args()
     subprocess.run([sys.executable, str(ROOT / 'tools/contract/selfcheck.py')], cwd=ROOT, check=True)
@@ -30,8 +29,7 @@ def main():
                 print(f'SKIP {name}: Linux /proc process proof', flush=True)
                 return 0
             script = ROOT / ('tools/contract/run.py' if name == 'run' else f'crates/taskr/tests/{name}.py')
-            selected = ['--record', str(args.production_go.resolve())] if args.record and args.production_go and name in ('daemon_restart_cell', 'hub_child_context') else mode
-            command = [sys.executable, str(script), *selected, '--rust', str(args.rust.resolve()),
+            command = [sys.executable, str(script), *mode, '--rust', str(args.rust.resolve()),
                        '--out', str(Path(tmp) / (name + '.json'))]
             if name == 'run':
                 command.append('--catchup-fixtures')

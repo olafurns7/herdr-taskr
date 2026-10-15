@@ -199,8 +199,6 @@ def main():
     ap.add_argument('--net-fixture',action='store_true');ap.add_argument('--out',type=Path);ap.add_argument('--rust-hub-only',action='store_true');args=golden.parse(ap, __file__)
     with tempfile.TemporaryDirectory(prefix='taskr-hub-matrix-') as tmp:
         go=args.go
-        if go is None:
-            go=Path(tmp).resolve()/'taskr-go';subprocess.run(['go','build','-tags','taskr_contract','-o',str(go),'.'],cwd=ROOT,check=True)
         results=[]
         for kind,cls in ([('Rust',RustHub)] if args.rust_hub_only else [('Go',Cell),('Rust',RustHub)]):
             place=Path(tmp).resolve()/kind;place.mkdir();cell=cls(go.resolve(),args.rust.resolve(),place)

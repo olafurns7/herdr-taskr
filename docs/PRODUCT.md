@@ -7,9 +7,8 @@ terminal view. There is no web interface.
 
 ## Stack
 
-- `taskr`: a Go binary at the repository root, with a Rust implementation of
-  the same CLI, hub and daemon in `crates/taskr` held to the same behaviour by
-  the contract tests in `tools/contract/`. State is one SQLite ledger.
+- `taskr`: Rust in `crates/taskr`, with CLI, hub and daemon behaviour checked
+  against stored golden fixtures in `tools/contract/`. State is one SQLite ledger.
 - `taskr-tui`: Rust and ratatui, in `crates/taskr-tui`. It reads through the
   `taskr` command (`taskr --json glance`, `taskr campaign`, `taskr doc get`)
   and writes ledger state only through `taskr answer` and `taskr set`. Its

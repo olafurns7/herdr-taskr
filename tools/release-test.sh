@@ -1,6 +1,6 @@
 #!/bin/sh
-# Refusal tests for release.sh: test-only hooks in an imported darwin pair, the
-# adapter summary parser, and --promote never moving "latest" back.
+# Refusal tests for release.sh: test-only hooks in an imported darwin pair,
+# and --promote never moving "latest" back.
 # Usage: sh tools/release-test.sh (needs release.sh's Linux build tools, for its preflight).
 # TASKR_RELEASE_SSH and TASKR_RELEASE_GH are fakes: no test reaches a real host or GitHub.
 set -eu
@@ -67,24 +67,6 @@ for fault in checksum architecture hook; do
 	grep -q "$want" "$t/out" || { cat "$t/out"; no "TUI $fault: wrong refusal"; }
 	ok "refuses TUI $fault"
 done
-
-# The gate's summary parser, extracted verbatim from release.sh.
-sed -n "/python3 - \"\$work\/adapter-summary.json\" <<'EOF'/,/^EOF\$/p" release.sh | sed '1d;$d' > "$t/parser.py"
-grep -q 'pass") != 196' "$t/parser.py" || no 'summary parser not found in release.sh'
-summary() { # NAME WANT(accept|refuse) JSON
-	printf '%s\n' "$3" > "$t/summary.json"
-	if python3 "$t/parser.py" "$t/summary.json" > "$t/out" 2>&1; then got=accept; else got=refuse; fi
-	[ "$got" = "$2" ] || { cat "$t/out"; no "summary $1: $got"; }
-	ok "summary $1: $2"
-}
-summary 'filtered to one family' refuse '{"read:version":{"pass":1,"skipped-family":195}}'
-summary 'all passing but filtered' refuse '{"read":{"pass":196,"skipped-family":3,"skipped-internals":284}}'
-summary 'other skip' refuse '{"read":{"pass":195,"skipped-other":1,"skipped-internals":287}}'
-summary 'mismatch' refuse '{"read":{"pass":195,"mismatch":1}}'
-summary 'not implemented' refuse '{"read":{"pass":195,"not-implemented":1}}'
-summary 'short pass count' refuse '{"read":{"pass":195,"skipped-internals":287}}'
-summary 'empty' refuse '{}'
-summary 'complete' accept '{"read":{"pass":150,"skipped-internals":200},"write":{"pass":46,"skipped-internals":87}}'
 
 # --promote reads the latest release and refuses an older tag.
 promote() { # TAG LATEST WANT(edit|refuse)

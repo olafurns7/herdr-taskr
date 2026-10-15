@@ -70,7 +70,6 @@ tools='git file strings sha256sum'
 if [ "$mode" = release ]; then
 	[ "$(uname -s)" = Linux ] || die 'the release builds on Linux; the darwin half runs on the Mac over ssh'
 	tools="$tools cargo rustup zig cargo-zigbuild python3 tar sed awk"
-	[ ! -f go.mod ] || tools="$tools go flock"
 	[ "$dry_run" -eq 1 ] || tools="$tools $gh"
 fi
 missing=
@@ -179,13 +178,9 @@ cargo fmt --all --check
 (
 	# Tests get a scratch HOME and ledger and no task identity; the build caches stay put.
 	export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
-	if [ -f go.mod ]; then
-		GOCACHE=$(go env GOCACHE) GOMODCACHE=$(go env GOMODCACHE) GOPATH=$(go env GOPATH) GOENV=$(go env GOENV)
-		export GOCACHE GOMODCACHE GOPATH GOENV
-	fi
 	export HOME="$PWD/$work/home" TASKR_DB="$PWD/$work/home/gate.db"
 	unset TASKR_TASK TASKR_LAUNCH TASKR_BIN TASKR_FROZEN_NOW
-	# An inherited filter such as TASKR_CONTRACT_FAMILY would shrink the adapter suite.
+	# Clear inherited contract fixture switches before running the gate.
 	for var in $(env | sed -n 's/^\(TASKR_CONTRACT_[A-Za-z0-9_]*\)=.*/\1/p'); do
 		unset "$var"
 	done
@@ -195,24 +190,6 @@ cargo fmt --all --check
 		# shellcheck disable=SC2086
 		cargo test --locked --workspace $features
 	done
-	[ -f go.mod ] || exit 0
-	# While Go exists: its adapter suite against the contract build. All 196
-	# binary-eligible tests must pass; the only other outcome allowed is
-	# skipped-internals (Go white-box and in-process tests).
-	cargo build --locked --release -p taskr --features contract
-	flock /tmp/taskr-test.lock env TASKR_BIN="$PWD/target/release/taskr" \
-		TASKR_CONTRACT_SUMMARY="$PWD/$work/adapter-summary.json" go test -timeout 20m -count=1 ./...
-	python3 - "$work/adapter-summary.json" <<'EOF'
-import json, sys
-total = {}
-for counts in json.load(open(sys.argv[1])).values():
-    for outcome, n in counts.items():
-        total[outcome] = total.get(outcome, 0) + n
-print("adapter " + " ".join(f"{k}={v}" for k, v in sorted(total.items())))
-other = {k: v for k, v in total.items() if k not in ("pass", "skipped-internals") and v}
-if total.get("pass") != 196 or other:
-    sys.exit("release.sh: the adapter suite needs pass=196 and no mismatch, not-implemented or other skip")
-EOF
 )
 
 # --- Build ---------------------------------------------------------------------

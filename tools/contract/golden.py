@@ -67,37 +67,28 @@ def digest(value):
 
 def parse(parser, file):
     global session
-    modes = parser.add_mutually_exclusive_group()
-    modes.add_argument('--record', type=Path, help='record Go-compatible observations from BIN')
-    modes.add_argument('--expect', type=Path, help='check the Rust binary against DIR, without Go')
-    required = {action.dest for action in parser._actions if action.required}
+    modes = parser.add_mutually_exclusive_group(required=True)
+    modes.add_argument('--record', type=Path, help='record observations from the Rust binary')
+    modes.add_argument('--expect', type=Path, help='check the Rust binary against DIR')
     for action in parser._actions:
         if action.dest in ('go', 'rust', 'out'):
             action.required = False
     args = parser.parse_args()
-    if not args.record and not args.expect:
-        for name in required:
-            if getattr(args, name, None) is None:
-                parser.error(f'differential mode requires --{name}')
-    if not getattr(args, 'rust', None):
-        args.rust = ROOT / 'target/debug/taskr'
-    args.rust = args.rust.resolve()
-    if args.record or args.expect:
-        if args.go:
-            parser.error('--go cannot be combined with --record/--expect')
-        oracle = args.record.resolve() if args.record else args.rust
-        needs_rust = Path(file).stem != 'run' or not args.record
-        if not oracle.is_file() or (needs_rust and not args.rust.is_file()):
-            parser.error('record/expect requires explicit existing binaries (--rust defaults to target/debug/taskr)')
-        args.go = oracle
-        if not getattr(args, 'out', None):
-            out = ROOT / '.scratch/golden-results'
-            out.mkdir(parents=True, exist_ok=True)
-            args.out = out / (Path(file).stem + '.json')
-        session = Session(Path(file).stem, args.record is not None,
-                          DIRECTORY if args.record else args.expect, oracle, args.rust)
-    elif not getattr(args, 'go', None) and Path(file).stem not in ('hub_cell', 'net_cell'):
-        parser.error('differential mode requires --go')
+    if getattr(args, 'go', None):
+        parser.error('--go is retired; use --expect DIR --rust BIN')
+    args.rust = (getattr(args, 'rust', None) or ROOT / 'target/debug/taskr').resolve()
+    if not args.rust.is_file():
+        parser.error('requires an existing Rust binary (--rust defaults to target/debug/taskr)')
+    if args.record and (not args.record.is_file() or not args.record.resolve().samefile(args.rust)):
+        parser.error('--record must name the same Rust binary as --rust')
+    # Existing cells use this alias for the reference side of the stored fixtures.
+    args.go = args.rust
+    if not getattr(args, 'out', None):
+        out = ROOT / '.scratch/golden-results'
+        out.mkdir(parents=True, exist_ok=True)
+        args.out = out / (Path(file).stem + '.json')
+    session = Session(Path(file).stem, args.record is not None,
+                      DIRECTORY if args.record else args.expect, args.rust, args.rust)
     return args
 
 
@@ -129,8 +120,7 @@ def observe(label, value, provenance=None):
         assert unchanged, {'cell': session.name, 'index': index, 'expected': expected, 'actual': entry}
     if unchanged:
         entry['label'], entry['value'] = expected['label'], expected['value']
-    source = provenance or ('production Go' if session.name in ('daemon_restart_cell', 'hub_child_context') else 'Go oracle')
-    entry['provenance'] = expected.get('provenance', source) if unchanged and (session.oracle_is_rust or not session.recording) else 'Rust rerecord' if session.oracle_is_rust and session.recording else source
+    entry['provenance'] = expected.get('provenance', 'Rust rerecord') if unchanged else 'Rust rerecord'
     session.observations.append(entry)
     return entry['value']
 
