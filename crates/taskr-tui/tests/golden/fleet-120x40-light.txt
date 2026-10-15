@@ -1,0 +1,40 @@
+ taskr ❯ fleet                                                            hub atlas · 2s ago   ● 2 need you  3 to check
+  D Dashboard   A Asks 2  [F Fleet 11]  I Detail
+ 3 notes still carry OWNER items
+ CAMPAIGNS ───────────────────────────────────────────────────────────────────────────────────────────────────────── 11
+ ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃                                                                      19s
+   Research complete: reports/ranking-options.md compares three scorers on the saved queries
+ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█                                                                      29s
+   Implementation slice: key rollover job, fake-clock tests, installer and operator docs
+▌○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁                                                                      33s
+▌  FYI 61448 from search-index (root 4310): the tokenizer upgrade drops the legacy stemmer
+•○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂                                                                       2m
+   Hub FYI: keep the page map machine-readable for the future link checker
+ ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█                                                                       3m
+   FIX: three P2 findings in the review of the address step; source review complete
+ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁                                                                laptop  7m
+   Widget batch approved (asks 61199, 61367): 19 PRs merged; the last 4 wait for your answer.
+ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆                                                                       8m
+   NOW: plan rev 3.1 sent; the trust rules and the first frames are in flight.
+ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃                                                                      12m
+   cache-audit lead root=4040 pane=w41:p1: campaign complete, docs PR merged
+ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁                                                                      14m
+   matrix run A finished
+ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                                                                      54m
+   S4 cursor split merged; contract tests green on both hosts
+ ‖ legacy-importer                                                                                            parked  3h
+ · 2 quiet
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ⏎ go to lead   l open   p park   / filter   D A F I screens   y copy   s slotr   q quit   ? help

@@ -32,8 +32,15 @@ use ratatui::{
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Screen {
+    /// The Dashboard: the panels, as toggled.
     #[default]
     Glance,
+    /// Every open owner ask, whatever the Dashboard's panels show.
+    Asks,
+    /// Every listed campaign, whatever the Dashboard's panels show.
+    Fleet,
+    /// One row's item in full ([`App::target`]).
+    Detail,
     Campaign,
     /// The answer dialog, step 1: choose an option or write.
     Answer,
@@ -45,6 +52,30 @@ pub enum Screen {
     Pager,
     /// slotr's pools: holders and the queue (`s`).
     Slotr,
+}
+
+impl Screen {
+    /// The top-level screens, in tab order: `D A F I`, `[ ]` cycle them.
+    pub(crate) const PEERS: [Screen; 4] =
+        [Screen::Glance, Screen::Asks, Screen::Fleet, Screen::Detail];
+
+    pub(crate) fn peer(self) -> Option<usize> {
+        Self::PEERS.iter().position(|s| *s == self)
+    }
+
+    /// A top-level screen of rows: `row` is its cursor.
+    pub(crate) fn rows(self) -> bool {
+        matches!(self, Screen::Glance | Screen::Asks | Screen::Fleet)
+    }
+
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Screen::Asks => "Asks",
+            Screen::Fleet => "Fleet",
+            Screen::Detail => "Detail",
+            _ => "Dashboard",
+        }
+    }
 }
 
 /// How fresh the snapshot is. The view's own state, not part of the snapshot.
@@ -79,8 +110,6 @@ pub(crate) enum Hit {
     Row(usize),
     Lane(usize),
     Pane(usize),
-    /// The glance's detail pane, drawn only in the wide layout.
-    Detail,
     /// A footer hint: the same as its key.
     Key(String),
 }
@@ -102,6 +131,26 @@ pub(crate) struct Back {
     row: usize,
     scroll: usize,
     filter: String,
+}
+
+/// A top-level screen's place while another one is shown: its row by identity, so a
+/// snapshot in between cannot move the cursor to another item.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Place {
+    id: Option<glance::RowId>,
+    row: usize,
+    scroll: usize,
+    filter: String,
+}
+
+/// What the Detail screen shows: the item `I` was pressed on, by identity, and the screen
+/// and filter it was listed under. It is never another row: when the item is gone, Detail
+/// says so.
+#[derive(Debug, Clone)]
+pub(crate) struct Target {
+    pub(crate) id: glance::RowId,
+    pub(crate) from: Screen,
+    pub(crate) filter: String,
 }
 
 /// What the Decisions and Decision log panels (7, 9) read: `data.campaign`, but only once
@@ -191,11 +240,15 @@ pub struct App {
     pub(crate) click: Option<(Instant, Hit)>,
     /// The need and check counts before the filter: the pill never follows a filter.
     pub(crate) counts: Option<(usize, usize)>,
-    /// First visible line of the pager, the help, the all-campaigns list and the glance's
-    /// detail pane.
+    /// First visible line of the pager, the help, the all-campaigns list and Detail.
     pub scroll: usize,
-    /// The glance's detail pane has the keys; `row` stays on the row it shows.
-    pub detail: bool,
+    /// Each top-level screen's place while it is not shown, in [`Screen::PEERS`] order.
+    pub(crate) places: [Place; 4],
+    /// The Detail screen's item.
+    pub(crate) target: Option<Target>,
+    /// Open owner asks and listed campaigns before panels and filter: the tab line's
+    /// counts. Filled by [`App::view`].
+    pub(crate) listed: (usize, usize),
     /// `--ascii`: draw every glyph as its ASCII stand-in.
     pub ascii: bool,
     /// The slotr view's own read, apart from the glance's: `loaded` once slotr answered,
@@ -248,7 +301,9 @@ impl App {
             click: None,
             counts: None,
             scroll: 0,
-            detail: false,
+            places: Default::default(),
+            target: None,
+            listed: (0, 0),
             ascii: false,
             slotr: Fetch::default(),
             config: config::Config::default(),
@@ -295,13 +350,7 @@ impl App {
         let selected = glance::ids(&view).get(view.row).cloned();
         self.observed_at = at;
         self.observed_tick = tick;
-        let retained = selected
-            .as_ref()
-            .is_some_and(|id| glance::ids(&self.glance_view()).contains(id));
         self.restore_row(selected);
-        if !retained {
-            self.detail = false;
-        }
         self.click = None;
         *self.seen.borrow_mut() = Seen::default();
         true
@@ -311,10 +360,28 @@ impl App {
     // ponytail: one clone of the snapshot per frame and key; filter by index if it shows.
     pub(crate) fn view(&self) -> App {
         let mut v = self.clone();
-        let q = self.filter.to_lowercase();
+        // Detail lists as the screen its item came from did, under that screen's filter.
+        let list = match (&self.target, self.screen) {
+            (Some(t), Screen::Detail) => {
+                v.filter = t.filter.clone();
+                t.from
+            }
+            _ => self.screen,
+        };
+        // Asks and Fleet list their rows whatever the Dashboard's panels show.
+        let only = |i: usize| -> [bool; 11] { std::array::from_fn(|p| p == i) };
+        match list {
+            Screen::Asks => v.config.panels = only(0),
+            Screen::Fleet => v.config.panels = only(2),
+            _ => {}
+        }
+        let panels = v.config.panels;
+        let q = v.filter.to_lowercase();
+        let g = &self.data.glance;
+        v.listed = (g.needs_you.len(), g.campaigns.len());
         // Fleet reads the snapshot itself, so hiding panel 3 does not empty it. Every
         // screen fills it: the help draws the glance behind itself.
-        v.fleet = if self.config.panels[7] && self.fetch.loaded {
+        v.fleet = if panels[7] && self.fetch.loaded {
             let all = &self.data.glance.campaigns;
             all.iter()
                 .filter(|c| !c.parked)
@@ -324,29 +391,29 @@ impl App {
         } else {
             vec![]
         };
-        if self.screen == Screen::Glance {
+        if list.rows() {
             let g = &mut v.data.glance;
             v.counts = Some((g.needs_you.len(), g.attention.len()));
-            if !self.config.panels[0] {
+            if !panels[0] {
                 g.needs_you.clear();
             }
-            if !self.config.panels[1] {
+            if !panels[1] {
                 g.attention.clear();
             }
-            if !self.config.panels[2] {
+            if !panels[2] {
                 g.campaigns.clear();
                 g.quiet.count = 0;
             }
-            if !self.config.panels[3] {
+            if !panels[3] {
                 v.github.sources.clear();
             }
-            if !self.config.panels[4] {
+            if !panels[4] {
                 v.shipped.sources.clear();
             }
-            if !self.config.panels[5] {
+            if !panels[5] {
                 v.builds.sources.clear();
             }
-            if !self.config.panels[9] {
+            if !panels[9] {
                 v.issues.sources.clear();
             }
             for source in &mut v.github.sources {
@@ -357,11 +424,30 @@ impl App {
                 });
             }
         }
-        if q.is_empty() {
-            return v;
+        if !q.is_empty() {
+            v.filtered(list, &q);
         }
-        let has = |name: &str| name.to_lowercase().contains(&q);
-        match self.screen {
+        if self.screen == Screen::Detail {
+            let ids = glance::ids(&v);
+            v.row = self
+                .target
+                .as_ref()
+                .and_then(|t| ids.iter().position(|r| *r == t.id))
+                .unwrap_or(ids.len());
+            // An ask's or a check's campaign activity shows with campaigns hidden too: with
+            // panel 3 off no campaign row is listed, so this moves no identity.
+            if !panels[2] {
+                v.data.glance.campaigns = self.data.glance.campaigns.clone();
+            }
+        }
+        v
+    }
+
+    /// Narrows the rows of `list` to names containing `q`.
+    fn filtered(&mut self, list: Screen, q: &str) {
+        let v = self;
+        let has = |name: &str| name.to_lowercase().contains(q);
+        match list {
             Screen::Pager => {}
             Screen::AllCampaigns => v.data.roots.retain(|r| has(&r.name)),
             Screen::Campaign => {
@@ -375,11 +461,11 @@ impl App {
                     .for_each(|l| l.parent_id = root);
             }
             _ => {
+                v.counts = Some(
+                    v.counts
+                        .unwrap_or((v.data.glance.needs_you.len(), v.data.glance.attention.len())),
+                );
                 let g = &mut v.data.glance;
-                v.counts = Some(self.counts.unwrap_or((
-                    self.data.glance.needs_you.len(),
-                    self.data.glance.attention.len(),
-                )));
                 g.needs_you.retain(|a| has(&a.campaign));
                 g.attention.retain(|a| has(&a.campaign));
                 g.campaigns.retain(|c| has(&c.name));
@@ -387,7 +473,6 @@ impl App {
                 v.fleet.retain(|c| has(&c.name));
             }
         }
-        v
     }
 
     /// Takes a new snapshot and keeps the cursor on the row it was on.
@@ -396,11 +481,11 @@ impl App {
         // ponytail: under the all-campaigns list or the slotr view `row` is that
         // screen's cursor, so the glance row saved for the way back is not followed.
         // The slotr view's cursor is `row` too.
-        let own = |s: Screen| matches!(s, Screen::AllCampaigns | Screen::Slotr);
+        // Detail has no cursor: its item is found by identity.
+        let own = |s: Screen| matches!(s, Screen::AllCampaigns | Screen::Slotr | Screen::Detail);
         let glance_row = !own(self.screen) && self.back.iter().all(|b| !own(b.screen));
         let ids = at(self);
-        let was = ids.get(self.row).cloned();
-        let before = was.clone().filter(|_| glance_row);
+        let before = ids.get(self.row).cloned().filter(|_| glance_row);
         let saved = {
             let view = self.glance_view();
             glance::ids(&view).get(view.row).cloned()
@@ -456,23 +541,9 @@ impl App {
         if glance_row {
             let len = at(self).len();
             self.row = self.row.min(len.saturating_sub(1));
-            self.detail = self.detail && len > 0;
         }
-        // The detail pane shows another row now: it starts at its top.
-        if glance_row && at(self).get(self.row) != was.as_ref() {
-            match self.back.first_mut() {
-                Some(b) if b.screen == Screen::Glance => b.scroll = 0,
-                _ => self.scroll = 0,
-            }
-        }
-        // Under an overlay the glance's row waits in `back`, and Esc returns to it.
-        if glance_row
-            && self.screen != Screen::Glance
-            && self
-                .back
-                .first()
-                .is_some_and(|b| b.screen == Screen::Glance)
-        {
+        // Under an overlay the screen's row waits in `back`, and Esc returns to it.
+        if glance_row && !self.screen.rows() && self.back.first().is_some_and(|b| b.screen.rows()) {
             self.restore_row(saved);
         }
         // Rows that moved are not where the last click landed.
@@ -481,15 +552,19 @@ impl App {
         }
     }
 
+    /// The top-level screen under any overlay, with its own row and filter.
     pub(crate) fn glance_view(&self) -> App {
         let mut app = self.clone();
-        if app.screen != Screen::Glance
-            && let Some(back) = app.back.first()
-        {
-            app.row = back.row;
-            app.filter = back.filter.clone();
+        if app.screen.peer().is_none() {
+            match app.back.first() {
+                Some(back) => {
+                    app.screen = back.screen;
+                    app.row = back.row;
+                    app.filter = back.filter.clone();
+                }
+                None => app.screen = Screen::Glance,
+            }
         }
-        app.screen = Screen::Glance;
         app.view()
     }
 
@@ -501,12 +576,15 @@ impl App {
             .and_then(|id| ids.iter().position(|r| r == id))
             .unwrap_or(view.row.min(ids.len().saturating_sub(1)));
         let changed = row != view.row || ids.get(row) != before.as_ref();
-        if self.screen == Screen::Glance {
+        if self.screen.rows() {
             self.row = row;
             if changed {
                 self.scroll = 0;
             }
-        } else if let Some(back) = self.back.first_mut() {
+        } else if self.screen.peer().is_none()
+            && let Some(back) = self.back.first_mut()
+            && back.screen.rows()
+        {
             back.row = row;
             if changed {
                 back.scroll = 0;
@@ -515,7 +593,73 @@ impl App {
         if changed {
             self.click = None;
         }
-        self.detail = self.detail && !ids.is_empty();
+    }
+
+    /// Shows the top-level screen `to`, closing any overlay first. The screen left keeps
+    /// its row by identity, its scroll and its filter; `to` gets its own back. Nothing is
+    /// read here: sources keep their own schedules.
+    pub(crate) fn switch(&mut self, to: Screen) {
+        while self.close() {}
+        let (Some(from), Some(i)) = (self.screen.peer(), to.peer()) else {
+            return;
+        };
+        if from == i {
+            return;
+        }
+        let id = self
+            .screen
+            .rows()
+            .then(|| glance::ids(&self.view()).get(self.row).cloned())
+            .flatten();
+        self.places[from] = Place {
+            id,
+            row: self.row,
+            scroll: self.scroll,
+            filter: std::mem::take(&mut self.filter),
+        };
+        let place = std::mem::take(&mut self.places[i]);
+        (self.screen, self.row, self.scroll, self.filter) =
+            (to, place.row, place.scroll, place.filter);
+        (self.typing, self.click) = (false, None);
+        if to.rows() {
+            let scroll = self.scroll;
+            self.restore_row(place.id);
+            self.scroll = scroll;
+        }
+    }
+
+    /// `I`: the selected row's item in full on the Detail screen. With no row selected,
+    /// Detail shows the item it showed last, or says to select one.
+    pub(crate) fn inspect(&mut self) {
+        while self.close() {}
+        if self.screen.rows() {
+            let view = self.view();
+            if let Some(id) = glance::ids(&view).get(self.row).cloned()
+                && !matches!(glance::selected(&view), glance::Selected::Nothing)
+            {
+                let target = Target {
+                    id,
+                    from: self.screen,
+                    filter: self.filter.clone(),
+                };
+                self.switch(Screen::Detail);
+                (self.target, self.scroll) = (Some(target), 0);
+                return;
+            }
+        }
+        self.switch(Screen::Detail);
+    }
+
+    /// Whether panel `i`'s source may start a read: its card is shown on the Dashboard, and
+    /// the Dashboard is on top, under no overlay or dialog.
+    pub fn admits(&self, i: usize) -> bool {
+        // A pending `y` question is a modal too: it owns every key until answered.
+        self.screen == Screen::Glance && self.pending.is_none() && self.config.panels[i]
+    }
+
+    /// Esc or `h` on Detail: back to the screen, row, scroll and filter it came from.
+    pub(crate) fn uninspect(&mut self) {
+        self.switch(self.target.as_ref().map_or(Screen::Glance, |t| t.from));
     }
 
     pub(crate) fn hit(&self, area: Rect, hit: Hit) {
@@ -671,7 +815,8 @@ pub fn frame<B: Backend>(
 
 fn screen(f: &mut Frame, app: &App) {
     match app.screen {
-        Screen::Glance => glance::draw(f, app),
+        Screen::Glance | Screen::Asks | Screen::Fleet => glance::draw(f, app),
+        Screen::Detail => glance::draw_detail(f, app),
         Screen::Campaign => campaign::draw(f, app),
         Screen::Answer | Screen::Confirm => dialog::answer(f, app),
         Screen::Help => dialog::help(f, app),
@@ -679,6 +824,14 @@ fn screen(f: &mut Frame, app: &App) {
         Screen::Pager => lists::pager(f, app),
         Screen::Slotr => slotr::draw(f, app),
     }
+}
+
+/// The top-level screen under an overlay, as it is shown there: what a dialog draws behind
+/// itself.
+pub(crate) fn background(f: &mut Frame, app: &App) {
+    let mut under = app.glance_view();
+    under.scroll = app.back.first().map_or(app.scroll, |b| b.scroll);
+    screen(f, &under);
 }
 
 /// In place of the footer hints: a question waiting for `y`, or what the last action did.

@@ -1,5 +1,6 @@
-//! Level 1, the glance: needs you, to check, campaigns. One borderless column under 100
-//! columns; two panes (the list and the selected row's detail) from 100.
+//! Level 1: the Dashboard (needs you, to check, campaigns and the toggled panels), the Asks
+//! and Fleet screens (the same rows, asks or campaigns only) in one full-width column, and
+//! the Detail screen: one row's item in full.
 
 use std::ops::Range;
 
@@ -13,7 +14,7 @@ use ratatui::{
 use ratatui::style::Color;
 
 use crate::{
-    App, Hit, ask,
+    App, Hit, Screen, ask,
     github::Kind,
     keys::hint,
     model::{Attention, Campaign, CampaignRow, Event, Glance, Need},
@@ -380,7 +381,8 @@ fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Op
     out.push(ui::rule(
         t,
         "CAMPAIGNS",
-        &active.len().to_string(),
+        // Every listed campaign, parked ones too: the Fleet tab counts the same.
+        &g.campaigns.len().to_string(),
         t.sub,
         width,
     ));
@@ -1527,6 +1529,7 @@ pub(crate) fn selected(app: &App) -> Selected<'_> {
 /// The footer lists only the keys that do something for the selected row.
 pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> {
     let g = &app.data.glance;
+    let detail = app.screen == Screen::Detail;
     // `⏎` is offered only where there is a pane to go to.
     let go = |host: &str, pane: &str| match (pane.is_empty(), g.local(host), wide) {
         (true, ..) => None,
@@ -1549,12 +1552,16 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
             Some(hint("l", None)),
             Some(hint("p", None)),
         ],
-        Selected::Pr(_) | Selected::Author(_) | Selected::Run(_) => vec![Some(hint("r", None))],
+        // Detail admits no GitHub read, so `r` would not refresh what it shows.
+        Selected::Pr(_) | Selected::Author(_) | Selected::Run(_) => {
+            vec![(!detail).then(|| hint("r", None))]
+        }
         Selected::Decision(_) | Selected::Logged(_) | Selected::Fleet(_) => {
             vec![Some(hint("o", Some("open campaign")))]
         }
         // Informational: traversal and help only.
         Selected::Assignee(_) | Selected::Health => vec![],
+        Selected::Nothing if detail => vec![],
         Selected::Nothing => vec![Some(hint("c", Some("all campaigns")))],
     }
     .into_iter()
@@ -1564,22 +1571,26 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
         out.retain(|(key, _)| *key != "r");
         out.insert(0, hint("r", Some("retry")));
     }
-    if app.detail && wide && !matches!(selected(app), Selected::Nothing) {
-        out.splice(0..0, [hint("j k", Some("scroll")), hint("h", Some("list"))]);
+    if detail {
+        out.insert(0, hint("h", None));
     }
     if wide {
         // `?` last: the footer keeps its last hint when the others give way.
+        if app.screen == Screen::Glance {
+            out.extend([hint("0-9", None), hint("H", None)]);
+        }
+        if app.screen.rows() {
+            out.push(hint("/", None));
+        }
         out.extend([
-            hint("0-9", None),
-            hint("H", None),
-            hint("/", None),
+            hint("D A F I", None),
             hint("y", None),
             hint("s", None),
             hint("q", None),
             hint("?", None),
         ]);
     } else {
-        out.push(hint("?", None));
+        out.extend([hint("D A F I", None), hint("?", None)]);
     }
     if matches!(
         selected(app),
@@ -1591,6 +1602,7 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
             | Selected::Fleet(_)
             | Selected::Assignee(_)
             | Selected::Health
+            | Selected::Nothing
     ) {
         out.retain(|(key, _)| *key != "y");
     }
@@ -1602,8 +1614,16 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
     let wide = area.width >= 100;
     let stale = app.fetch.error.as_deref().filter(|_| app.fetch.loaded);
-    let toggle_lines = toggles(app, area.width as usize, wide);
-    let [head, switches, warning, notes, banner, body, foot] = Layout::vertical([
+    // The panel switches are the Dashboard's: Asks and Fleet list theirs whatever they say.
+    let dashboard = !matches!(app.screen, Screen::Asks | Screen::Fleet);
+    let toggle_lines = if dashboard {
+        // Short of rows, the switches take one compact line so the tab line costs no row.
+        toggles(app, area.width as usize, wide, area.height < 32)
+    } else {
+        vec![]
+    };
+    let [head, tabs, switches, warning, notes, banner, body, foot] = Layout::vertical([
+        Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(toggle_lines.len() as u16),
         Constraint::Length(u16::from(app.config_warning.is_some())),
@@ -1618,11 +1638,12 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
         app,
         head,
         if wide {
-            vec![sp("glance", t.dim)]
+            vec![sp(app.screen.name().to_lowercase(), t.dim)]
         } else {
             vec![]
         },
     );
+    ui::tabs(f, app, tabs);
     f.render_widget(Paragraph::new(toggle_lines), switches);
     if let Some(text) = &app.config_warning {
         f.render_widget(
@@ -1635,21 +1656,15 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     f.render_widget(Paragraph::new(Line::from(sp(pending, t.dim))), notes);
     ui::footer(f, app, foot, &hints(app, wide));
 
-    if !app.config.panels.iter().any(|p| *p) {
+    if dashboard && !app.config.panels.iter().any(|p| *p) {
         f.render_widget(
             Paragraph::new("All panels hidden · press 1-9, 0 or H to show").centered(),
             body,
         );
         return;
     }
-    let mut list = body;
-    if wide {
-        // No inset here: the list has its own gutter column.
-        let detail = app.detail && !matches!(selected(app), Selected::Nothing);
-        let block = ui::panel(t, "Glance", !detail);
-        list = block.inner(Rect { width: 60, ..body });
-        f.render_widget(block, Rect { width: 60, ..body });
-    }
+    // The list spans the width: no pane is reserved beside it.
+    let list = body;
     let mut compact = list.height < 8;
     let ledger_state = g.needs_you.is_empty()
         && g.attention.is_empty()
@@ -1736,31 +1751,26 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     f.render_widget(Paragraph::new(lines), list_rows);
     if let Some(error) = stale {
         // The last frame stays, dimmed, and says so.
+        f.render_widget(Paragraph::new(stale_line(app, error)), banner);
+    }
+}
 
-        let retry = format!(" · retry {}s", app.fetch.retry_in_s);
-        let line = vec![
-            bold(" ! ", t.check),
-            sp(format!("{error} · showing {}", ui::hhmm(&g.now)), t.check),
-            sp(retry, t.dim),
-        ];
-        f.render_widget(Paragraph::new(Line::from(line)), banner);
-    }
-    if wide {
-        let right = Rect {
-            x: body.x + 60,
-            width: body.width - 60,
-            ..body
-        };
-        let [detail_area, context] =
-            Layout::vertical([Constraint::Min(0), Constraint::Length(9)]).areas(right);
-        detail(f, app, detail_area);
-        activity(f, app, context);
-    }
+fn stale_line(app: &App, error: &str) -> Line<'static> {
+    let t = &app.theme;
+    let retry = format!(" · retry {}s", app.fetch.retry_in_s);
+    Line::from(vec![
+        bold(" ! ", t.check),
+        sp(
+            format!("{error} · showing {}", ui::hhmm(&app.data.glance.now)),
+            t.check,
+        ),
+        sp(retry, t.dim),
+    ])
 }
 
 /// The panel switches: one line when wide, else 1-3, 4-6 and 7-9,0,H on lines of their own
 /// (7-9, 0 and H folded into the second while all hidden), each wrapped to the width.
-fn toggles(app: &App, width: usize, wide: bool) -> Vec<Line<'static>> {
+fn toggles(app: &App, width: usize, wide: bool, short: bool) -> Vec<Line<'static>> {
     // Each switch names its own key: H is not an eleventh digit.
     const LABELS: [(&str, &str); 11] = [
         ("1", "asks"),
@@ -1775,6 +1785,22 @@ fn toggles(app: &App, width: usize, wide: bool) -> Vec<Line<'static>> {
         ("0", "Issues"),
         ("H", "Health"),
     ];
+    if short {
+        let mut line = String::from("panels");
+        let mut out = vec![];
+        for ((key, _), on) in LABELS.iter().zip(app.config.panels) {
+            let part = format!("{key}{}", if on { "+" } else { "-" });
+            if line.chars().count() + 1 + part.chars().count() > width {
+                out.push(Line::from(sp(std::mem::take(&mut line), app.theme.sub)));
+            }
+            if !line.is_empty() {
+                line.push(' ');
+            }
+            line += &part;
+        }
+        out.push(Line::from(sp(line, app.theme.sub)));
+        return out;
+    }
     let mut parts: Vec<String> = LABELS
         .iter()
         .zip(app.config.panels)
@@ -1866,6 +1892,32 @@ fn state_lines(app: &App, w: usize) -> Option<(Vec<Line<'static>>, bool)> {
             )));
             lines
         }
+        _ if app.screen == Screen::Asks && g.needs_you.is_empty() => {
+            if app.filter.is_empty() {
+                vec![
+                    Line::from(bold("✓", t.ok)),
+                    Line::raw(""),
+                    Line::from(sp("Nothing needs you", t.text)),
+                    Line::from(sp("No open owner ask in this snapshot.", t.sub)),
+                ]
+            } else {
+                vec![
+                    Line::from(sp("No ask matches the filter", t.sub)),
+                    Line::from(sp("Esc clears the filter", t.dim)),
+                ]
+            }
+        }
+        _ if app.screen == Screen::Fleet && g.campaigns.is_empty() => {
+            let (first, second) = if app.filter.is_empty() {
+                (
+                    "No listed campaigns",
+                    "Not a fleet-wide idle claim · c all campaigns",
+                )
+            } else {
+                ("No campaign matches the filter", "Esc clears the filter")
+            };
+            vec![Line::from(sp(first, t.sub)), Line::from(sp(second, t.dim))]
+        }
         _ if (!app.config.panels[..3].iter().all(|p| *p) || !app.filter.is_empty())
             && g.needs_you.is_empty()
             && g.attention.is_empty()
@@ -1907,9 +1959,147 @@ fn state_lines(app: &App, w: usize) -> Option<(Vec<Line<'static>>, bool)> {
     Some((lines, true))
 }
 
-/// The right pane follows the cursor: an ask's full text and options, what a "to check"
-/// row observed, or a campaign's lead, lanes and latest note.
-fn detail(f: &mut Frame, app: &App, area: Rect) {
+/// Which card a row is listed under, as its rule names it.
+fn card(id: &RowId) -> &'static str {
+    match id {
+        RowId::Ask(_) => "NEEDS YOU",
+        RowId::Check(..) => "TO CHECK",
+        RowId::Campaign(_) => "CAMPAIGNS",
+        RowId::Pr(..) => "OPEN PRS",
+        RowId::Author(_) => "SHIPPED",
+        RowId::Run(..) => "BUILD QUEUE",
+        RowId::Decision(..) => "DECISIONS",
+        RowId::Fleet(_) => "FLEET",
+        RowId::Logged(..) => "DECISION LOG",
+        RowId::Assignee(..) => "ISSUES",
+        RowId::Health(..) => "HEALTH",
+    }
+}
+
+/// The Detail screen: the item `I` was pressed on, in full and at full width, from the
+/// reads on hand with their ages; it reads nothing. An item no longer listed is said to be
+/// gone: no other row takes its place, and no key acts on one.
+pub(crate) fn draw_detail(f: &mut Frame, app: &App) {
+    let t = &app.theme;
+    let area = f.area();
+    let wide = area.width >= 100;
+    let stale = app.fetch.error.as_deref().filter(|_| app.fetch.loaded);
+    let [head, tabs, banner, body, foot] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(u16::from(stale.is_some())),
+        Constraint::Min(0),
+        Constraint::Length(1),
+    ])
+    .areas(area);
+    ui::header(
+        f,
+        app,
+        head,
+        if wide {
+            vec![sp("detail", t.dim)]
+        } else {
+            vec![]
+        },
+    );
+    ui::tabs(f, app, tabs);
+    if let Some(error) = stale {
+        f.render_widget(Paragraph::new(stale_line(app, error)), banner);
+    }
+    // The pane's inside, as `ui::pane` will draw it, so the text wraps before the title
+    // says how much of it there is.
+    let (width, h) = (
+        body.width.saturating_sub(4) as usize,
+        body.height.saturating_sub(2) as usize,
+    );
+    let ids = ids(app);
+    let (title, lines) = match (&app.target, ids.get(app.row)) {
+        (None, _) => (
+            "detail".to_string(),
+            vec![
+                Line::from(sp("Nothing selected yet.", t.text)),
+                Line::raw(""),
+                Line::from(sp(
+                    "Select a row first on Dashboard, Asks or Fleet; I shows it here in full.",
+                    t.sub,
+                )),
+            ],
+        ),
+        (Some(target), None) => (
+            format!("detail · from {}", target.from.name()),
+            vec![
+                Line::from(bold("No longer listed", t.check)),
+                Line::raw(""),
+                Line::from(sp(
+                    "The item opened here was answered, closed, expired, hidden or filtered \
+                     out since. No other row takes its place, and no key here acts on one.",
+                    t.sub,
+                )),
+                Line::from(sp(
+                    format!("esc or h returns to {}.", target.from.name()),
+                    t.dim,
+                )),
+            ],
+        ),
+        (Some(target), Some(id)) => {
+            let first = ids
+                .iter()
+                .position(|r| std::mem::discriminant(r) == std::mem::discriminant(id))
+                .unwrap_or(app.row);
+            let (title, mut lines) = detail_lines(app, width).unwrap_or_default();
+            lines.insert(
+                0,
+                Line::from(sp(
+                    format!(
+                        "from {} · {} · row {}",
+                        target.from.name(),
+                        card(id),
+                        app.row - first + 1
+                    ),
+                    t.dim,
+                )),
+            );
+            (title, lines)
+        }
+    };
+    // Nothing is clipped: a line wider than the pane folds onto the next.
+    let lines: Vec<Line<'static>> = lines
+        .into_iter()
+        .flat_map(|line| {
+            if ui::width(&line.spans) <= width {
+                return vec![line];
+            }
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            wrap(&text, width)
+                .into_iter()
+                .map(|l| Line::from(sp(l, t.text)))
+                .collect()
+        })
+        .collect();
+    let total = lines.len();
+    app.seen.borrow_mut().page = (h, total);
+    let mut keys = hints(app, wide);
+    if total > h {
+        keys.insert(0, hint("j k", Some("scroll")));
+    }
+    ui::footer(f, app, foot, &keys);
+    let first = app.scroll.min(total.saturating_sub(h));
+    let title = if total > h && h > 0 {
+        format!("{title} · {}-{}/{total}", first + 1, first + h)
+    } else {
+        title
+    };
+    let inner = ui::pane(f, t, body, &title, true);
+    f.render_widget(
+        Paragraph::new(lines.into_iter().skip(first).take(h).collect::<Vec<_>>()),
+        inner,
+    );
+}
+
+/// The selected row's item in full: an ask's full text and options, what a "to check" row
+/// observed, a campaign's lead, lanes and latest note, each source with its age, and the
+/// campaign's activity. Lines may be wider than `width`; the caller folds them.
+fn detail_lines(app: &App, width: usize) -> Option<(String, Vec<Line<'static>>)> {
     let (t, g) = (&app.theme, &app.data.glance);
     let at = |host: &str, pane: &str| {
         let name = ui::host_name(g, host);
@@ -1995,14 +2185,20 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
                 t.sub,
             ))],
             format!(
-                "{}\n{}\nObserved checks only; not merge readiness.{}",
+                "{}\n{}\nObserved checks only; not merge readiness.{}\n{}",
                 p.title,
                 p.repo,
                 if p.truncated {
                     " Check list truncated; completeness unknown."
                 } else {
                     ""
-                }
+                },
+                // The read it came from: its age, or stale or unavailable.
+                app.github
+                    .sources
+                    .iter()
+                    .find(|s| s.repo == p.repo)
+                    .map_or_else(String::new, |s| s.status(app.observed_tick))
             ),
         ),
         Selected::Author(author) => {
@@ -2133,14 +2329,8 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
             vec![Line::from(sp(app.health.state(), health_color(app)))],
             app.health.detail(app.observed_at),
         ),
-        Selected::Nothing => return,
+        Selected::Nothing => return None,
     };
-    // The pane's inside, as `ui::pane` will draw it, so the text wraps before the title
-    // says how much of it there is.
-    let (width, h) = (
-        area.width.saturating_sub(4) as usize,
-        area.height.saturating_sub(2) as usize,
-    );
     lines.push(Line::raw(""));
     lines.extend(
         wrap(&text, width)
@@ -2169,7 +2359,7 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
             };
             line.push(sp(tag, t.ok));
         }
-        lines.push(Line::from(ui::fit(line, width)));
+        lines.push(Line::from(line));
         lines.extend(
             wrap(&o.description, width.saturating_sub(4))
                 .into_iter()
@@ -2177,26 +2367,17 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
                 .map(|l| Line::from(sp(format!("    {l}"), t.dim))),
         );
     }
-    // Longer than its box, it scrolls when focused and says where it is, as the campaign
-    // view's panes do.
-    let total = lines.len();
-    app.seen.borrow_mut().page = (h, total);
-    app.hit(area, Hit::Detail);
-    let first = app.scroll.min(total.saturating_sub(h));
-    let title = if total > h && h > 0 {
-        format!("{title} · {}-{}/{total}", first + 1, first + h)
-    } else {
-        title
-    };
-    let inner = ui::pane(f, t, area, &title, app.detail);
-    f.render_widget(
-        Paragraph::new(lines.into_iter().skip(first).take(h).collect::<Vec<_>>()),
-        inner,
-    );
+    let activity = activity(app, width);
+    if !activity.is_empty() {
+        lines.push(Line::raw(""));
+        lines.extend(activity);
+    }
+    Some((title, lines))
 }
 
-/// The lower right pane: the selected row's campaign over the last four hours.
-fn activity(f: &mut Frame, app: &App, area: Rect) {
+/// The selected row's campaign over the last four hours, its lead and lanes, and its
+/// latest note.
+fn activity(app: &App, width: usize) -> Vec<Line<'static>> {
     let (t, g) = (&app.theme, &app.data.glance);
     let root = match selected(app) {
         Selected::Ask(a) => a.root_id,
@@ -2208,17 +2389,27 @@ fn activity(f: &mut Frame, app: &App, area: Rect) {
         | Selected::Run(_)
         | Selected::Assignee(_)
         | Selected::Health
-        | Selected::Nothing => return,
+        | Selected::Nothing => return vec![],
     };
     let Some(c) = g.campaigns.iter().find(|c| c.id == root) else {
-        return;
+        return vec![];
     };
-    let inner = ui::pane(f, t, area, &format!("{} · last 4 h", c.name), false);
-    let wide: Vec<u32> = c.spark.iter().flat_map(|&v| [v, v]).collect();
-    let mut lines: Vec<Line> = ui::chart(&wide, 3)
-        .into_iter()
-        .map(|l| Line::from(sp(l, t.accent)))
-        .collect();
+    // Two columns a bar where they fit.
+    let bars: Vec<u32> = if c.spark.len() * 2 <= width {
+        c.spark.iter().flat_map(|&v| [v, v]).collect()
+    } else {
+        c.spark.clone()
+    };
+    let mut lines = vec![Line::from(bold(format!("{} · last 4 h", c.name), t.sub))];
+    lines.extend(
+        ui::chart(&bars, 3)
+            .into_iter()
+            .map(|l| Line::from(sp(l, t.accent))),
+    );
+    // A campaign's or Fleet row's own Detail already says its lead and its note.
+    if matches!(selected(app), Selected::Campaign(_) | Selected::Fleet(_)) {
+        return lines;
+    }
     let mut lead = vec![
         sp("lead ", t.dim),
         ui::lead_mark(t, &c.lead, c.lead_waiting),
@@ -2226,13 +2417,9 @@ fn activity(f: &mut Frame, app: &App, area: Rect) {
     ];
     lead.extend(ui::pips(t, &c.lanes, 7));
     lines.extend([Line::raw(""), Line::from(lead)]);
-    let note = ui::wrap_max(
-        &format!("last {}", c.status_text()),
-        inner.width as usize,
-        2,
-    );
+    let note = wrap(&format!("last {}", c.status_text()), width);
     lines.extend(note.into_iter().map(|l| Line::from(sp(l, t.sub))));
-    f.render_widget(Paragraph::new(lines), inner);
+    lines
 }
 
 #[cfg(test)]
@@ -2359,14 +2546,16 @@ mod tests {
         // Default narrow, 0 on, cursor on an Issues row: the compact row says stale.
         let stale = text("issues-46x30-stale");
         assert!(stale.contains("Issues stale @alex"), "{stale}");
-        for name in ["issues-46x30-cap", "issues-120x40-overflow"] {
+        for name in ["issues-46x30-cap", "issues-120x40-overflow-detail"] {
             let t = text(name);
             assert!(
                 t.contains("open: first 100") && t.contains("closed: first 100"),
                 "{name}:\n{t}"
             );
         }
-        // The overflow spec's cursor is on an Issues group, not a stale index.
-        assert!(text("issues-120x40-overflow").contains("Issues · @alex"));
+        // The overflow spec's cursor is on an Issues group, not a stale index; Detail shows
+        // that group.
+        assert!(text("issues-120x40-overflow").contains("▌Issues @alex"));
+        assert!(text("issues-120x40-overflow-detail").contains("Issues · @alex"));
     }
 }

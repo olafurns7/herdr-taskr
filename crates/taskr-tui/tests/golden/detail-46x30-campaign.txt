@@ -1,0 +1,30 @@
+ taskr      2s ago   ● 2 need you  3 to check
+  D Dash   A Asks 2   F Fleet 11  [I Detail]
+╭ search-index · #4310 ──────────────────────╮
+│ from Dashboard · CAMPAIGNS · row 1         │
+│ lead ◐ working   lanes ●                   │
+│                                            │
+│ Research complete:                         │
+│ reports/ranking-options.md compares three  │
+│ scorers on the saved queries               │
+│                                            │
+│ search-index · last 4 h                    │
+│                       █                    │
+│                       █                    │
+│                       ██                   │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+╰────────────────────────────────────────────╯
+ h back   ⏎ go   l open   p park   ? help

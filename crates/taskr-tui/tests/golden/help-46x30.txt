@@ -1,17 +1,15 @@
  taskr ❯ help          2s ago   ● 2 need you
- KEYS · glance ────────────────────── 1-27/60
+ KEYS · dashboard ─────────────────── 1-27/61
  Move
   j k           down, up (arrows too)
   g G           first, last row
   ctrl-d ctrl-u half page
-  tab           next section, then the detail
+  tab           next card; shift-tab back
   wheel         scroll
-  shift-tab goes back. In the wide view, with
-  the detail focused, j k g G ctrl-d ctrl-u
-  PgDn PgUp scroll it; h or esc returns to the
-  list.
 
  Go
+  D A F I       Dashboard, Asks, Fleet; I: the
+  [ ]           previous, next screen
   ⏎             go to the row's agent pane
   l             open the campaign
   h             back, close (esc too)
@@ -21,10 +19,12 @@
   click         select; double-click is ⏎
   ⏎ moves every client attached to that Herdr
   server.
+  Each screen keeps its place; switching reads
+  nothing. 0-9 and H shape the Dashboard only.
+  Detail scrolls; esc or h returns to its row.
   7, 9: the campaign last opened with l, as
   cached; l or o reads it again, r does not.
   8: listed campaigns only; / filters it, not
   7 or 9. 0: trip-to-japan/trip issues by
   current assignee, read at most every 5 min
-  while shown; r does not hurry it. H: the
  j k scroll   h close

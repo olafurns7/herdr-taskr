@@ -1,6 +1,6 @@
  taskr                             ! no data
-1 asks+ · 2 checks+ · 3 camps+
-4 PRs+ · 5 Shipped+ · 6 Build+ · 7-9,0,H off
+ [D Dashboard]  A Asks   F Fleet   I Detail
+panels 1+ 2+ 3+ 4+ 5+ 6+ 7- 8- 9- 0- H-
 
 
 

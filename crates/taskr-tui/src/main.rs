@@ -233,18 +233,19 @@ fn main() -> ExitCode {
             let now = Instant::now();
             if !options.demo {
                 dirty |= app.advance_time(time::OffsetDateTime::now_utc().unix_timestamp(), now);
-                let glance = app.screen == Screen::Glance;
-                let ship_visible = glance && app.config.panels[4];
-                let build_visible = glance && app.config.panels[5];
+                // A source reads only while its card is on the Dashboard with nothing over it.
+                // Navigation never starts one: a screen switch keeps each source's schedule.
+                let ship_visible = app.admits(4);
+                let build_visible = app.admits(5);
                 dirty |= shipped.tick(&mut app, now, ship_visible, pr_manual);
                 dirty |= builds.tick(&mut app, now, build_visible, pr_manual);
-                let visible = app.screen == Screen::Glance && app.config.panels[3];
+                let visible = app.admits(3);
                 dirty |= github.tick(&mut app, now, visible, pr_manual);
                 // Manual `r` reaches it, but its admission budget ignores manual.
-                let issues_visible = glance && app.config.panels[9];
+                let issues_visible = app.admits(9);
                 dirty |= issues.tick(&mut app, now, issues_visible, pr_manual);
                 // Its own minute budget; manual `r` does not reach it.
-                let health_visible = glance && app.config.panels[10];
+                let health_visible = app.admits(10);
                 dirty |= hub_health.tick(&mut app, now, health_visible);
             }
             pr_manual = false;

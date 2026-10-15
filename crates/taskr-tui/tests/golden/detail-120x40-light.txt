@@ -1,0 +1,40 @@
+ taskr ❯ detail                                                           hub atlas · 2s ago   ● 3 need you  3 to check
+  D Dashboard   A Asks 3   F Fleet 11  [I Detail]
+╭ ask 61812 · infra-layout ────────────────────────────────────────────────────────────────────────────────────────────╮
+│ from Dashboard · NEEDS YOU · row 3                                                                                   │
+│ BLOCKING · asker waiting · 3m ago · atlas w62:p1                                                                     │
+│                                                                                                                      │
+│ Release runbook for v2.5, ready to run once you pick the window. Each step waits for the one before:                 │
+│ 1. Freeze the release branch and post the freeze note in the team channel.                                           │
+│ 2. Tag the release candidate from the head of the release branch.                                                    │
+│ 3. Build the server, the client and the daemon for both architectures.                                               │
+│ 4. Run the full suite on the build host with the slow tests switched on.                                             │
+│ 5. Install the candidate on the staging host and replay one day of traffic.                                          │
+│ 6. Compare the replay's error rate and latency with the last release.                                                │
+│ 7. Write the changelog from the merged pull requests since v2.4.                                                     │
+│ 8. Publish the candidate to the beta channel and wait one hour for crash reports.                                    │
+│ 9. Promote the candidate to stable if the beta channel stays quiet.                                                  │
+│ 10. Update the install docs and the upgrade notes for the new flags.                                                 │
+│ 11. Unfreeze the release branch and merge it back into main.                                                         │
+│ 12. Close the release milestone and archive the runbook with the timings.                                            │
+│ When: (A) tonight after 22:00 [recommended]; (B) tomorrow morning.                                                   │
+│                                                                                                                      │
+│ Options                                                                                                              │
+│  A tonight after 22:00  recommended                                                                                  │
+│  B tomorrow morning                                                                                                  │
+│                                                                                                                      │
+│ infra-layout · last 4 h                                                                                              │
+│ ██    ██                                ██                                                                           │
+│ ██    ████    ██  ██▂▂██                ██                                                                           │
+│ ██  ▂▂████▇▇▂▂██▇▇██████▄▄▂▂  ▂▂▂▂▄▄▄▄  ██▂▂▇▇▇▇                                                                     │
+│                                                                                                                      │
+│ lead · idle   lanes —                                                                                                │
+│ last cache-audit lead root=4040 pane=w41:p1: campaign complete, docs PR merged                                       │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ h back   ⏎ go to lead   a answer   l open   D A F I screens   y copy   s slotr   q quit   ? help

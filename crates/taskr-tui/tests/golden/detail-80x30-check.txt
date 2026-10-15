@@ -1,0 +1,30 @@
+ taskr                                        2s ago   ● 2 need you  3 to check
+  D Dashboard   A Asks 2   F Fleet 11  [I Detail]
+╭ check · map-tiles-polish ────────────────────────────────────────────────────╮
+│ from Dashboard · TO CHECK · row 1                                            │
+│ lead unregistered and silent · 2h ago · laptop  ↗                            │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ h back   l open   D A F I screens   ? help

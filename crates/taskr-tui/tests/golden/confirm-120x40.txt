@@ -1,40 +1,40 @@
- taskr ❯ glance                                                           hub atlas · 2s ago   ● 2 need you  3 to check
+ taskr ❯ dashboard                                                        hub atlas · 2s ago   ● 2 need you  3 to check
+ [D Dashboard]  A Asks 2   F Fleet 11   I Detail
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
 H Health-
  3 notes still carry OWNER items
-╭ Glance ──────────────────────────────────────────────────╮╭ ask 61767 · tui-frames ──────────────────────────────────╮
-│ NEEDS YOU ──────────────────────────────────────────── 2 ││ BLOCKING · asker waiting · 41s ago · atlas w31:p1        │
-│▌? ◇ tui-frames           BLOCKING                  ⏎  41s││                                                          │
-│▌  Frames follow-up is ready: PR #212 (orphaned asks hid… ││ Frames follow-up is ready: PR #212 (orphaned asks        │
-│ ? ◇ ios-widgets                             laptop ↗   6m││ hidden, close warns). (A) merge #212 and release v2.4.1  │
-│   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash).… ││ now [recommended]; (B) merge, hold the release for the   │
-│ TO CHECK ───────────────────────────────────────────── 3 ││ next change.                                             │
-│ ! map-tiles-polish                            laptop   2h││                                                          │
-│   lead unregistere╭ Answer ask 61767 · tui-frames ───────────────────────────────────────────────╮                   │
-│ ! infra-layout    │                                                                              │recommended        │
-│   lead idle with 3│  You are about to send this answer. It cannot be changed or sent twice.      │t change           │
-│ ! host build-mini │                                                                              │                   │
-│   host stale: no h│  to    tui-frames lead · atlas w31:p1 · waiting for this answer              │                   │
-│ CAMPAIGNS ────────│  text  A: merge #212 and release v2.4.1 now                                  │                   │
-│ ◐ search-index    │                                                                              │                   │
-│   Research complet│  runs  taskr answer 61767 "A: merge #212 and release v2.4.1 now"             │                   │
-│ ◐ auth-rotation   │                                                                              │                   │
-│   Implementation s│   y send    e edit    esc cancel, nothing is sent                            │                   │
-│ ○ billing-export  │                                                                              │                   │
-│   FYI 61448 from s│                                                                              │                   │
-│ ○ docs-refresh    │                                                                              │                   │
-│   Hub FYI: keep th│                                                                              │                   │
-│ ○ checkout-flow   │                                                                              │                   │
-│   FIX: three P2 fi╰──────────────────────────────────────────────────────────────────────────────╯                   │
-│ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁  laptop  7m││                                                          │
-│   Widget batch approved (asks 61199, 61367): 19 PRs mer… │╰──────────────────────────────────────────────────────────╯
-│ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆         8m│╭ tui-frames · last 4 h ───────────────────────────────────╮
-│   NOW: plan rev 3.1 sent; the trust rules and the first… ││       ██      ██        ██      ██                       │
-│ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃        12m││       ██      ██  ██▂▂  ██▂▂    ██          ████         │
-│   cache-audit lead root=4040 pane=w41:p1: campaign comp… ││     ▇▇██    ▇▇██▇▇████  ████▂▂  ██  ▄▄▇▇▂▂▄▄████         │
-│ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁        14m││                                                          │
-│ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁        54m││ lead ◐ working   lanes ●●●●○○                            │
-│ ‖ legacy-importer                              parked  3h││ last NOW: plan rev 3.1 sent; the trust rules and the     │
-│ · 2 quiet                                                ││ first frames are in flight.                              │
-╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
- ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   y copy   s slotr   q quit   ? help
+ NEEDS YOU ────────────────────────────────────────────────────────────────────────────────────────────────────────── 2
+▌? ◇ tui-frames           BLOCKING                                                                                ⏎  41s
+▌  Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns). (A) merge #212 and release v2.4.1 now [reco…
+ ? ◇ ios-widgets                                                                                           laptop ↗   6m
+   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). STOPPED, per your rule (conflict on the way): #641 and the th…
+ TO CHECK ─────────────────────────────────────────────────────────────────────────────────────────────────────────── 3
+ ! map-tiles-polish                                                                                          laptop   2h
+   lead unregistered╭ Answer ask 61767 · tui-frames ───────────────────────────────────────────────╮
+ ! infra-layout     │                                                                              │                  2h
+   lead idle with 3 │  You are about to send this answer. It cannot be changed or sent twice.      │
+ ! host build-mini  │                                                                              │           mini  12m
+   host stale: no he│  to    tui-frames lead · atlas w31:p1 · waiting for this answer              │
+ CAMPAIGNS ─────────│  text  A: merge #212 and release v2.4.1 now                                  │──────────────── 11
+ ◐ search-index     │                                                                              │                 19s
+   Research complete│  runs  taskr answer 61767 "A: merge #212 and release v2.4.1 now"             │
+ ◐ auth-rotation    │                                                                              │                 29s
+   Implementation sl│   y send    e edit    esc cancel, nothing is sent                            │
+ ○ billing-export   │                                                                              │                 33s
+   FYI 61448 from se│                                                                              │
+ ○ docs-refresh     │                                                                              │                  2m
+   Hub FYI: keep the│                                                                              │
+ ○ checkout-flow    │                                                                              │                  3m
+   FIX: three P2 fin╰──────────────────────────────────────────────────────────────────────────────╯
+ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁                                                                laptop  7m
+   Widget batch approved (asks 61199, 61367): 19 PRs merged; the last 4 wait for your answer.
+ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆                                                                       8m
+   NOW: plan rev 3.1 sent; the trust rules and the first frames are in flight.
+ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃                                                                      12m
+   cache-audit lead root=4040 pane=w41:p1: campaign complete, docs PR merged
+ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁                                                                      14m
+   matrix run A finished
+ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                                                                      54m
+ ‖ legacy-importer                                                                                            parked  3h
+ · 2 quiet
+ ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   D A F I screens   y copy   s slotr   ? help

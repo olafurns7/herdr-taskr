@@ -1,6 +1,6 @@
  taskr            ◓   ! stale 40s  2 need you
-1 asks+ · 2 checks+ · 3 camps+
-4 PRs+ · 5 Shipped+ · 6 Build+ · 7-9,0,H off
+ [D Dash]  A Asks 2   F Fleet 11   I Detail
+panels 1+ 2+ 3+ 4+ 5+ 6+ 7- 8- 9- 0- H-
  3 notes still carry OWNER items
  ! hub unreachable · showing 14:16 · retry 4s
  NEEDS YOU ──────────────────────────────── 2
@@ -15,7 +15,7 @@
    lead idle with 3 results
  ! host build-mini                   mini  12m
    host stale: no heartbeat for 12 m
- CAMPAIGNS ─────────────────────────────── 10
+ CAMPAIGNS ─────────────────────────────── 11
  ◐ search-index      ●       ▁▁▁▁▁█▃       19s
  ◐ auth-rotation     ●       ▁▁▁▄▄▁█       29s
  ○ billing-export    ●       ▁▂▁▁▄█▁       33s
