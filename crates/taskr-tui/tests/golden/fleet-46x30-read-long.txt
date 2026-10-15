@@ -1,0 +1,30 @@
+ taskr      2s ago   ● 2 need you  3 to check
+  D Dash   A Asks 2  [F Fleet 11]  I Detail
+ 3 notes still carry OWNER items
+   campaign             w/r/o     age
+ ◐ search-index         1/0/1     19s
+ ◐ auth-rotation        0/1/1     29s
+ ○ billing-export       1/0/1     33s
+•○ docs-refresh         1/0/1      2m
+ ○ checkout-flow        1/1/2      3m
+ ◐ ios-widgets          0/0/0      7m
+▌◐ warehouse-inventory… 3/1/6      8m
+ · infra-layout         0/0/0     12m
+ ◐ model-evals          5/2/9     14m
+ ○ api-pagination       1/0/1     54m
+ ‖ legacy-importer      0/0/0      3h
+ quiet 2: cache-audit · font-swap · folded, n…
+ 11 listed only · 13/5/22 lanes w/r/o
+
+ LANES · warehouse-inve… #4120 ─ read 40s ago
+ ◐ warehouse-inventory-… lead              14s
+ │ ◐ sub-list-core       opus 5.5 high      4m
+ │ │ ○ rev-list-harness  opus 5.5 medium   21m
+ │ ╰ ◐ impl-list-harness gpt-6.1-sol high   4m
+ │ ◐ impl-frames         opus 5.5 medium   40s
+ │ ◐ impl-trust-rules    gpt-6.1-sol high   2m
+ ╰ ● arch-plan-counter2  fable 5.1 xhigh    9m
+ 6 of 29 lanes, open shown · l opens all
+ Lanes show only after l reads a campaign; mo…
+
+ ⏎ go   l open   p park   ? help

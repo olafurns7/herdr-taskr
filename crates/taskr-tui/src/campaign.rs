@@ -23,13 +23,13 @@ const PANES: [&str; 5] = ["Lanes", "Asks", "Docs", "PRs", "Log"];
 const DOCS: usize = 2;
 
 /// One row of the lane tree; `lane` is `None` for the lead.
-struct LaneRow<'a> {
+pub(crate) struct LaneRow<'a> {
     prefix: String,
-    lane: Option<&'a Lane>,
+    pub(crate) lane: Option<&'a Lane>,
 }
 
 /// The lead, then its lanes depth first: open ones before closed ones, newest first.
-fn tree(c: &Campaign) -> Vec<LaneRow<'_>> {
+pub(crate) fn tree(c: &Campaign) -> Vec<LaneRow<'_>> {
     fn walk<'a>(c: &'a Campaign, parent: i64, indent: &str, out: &mut Vec<LaneRow<'a>>) {
         let mut kids: Vec<&Lane> = c.lanes.iter().filter(|l| l.parent_id == parent).collect();
         kids.sort_by_key(|l| (l.status == "closed", -l.id));
@@ -95,7 +95,12 @@ fn role(lane: &Lane) -> &str {
     }
 }
 
-fn lane_line(app: &App, row: &LaneRow, narrow: bool, width: usize) -> Vec<Span<'static>> {
+pub(crate) fn lane_line(
+    app: &App,
+    row: &LaneRow,
+    narrow: bool,
+    width: usize,
+) -> Vec<Span<'static>> {
     let (t, c, g) = (&app.theme, &app.data.campaign, &app.data.glance);
     let cols = if narrow { 22 } else { 45 };
     let name_w = width.saturating_sub(cols);

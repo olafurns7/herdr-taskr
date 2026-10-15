@@ -1,0 +1,30 @@
+ taskr                                        2s ago   ● 2 need you  3 to check
+  D Dashboard   A Asks 2  [F Fleet 0]  I Detail
+ 3 notes still carry OWNER items
+▌No listed campaigns; not a fleet-wide idle claim
+ quiet 2: cache-audit · font-swap · folded, not listed · c lists them
+ 0 listed only · 0/0/0 lanes w/r/o
+
+ LANES ─────────────────────────────────────────────────────── nothing read yet
+ l opens the selected campaign and reads its lanes; they stay here after it clo…
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ c all campaigns   D A F I screens   ? help

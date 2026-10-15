@@ -2,7 +2,7 @@
   D Dash   A Asks 2   F Fleet 11  [I Detail]
 ╭ search-index · #4310 ──────────────────────╮
 │ from Dashboard · CAMPAIGNS · row 1         │
-│ lead ◐ working   lanes ●                   │
+│ lead ◐ working lanes w/r/o 1/0/1 · 19s ago │
 │                                            │
 │ Research complete:                         │
 │ reports/ranking-options.md compares three  │

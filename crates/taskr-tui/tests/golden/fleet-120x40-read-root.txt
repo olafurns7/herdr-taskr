@@ -1,0 +1,40 @@
+ taskr ❯ fleet                                                            hub atlas · 2s ago   ● 2 need you  3 to check
+  D Dashboard   A Asks 2  [F Fleet 11]  I Detail
+ 3 notes still carry OWNER items
+ lead state  campaign        host    lanes w/r/o activity 4h              last milestone                             age
+ ◐ working   search-index            1/0/1       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃ Research complete: reports/ranking-optio…  19s
+ ◐ working   auth-rotation           0/1/1       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█ Implementation slice: key rollover job, …  29s
+ ○ waiting   billing-export          1/0/1       ▁▆▁▂▁▁██▁▂▁█▁▁▂▁█▁▂▁▁▄█▁ FYI 61448 from search-index (root 4310):…  33s
+•○ waiting   docs-refresh            1/0/1       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂ Hub FYI: keep the page map machine-reada…   2m
+ ○ waiting   checkout-flow           1/1/2       ▃▁▁▂▄▁▁▁▂█▆▄██▄▃▂▁▂▁▃█▄█ FIX: three P2 findings in the review of …   3m
+ ◐ working   ios-widgets     laptop  0/0/0       ▃▆▁▁▅▄▂▇▃▂█▄▁▁▁▂▂▁▁▁▂▁▂▁ Widget batch approved (asks 61199, 61367…   7m
+▌◐ working   tui-frames              3/1/6       ▁▁▃█▁▁▃█▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆ NOW: plan rev 3.1 sent; the trust rules …   8m
+ · idle      infra-layout            0/0/0       █▁▁█▆▃▁▆▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃ cache-audit lead root=4040 pane=w41:p1: …  12m
+ ◐ working   model-evals             5/2/9       ▁▂▄▅▄▆▆▄▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁ matrix run A finished                      14m
+ ○ waiting   api-pagination          1/0/1       ▃▁▃▇▂▁▅█▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁ S4 cursor split merged; contract tests g…  54m
+ ‖ parked    legacy-importer         0/0/0       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁ Held by the owner until the import budge…   3h
+ quiet 2: cache-audit · font-swap · folded, not listed · c lists them
+ totals  working 13 · ready 5 · open 22 lanes in 11 listed campaigns (listed only, not every host)
+
+ LANES · tui-frames #4120 ─────────────────────────────────────────────────────────────────── read 40s ago · l re-reads
+ ◐ tui-frames                                                        lead     —                atlas  w31:p1  14s
+ │ ◐ sub-list-core                                                   sub-orch opus 5.5 high    laptop w07:p1   4m
+ │ │ ○ rev-list-harness                                              review   opus 5.5 medium  laptop         21m
+ │ ╰ ◐ impl-list-harness                                             impl     gpt-6.1-sol high laptop w08:p2   4m
+ │ ◐ impl-frames                                                     impl     opus 5.5 medium  atlas  w02:p1  40s
+ │ ◐ impl-trust-rules                                                impl     gpt-6.1-sol high atlas  w00:p4   2m
+ ╰ ● arch-plan-counter2                                              research fable 5.1 xhigh  atlas  w82:p2   9m report
+ 6 of 29 lanes, open shown · l opens all
+ Lanes show only after l reads a campaign; moving the cursor never reads.
+
+
+
+
+
+
+
+
+
+
+
+ ⏎ go to lead   l open (reads lanes)   p park   c closed too   a asks   / filter   D A F I screens   y copy   ? help

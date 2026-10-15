@@ -1,29 +1,29 @@
  taskr      2s ago   * 2 need you  3 to check
   D Dash   A Asks 2  [F Fleet 11]  I Detail
  3 notes still carry OWNER items
- CAMPAIGNS ------------------------------- 11
- * search-index      *       _____#.       19s
-   Research complete: reports/ranking-option.
- * auth-rotation     *       ___--_#       29s
-   Implementation slice: key rollover job, f.
-|o billing-export    *       _.__-#_       33s
-|  FYI 61448 from search-index (root 4310): .
-.o docs-refresh      *       _____#.        2m
-   Hub FYI: keep the page map machine-readab.
- o checkout-flow     **      _._.#-#        3m
-   FIX: three P2 findings in the review of t.
- * ios-widgets       -       __#-#- laptop  7m
-   Widget batch approved (asks 61199, 61367).
- * tui-frames        ****oo  _.-_.##        8m
-   NOW: plan rev 3.1 sent; the trust rules a.
- . infra-layout      -       .._#_..       12m
-   cache-audit lead root=4040 pane=w41:p1: c.
- * model-evals       ******+ ###_##_       14m
-   matrix run A finished
- o api-pagination    *       ___#-__       54m
-   S4 cursor split merged; contract tests gr.
- | legacy-importer                  parked  3h
- . 2 quiet
+   campaign        w/r/o    last mileston  age
+ * search-index    1/0/1    Research com.  19s
+ * auth-rotation   0/1/1    Implementati.  29s
+|o billing-export  1/0/1    FYI 61448 fr.  33s
+.o docs-refresh    1/0/1    Hub FYI: kee.   2m
+ o checkout-flow   1/1/2    FIX: three P.   3m
+ * ios-widgets     0/0/0    Widget batch.   7m
+ * tui-frames      3/1/6    NOW: plan re.   8m
+ . infra-layout    0/0/0    cache-audit .  12m
+ * model-evals     5/2/9    matrix run A.  14m
+ o api-pagination  1/0/1    S4 cursor sp.  54m
+ | legacy-importer 0/0/0    Held by the .   3h
+ quiet 2: cache-audit . font-swap . folded, n.
+ 11 listed only . 13/5/22 lanes w/r/o
+
+ LANES --------------------- nothing read yet
+ l opens the selected campaign and reads its .
+
+
+
+
+
+
 
 
 

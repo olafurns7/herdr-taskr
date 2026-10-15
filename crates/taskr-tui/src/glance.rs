@@ -66,7 +66,7 @@ fn ledger_panel(panel: &Panel) -> bool {
 
 /// The campaign panels 7 and 9 read: the last one opened on purpose, once it arrived.
 /// Never the cursor's campaign, and never a total over campaigns.
-fn scoped(app: &App) -> Option<&Campaign> {
+pub(crate) fn scoped(app: &App) -> Option<&Campaign> {
     app.scope.read_at.map(|_| &app.data.campaign)
 }
 
@@ -1803,6 +1803,13 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
             go(&a.host, &a.pane_id),
             (a.root_id != 0).then(|| hint("l", None)),
         ],
+        // Fleet's `l` also fills the lanes under its roster; `c` lists the closed ones too.
+        Selected::Campaign(c) if app.screen == Screen::Fleet && wide => vec![
+            go(&c.host, &c.pane_id),
+            Some(hint("l", Some("open (reads lanes)"))),
+            Some(hint("p", None)),
+            Some(hint("c", Some("closed too"))),
+        ],
         Selected::Campaign(c) => vec![
             go(&c.host, &c.pane_id),
             Some(hint("l", None)),
@@ -1997,7 +2004,11 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
             ask_pane(f, app, below);
         }
     }
-    self::body(f, app, cards, tiny);
+    if app.screen == Screen::Fleet && state_height == 0 {
+        crate::fleet::body(f, app, cards, tiny);
+    } else {
+        self::body(f, app, cards, tiny);
+    }
     // After the body: the Asks screen's hints depend on what it drew.
     ui::footer(f, app, foot, &hints(app, wide));
     if let Some(error) = stale {
@@ -2495,12 +2506,29 @@ fn detail_lines(app: &App, width: usize) -> Option<(String, Vec<Line<'static>>)>
             )
         }
         Selected::Campaign(c) => {
+            // Every fact a narrow Fleet row drops: the lead's word, the host, counts with
+            // `?` for one the snapshot left out (never pips that would read as zero), age.
+            let mark = if c.parked {
+                sp("‖", t.dim)
+            } else {
+                ui::lead_mark(t, &c.lead, c.lead_waiting)
+            };
             let mut head = vec![
                 sp("lead ", t.dim),
-                ui::lead_mark(t, &c.lead, c.lead_waiting),
-                sp(format!(" {}   lanes ", c.lead), t.sub),
+                mark,
+                sp(
+                    format!(
+                        " {}   lanes w/r/o {}",
+                        crate::fleet::state(c),
+                        crate::fleet::counts(c)
+                    ),
+                    t.sub,
+                ),
             ];
-            head.extend(ui::pips(t, &c.lanes, 7));
+            if !g.local(&c.host) {
+                head.push(sp(format!(" · {}", ui::host_name(g, &c.host)), t.remote));
+            }
+            head.push(sp(format!(" · {} ago", age(c.activity_age_ms)), t.sub));
             if let Some(label) = c.tmp_label() {
                 head.push(sp(format!(" · {label}"), t.dim));
             }

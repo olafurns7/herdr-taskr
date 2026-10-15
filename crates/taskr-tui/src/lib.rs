@@ -17,6 +17,7 @@ pub mod theme;
 mod ask;
 mod campaign;
 mod dialog;
+mod fleet;
 mod glance;
 mod keys;
 mod lists;
@@ -391,7 +392,10 @@ impl App {
             (shipped, app.issues.assignees(at))
         };
         // A cached panel's age is on screen: a new minute is a new frame.
-        let aged = (self.config.panels[6] || self.config.panels[8])
+        // Fleet's cached lanes say their age too, under an overlay as well.
+        let fleet = self.screen == Screen::Fleet
+            || self.back.first().is_some_and(|b| b.screen == Screen::Fleet);
+        let aged = (self.config.panels[6] || self.config.panels[8] || fleet)
             && self.scope.age(self.observed_at) != self.scope.age(at);
         if signature(self, self.observed_at) == signature(self, at) {
             self.observed_at = at;

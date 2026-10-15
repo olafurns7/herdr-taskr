@@ -112,6 +112,25 @@ fn fleet(app: &mut App) {
     app.row = 2;
 }
 
+/// Fleet after `l` read tui-frames 40 s ago: its lanes cached under the roster, the cursor
+/// on another campaign.
+fn fleet_read(app: &mut App) {
+    fleet(app);
+    app.scope.read_at = Some(app.observed_at - 40);
+}
+
+/// The cached campaign under a long name, the cursor on its row: the root and the read age
+/// stay whole, the name gives way.
+fn fleet_read_long(app: &mut App) {
+    fleet_read(app);
+    let long = "warehouse-inventory-reconciliation-tui";
+    app.data.campaign.root.name = long.into();
+    if let Some(c) = app.data.glance.campaigns.iter_mut().find(|c| c.id == 4120) {
+        c.name = long.into();
+    }
+    app.row = 6;
+}
+
 /// `a` on a Fleet row: the picker over Fleet, the second ask highlighted.
 fn picker(app: &mut App) {
     fleet(app);
@@ -583,6 +602,88 @@ pub fn all() -> Vec<Spec> {
             // Panel 3 hidden on the Dashboard: Fleet still lists every listed campaign.
             fleet(app);
             app.config.panels[2] = false;
+        }),
+        spec("fleet", 40, 12, "", fleet),
+        spec("fleet", 120, 40, "-read", fleet_read),
+        spec("fleet", 120, 40, "-read-light", fleet_read),
+        spec("fleet", 80, 30, "-read", fleet_read),
+        spec("fleet", 46, 30, "-read", fleet_read),
+        spec("fleet", 46, 30, "-read-light", fleet_read),
+        spec("fleet", 46, 30, "-read-ascii", |app| {
+            fleet_read(app);
+            app.ascii = true;
+            app.theme = theme::PLAIN;
+        }),
+        spec("fleet", 120, 40, "-read-plain", |app| {
+            // NO_COLOR: the terminal's own colours.
+            fleet_read(app);
+            app.theme = theme::PLAIN;
+        }),
+        spec("fleet", 46, 20, "-read", fleet_read),
+        spec("fleet", 40, 12, "-read", fleet_read),
+        spec("fleet", 120, 40, "-reading", |app| {
+            // `l` on search-index, still on its way: the lanes on hand stay, named.
+            fleet_read(app);
+            app.row = 0;
+            app.scope.want = Some((4310, Screen::Fleet, 0));
+        }),
+        spec("fleet", 120, 40, "-failed", |app| {
+            // The re-read failed: the last good read stays, with its age and the error.
+            fleet_read(app);
+            app.scope.error = Some("reading tui-frames failed: hub unreachable".into());
+        }),
+        spec("fleet", 46, 30, "-failed-first", |app| {
+            // The first read failed: nothing cached, the error said.
+            fleet(app);
+            app.scope.error = Some("reading search-index failed: hub unreachable".into());
+        }),
+        spec("fleet", 120, 40, "-missing", |app| {
+            // Counts the snapshot did not carry: `?`, and totals that say so.
+            fleet(app);
+            app.data.glance.campaigns[0].lanes.known = [true, false, true];
+            app.data.glance.campaigns[6].lanes.known = [false; 3];
+        }),
+        spec("fleet", 46, 30, "-missing", |app| {
+            fleet(app);
+            app.data.glance.campaigns[0].lanes.known = [true, false, true];
+            app.data.glance.campaigns[6].lanes.known = [false; 3];
+        }),
+        spec("fleet", 120, 40, "-filter", |app| {
+            fleet_read(app);
+            app.filter = "doc".into();
+            app.row = 0;
+        }),
+        spec("fleet", 80, 30, "-quiet-only", |app| {
+            // Nothing listed, two quiet: never a fleet-wide idle claim.
+            fleet(app);
+            app.data.glance.campaigns.clear();
+            app.row = 0;
+        }),
+        spec("fleet", 120, 40, "-stale", |app| {
+            stale(app);
+            app.screen = Screen::Fleet;
+            app.row = 2;
+            app.scope.read_at = Some(app.observed_at - 40);
+        }),
+        spec("fleet", 46, 30, "-read-long", fleet_read_long),
+        spec("fleet", 40, 12, "-read-long", fleet_read_long),
+        spec("fleet", 120, 40, "-read-root", |app| {
+            fleet_read(app);
+            app.row = 6;
+        }),
+        spec("fleet", 120, 40, "-read-orphan", |app| {
+            fleet_read(app);
+            if let Some(l) = app.data.campaign.lanes.iter_mut().find(|l| l.id == 4190) {
+                l.status = "closed".into();
+            }
+        }),
+        spec("detail", 46, 30, "-fleet-remote", |app| {
+            fleet(app);
+            if let Some(c) = app.data.glance.campaigns.iter_mut().find(|c| c.id == 4087) {
+                c.lanes.known = [true, false, true];
+            }
+            app.row = 5;
+            app.inspect();
         }),
         spec("issues", 120, 40, "", issues),
         spec("issues", 120, 40, "-light", issues),
