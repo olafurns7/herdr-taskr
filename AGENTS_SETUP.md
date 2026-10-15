@@ -158,10 +158,14 @@ taskr daemon --restart   # start it now instead of at the next agent detection
 (`ExecStart=... taskr daemon --stay`, `loginctl enable-linger`). It keeps the
 ledger served while Herdr is down.
 
-**macOS, at login.** taskr ships no launchd agent. This one is the same idea as
-the systemd unit; save it as `~/Library/LaunchAgents/dev.taskr.daemon.plist`
-with your home directory in place of `/Users/you`, then
-`launchctl load ~/Library/LaunchAgents/dev.taskr.daemon.plist`:
+**macOS, at login.** taskr ships no launchd agent. The one below is the same
+idea as the systemd unit. Run `mkdir -p ~/Library/LaunchAgents`, save it as
+`~/Library/LaunchAgents/dev.taskr.daemon.plist` with your home directory in
+place of `/Users/you`, then run
+`launchctl load ~/Library/LaunchAgents/dev.taskr.daemon.plist`. The
+[health check](#health-check) below must pass before you rely on it.
+
+Untested on macOS:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -215,10 +219,18 @@ Tailscale nodes of the same Tailscale user.
 1. On the hub: `mkdir -p ~/.local/state/taskr && echo tailnet > ~/.local/state/taskr/dashboard.addr`, then
    `taskr daemon --restart`. Expect `"role":"hub"` and a `"tailnet_url"` in
    `taskr daemon --status`.
-2. On the client: install taskr (step 2), leave `TASKR_DB` unset, write that
-   `tailnet_url` to `~/.local/state/taskr/server.url`, then
-   `taskr daemon --restart`. Expect `"mode":"client"` with the `"server"` in
-   the status, and `taskr status` answering from the hub.
+2. On the client: install taskr (step 2) and leave `TASKR_DB` unset. Write
+   the hub's `tailnet_url` to `server.url`; the state directory does not
+   exist until taskr first runs, so create it:
+
+   ```sh
+   mkdir -p ~/.local/state/taskr
+   printf '%s\n' 'http://hub.example.ts.net:7788' > ~/.local/state/taskr/server.url   # your hub's tailnet_url
+   taskr daemon --restart
+   ```
+
+   Expect `"mode":"client"` with the `"server"` in `taskr daemon --status`,
+   and `taskr status` answering from the hub.
 
 Full steps, the spool and moving an existing ledger:
 [install.md, step 7](docs/install.md#7-multiple-machines) and
@@ -297,18 +309,8 @@ own tab beside the session after `taskr start` registered the thread:
 `pi --extension /path/to/herdr-taskr/adapters/pi/taskr-push.ts`
 ([push.md, pi](docs/push.md#pi)).
 
-To check that the server answers (it needs a lane identity; step 7 creates
-one), send it the MCP handshake:
-
-```sh
-printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"check","version":"0"}}}' \
-  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
-  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' |
-  TASKR_TASK="$lane" TASKR_LAUNCH="$launch" taskr mcp | grep -o '"name":"taskr_[a-z]*"'
-```
-
-Expect nine tool names, `"name":"taskr_task"` through `"name":"taskr_fail"`.
+The check in [step 7](#7-verify-end-to-end) starts the server for a
+throwaway lane, sends it the MCP handshake and lists its nine tools.
 
 ## 6. Terminal view settings
 
@@ -345,70 +347,82 @@ login of the machine running `taskr-tui`. Every panel and key:
 
 ## 7. Verify end to end
 
-This registers a small campaign on the ledger, reports through it as a worker
-would, and reads it back. It needs no Herdr and no agent. Run it in one shell,
-in a scratch directory, since it writes two small files.
+This checks the task flow: it registers a small campaign, reports through it
+as a worker would, and reads it back. It needs no Herdr and no agent. It runs
+on a throwaway ledger, `~/taskr-check/check.db`, never your real one: the
+script runs in a subshell that sets `TASKR_DB` and unsets `TASKR_TASK`,
+`TASKR_LAUNCH` and `TASKR_BIN`. That way it is safe inside an agent lane or on
+a client host with `server.url`, and your environment is unchanged
+afterwards. The daemon's health is checked separately, by
+[step 3](#health-check).
+
+`mkdir` stops the script if `~/taskr-check` already exists; move that
+directory aside first or pick another name.
 
 ```sh
-mkdir -p ~/taskr-check && cd ~/taskr-check
-root=$(taskr new setup-check --role orchestrator | sed -n 's/^n1 //p'); echo "root=$root"
+mkdir ~/taskr-check && (
+  cd ~/taskr-check || exit 1
+  unset TASKR_TASK TASKR_LAUNCH TASKR_BIN
+  export TASKR_DB="$PWD/check.db"
+  set -e
+  root=$(taskr new setup-check --role orchestrator | sed -n 's/^n1 //p'); echo "root=$root"
+  printf 'Check the taskr install.\n' > brief.md
+  lane=$(taskr new setup-lane --role implementer --parent "$root" --brief "$PWD/brief.md" | sed -n 's/^n1 //p')
+  launch=$(taskr launch "$lane" --provider manual --model none --effort none |
+    sed -n 's/.*"launch_id":\([0-9]*\).*/\1/p')
+  echo "lane=$lane launch=$launch"
+  # The worker reports (an orchestrator would start an agent with these set):
+  TASKR_TASK=$lane TASKR_LAUNCH=$launch taskr note "install checked"
+  printf 'All good.\n' > report.md
+  TASKR_TASK=$lane TASKR_LAUNCH=$launch taskr ready "setup check done" --report "$PWD/report.md"
+  # The orchestrator wakes on the report and marks it handled:
+  event=$(taskr wait --as "$root" --for ready --timeout 5000 | tee /dev/stderr | cut -f2)
+  taskr ack "$event" --as "$root"
+  # The owner's view:
+  taskr glance --brief
+  # The MCP server, bound to the lane (step 5):
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"check","version":"0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' |
+    TASKR_TASK="$lane" TASKR_LAUNCH="$launch" taskr mcp | grep -o '"name":"taskr_[a-z]*"'
+)
 ```
 
-Expect `root=` and a number. Two notes on stderr are normal for a root made
-by hand: `no goal recorded for root N` and `lead has no pane`.
+Expect, in order:
 
-```sh
-printf 'Check the taskr install.\n' > brief.md
-lane=$(taskr new setup-lane --role implementer --parent "$root" --brief "$PWD/brief.md" | sed -n 's/^n1 //p')
-launch=$(taskr launch "$lane" --provider manual --model none --effort none |
-  sed -n 's/.*"launch_id":\([0-9]*\).*/\1/p')
-echo "lane=$lane launch=$launch"
-```
+- on stderr, two notes that are normal for a root made by hand:
+  `no goal recorded for root 1` and `lead has no pane`;
+- `root=1`, then `lane=2 launch=1`;
+- `n1 1`, then `r1 2` (the note and the ready report);
+- an `e1` line ending in `"setup check done"` and the report path, then
+  `k1 2`;
+- a header line `taskr · <time> · cursor=2 · 1 to check`, a `⚠ hub  daemon`
+  line ("no live Herdr connection; no heartbeat": this throwaway ledger has
+  never seen a daemon, so it says so even when yours is healthy), then
+  `○ setup-check  root=1  0/1 working ...` with `setup check done` under it;
+- nine tool names, `"name":"taskr_task"` through `"name":"taskr_fail"`.
 
-Expect two numbers. In real use an orchestrator does this and starts an agent
-with `TASKR_TASK` and `TASKR_LAUNCH` set; here you play the worker:
-
-```sh
-TASKR_TASK=$lane TASKR_LAUNCH=$launch taskr note "install checked"
-printf 'All good.\n' > report.md
-TASKR_TASK=$lane TASKR_LAUNCH=$launch taskr ready "setup check done" --report "$PWD/report.md"
-```
-
-Expect `n1 <id>` then `r1 <id>`. Now be the orchestrator and wait for it:
-
-```sh
-event=$(taskr wait --as "$root" --for ready --timeout 5000 | tee /dev/stderr | cut -f2)
-taskr ack "$event" --as "$root"
-```
-
-Expect an `e1` line ending in `"setup check done"` and the report path, then
-`k1 <event>`. Then the owner's view:
-
-```sh
-taskr glance --brief
-```
-
-Expect a header line `taskr · <time> · cursor=<n>`, then
-`○ setup-check  root=<root> ...` with `setup check done` under it. Without
-Herdr there is also `⚠ hub  daemon` "no live Herdr connection", which is
-expected. Then open the terminal view in a real terminal:
+Then open the terminal view in a real terminal, first with invented data,
+then on the throwaway ledger:
 
 ```sh
 taskr-tui --demo   # invented data; reads and writes nothing
-taskr-tui          # your ledger: setup-check under CAMPAIGNS
+env -u TASKR_TASK -u TASKR_LAUNCH -u TASKR_BIN TASKR_DB="$HOME/taskr-check/check.db" taskr-tui
 ```
 
-Press `?` for the keys and `q` to quit. Optionally run the MCP check from
-[step 5](#the-mcp-server-and-push-channel) now, in the same shell. Finally
-close the check and remove its files:
+Expect `setup-check` under CAMPAIGNS in the second. Press `?` for the keys and
+`q` to quit. `taskr-tui` without the `env` prefix shows your real ledger.
+
+Finally remove only what the check created:
 
 ```sh
-taskr close "$lane" --outcome accepted
-taskr close "$root"
-cd ~ && rm -r ~/taskr-check
+rm -f ~/taskr-check/brief.md ~/taskr-check/report.md \
+  ~/taskr-check/check.db ~/taskr-check/check.db-wal ~/taskr-check/check.db-shm
+rmdir ~/taskr-check
 ```
 
-Expect `c1 <lane>` and `c1 <root>`.
+`rmdir` fails, and keeps the directory, if anything else is in it.
 
 ## 8. Common failures
 
