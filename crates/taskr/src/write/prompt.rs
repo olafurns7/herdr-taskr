@@ -130,6 +130,10 @@ pub fn prompt(f: &FlagSet) -> Result<Value> {
             ));
         }
     }
+    let mut db = open()?;
+    if let Some(push) = route(&mut db, id, f)? {
+        return Ok(push);
+    }
     let abs = if file.is_empty() {
         String::new()
     } else {
@@ -173,7 +177,21 @@ pub fn prompt(f: &FlagSet) -> Result<Value> {
         receipt_recipient: None,
         answer: None,
     };
-    deliver(&mut open()?, id, d, f.json())
+    deliver(&mut db, id, d, f.json())
+}
+pub(crate) fn route(db: &mut db::Connection, id: i64, f: &FlagSet) -> Result<Option<Value>> {
+    if f.was_set("as") && f.get_int("as") <= 0 {
+        return Err(store::usage("--as must be a positive task id"));
+    }
+    store::message::route(
+        db,
+        id,
+        f.get_int("as"),
+        f.get_string("text"),
+        f.get_string("file"),
+        f.get_bool("push"),
+        f.get_bool("pane"),
+    )
 }
 fn deliver(db: &mut db::Connection, id: i64, d: Delivery<'_>, json_mode: bool) -> Result<Value> {
     let sock = herdr::socket();
@@ -253,7 +271,11 @@ pub(crate) fn begin(
         if let Some(host) = host.as_ref()
             && (!here || store::caller_machine().as_deref() != Some(host.as_str()))
         {
-            let message = if !here && store::caller_machine().as_deref() == Some(host.as_str()) {
+            let message = if t.parent.is_none() {
+                format!(
+                    "root {id} is not push-live and is on host {host}; prompt it from that host"
+                )
+            } else if !here && store::caller_machine().as_deref() == Some(host.as_str()) {
                 format!(
                     "lane {} is on {host}, this caller's host; send it with `taskr prompt {id}` there",
                     t.name
@@ -395,6 +417,9 @@ pub(crate) fn finish(
         ..
     } = a;
     let mut out = json!({"task_id":id,"attempt_id":attempt,"target":target,"outcome":outcome});
+    if store::task(db, id)?.parent.is_none() {
+        out["path"] = json!("pane");
+    }
     let mut data = json!({"outcome":outcome});
     for (k, v) in detail.as_object().expect("object") {
         out[k] = v.clone();

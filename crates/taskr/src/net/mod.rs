@@ -652,7 +652,7 @@ pub fn route(mut json_mode: bool, raw_args: &[String]) -> Option<ExitCode> {
             }
         }
         if cmd == "prompt"
-            && let Some(code) = prompt::relay(&cl, &lead, &cargs, &cwd_text, &env, json_mode)?
+            && let Some(code) = prompt::relay(&cl, &lead, &cargs, &cwd_text, &env, json_mode, &key)?
         {
             return Ok(code);
         }

@@ -14,11 +14,14 @@ mod inbox;
 pub(crate) use inbox::observe::{daemon_observe, host_snapshot};
 mod prompt;
 mod question;
-pub(crate) use prompt::{Attempt, Delivery, begin, finish};
+pub(crate) use prompt::{Attempt, Delivery, begin, finish, route as prompt_route};
 
 pub fn flags(cmd: &str, json: bool) -> FlagSet {
     let mut f = FlagSet::new(cmd, json);
     match cmd {
+        "message status" => {
+            f.int("as", 0, "the sender root's own task id");
+        }
         "next" => {
             f.bool("clear", false, "clear the lane's next step");
         }
@@ -34,7 +37,7 @@ pub fn flags(cmd: &str, json: bool) -> FlagSet {
                 .int("cancel", 0, "cancel this subscription id");
         }
         "delivery new" | "delivery submitted" | "delivery received" | "delivery ls"
-        | "delivery state" => {
+        | "delivery state" | "delivery exhausted" => {
             f.int(
                 "as",
                 0,
@@ -56,7 +59,7 @@ pub fn flags(cmd: &str, json: bool) -> FlagSet {
                     "attempt watermark before an uncertain insert",
                 );
             }
-            if cmd == "delivery new" {
+            if cmd == "delivery new" || cmd == "delivery exhausted" {
                 f.string(
                     "adapter",
                     "",
@@ -288,7 +291,7 @@ pub fn flags(cmd: &str, json: bool) -> FlagSet {
                 .string("name", "", "plan name, [a-z0-9][a-z0-9._-]{0,63}");
         }
         "prompt" => {
-            f.string("file","","prompt file; the agent is told to read it").string("text","","literal prompt text").bool("confirm",false,"after observed activity, wait for the worker's taskr got receipt").int("confirm-timeout",60000,"milliseconds to wait for the receipt").int("receipt-timeout",300000,"without --confirm: milliseconds until a missing receipt alarms the parent; 0 disarms");
+            f.int("as",0,"the sender root for orchestrator messages").bool("push",false,"require a push-live root target").bool("pane",false,"force pane delivery").string("file","","prompt file; the agent is told to read it").string("text","","literal prompt text").bool("confirm",false,"after observed activity, wait for the worker's taskr got receipt").int("confirm-timeout",60000,"milliseconds to wait for the receipt").int("receipt-timeout",300000,"without --confirm: milliseconds until a missing receipt alarms the parent; 0 disarms");
         }
         "handover" => {
             f.int("as", 0, "the root orchestrator's own task id")
@@ -471,6 +474,7 @@ pub fn emit(cmd: &str, json_mode: bool, v: &Value) {
                 }
             ),
         },
+        "message status" | "delivery exhausted" => crate::cli::emit(false, v, false),
         "delivery state" => println!("j1 {}", compact_json(v).expect("JSON")),
         "delivery ls" => {
             for r in v["attempts"].as_array().expect("attempts") {
@@ -504,6 +508,7 @@ pub fn emit(cmd: &str, json_mode: bool, v: &Value) {
                 format!("launch={}", v["launch_id"])
             }
         ),
+        "prompt" if v["path"] == "push" => println!("m1 {}", compact_json(v).expect("JSON")),
         "prompt" | "answer" => {
             let mut m = json!({});
             for (k, v) in v.as_object().expect("object") {
@@ -553,13 +558,15 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
             },
             &args[2..],
         )
-    } else if raw == "delivery" || raw == "consumer" {
-        const SUBS: [(&str, &str); 9] = [
+    } else if matches!(raw, "delivery" | "consumer" | "message") {
+        const SUBS: [(&str, &str); 11] = [
+            ("status", "message status"),
             ("new", "delivery new"),
             ("submitted", "delivery submitted"),
             ("received", "delivery received"),
             ("ls", "delivery ls"),
             ("state", "delivery state"),
+            ("exhausted", "delivery exhausted"),
             ("take", "consumer take"),
             ("renew", "consumer renew"),
             ("release", "consumer release"),
@@ -586,10 +593,10 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
             return Some(error(
                 f.json(),
                 raw,
-                store::usage(if raw == "delivery" {
-                    "delivery needs new, submitted, received or ls"
-                } else {
-                    "consumer needs take, renew, release or show"
+                store::usage(match raw {
+                    "delivery" => "delivery needs new, submitted, received or ls",
+                    "message" => "message needs status",
+                    _ => "consumer needs take, renew, release or show",
                 }),
                 json!({}),
             ));
@@ -627,6 +634,8 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
         "delivery received",
         "delivery ls",
         "delivery state",
+        "delivery exhausted",
+        "message status",
         "consumer take",
         "consumer renew",
         "consumer release",
@@ -663,6 +672,7 @@ pub fn dispatch(json_mode: bool, args: &[String]) -> Option<ExitCode> {
     }
     // A repeated help flag would run as a write locally but read as help to the hub.
     let once: &[&str] = match cmd {
+        "prompt" | "message status" => &["as", "push", "pane", "help"],
         _ if cmd.starts_with("delivery ") => {
             &["as", "session", "adapter", "fence", "after", "help"]
         }
@@ -769,6 +779,11 @@ fn open() -> Result<db::Connection> {
 fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
     let p = &f.positional;
     match cmd {
+        "message status" => store::message::status(
+            &open()?,
+            store::id(&f.positional[0], "event id")?,
+            f.get_int("as"),
+        ),
         "next" => {
             let id = store::id(&p[0], "task id")?;
             let text = p.get(1).map_or("", String::as_str).trim();
@@ -862,7 +877,7 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
             )
         }
         "delivery new" | "delivery submitted" | "delivery received" | "delivery ls"
-        | "delivery state" => {
+        | "delivery state" | "delivery exhausted" => {
             let as_id = f.get_int("as");
             if f.was_set("as") && as_id <= 0 {
                 return Err(store::usage("--as must be a positive task id"));
@@ -881,6 +896,15 @@ fn run(cmd: &str, f: &FlagSet) -> Result<Value> {
                     ));
                 }
                 return store::delivery::state(&open()?, as_id, session, id, adapter, after);
+            }
+            if cmd == "delivery exhausted" {
+                let id = store::id(&p[0], "event id")?;
+                let fence = if f.was_set("fence") {
+                    Some(f.get_int("fence"))
+                } else {
+                    None
+                };
+                return store::message::unreceived(&mut open()?, as_id, session, id, fence);
             }
             if cmd != "delivery new" {
                 let id = store::id(&p[0], "attempt id")?;

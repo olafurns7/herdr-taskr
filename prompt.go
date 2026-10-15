@@ -24,6 +24,9 @@ func cmdPrompt(c *ctx, args []string) (any, int, error) {
 	fs := flag.NewFlagSet("prompt", flag.ContinueOnError)
 	file := fs.String("file", "", "prompt file; the agent is told to read it")
 	text := fs.String("text", "", "literal prompt text")
+	fs.Int64("as", 0, "the sender root for orchestrator messages")
+	fs.Bool("push", false, "require a push-live root target")
+	fs.Bool("pane", false, "force pane delivery")
 	confirm := fs.Bool("confirm", false, "after observed activity, wait for the worker's taskr got receipt")
 	confirmTimeout := fs.Int64("confirm-timeout", 60000, "milliseconds to wait for the receipt")
 	receiptTimeout := fs.Int64("receipt-timeout", defaultReceiptTimeout.Milliseconds(),
@@ -258,6 +261,13 @@ func beginAttempt(c *ctx, db *sql.DB, taskID int64, d delivery, here bool, ready
 // for the receipt after observed activity.
 func finishDelivery(db *sql.DB, a attempt, outcome string, detail map[string]any, confirm bool, timeout time.Duration) (any, int, error) {
 	out := map[string]any{"task_id": a.taskID, "attempt_id": a.id, "target": a.target, "outcome": outcome}
+	var parent sql.NullInt64
+	if err := db.QueryRow("select parent_id from tasks where id=?", a.taskID).Scan(&parent); err != nil {
+		return nil, 0, err
+	}
+	if !parent.Valid {
+		out["path"] = "pane"
+	}
 	odata := map[string]any{"outcome": outcome}
 	for k, v := range detail {
 		odata[k], out[k] = v, v
