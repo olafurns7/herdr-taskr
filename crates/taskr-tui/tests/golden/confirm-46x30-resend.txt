@@ -1,0 +1,30 @@
+ taskr ❯ answer        2s ago   ● 5 need you
+ ask 61767 · tui-frames
+ BLOCKING · waiting · 41s · atlas w31:p1
+
+ Whether this answer reached the ledger is
+ unknown, and the ask is still open. y sends
+ it again unchanged, with the same request
+ key.
+
+ to    tui-frames lead · atlas w31:p1 ·
+       waiting for this answer
+ text  A: yes
+
+ runs  taskr answer 61767 "A: yes"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ y resend   esc keep it

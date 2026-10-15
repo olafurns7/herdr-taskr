@@ -216,11 +216,12 @@ fn main() -> ExitCode {
                 }
             }
             for (job, result) in results.try_iter() {
+                // Taken first: an unknown answer's time is before the read the wake starts.
+                input::done(&mut app, &job, result);
                 // What was written shows at once, not at the next tick.
                 if !job.reads() {
                     let _ = wake.send(());
                 }
-                input::done(&mut app, &job, result);
                 if job == actions::Job::Slotr {
                     let now = Instant::now();
                     (slotr_started, slotr_due) = (None, Some(now + SLOTR_EVERY));

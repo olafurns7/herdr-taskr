@@ -5,7 +5,8 @@ use std::{
     env,
     io::{BufRead, BufReader, Read, Write},
     os::unix::net::UnixStream,
-    time::Duration,
+    sync::atomic::{AtomicU64, Ordering},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
@@ -17,11 +18,13 @@ use crate::{
 pub enum Job {
     /// Focus a pane on this host's Herdr server. It moves every client attached to it.
     Focus { pane: String },
-    /// `taskr answer ASK TEXT`, with `--prompt` when the asker is not waiting.
+    /// `taskr --request-key KEY answer ASK TEXT`, with `--prompt` when the asker is not
+    /// waiting. The key is this submission's: a resend carries the same one.
     Answer {
         ask_id: i64,
         text: String,
         prompt: bool,
+        key: String,
     },
     /// `taskr set ROOT glance.state=parked`, or `glance.state=` to unpark.
     Park { root: i64, name: String, park: bool },
@@ -44,12 +47,21 @@ pub enum Job {
 #[derive(Debug, Clone)]
 pub enum Done {
     Ok,
-    /// Done, with something the owner should know.
-    Note(String),
     Campaign(Box<Campaign>),
     Doc(String),
     Slotr(Box<Slotr>),
+    /// An answer the ledger recorded as event `answer_id`, with what the owner should
+    /// know (not delivered to its pane, the asker stopped waiting), or empty.
+    Answered {
+        answer_id: i64,
+        note: String,
+    },
+    /// An answer the ledger refused, in its own words: nothing was recorded.
+    Refused(String),
 }
+
+/// What a local-mode taskr says to `--request-key`, before it reads or writes anything.
+const LOCAL_KEY: &str = "--request-key is only for client mode (a server.url without TASKR_DB)";
 
 impl Job {
     /// What the job does, for the question before it and the line after it.
@@ -82,11 +94,12 @@ impl Job {
                 ask_id,
                 text,
                 prompt,
+                key,
             } => {
                 let prompt: &[&str] = if *prompt { &["--prompt"] } else { &[] };
                 args(
                     &[
-                        &["--json", "answer"],
+                        &["--json", "--request-key", key, "answer"],
                         prompt,
                         &["--", &ask_id.to_string(), text],
                     ]
@@ -117,24 +130,55 @@ impl Job {
             return focus(&socket, pane).map(|()| Done::Ok);
         };
         let command: Vec<String> = taskr.iter().cloned().chain(args).collect();
-        let out = client::run(&command, client::TIMEOUT)?;
+        // One bound for the job, the keyless try included.
+        let deadline = Instant::now() + client::TIMEOUT;
+        let mut out = client::run(&command, client::TIMEOUT)?;
         match self {
             Job::Answer { prompt, .. } => {
+                // A local-mode taskr refuses the key before it touches the ledger, in these
+                // exact words: that one refusal allows one try without it. The ledger
+                // records one answer per ask, so the try cannot answer twice.
+                let local = serde_json::json!({"error": LOCAL_KEY, "kind": "usage"});
+                if out.status.code() == Some(2) && reply(&out) == Some(local) {
+                    let keyless: Vec<String> = command
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| !(taskr.len() + 1..taskr.len() + 3).contains(i))
+                        .map(|(_, a)| a.clone())
+                        .collect();
+                    let left = deadline.saturating_duration_since(Instant::now());
+                    if left.is_zero() {
+                        return Err(format!(
+                            "taskr did not answer in {}s",
+                            client::TIMEOUT.as_secs()
+                        ));
+                    }
+                    out = client::run(&keyless, left)?;
+                }
+                let reply = reply(&out).unwrap_or_default();
                 // An answer can be recorded and still fail to reach the asker's pane: the
                 // reply then carries both the answer and the error.
-                let reply: serde_json::Value =
-                    serde_json::from_slice(&out.stdout).unwrap_or_default();
-                if reply["answer_id"].as_i64().is_none() {
-                    return Err(out.reason());
-                }
+                let Some(answer_id) = reply["answer_id"].as_i64() else {
+                    // Only the ledger's own refusal says nothing was recorded; anything
+                    // else (timeout, transport, queued, no reply) leaves it unknown.
+                    return match (
+                        out.status.code(),
+                        reply["kind"].as_str(),
+                        reply["error"].as_str(),
+                    ) {
+                        (Some(6), Some("rejected"), Some(error)) => Ok(Done::Refused(error.into())),
+                        _ => Err(out.reason()),
+                    };
+                };
                 let waiting = reply["asker_waiting"].as_bool().unwrap_or(true);
-                Ok(match reply["error"].as_str() {
-                    Some(error) => Done::Note(format!("not delivered to its pane: {error}")),
+                let note = match reply["error"].as_str() {
+                    Some(error) => format!("not delivered to its pane: {error}"),
                     None if !waiting && !prompt => {
-                        Done::Note("the asker stopped waiting; prompt it by hand".into())
+                        "the asker stopped waiting; prompt it by hand".into()
                     }
-                    None => Done::Ok,
-                })
+                    None => String::new(),
+                };
+                Ok(Done::Answered { answer_id, note })
             }
             Job::Campaign { .. } => {
                 let campaign = serde_json::from_slice(&out.text()?)
@@ -152,6 +196,22 @@ impl Job {
             _ => out.text().map(|_| Done::Ok),
         }
     }
+}
+
+/// A new submission's request key: this process, the clock and a count, so no two
+/// submissions share one. Within taskr's `[A-Za-z0-9_-]{8,128}`.
+pub fn request_key(ask_id: i64) -> String {
+    static COUNT: AtomicU64 = AtomicU64::new(0);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let n = COUNT.fetch_add(1, Ordering::Relaxed);
+    format!("tui-{:x}-{nanos:x}-{n}-{ask_id}", std::process::id())
+}
+
+/// The one JSON value taskr printed on stdout, or None.
+fn reply(out: &client::Output) -> Option<serde_json::Value> {
+    serde_json::from_slice(&out.stdout).ok()
 }
 
 /// A reply longer than this is not one of Herdr's.
@@ -237,15 +297,45 @@ mod tests {
             ask_id: 7,
             text: "-B: no".into(),
             prompt,
+            key: "tui-key-0007".into(),
         };
         assert_eq!(
             answer(false).args().unwrap(),
-            ["--json", "answer", "--", "7", "-B: no"]
+            [
+                "--json",
+                "--request-key",
+                "tui-key-0007",
+                "answer",
+                "--",
+                "7",
+                "-B: no"
+            ]
         );
         assert_eq!(
             answer(true).args().unwrap(),
-            ["--json", "answer", "--prompt", "--", "7", "-B: no"]
+            [
+                "--json",
+                "--request-key",
+                "tui-key-0007",
+                "answer",
+                "--prompt",
+                "--",
+                "7",
+                "-B: no"
+            ]
         );
+        // Every submission has its own key, within taskr's rule.
+        let (a, b) = (request_key(7), request_key(7));
+        assert_ne!(a, b);
+        for key in [a, b] {
+            assert!(
+                (8..=128).contains(&key.len())
+                    && key
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
+                "{key}"
+            );
+        }
         let park = |park| Job::Park {
             root: 3,
             name: "x".into(),
@@ -275,35 +365,110 @@ mod tests {
         let fake = |script: &str| -> Vec<String> {
             ["sh", "-c", script, "taskr"].map(String::from).into()
         };
+        let dir = scratch("answer");
+        let log = dir.join("calls");
+        // Each call's arguments, one line per call, then the script's reply.
+        let logged = |script: &str| {
+            fake(&format!(
+                "printf '%s|' \"$@\" >> {}; echo >> {}; {script}",
+                log.display(),
+                log.display()
+            ))
+        };
+        let calls = || {
+            let calls = fs::read_to_string(&log).unwrap_or_default();
+            let _ = fs::remove_file(&log);
+            calls.lines().map(String::from).collect::<Vec<_>>()
+        };
         let answer = |prompt| Job::Answer {
             ask_id: 5,
             text: "A: yes".into(),
             prompt,
+            key: "tui-key-0001".into(),
         };
+        let run = |job: Job, script: &str| job.run(&logged(script));
         let recorded =
             r#"echo '{"answer_id":6,"ask_id":5,"asker_waiting":true,"delivered":true,"ok":true}'"#;
-        assert!(matches!(answer(false).run(&fake(recorded)), Ok(Done::Ok)));
+        assert!(
+            matches!(run(answer(false), recorded), Ok(Done::Answered { answer_id: 6, note }) if note.is_empty())
+        );
+        // The key goes before the command, the text after `--`; one call.
+        assert_eq!(
+            calls(),
+            ["--json|--request-key|tui-key-0001|answer|--|5|A: yes|"]
+        );
         // Recorded, but the prompt did not reach the pane: not a failure, and said so.
         let undelivered = r#"echo 'taskr answer: no pane' >&2; echo '{"answer_id":6,"ask_id":5,"error":"task 1 has no pane or agent name to prompt","kind":"usage","ok":true}'; exit 2"#;
-        let Ok(Done::Note(note)) = answer(true).run(&fake(undelivered)) else {
-            panic!("a note")
-        };
-        assert_eq!(
-            note,
-            "not delivered to its pane: task 1 has no pane or agent name to prompt"
+        assert!(
+            matches!(run(answer(true), undelivered), Ok(Done::Answered { answer_id: 6, note }) if note == "not delivered to its pane: task 1 has no pane or agent name to prompt")
         );
         // The asker stopped waiting after the snapshot, so no prompt went out.
         let late = r#"echo '{"answer_id":6,"ask_id":5,"asker_waiting":false,"delivered":false,"ok":true}'"#;
         assert!(
-            matches!(answer(false).run(&fake(late)), Ok(Done::Note(n)) if n.contains("stopped waiting"))
+            matches!(run(answer(false), late), Ok(Done::Answered { note, .. }) if note.contains("stopped waiting"))
         );
-        assert!(matches!(answer(true).run(&fake(late)), Ok(Done::Ok)));
+        assert!(
+            matches!(run(answer(true), late), Ok(Done::Answered { note, .. }) if note.is_empty())
+        );
+        assert_eq!(calls().len(), 3);
+        // The ledger's own refusal: not recorded, in its words.
         let refused =
             r#"echo '{"error":"ask 5 is already answered by event 6","kind":"rejected"}'; exit 6"#;
-        assert_eq!(
-            answer(false).run(&fake(refused)).unwrap_err(),
-            "ask 5 is already answered by event 6"
+        assert!(
+            matches!(run(answer(false), refused), Ok(Done::Refused(r)) if r == "ask 5 is already answered by event 6")
         );
+        assert_eq!(calls().len(), 1);
+        // Anything short of a receipt or that refusal is unknown: an exit code alone, a
+        // usage error, transport, an outcome-unknown reply, a queued one, no reply.
+        for script in [
+            "exit 6",
+            r#"echo '{"error":"ask 5 is already answered","kind":"usage"}'; exit 2"#,
+            r#"echo '{"error":"x","kind":"rejected"}'; echo '{}'; exit 6"#,
+            r#"echo '{"error":"server unreachable (connection refused)","kind":"transport"}'; exit 5"#,
+            r#"echo '{"error":"request outcome unknown","kind":"transport"}'; exit 5"#,
+            r#"echo '{"queued":true,"request_key":"tui-key-0001"}'"#,
+            r#"echo '{"ok":true}'"#,
+            "echo 'not json'",
+        ] {
+            assert!(run(answer(false), script).is_err(), "{script}");
+        }
+        assert_eq!(calls().len(), 8, "no retry for any of them");
+        // A local-mode taskr refuses the key, exactly so: one try without it, the same
+        // ask, prompt flag and text.
+        let local = r#"echo '{"error":"--request-key is only for client mode (a server.url without TASKR_DB)","kind":"usage"}'; exit 2"#;
+        let fallback = format!(
+            r#"if [ "$2" = --request-key ]; then {local}; fi; echo '{{"answer_id":8,"ask_id":5,"asker_waiting":true,"ok":true}}'"#
+        );
+        assert!(matches!(
+            run(answer(true), fallback.as_str()),
+            Ok(Done::Answered { answer_id: 8, .. })
+        ));
+        assert_eq!(
+            calls(),
+            [
+                "--json|--request-key|tui-key-0001|answer|--prompt|--|5|A: yes|",
+                "--json|answer|--prompt|--|5|A: yes|"
+            ]
+        );
+        // The keyless try's own result counts, unknown included; there is no third.
+        assert!(run(answer(false), local).is_err());
+        assert_eq!(calls().len(), 2);
+        let then_refused = format!(r#"if [ "$2" = --request-key ]; then {local}; fi; {refused}"#);
+        assert!(matches!(
+            run(answer(false), then_refused.as_str()),
+            Ok(Done::Refused(_))
+        ));
+        assert_eq!(calls().len(), 2);
+        // Not that exact refusal, no keyless try: another field, another exit, other words.
+        for script in [
+            r#"echo '{"error":"--request-key is only for client mode (a server.url without TASKR_DB)","kind":"usage","try":"x"}'; exit 2"#,
+            r#"echo '{"error":"--request-key is only for client mode (a server.url without TASKR_DB)","kind":"usage"}'; exit 1"#,
+            r#"echo '{"error":"--request-key is only for client mode","kind":"usage"}'; exit 2"#,
+        ] {
+            assert!(run(answer(false), script).is_err(), "{script}");
+            assert_eq!(calls().len(), 1, "{script}");
+        }
+        let _ = fs::remove_dir_all(&dir);
 
         // The P1b sample, as `taskr --json campaign` prints it.
         let sample: serde_json::Value =
@@ -427,21 +592,25 @@ mod tests {
         };
         let asks = open(&run);
         assert_eq!(asks.len(), 3);
+        // A local ledger refuses the request key; the answer goes without it.
         let answer = |ask_id, text: &str, prompt| {
             Job::Answer {
                 ask_id,
                 text: text.into(),
                 prompt,
+                key: request_key(ask_id),
             }
             .run(&taskr)
         };
 
         assert!(matches!(
             answer(asks[0], "A: yes", false),
-            Ok(Done::Ok | Done::Note(_))
+            Ok(Done::Answered { answer_id, .. }) if answer_id > 0
         ));
         // The ledger refuses a second answer, in its own words.
-        let again = answer(asks[0], "B: no", false).unwrap_err();
+        let Ok(Done::Refused(again)) = answer(asks[0], "B: no", false) else {
+            panic!("a refusal")
+        };
         assert!(
             again.contains("already answered") && !again.contains('{'),
             "{again}"
@@ -451,7 +620,7 @@ mod tests {
         // The lead has no pane: the answer is recorded and the failed prompt is a note.
         let note = answer(asks[2], "A: yes", true);
         assert!(
-            matches!(&note, Ok(Done::Note(n)) if n.starts_with("not delivered")),
+            matches!(&note, Ok(Done::Answered { note, .. }) if note.starts_with("not delivered")),
             "{note:?}"
         );
         assert!(open(&run).is_empty());

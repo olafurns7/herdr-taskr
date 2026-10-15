@@ -1,40 +1,40 @@
  taskr ❯ asks                                                             hub atlas · 2s ago   ● 5 need you  3 to check
   D Dashboard  [A Asks 5]  F Fleet 11   I Detail
  3 notes still carry OWNER items
- NEEDS YOU ────────────────────────────────────────────────────────────────────────────────────────────────────────── 5
- ? ◆ fleet-hub            BLOCKING HUB                                                                            ⏎  25s
-   Release: Cut the v3.2 release today, or wait for the cache fix? (A) Cut today; (B) Wait for the fix
-▌? ◆ auth-rotation        BLOCKING                                                                                ⏎   2m
-▌  Tokens: Which signing scheme should the rotated service tokens use? (A) Ed25519; (B) RSA-2048; (C) HMAC-SHA256
- ? ◆ docs-refresh                                                                                                 ⏎   4m
-   Translations landed for three of the four locales. Locales: Which locales ship in the first docs release? (A) Engli…
- ? ◇ tui-frames           BLOCKING                                                                                ⏎  41s
-   Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns). (A) merge #212 and release v2.4.1 now [reco…
- ? ◇ ios-widgets                                                                                           laptop ↗   6m
-   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). STOPPED, per your rule (conflict on the way): #641 and the th…
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
- ⏎ go to lead   a answer   l open   / filter   D A F I screens   y copy   s slotr   q quit   ? help
+ NEEDS YOU ──────────────────────────────── 5 ╭ ask 61790 · auth-rotation ─────────────────────────────────────────────╮
+ ? ◆ fleet-hub            BLOCKING HUB  ⏎  25s│ BLOCKING · asker waiting · 2m ago · atlas w20:p1                       │
+   Release: Cut the v3.2 release today, or w… │                                                                        │
+▌? ◆ auth-rotation        BLOCKING      ⏎   2m│ Tokens: Which signing scheme should the rotated service tokens use?    │
+▌  Tokens: Which signing scheme should the r… │                                                                        │
+ ? ◆ docs-refresh                       ⏎   4m│ Options                                                                │
+   Translations landed for three of the four… │  A Ed25519  ★ recommended                                              │
+ ? ◇ tui-frames           BLOCKING      ⏎  41s│     Short keys and fast checks; every client library we ship supports  │
+   Frames follow-up is ready: PR #212 (orpha… │     it already.                                                        │
+ ? ◇ ios-widgets                 laptop ↗   6m│  B RSA-2048                                                            │
+   WIDGET BATCH: 19 of 23 merged (14:02-14:0… │     Matches today's tokens, so no client changes, but rotation takes   │
+                                              │     four times as long.                                                │
+                                              │  C HMAC-SHA256                                                         │
+                                              │     Simplest to run, but every verifier then holds the signing secret. │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              ╰────────────────────────────────────────────────────────────────────────╯
+ ⏎ answer   a answer   l open   / filter   D A F I screens   y copy   s slotr   q quit   ? help

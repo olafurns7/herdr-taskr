@@ -27,4 +27,4 @@
 
 
 
- > go   a answer   l open   ? help
+ > read in full   a answer   l open   ? help

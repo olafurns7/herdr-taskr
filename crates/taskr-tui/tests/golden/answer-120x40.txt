@@ -6,20 +6,20 @@ H Health-
  NEEDS YOU ────────────────────────────────────────────── 2  TO CHECK ─────────────────────────────────────────────── 3
 ▌? ◇ tui-frames           BLOCKING                    ⏎  41s ! map-tiles-polish                              laptop   2h
 ▌  Frames follow-up is ready: PR #212 (orphaned asks hidde…    lead unregistered and silent
- ? ◇ ios-widgets                               laptop ↗   6m ! infra-layout                                           2h
-   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…    lead idle with 3 results
-                    ╭ Answer ask 61767 · tui-frames ───────────────────────────────────────────────╮           mini  12m
+ ? ◇ ios-widgets    ╭ Answer ask 61767 · tui-frames ───────────────────────────────────────────────╮                  2h
+   WIDGET BATCH: 19 │                                                                              │
+                    │  Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns).     │           mini  12m
                     │                                                                              │
- CAMPAIGNS ─────────│  Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns).     │──────────────── 11
- ◐ search-index     │                                                                              │                 19s
-   Research complete│   ❯ A  merge #212 and release v2.4.1 now  recommended                        │
- ◐ auth-rotation    │     B  merge, hold the release for the next change                           │                 29s
-   Implementation sl│     …  write your own answer                                                 │
- ○ billing-export   │                                                                              │                 33s
-   FYI 61448 from se│  ──────────────────────────────────────────────────────────────────────────  │
- ○ docs-refresh     │   answer  A: merge #212 and release v2.4.1 now                               │                  2m
+ CAMPAIGNS ─────────│   ❯ A  merge #212 and release v2.4.1 now  recommended                        │──────────────── 11
+ ◐ search-index     │     B  merge, hold the release for the next change                           │                 19s
+   Research complete│     …  write your own answer                                                 │
+ ◐ auth-rotation    │                                                                              │                 29s
+   Implementation sl│  ──────────────────────────────────────────────────────────────────────────  │
+ ○ billing-export   │   answer  A: merge #212 and release v2.4.1 now                               │                 33s
+   FYI 61448 from se│                                                                              │
+ ○ docs-refresh     │   j k choose    tab edit the text    ⏎ review before sending    esc cancel   │                  2m
    Hub FYI: keep the│                                                                              │
- ○ checkout-flow    │   j k choose    tab edit the text    ⏎ review before sending    esc cancel   │                  3m
+ ○ checkout-flow    │                                                                              │                  3m
    FIX: three P2 fin│                                                                              │
  ◐ ios-widgets      │                                                                              │          laptop  7m
    Widget batch appr│                                                                              │
@@ -27,9 +27,9 @@ H Health-
    NOW: plan rev 3.1│                                                                              │
  · infra-layout     │                                                                              │                 12m
    cache-audit lead │                                                                              │
- ◐ model-evals      ╰──────────────────────────────────────────────────────────────────────────────╯                 14m
-   matrix run A finished
- ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                                                                      54m
+ ◐ model-evals      │                                                                              │                 14m
+   matrix run A fini│                                                                              │
+ ○ api-pagination   ╰──────────────────────────────────────────────────────────────────────────────╯                 54m
    S4 cursor split merged; contract tests green on both hosts
  ‖ legacy-importer                                                                                            parked  3h
  · 2 quiet

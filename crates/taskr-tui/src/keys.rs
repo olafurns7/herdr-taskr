@@ -73,7 +73,7 @@ pub(crate) const KEYS: &[Key] = &[
         "Go",
         "⏎",
         "go",
-        "go to the row's agent pane",
+        "go to the row's agent pane; on Asks, answer",
         GLANCE | LIST | DETAIL | CAMPAIGN | SLOTR,
     ),
     key(
@@ -109,13 +109,7 @@ pub(crate) const KEYS: &[Key] = &[
         "select; double-click is ⏎",
         GLANCE | LIST | CAMPAIGN | SLOTR,
     ),
-    key(
-        "Act",
-        "a",
-        "answer",
-        "answer the selected ask",
-        GLANCE | LIST | DETAIL | CAMPAIGN,
-    ),
+    key("Act", "a", "answer", "answer this ask, else pick one", ALL),
     key(
         "Act",
         "p",

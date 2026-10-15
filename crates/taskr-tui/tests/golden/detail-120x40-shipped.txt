@@ -37,4 +37,4 @@
 │                                                                                                                      │
 │                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- h back   D A F I screens   s slotr   q quit   ? help
+ h back   a asks   D A F I screens   s slotr   q quit   ? help

@@ -443,9 +443,35 @@ fn second(text: &str, color: Color, width: usize) -> Vec<Span<'static>> {
     ]
 }
 
-fn ask_card(app: &App, width: usize, offset: usize) -> Card {
+/// An ask's two lines, as the Needs you card and the picker draw it.
+pub(crate) fn ask_lines(app: &App, a: &Need, on: bool, width: usize) -> Vec<Line<'static>> {
     let (t, g) = (&app.theme, &app.data.glance);
     let body = width.saturating_sub(1);
+    // ◆ a structured ask, ◇ options found in its text; HUB: the hub's own dialog.
+    let mut left = vec![
+        bold("? ", t.need),
+        bold(format!("{} ", ask::mark(a)), t.accent),
+        bold(pad(&a.campaign, 20.min(body.saturating_sub(24))), t.text),
+    ];
+    if a.blocking {
+        left.push(bold(" BLOCKING", t.need));
+    }
+    if a.dialog {
+        left.push(bold(" HUB", t.remote));
+    }
+    let right = vec![
+        Span::raw(" "),
+        place(t, g, &a.host, &a.pane_id),
+        sp(format!("{:>4}", age(a.age_ms)), t.sub),
+    ];
+    vec![
+        ui::row(t, ui::spread(left, right, body), on, false, t.need, width),
+        ui::row(t, second(&a.text, t.sub, width), on, false, t.need, width),
+    ]
+}
+
+fn ask_card(app: &App, width: usize, offset: usize) -> Card {
+    let (t, g) = (&app.theme, &app.data.glance);
     let mut card = Card::new(
         app,
         "NEEDS YOU",
@@ -457,29 +483,8 @@ fn ask_card(app: &App, width: usize, offset: usize) -> Card {
     (card.keep, card.unit, card.counted) = (2, ("ask", "asks"), true);
     card.route = "A lists all";
     for (i, a) in g.needs_you.iter().enumerate() {
-        let on = app.row == offset + i;
-        // ◆ a structured ask, ◇ options found in its text; HUB: the hub's own dialog.
-        let mut left = vec![
-            bold("? ", t.need),
-            bold(format!("{} ", ask::mark(a)), t.accent),
-            bold(pad(&a.campaign, 20.min(body.saturating_sub(24))), t.text),
-        ];
-        if a.blocking {
-            left.push(bold(" BLOCKING", t.need));
-        }
-        if a.dialog {
-            left.push(bold(" HUB", t.remote));
-        }
-        let right = vec![
-            Span::raw(" "),
-            place(t, g, &a.host, &a.pane_id),
-            sp(format!("{:>4}", age(a.age_ms)), t.sub),
-        ];
         card.rows.push(Row {
-            lines: vec![
-                ui::row(t, ui::spread(left, right, body), on, false, t.need, width),
-                ui::row(t, second(&a.text, t.sub, width), on, false, t.need, width),
-            ],
+            lines: ask_lines(app, a, app.row == offset + i, width),
             extra: None,
             once: false,
         });
@@ -1772,7 +1777,23 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
         (_, true, true) => Some(hint("⏎", Some("go to lead"))),
         (_, true, false) => Some(hint("⏎", None)),
     };
+    let (page, full) = {
+        let seen = app.seen.borrow();
+        (seen.page, seen.full)
+    };
+    let asks = app.screen == Screen::Asks;
     let mut out: Vec<_> = match selected(app) {
+        // A narrow Asks screen of several asks reads the selected one in full on `⏎`.
+        Selected::Ask(_) if asks && !full => vec![
+            Some(hint("⏎", Some("read in full"))),
+            Some(hint("a", None)),
+            Some(hint("l", None)),
+        ],
+        Selected::Ask(_) if asks => vec![
+            Some(hint("⏎", Some("answer"))),
+            Some(hint("a", None)),
+            Some(hint("l", None)),
+        ],
         Selected::Ask(a) => vec![
             go(&a.host, &a.pane_id),
             Some(hint("a", None)),
@@ -1809,7 +1830,14 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
     if detail {
         out.insert(0, hint("h", None));
     }
+    if asks && full && page.1 > page.0 {
+        out.insert(0, hint("ctrl-d ctrl-u", Some("scroll text")));
+    }
     if wide {
+        // Off an ask, `a` lists every open one to choose from.
+        if !matches!(selected(app), Selected::Ask(_)) {
+            out.push(hint("a", Some("asks")));
+        }
         // `?` last: the footer keeps its last hint when the others give way.
         if app.screen == Screen::Glance {
             out.extend([hint("0-9", None), hint("H", None)]);
@@ -1891,9 +1919,8 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     // The migration count: dim, never red, gone at zero.
     let pending = format!(" {} notes still carry OWNER items", g.owner_notes_pending);
     f.render_widget(Paragraph::new(Line::from(sp(pending, t.dim))), notes);
-    ui::footer(f, app, foot, &hints(app, wide));
-
     if dashboard && !app.config.panels.iter().any(|p| *p) {
+        ui::footer(f, app, foot, &hints(app, wide));
         f.render_widget(
             Paragraph::new("All panels hidden · press 1-9, 0 or H to show").centered(),
             body,
@@ -1923,18 +1950,150 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
             },
         );
     }
-    let cards = Rect {
+    let mut cards = Rect {
         y: body.y + state_height as u16,
         height: body.height.saturating_sub(state_height as u16),
         ..body
     };
     // Every row is reachable: a card windows around the cursor, the body scrolls.
     app.seen.borrow_mut().rows = ids(app).len();
+    // The Asks screen shows the selected ask in full: beside the list from 80 columns,
+    // under it when it is the only one, else `⏎` or `I` reads it on Detail.
+    // The answers sent from here, newest first, under the list.
+    let sent = answered_here(app, cards.width);
+    if app.screen == Screen::Asks && state_height == 0 && !sent.is_empty() {
+        // Whole answers only, newest first, in at most half the room.
+        let room = cards.height.saturating_sub(4) as usize / 2;
+        let mut lines = vec![];
+        for answer in sent {
+            if lines.len() + answer.len() > room {
+                break;
+            }
+            lines.extend(answer);
+        }
+        if !lines.is_empty() {
+            let [list, below] = Layout::vertical([
+                Constraint::Min(0),
+                Constraint::Length(lines.len() as u16 + 1),
+            ])
+            .areas(cards);
+            cards = list;
+            lines.insert(0, Line::from(bold(" ANSWERED HERE", app.theme.sub)));
+            f.render_widget(Paragraph::new(lines), below);
+        }
+    }
+    let asks = g.needs_you.len();
+    if app.screen == Screen::Asks && state_height == 0 && asks > 0 {
+        if cards.width >= 80 {
+            let list = if cards.width >= 100 { 46 } else { 40 };
+            let [left, right] =
+                Layout::horizontal([Constraint::Length(list), Constraint::Min(0)]).areas(cards);
+            cards = left;
+            ask_pane(f, app, right);
+        } else if asks == 1 && cards.height > 6 {
+            let [top, below] =
+                Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(cards);
+            cards = top;
+            ask_pane(f, app, below);
+        }
+    }
     self::body(f, app, cards, tiny);
+    // After the body: the Asks screen's hints depend on what it drew.
+    ui::footer(f, app, foot, &hints(app, wide));
     if let Some(error) = stale {
         // The last frame stays, dimmed, and says so.
         f.render_widget(Paragraph::new(stale_line(app, error)), banner);
     }
+}
+
+/// The lines of each answer sent from here, newest first: what is known of it, and on a
+/// line of its own what the owner should know of a recorded one (not delivered to its pane).
+fn answered_here(app: &App, width: u16) -> Vec<Vec<Line<'static>>> {
+    use crate::Outcome;
+    let t = &app.theme;
+    app.outcomes
+        .iter()
+        .rev()
+        .map(|s| {
+            let (mark, color, what) = match &s.state {
+                Outcome::Sending => ("…", t.sub, "sending".to_string()),
+                Outcome::Recorded { answer_id, .. } => {
+                    ("✓", t.ok, format!("recorded, event {answer_id}"))
+                }
+                Outcome::Refused(reason) => ("!", t.check, format!("not recorded: {reason}")),
+                Outcome::Unknown { .. } => ("?", t.check, "outcome unknown; checking".into()),
+                Outcome::Open => ("?", t.check, "still open: a, then y resends".into()),
+                Outcome::Gone => (
+                    "·",
+                    t.sub,
+                    "no longer open (answered or withdrawn elsewhere)".into(),
+                ),
+            };
+            let text = format!("{} {} · {what}", s.ask.ask_id, s.ask.campaign);
+            let mut lines = vec![Line::from(vec![
+                sp(format!(" {mark} "), color),
+                sp(clip(&text, width.saturating_sub(4) as usize), t.text),
+            ])];
+            if let Outcome::Recorded { note, .. } = &s.state
+                && !note.is_empty()
+            {
+                lines.push(Line::from(sp(
+                    format!("   {}", clip(note, width.saturating_sub(4) as usize)),
+                    t.check,
+                )));
+            }
+            lines
+        })
+        .collect()
+}
+
+/// The selected ask in full on the Asks screen, with its own scroll (`ctrl-d ctrl-u`).
+fn ask_pane(f: &mut Frame, app: &App, area: Rect) {
+    let t = &app.theme;
+    let (width, h) = (
+        area.width.saturating_sub(4) as usize,
+        area.height.saturating_sub(2) as usize,
+    );
+    let (title, lines) = detail_lines(app, width).unwrap_or_else(|| {
+        (
+            "ask".into(),
+            vec![Line::from(sp("No ask selected: j k choose one", t.sub))],
+        )
+    });
+    let lines = fold(app, lines, width);
+    let total = lines.len();
+    {
+        let mut seen = app.seen.borrow_mut();
+        (seen.page, seen.full) = ((h, total), true);
+    }
+    let first = app.scroll.min(total.saturating_sub(h));
+    let title = if total > h && h > 0 {
+        format!("{title} · {}-{}/{total}", first + 1, first + h)
+    } else {
+        title
+    };
+    let inner = ui::pane(f, t, area, &title, false);
+    f.render_widget(
+        Paragraph::new(lines.into_iter().skip(first).take(h).collect::<Vec<_>>()),
+        inner,
+    );
+}
+
+/// Nothing is clipped: a line wider than `width` folds onto the next.
+fn fold(app: &App, lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
+    lines
+        .into_iter()
+        .flat_map(|line| {
+            if ui::width(&line.spans) <= width {
+                return vec![line];
+            }
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            wrap(&text, width)
+                .into_iter()
+                .map(|l| Line::from(sp(l, app.theme.text)))
+                .collect()
+        })
+        .collect()
 }
 
 fn stale_line(app: &App, error: &str) -> Line<'static> {
@@ -2257,20 +2416,7 @@ pub(crate) fn draw_detail(f: &mut Frame, app: &App) {
             (title, lines)
         }
     };
-    // Nothing is clipped: a line wider than the pane folds onto the next.
-    let lines: Vec<Line<'static>> = lines
-        .into_iter()
-        .flat_map(|line| {
-            if ui::width(&line.spans) <= width {
-                return vec![line];
-            }
-            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-            wrap(&text, width)
-                .into_iter()
-                .map(|l| Line::from(sp(l, t.text)))
-                .collect()
-        })
-        .collect();
+    let lines = fold(app, lines, width);
     let total = lines.len();
     app.seen.borrow_mut().page = (h, total);
     let mut keys = hints(app, wide);

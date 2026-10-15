@@ -46,6 +46,8 @@ pub enum Screen {
     Answer,
     /// Step 2: confirm the exact text.
     Confirm,
+    /// `a` with no ask selected: every open owner ask, to choose one to answer.
+    Picker,
     Help,
     /// Every root, closed ones too.
     AllCampaigns,
@@ -100,6 +102,39 @@ pub struct Fetch {
     pub live: Option<bool>,
     /// Why it is polling, when the subscription said.
     pub why: String,
+    /// When the read of the snapshot being taken began, in the fetch thread: only a read
+    /// that began after an answer's outcome went unknown can settle it.
+    pub began: Option<Instant>,
+}
+
+/// An answer sent from this view, kept for the session: the ask as it was, the job as it
+/// was sent (its request key included) and what is known of it.
+#[derive(Debug, Clone)]
+pub(crate) struct Sent {
+    pub ask: model::Need,
+    pub job: actions::Job,
+    pub state: Outcome,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Outcome {
+    Sending,
+    /// As ledger event `answer_id`, with what the owner should know: not delivered to the
+    /// pane, the asker stopped waiting (or empty).
+    Recorded {
+        answer_id: i64,
+        note: String,
+    },
+    /// The ledger refused it; nothing was recorded.
+    Refused(String),
+    /// No receipt either way, since `after`.
+    Unknown {
+        after: Instant,
+    },
+    /// A read begun after the unknown outcome still lists the ask: `y` may resend it.
+    Open,
+    /// A later read no longer lists it. Whose answer closed it is not known here.
+    Gone,
 }
 
 /// Something the pointer can land on, recorded while drawing so a click needs no second
@@ -112,6 +147,10 @@ pub(crate) enum Hit {
     Pane(usize),
     /// A footer hint: the same as its key.
     Key(String),
+    /// An ask in the picker, by identity.
+    Ask(i64),
+    /// An option of the ask being answered; the last is "write your own answer".
+    Opt(usize),
 }
 
 /// What the last frame showed, for the next key or click.
@@ -122,6 +161,8 @@ pub(crate) struct Seen {
     pub rows: usize,
     /// Height and length of whatever scrolls on this screen.
     pub page: (usize, usize),
+    /// The Asks screen shows its selected ask in full beside or under the list.
+    pub full: bool,
 }
 
 /// Where `h` or Esc returns to.
@@ -221,8 +262,16 @@ pub struct App {
     pub text: String,
     /// Typing goes to the answer field.
     pub editing: bool,
-    /// Asks answered from this view; they stay listed until the next snapshot.
-    pub(crate) sent: Vec<i64>,
+    /// A successful snapshot taken while the dialog was open no longer lists its ask:
+    /// answered or withdrawn elsewhere. `y` sends nothing; the draft stays until Esc.
+    pub(crate) gone: bool,
+    /// The picker's highlighted ask, by identity: a snapshot that reorders the asks does
+    /// not move it to another one.
+    pub(crate) pick: Option<i64>,
+    /// Answers sent from this view, oldest first.
+    pub(crate) outcomes: Vec<Sent>,
+    /// The Confirm step resends this outcome's job unchanged.
+    pub(crate) resend: bool,
     /// Rows are narrowed to names containing this.
     pub filter: String,
     /// Typing goes to the filter.
@@ -289,7 +338,10 @@ impl App {
             note: String::new(),
             text: String::new(),
             editing: false,
-            sent: vec![],
+            gone: false,
+            pick: None,
+            outcomes: vec![],
+            resend: false,
             filter: String::new(),
             typing: false,
             status: None,
@@ -493,13 +545,69 @@ impl App {
             .filter(|_| glance_row && self.fetch.loaded);
         if glance_row && !self.fetch.loaded {
             self.row = 0;
+            // The row waiting under an overlay starts at the top too.
+            if let Some(back) = self.back.first_mut().filter(|b| b.screen.rows()) {
+                (back.row, back.scroll) = (0, 0);
+            }
         }
+        // The row waiting under an overlay follows the same first-snapshot rule.
         let saved = {
             let view = self.glance_view();
             glance::ids(&view).get(view.row).cloned()
+        }
+        .filter(|_| self.fetch.loaded);
+        let listed = |id: i64| glance.needs_you.iter().any(|a| a.ask_id == id);
+        // An unknown outcome settles only on a read that began after it went unknown; an
+        // older read still in flight proves nothing.
+        let began = self.fetch.began.take();
+        for sent in &mut self.outcomes {
+            let (id, open) = (sent.ask.ask_id, listed(sent.ask.ask_id));
+            match sent.state {
+                Outcome::Unknown { after } if began.is_some_and(|b| b > after) && open => {
+                    sent.state = Outcome::Open;
+                    self.status = Some(format!(
+                        "? ask {id} is still open: a shows the same answer, y resends it"
+                    ));
+                }
+                Outcome::Unknown { after } if began.is_some_and(|b| b > after) => {
+                    sent.state = Outcome::Gone;
+                    self.status = Some(format!(
+                        "ask {id} {} is no longer open (answered or withdrawn elsewhere)",
+                        sent.ask.campaign
+                    ));
+                }
+                Outcome::Open if !open => sent.state = Outcome::Gone,
+                _ => {}
+            }
+        }
+        // Only a snapshot that arrived says an ask left; a failed read never gets here.
+        if let Some(a) = &self.ask
+            && matches!(self.screen, Screen::Answer | Screen::Confirm)
+        {
+            self.gone = !listed(a.ask_id);
+        }
+        // A refused answer stays listed in the picker after its ask leaves.
+        let kept = |id: i64| {
+            matches!(
+                self.outcome(id).map(|s| &s.state),
+                Some(Outcome::Refused(_))
+            )
         };
-        self.sent
-            .retain(|id| glance.needs_you.iter().any(|a| a.ask_id == *id));
+        if self.screen == Screen::Picker
+            && let Some(id) = self.pick.filter(|id| !listed(*id) && !kept(*id))
+        {
+            let name = self
+                .data
+                .glance
+                .needs_you
+                .iter()
+                .find(|a| a.ask_id == id)
+                .map_or(String::new(), |a| format!(" {}", a.campaign));
+            self.status = Some(format!(
+                "! ask {id}{name} is no longer open (answered or withdrawn elsewhere)"
+            ));
+            self.pick = glance.needs_you.first().map(|a| a.ask_id);
+        }
         // "Changed since you looked": a campaign whose last event, owner note, lead, lanes
         // or parking differ from the snapshot on screen. Any key clears the marks.
         let event = |last: &Option<model::Last>| last.as_ref().map(|l| l.event_id);
@@ -658,6 +766,80 @@ impl App {
         self.switch(Screen::Detail);
     }
 
+    /// `a` with no ask selected: the picker over the screen it was pressed on, which keeps
+    /// its row, filter and scroll under it. Nothing is read.
+    pub(crate) fn picker(&mut self) {
+        self.go(Screen::Picker);
+        self.pick = self.pickable().first().map(|a| a.ask_id);
+    }
+
+    /// What the picker lists: the open asks, then the answers the ledger refused whose ask
+    /// is no longer open, kept to read (newest first, once each).
+    pub(crate) fn pickable(&self) -> Vec<&model::Need> {
+        let open = &self.data.glance.needs_you;
+        let mut out: Vec<&model::Need> = open.iter().collect();
+        for sent in self.outcomes.iter().rev() {
+            let id = sent.ask.ask_id;
+            if matches!(
+                self.outcome(id).map(|s| &s.state),
+                Some(Outcome::Refused(_))
+            ) && out.iter().all(|a| a.ask_id != id)
+            {
+                out.push(&sent.ask);
+            }
+        }
+        out
+    }
+
+    /// The picker's highlighted ask: its own while listed, else the first.
+    pub(crate) fn picked(&self) -> Option<&model::Need> {
+        let asks = self.pickable();
+        asks.iter()
+            .find(|a| Some(a.ask_id) == self.pick)
+            .or(asks.first())
+            .copied()
+    }
+
+    /// Whether the picker's highlight is a kept refused answer, not an open ask.
+    pub(crate) fn picked_kept(&self) -> bool {
+        self.picked().is_some_and(|p| {
+            self.data
+                .glance
+                .needs_you
+                .iter()
+                .all(|a| a.ask_id != p.ask_id)
+        })
+    }
+
+    /// Moves the picker's highlight, stopping at the ends.
+    pub(crate) fn pick_by(&mut self, by: isize) {
+        let asks = self.pickable();
+        let at = self
+            .picked()
+            .and_then(|p| asks.iter().position(|a| a.ask_id == p.ask_id))
+            .unwrap_or(0);
+        let i = at
+            .saturating_add_signed(by)
+            .min(asks.len().saturating_sub(1));
+        self.pick = asks.get(i).map(|a| a.ask_id);
+    }
+
+    /// The picker's `A`: closes it and shows the Asks screen on the highlighted ask. The
+    /// screen it was opened from keeps its own place, so `D` or `F` returns there.
+    pub(crate) fn pick_full(&mut self) {
+        let id = self.picked().map(|a| glance::RowId::Ask(a.ask_id));
+        if let Some(id) = &id {
+            self.places[1].id = Some(id.clone());
+        }
+        self.switch(Screen::Asks);
+        let Some(id) = id else { return };
+        // The Asks screen's own filter must not hide the ask it was asked to show.
+        if !glance::ids(&self.view()).contains(&id) {
+            self.filter.clear();
+        }
+        self.restore_row(Some(id));
+    }
+
     /// Whether panel `i`'s source may start a read: its card is shown on the Dashboard, and
     /// the Dashboard is on top, under no overlay or dialog.
     pub fn admits(&self, i: usize) -> bool {
@@ -674,10 +856,28 @@ impl App {
         self.seen.borrow_mut().hits.push((area, hit));
     }
 
+    /// The latest answer sent from here to this ask.
+    pub(crate) fn outcome(&self, ask_id: i64) -> Option<&Sent> {
+        self.outcomes.iter().rev().find(|s| s.ask.ask_id == ask_id)
+    }
+
+    /// The ledger's reason when the review on screen is a refused answer, kept to read:
+    /// nothing sends it again.
+    pub(crate) fn refused(&self) -> Option<&str> {
+        let a = self
+            .ask
+            .as_ref()
+            .filter(|_| self.screen == Screen::Confirm && !self.resend)?;
+        match &self.outcome(a.ask_id)?.state {
+            Outcome::Refused(reason) => Some(reason.as_str()),
+            _ => None,
+        }
+    }
+
     /// Opens the answer dialog on `ask`, with its first option chosen.
     pub fn answer(&mut self, ask: model::Need) {
         self.go(Screen::Answer);
-        self.ask = Some(ask);
+        (self.ask, self.gone, self.resend) = (Some(ask), false, false);
         (self.picked, self.note) = (vec![], String::new());
         self.choose(0);
     }
@@ -827,6 +1027,7 @@ fn screen(f: &mut Frame, app: &App) {
         Screen::Detail => glance::draw_detail(f, app),
         Screen::Campaign => campaign::draw(f, app),
         Screen::Answer | Screen::Confirm => dialog::answer(f, app),
+        Screen::Picker => dialog::picker(f, app),
         Screen::Help => dialog::help(f, app),
         Screen::AllCampaigns => lists::all_campaigns(f, app),
         Screen::Pager => lists::pager(f, app),

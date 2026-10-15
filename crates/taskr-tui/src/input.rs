@@ -12,8 +12,8 @@ use ratatui::{
 };
 
 use crate::{
-    App, Hit, Screen,
-    actions::{Done, Job},
+    App, Hit, Outcome, Screen, Sent,
+    actions::{self, Done, Job},
     ask, campaign,
     glance::{self, Selected},
     lists,
@@ -67,7 +67,8 @@ pub fn key(app: &mut App, key: KeyEvent) -> Effect {
     }
     match app.screen {
         Screen::Answer => answer(app, key.code, ctrl),
-        Screen::Confirm => confirm(app, key.code),
+        Screen::Confirm => confirm(app, key.code, ctrl),
+        Screen::Picker => pick(app, key.code),
         _ => view(app, key.code, ctrl),
     }
 }
@@ -107,6 +108,15 @@ fn travel(app: &mut App, by: isize) {
         _ => (&mut app.scroll, total.saturating_sub(height)),
     };
     *at = at.saturating_add_signed(by).min(last);
+}
+
+/// Scrolls the Asks screen's full ask, whose cursor stays on its row.
+fn text_by(app: &mut App, by: isize) {
+    let (height, total) = app.seen.borrow().page;
+    app.scroll = app
+        .scroll
+        .saturating_add_signed(by)
+        .min(total.saturating_sub(height));
 }
 
 fn scroll(app: &mut App, by: isize) -> Effect {
@@ -152,8 +162,13 @@ fn filter(app: &mut App, code: KeyCode) -> Effect {
 
 /// The keys every screen but the answer dialog shares, then the screen's own.
 fn view(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
-    let page = app.seen.borrow().page.0;
+    let (page, full) = {
+        let seen = app.seen.borrow();
+        (seen.page.0, seen.full)
+    };
     let detail = app.screen == Screen::Detail;
+    // The Asks screen's full ask scrolls on its own; `j k` keep moving between asks.
+    let text = app.screen == Screen::Asks && full;
     let lists = app.screen.rows()
         || matches!(app.screen, Screen::AllCampaigns | Screen::Slotr)
         || (app.screen == Screen::Campaign && app.pane == 0);
@@ -220,6 +235,15 @@ fn view(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
             }
         }
         KeyCode::Char('r') => return Effect::Refresh,
+        // No ask is selected on these: `a` lists the open ones to choose from.
+        KeyCode::Char('a')
+            if matches!(
+                app.screen,
+                Screen::Help | Screen::Pager | Screen::AllCampaigns | Screen::Slotr
+            ) =>
+        {
+            app.picker();
+        }
         KeyCode::Char('/')
             if matches!(
                 app.screen,
@@ -236,6 +260,10 @@ fn view(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
         KeyCode::Char('k') | KeyCode::Up => travel(app, -1),
         KeyCode::Char('g') | KeyCode::Home => travel(app, isize::MIN),
         KeyCode::Char('G') | KeyCode::End => travel(app, isize::MAX),
+        KeyCode::Char('d') if ctrl && text => text_by(app, (page / 2).max(1) as isize),
+        KeyCode::Char('u') if ctrl && text => text_by(app, -((page / 2).max(1) as isize)),
+        KeyCode::PageDown if text => text_by(app, page as isize),
+        KeyCode::PageUp if text => text_by(app, -(page as isize)),
         KeyCode::Char('d') if ctrl => travel(app, half),
         KeyCode::Char('u') if ctrl => travel(app, -half),
         KeyCode::Char(' ') if app.screen == Screen::Pager => travel(app, page as isize),
@@ -362,6 +390,8 @@ pub fn demo(app: &mut App, job: Job) {
         Job::Doc { .. } => Ok(Done::Doc(app.data.doc.body.clone())),
         Job::Slotr => Ok(Done::Slotr(Box::new(app.data.slotr.clone()))),
         _ => {
+            // Nothing ran, so nothing is in flight.
+            app.outcomes.retain(|s| s.job != job);
             app.status = Some(format!("demo: {} (nothing was sent)", job.label()));
             return;
         }
@@ -386,16 +416,57 @@ pub fn paste(app: &mut App, text: &str) {
 
 fn start_answer(app: &mut App, need: Option<crate::model::Need>) -> Effect {
     match need {
-        None => say(app, "a answers an ask: select one under NEEDS YOU"),
-        Some(a) if app.sent.contains(&a.ask_id) => say(
-            app,
-            format!("ask {} is already answered from here", a.ask_id),
-        ),
-        Some(a) => {
-            app.answer(a);
+        None => {
+            app.picker();
             Effect::None
         }
+        Some(a) => {
+            let id = a.ask_id;
+            let kept = app
+                .outcome(id)
+                .map(|s| (s.state.clone(), s.job.clone(), s.ask.clone()));
+            // A refused answer is kept to read in full, as it was sent; nothing sends it.
+            if let Some((Outcome::Refused(_), Job::Answer { text, .. }, sent)) = kept.clone() {
+                app.answer(sent);
+                (app.text, app.editing, app.screen) = (text, false, Screen::Confirm);
+                return Effect::None;
+            }
+            if let Some(line) = held(app, id) {
+                return say(app, line);
+            }
+            match kept {
+                // Still open after an unknown outcome: the same answer to the ask as it was
+                // sent, to resend unchanged.
+                Some((Outcome::Open, Job::Answer { text, .. }, sent)) => {
+                    app.answer(sent);
+                    (app.text, app.editing) = (text, false);
+                    (app.screen, app.resend) = (Screen::Confirm, true);
+                    Effect::None
+                }
+                _ => {
+                    app.answer(a);
+                    Effect::None
+                }
+            }
+        }
     }
+}
+
+/// Why an ask takes no new answer from here: one is on its way, recorded, refused or
+/// unknown. None when a new draft (or, still open after an unknown outcome, the resend) may
+/// open.
+fn held(app: &App, id: i64) -> Option<String> {
+    Some(match &app.outcome(id)?.state {
+        Outcome::Sending => format!("ask {id}: the answer is on its way"),
+        Outcome::Recorded { answer_id, .. } => {
+            format!("ask {id} is already answered from here (event {answer_id})")
+        }
+        Outcome::Refused(reason) => format!("! ask {id}: not recorded: {reason}"),
+        Outcome::Unknown { .. } => {
+            format!("? ask {id}: answer outcome unknown; checking the ledger")
+        }
+        Outcome::Open | Outcome::Gone => return None,
+    })
 }
 
 fn park(app: &mut App, root: i64, name: &str, parked: bool) -> Effect {
@@ -424,23 +495,49 @@ fn glance_key(app: &mut App, code: KeyCode) -> Effect {
         return Effect::SaveConfig;
     }
     let view = app.view();
-    let acts = matches!(
-        code,
-        KeyCode::Enter | KeyCode::Right | KeyCode::Char('a' | 'p' | 'l' | 'o' | 'y')
-    );
-    // Detail acts on its own item, found by identity; a list on a drawn row only.
-    if acts && app.screen == Screen::Detail {
-        if view.row >= glance::ids(&view).len() {
-            return say(app, "nothing here to act on: esc returns");
-        }
-    } else if acts
-        && !app
-            .seen
+    let drawn = if app.screen == Screen::Detail {
+        view.row < glance::ids(&view).len()
+    } else {
+        app.seen
             .borrow()
             .hits
             .iter()
             .any(|(_, hit)| *hit == Hit::Row(app.row))
-    {
+    };
+    // `a` answers the selected ask; on any other row, or none, it opens the picker. Not
+    // over a pane too small to draw anything but the pill.
+    if code == KeyCode::Char('a') {
+        if app.seen.borrow().hits.is_empty() {
+            return Effect::None;
+        }
+        return match glance::selected(&view) {
+            Selected::Ask(a) if drawn => start_answer(app, Some(a.clone())),
+            _ => {
+                app.picker();
+                Effect::None
+            }
+        };
+    }
+    // On the Asks screen ⏎ answers the ask drawn in full; a narrow list of several reads the
+    // selected one in full first.
+    if code == KeyCode::Enter && app.screen == Screen::Asks && drawn {
+        if !app.seen.borrow().full {
+            app.inspect();
+            return Effect::None;
+        }
+        if let Selected::Ask(a) = glance::selected(&view) {
+            return start_answer(app, Some(a.clone()));
+        }
+    }
+    let acts = matches!(
+        code,
+        KeyCode::Enter | KeyCode::Right | KeyCode::Char('p' | 'l' | 'o' | 'y')
+    );
+    // Detail acts on its own item, found by identity; a list on a drawn row only.
+    if acts && !drawn {
+        if app.screen == Screen::Detail {
+            return say(app, "nothing here to act on: esc returns");
+        }
         return Effect::None;
     }
     let g = &view.data.glance;
@@ -507,13 +604,6 @@ fn glance_key(app: &mut App, code: KeyCode) -> Effect {
             app.go(Screen::AllCampaigns);
             app.row = 0;
         }
-        KeyCode::Char('a') => {
-            let need = match glance::selected(&view) {
-                Selected::Ask(a) => Some(a.clone()),
-                _ => None,
-            };
-            return start_answer(app, need);
-        }
         KeyCode::Char('p') => {
             return match glance::selected(&view) {
                 Selected::Campaign(c) => park(app, c.id, &c.name, c.parked),
@@ -530,7 +620,7 @@ fn glance_key(app: &mut App, code: KeyCode) -> Effect {
 fn info_key(app: &mut App, code: KeyCode, root: i64, name: &str) -> Effect {
     match code {
         KeyCode::Char('o') => open(app, root, name),
-        KeyCode::Enter | KeyCode::Right | KeyCode::Char('a' | 'p' | 'l' | 'y') => say(
+        KeyCode::Enter | KeyCode::Right | KeyCode::Char('p' | 'l' | 'y') => say(
             app,
             "an informational row: o opens its campaign; nothing else acts here",
         ),
@@ -556,10 +646,13 @@ fn campaign_key(app: &mut App, code: KeyCode) -> Effect {
             let need = g
                 .needs_you
                 .iter()
-                .find(|a| a.root_id == root.id && !app.sent.contains(&a.ask_id));
+                .find(|a| a.root_id == root.id && held(app, a.ask_id).is_none());
             return match need {
                 Some(a) => start_answer(app, Some(a.clone())),
-                None => say(app, "no open owner ask in this campaign"),
+                None => {
+                    app.picker();
+                    Effect::None
+                }
             };
         }
         KeyCode::Char('p') => {
@@ -650,7 +743,7 @@ fn answer(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
             return say(app, "pick at least one: space picks an option");
         }
         KeyCode::Enter if app.text.trim().is_empty() => return say(app, "write an answer first"),
-        KeyCode::Enter => app.screen = Screen::Confirm,
+        KeyCode::Enter => (app.screen, app.scroll) = (Screen::Confirm, 0),
         KeyCode::Tab | KeyCode::BackTab => app.editing = !app.editing,
         KeyCode::Down => app.choose((app.choice + 1).min(options)),
         KeyCode::Up => app.choose(app.choice.saturating_sub(1)),
@@ -672,21 +765,109 @@ fn answer(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
 }
 
 /// Step 2: `y` sends. There is no default button, so Enter alone cannot.
-fn confirm(app: &mut App, code: KeyCode) -> Effect {
+fn confirm(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
+    // A long answer scrolls, as the ask's text does in the editor.
+    let half = (app.seen.borrow().page.0 / 2).max(1) as isize;
+    match code {
+        KeyCode::Char('d') if ctrl => return scroll(app, half),
+        KeyCode::Char('u') if ctrl => return scroll(app, -half),
+        KeyCode::PageDown => return scroll(app, 2 * half),
+        KeyCode::PageUp => return scroll(app, -2 * half),
+        _ => {}
+    }
     match (code, app.ask.clone()) {
+        // A refused answer is shown to read; the ledger's reason holds, so nothing sends it.
+        (KeyCode::Char('y' | 'e'), Some(a)) if app.refused().is_some() => {
+            let reason = app.refused().unwrap_or_default().to_string();
+            say(
+                app,
+                format!(
+                    "! ask {}: not recorded: {reason}; it is not sent again",
+                    a.ask_id
+                ),
+            )
+        }
+        (KeyCode::Esc | KeyCode::Char('q'), Some(a)) if app.refused().is_some() => {
+            app.close();
+            say(
+                app,
+                format!(
+                    "ask {}: the refused answer stays here; a shows it",
+                    a.ask_id
+                ),
+            )
+        }
+        // A resend's first send is still unresolved: only the resend is known not sent.
+        (KeyCode::Char('y'), Some(a)) if app.gone && app.resend => say(
+            app,
+            format!(
+                "! ask {} is no longer open; no resend was sent, and whether the first answer was recorded is unknown",
+                a.ask_id
+            ),
+        ),
+        (KeyCode::Char('y'), Some(a)) if app.gone => say(
+            app,
+            format!(
+                "! ask {} is no longer open; nothing was sent · esc closes, the draft stays until then",
+                a.ask_id
+            ),
+        ),
+        // A resend is the job that went unknown, key and all; anything else is new.
+        (KeyCode::Char('y'), Some(a)) if app.resend => {
+            let Some(i) = app
+                .outcomes
+                .iter()
+                .rposition(|s| s.ask.ask_id == a.ask_id && s.state == Outcome::Open)
+            else {
+                return say(app, format!("ask {}: nothing to resend", a.ask_id));
+            };
+            app.close();
+            app.resend = false;
+            app.outcomes[i].state = Outcome::Sending;
+            app.status = Some(format!("resending the answer to ask {}", a.ask_id));
+            Effect::Run(app.outcomes[i].job.clone())
+        }
+        // A second `y` never sends twice: the first one's outcome holds the ask.
+        (KeyCode::Char('y'), Some(a))
+            if app
+                .outcome(a.ask_id)
+                .is_some_and(|s| s.state != Outcome::Gone) =>
+        {
+            let line = held(app, a.ask_id)
+                .unwrap_or_else(|| format!("ask {}: a shows the answer to resend", a.ask_id));
+            say(app, line)
+        }
         (KeyCode::Char('y'), Some(a)) => {
             app.close();
-            app.sent.push(a.ask_id);
-            app.status = Some(format!("sending the answer to ask {}", a.ask_id));
-            Effect::Run(Job::Answer {
+            let job = Job::Answer {
                 ask_id: a.ask_id,
                 text: app.text.trim().to_string(),
                 prompt: !a.asker_waiting,
-            })
+                key: actions::request_key(a.ask_id),
+            };
+            app.outcomes.push(Sent {
+                ask: a.clone(),
+                job: job.clone(),
+                state: Outcome::Sending,
+            });
+            app.status = Some(format!("sending the answer to ask {}", a.ask_id));
+            Effect::Run(job)
         }
+        (KeyCode::Char('e'), _) if app.resend => say(
+            app,
+            "a resend is the same answer, unchanged: y resends it, esc keeps it",
+        ),
         (KeyCode::Char('e'), _) => {
             app.screen = Screen::Answer;
             Effect::None
+        }
+        (KeyCode::Esc | KeyCode::Char('q'), Some(a)) if app.resend => {
+            app.close();
+            app.resend = false;
+            say(
+                app,
+                format!("ask {}: no resend was sent; the answer is kept", a.ask_id),
+            )
         }
         (KeyCode::Esc | KeyCode::Char('q'), _) => {
             app.close();
@@ -696,14 +877,38 @@ fn confirm(app: &mut App, code: KeyCode) -> Effect {
     }
 }
 
+/// The picker owns every key; `A` is its one way to another screen.
+fn pick(app: &mut App, code: KeyCode) -> Effect {
+    match code {
+        KeyCode::Char('j') | KeyCode::Down => app.pick_by(1),
+        KeyCode::Char('k') | KeyCode::Up => app.pick_by(-1),
+        KeyCode::Char('g') | KeyCode::Home => app.pick_by(isize::MIN),
+        KeyCode::Char('G') | KeyCode::End => app.pick_by(isize::MAX),
+        KeyCode::Enter => {
+            let Some(a) = app.picked().cloned() else {
+                return say(app, "nothing needs you: esc closes");
+            };
+            // The editor takes the picker's place: esc from it returns to the same origin.
+            app.close();
+            return start_answer(app, Some(a));
+        }
+        // `A` shows an open ask; a kept answer's ask is no longer on the Asks screen.
+        KeyCode::Char('A') if app.picked_kept() => {
+            return say(app, "no longer open: ⏎ reads the kept answer");
+        }
+        KeyCode::Char('A') => app.pick_full(),
+        KeyCode::Esc | KeyCode::Char('q') => {
+            app.close();
+        }
+        _ => {}
+    }
+    Effect::None
+}
+
 /// The result of a job the loop ran.
 pub fn done(app: &mut App, job: &Job, result: Result<Done, String>) {
     let showing =
         app.screen == Screen::Campaign || app.back.iter().any(|b| b.screen == Screen::Campaign);
-    let note = |done: &Done| match done {
-        Done::Note(note) => format!(" · {note}"),
-        _ => String::new(),
-    };
     if let Job::Slotr = job {
         // The slotr view says its own trouble, on its own line; the last good pools stay.
         let s = &mut app.slotr;
@@ -774,21 +979,43 @@ pub fn done(app: &mut App, job: &Job, result: Result<Done, String>) {
             None
         }
         // Recorded is recorded, even when the prompt did not reach the asker's pane: the
-        // ask stays out of reach here, and the line says what is left to do.
-        (Job::Answer { ask_id, .. }, Ok(done)) => {
-            Some(format!("✓ answered {ask_id}{}", note(&done)))
+        // ask stays out of reach here, and the line says what is left to do. A refusal is
+        // the ledger's own; anything else is unknown, and nothing repeats it by itself.
+        (Job::Answer { ask_id, .. }, result) => {
+            let (state, line) = match result {
+                Ok(Done::Answered { answer_id, note }) => {
+                    let line = format!("✓ answered {ask_id} as event {answer_id}");
+                    let line = if note.is_empty() {
+                        line
+                    } else {
+                        format!("{line} · {note}")
+                    };
+                    (Outcome::Recorded { answer_id, note }, line)
+                }
+                Ok(Done::Refused(reason)) => (
+                    Outcome::Refused(reason.clone()),
+                    format!("! not recorded: {reason}"),
+                ),
+                // No receipt either way. Taking the time now, when the result is read, is
+                // later than the failure: it can only make a read too old to settle it.
+                _ => (
+                    Outcome::Unknown {
+                        after: Instant::now(),
+                    },
+                    format!("? ask {ask_id}: answer outcome unknown; checking the ledger"),
+                ),
+            };
+            if let Some(sent) = app.outcomes.iter_mut().rev().find(|s| s.job == *job) {
+                sent.state = state;
+            }
+            Some(line)
         }
         (Job::Park { name, park, .. }, Ok(_)) => Some(format!(
             "✓ {} {name}",
             if *park { "parked" } else { "unparked" }
         )),
         (_, Ok(_)) => None,
-        (job, Err(error)) => {
-            if let Job::Answer { ask_id, .. } = job {
-                app.sent.retain(|id| id != ask_id);
-            }
-            Some(format!("! {} failed: {error}", job.label()))
-        }
+        (job, Err(error)) => Some(format!("! {} failed: {error}", job.label())),
     };
 }
 
@@ -905,6 +1132,10 @@ pub fn mouse(app: &mut App, event: MouseEvent, now: Instant) -> Effect {
                 return Effect::None;
             }
             let down = event.kind == MouseEventKind::ScrollDown;
+            // In the answer dialog the wheel scrolls the ask's text, never the choice.
+            if matches!(app.screen, Screen::Answer | Screen::Confirm) {
+                return scroll(app, if down { 1 } else { -1 });
+            }
             press(app, if down { KeyCode::Down } else { KeyCode::Up })
         }
         MouseEventKind::Down(MouseButton::Left) => {
@@ -932,6 +1163,14 @@ pub fn mouse(app: &mut App, event: MouseEvent, now: Instant) -> Effect {
                 Hit::Lane(i) => {
                     pane(app, 0);
                     app.lane = i;
+                }
+                Hit::Ask(id) => app.pick = Some(id),
+                // Chooses, and nothing more: only `y` on the review sends.
+                Hit::Opt(i) => {
+                    if app.screen == Screen::Answer {
+                        app.choose(i);
+                    }
+                    return Effect::None;
                 }
             }
             // A double-click on a row is Enter.
@@ -1128,32 +1367,25 @@ mod tests {
         assert_eq!(p.keys("a\n\n x\tj"), Effect::None);
         assert_eq!(p.app.screen, Screen::Confirm);
         assert!(p.text().contains("You are about to send this answer"));
-        // A snapshot under the dialog cannot change which ask is answered.
+        // A snapshot that reorders the asks under the dialog cannot change which ask is
+        // answered. (One that drops it refuses `y`: see the closed-elsewhere test.)
         let mut next = p.app.data.glance.clone();
-        next.needs_you.remove(0);
+        next.needs_you.reverse();
         p.app.snapshot(next);
         let text = p.app.text.clone();
         assert!(text.starts_with("A: "), "{text}");
-        let sent = p.keys("y");
-        assert_eq!(
-            sent,
-            Effect::Run(Job::Answer {
-                ask_id: ask.ask_id,
-                text,
-                prompt: false
-            })
-        );
+        let (job, sent) = answered(p.keys("y"));
+        assert_eq!(sent, (ask.ask_id, text, false));
         assert_eq!(p.app.screen, Screen::Glance);
-        done(
-            &mut p.app,
-            &Job::Answer {
-                ask_id: ask.ask_id,
-                text: String::new(),
-                prompt: false,
-            },
-            Ok(Done::Ok),
+        let receipt = Done::Answered {
+            answer_id: 9001,
+            note: String::new(),
+        };
+        done(&mut p.app, &job, Ok(receipt));
+        assert!(
+            p.text()
+                .contains(&format!("✓ answered {} as event 9001", ask.ask_id))
         );
-        assert!(p.text().contains(&format!("✓ answered {}", ask.ask_id)));
     }
 
     #[test]
@@ -1176,18 +1408,11 @@ mod tests {
         // e goes back to the text; esc from there sends nothing.
         p.keys("\ne");
         assert_eq!(p.app.screen, Screen::Answer);
-        assert_eq!(
-            p.keys("\ny"),
-            Effect::Run(Job::Answer {
-                ask_id: ask.ask_id,
-                text,
-                prompt: true
-            })
-        );
-        // It cannot be sent twice from here while the row is still listed.
+        assert_eq!(answered(p.keys("\ny")).1, (ask.ask_id, text, true));
+        // It cannot be sent twice from here while it is on its way.
         p.keys("a");
         assert_eq!(p.app.screen, Screen::Glance);
-        assert!(p.status().contains("already answered"));
+        assert!(p.status().contains("on its way"), "{}", p.status());
 
         // "write your own answer" starts empty, and an empty answer is not reviewed.
         let mut p = Pane::new(46, 30);
@@ -1205,8 +1430,10 @@ mod tests {
             (p.app.screen, p.status()),
             (Screen::Glance, "cancelled, nothing was sent")
         );
-        // On a campaign row there is no ask to answer.
+        // On a campaign row there is no ask to answer: `a` lists the open ones.
         p.keys("Ga");
+        assert_eq!(p.app.screen, Screen::Picker);
+        p.keys("\x1b");
         assert_eq!(p.app.screen, Screen::Glance);
     }
 
@@ -1558,6 +1785,32 @@ mod tests {
         assert!(!p.text().contains("LASTWORD"));
     }
 
+    /// The answer a key sent: the job, and its ask, text and prompt flag. Its request key
+    /// is checked against taskr's rule and set aside.
+    fn answered(effect: Effect) -> (Job, (i64, String, bool)) {
+        let Effect::Run(job) = effect else {
+            panic!("no answer sent")
+        };
+        let Job::Answer {
+            ask_id,
+            text,
+            prompt,
+            key,
+        } = &job
+        else {
+            panic!("not an answer: {job:?}")
+        };
+        assert!(
+            (8..=128).contains(&key.len())
+                && key
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
+            "{key}"
+        );
+        let sent = (*ask_id, text.clone(), *prompt);
+        (job, sent)
+    }
+
     /// The selected row's identity on the screen shown.
     fn at_row(p: &Pane) -> Option<glance::RowId> {
         glance::ids(&p.app.view()).get(p.app.row).cloned()
@@ -1781,11 +2034,13 @@ mod tests {
             text.contains("No longer listed") && !text.contains(&format!("ask {other}")),
             "{text}"
         );
-        for key in ["a", "p", "l", "o", "y", "\n"] {
+        for key in ["p", "l", "o", "y", "\n"] {
             assert_eq!(p.keys(key), Effect::None, "{key:?}");
             assert_eq!(p.app.screen, Screen::Detail);
             assert!(p.app.pending.is_none() && p.app.ask.is_none());
         }
+        p.text();
+        a_lists_asks(&mut p);
         assert!(!p.text().lines().last().unwrap().contains("answer"));
         p.keys("\x1b");
         assert_eq!(p.app.screen, Screen::Glance);
@@ -1956,6 +2211,10 @@ mod tests {
             ("Ds", Screen::Slotr),
             ("Dga", Screen::Answer),
             ("Dga\n", Screen::Confirm),
+            // The picker parks every source, from any screen it opens on.
+            ("DGa", Screen::Picker),
+            ("Fa", Screen::Picker),
+            ("Ica", Screen::Picker),
         ] {
             assert!(!matches!(p.keys(keys), Effect::Refresh | Effect::Run(_)));
             assert_eq!(p.app.screen, screen, "{keys}");
@@ -2115,22 +2374,25 @@ mod tests {
                 );
             }
             assert!(glance::ids(&p.app.view()).is_empty());
-            for code in [KeyCode::Enter, KeyCode::Char('a'), KeyCode::Char('p')] {
+            for code in [KeyCode::Enter, KeyCode::Char('p')] {
                 assert_eq!(p.code(code), Effect::None);
             }
             assert!(p.app.pending.is_none());
             assert!(p.app.ask.is_none());
+            p.text();
+            a_lists_asks(&mut p);
             assert_eq!(p.code(KeyCode::Char('4')), Effect::SaveConfig);
             assert!(matches!(glance::selected(&p.app.view()), Selected::Pr(_)));
             for code in [
                 KeyCode::Enter,
-                KeyCode::Char('a'),
                 KeyCode::Char('p'),
                 KeyCode::Char('l'),
                 KeyCode::Char('y'),
             ] {
                 assert_eq!(p.code(code), Effect::None);
             }
+            p.text();
+            a_lists_asks(&mut p);
             assert_eq!(p.code(KeyCode::Char('1')), Effect::SaveConfig);
             // Showing asks preserves the PR by repository and number instead of retargeting an ask.
             assert!(matches!(glance::selected(&p.app.view()), Selected::Pr(_)));
@@ -2169,7 +2431,7 @@ mod tests {
             p.app.row = row;
             assert!(matches!(glance::selected(&p.app.view()), Selected::Nothing));
             assert_reachable(&mut p, false);
-            for key in ['\n', 'a', 'p', 'l', 'y', 'o'] {
+            for key in ['\n', 'p', 'l', 'y', 'o'] {
                 assert_eq!(p.keys(&key.to_string()), Effect::None, "{row} {key:?}");
                 assert!(
                     p.app.ask.is_none() && p.app.pending.is_none(),
@@ -2177,6 +2439,10 @@ mod tests {
                 );
                 assert_eq!(p.app.row, row, "{row} {key:?}");
             }
+            // `a` lists the open asks; esc gives back this stop and its filter.
+            p.text();
+            a_lists_asks(&mut p);
+            assert_eq!((p.app.row, p.app.filter.as_str()), (row, "no-matches"));
         }
     }
 
@@ -2345,7 +2611,6 @@ mod tests {
                 if matches!(id, glance::RowId::Author(_) | glance::RowId::Run(..)) || height < 8 {
                     for code in [
                         KeyCode::Enter,
-                        KeyCode::Char('a'),
                         KeyCode::Char('p'),
                         KeyCode::Char('l'),
                         KeyCode::Char('y'),
@@ -2353,6 +2618,7 @@ mod tests {
                         assert_eq!(press(&mut p.app, code), Effect::None, "{height}/{id:?}");
                     }
                     assert!(p.app.ask.is_none() && p.app.pending.is_none());
+                    a_lists_asks(&mut p);
                 }
             }
             for n in '1'..='6' {
@@ -2567,12 +2833,12 @@ mod tests {
         p.keys("\n");
         assert_eq!(p.app.screen, Screen::Confirm);
         assert_eq!(
-            p.keys("y"),
-            Effect::Run(Job::Answer {
-                ask_id: ask.ask_id,
-                text: "B: German; D: Portuguese — glossary first".into(),
-                prompt: false
-            })
+            answered(p.keys("y")).1,
+            (
+                ask.ask_id,
+                "B: German; D: Portuguese — glossary first".into(),
+                false
+            )
         );
     }
 
@@ -2582,55 +2848,344 @@ mod tests {
         let ask = p.app.data.glance.needs_you[2].clone();
         p.keys("jja \n");
         assert_eq!(p.app.screen, Screen::Confirm);
-        // The refresh no longer lists it: it was answered elsewhere.
+        // A failed read is not evidence: the dialog still sends.
+        p.app.fetch.error = Some("server unreachable".into());
+        assert!(!p.app.gone);
+        // The next successful read no longer lists it: answered or withdrawn elsewhere.
         let mut next = p.app.data.glance.clone();
         next.needs_you.retain(|a| a.ask_id != ask.ask_id);
         p.app.snapshot(next);
-        let Effect::Run(job) = p.keys("y") else {
-            panic!("an answer")
-        };
-        assert_eq!(
-            job,
-            Job::Answer {
-                ask_id: ask.ask_id,
-                text: "A: English".into(),
-                prompt: false
-            }
+        let text = p.text();
+        assert!(text.contains("is no longer open"), "{text}");
+        // Only keys that do something are offered: no `y send`.
+        assert!(
+            text.contains("e edit") && text.contains("esc close") && !text.contains("y send "),
+            "{text}"
         );
-        // taskr refuses the second answer, and the view says so.
-        let refused = format!("ask {} is already answered by event 61900", ask.ask_id);
-        done(&mut p.app, &job, Err(refused));
-        assert!(p.status().contains("already answered"), "{}", p.status());
+        // `y` sends nothing, and the draft stays until esc.
+        assert_eq!(p.keys("y"), Effect::None);
+        assert_eq!(p.app.screen, Screen::Confirm);
+        assert!(p.status().contains("nothing was sent"), "{}", p.status());
+        assert_eq!(p.app.text, "A: English");
+        p.keys("e");
+        assert_eq!(p.keys("\n"), Effect::None);
+        assert_eq!(p.keys("y"), Effect::None);
+        p.keys("\x1b");
+        assert_eq!(p.app.screen, Screen::Glance);
+        // A new dialog starts clean.
+        p.app.snapshot(p.app.data.glance.clone());
+        p.keys("ga");
+        assert!(!p.app.gone);
     }
 
     #[test]
-    fn a_recorded_answer_is_not_called_failed() {
+    fn a_recorded_answer_keeps_its_event_and_a_refused_one_its_reason() {
         let mut p = Pane::new(46, 30);
         let id = p.app.data.glance.needs_you[0].ask_id;
-        let Effect::Run(job) = p.keys("a\ny") else {
-            panic!("an answer")
+        let (job, _) = answered(p.keys("a\ny"));
+        // Recorded, though the prompt did not reach the pane: the ledger's event, not the ask.
+        let receipt = Done::Answered {
+            answer_id: 777,
+            note: "not delivered to its pane: no pane".into(),
         };
-        done(
-            &mut p.app,
-            &job,
-            Ok(Done::Note("not delivered to its pane: no pane".into())),
-        );
+        done(&mut p.app, &job, Ok(receipt));
         assert_eq!(
             p.status(),
-            format!("✓ answered {id} · not delivered to its pane: no pane")
+            format!("✓ answered {id} as event 777 · not delivered to its pane: no pane")
         );
-        // It is recorded, so it cannot be sent again from here.
-        p.keys("a");
+        assert!(matches!(
+            p.app.outcome(id).unwrap().state,
+            Outcome::Recorded { answer_id: 777, .. }
+        ));
+        // It cannot be sent again from here.
+        assert_eq!(p.keys("a"), Effect::None);
         assert_eq!(p.app.screen, Screen::Glance);
-        assert!(p.status().contains("already answered"));
-        // A refusal is a failure, and the ask can be tried again.
-        done(&mut p.app, &job, Err("server unreachable".into()));
+        assert!(
+            p.status()
+                .contains("already answered from here (event 777)")
+        );
+
+        // A refusal in the ledger's words: not recorded, the reason holds, no resend. The
+        // answer is kept to read in full, wide and narrow, and nothing sends it.
+        for (width, height) in [(120, 40), (46, 30)] {
+            let mut p = Pane::new(width, height);
+            p.app.fetch.live = Some(false);
+            p.keys("a\t");
+            p.keys(" and keep the glossary");
+            let (job, (_, text, _)) = answered(p.keys("\ny"));
+            let reason = format!("ask {id} is already answered by event 6");
+            done(&mut p.app, &job, Ok(Done::Refused(reason.clone())));
+            assert_eq!(p.status(), format!("! not recorded: {reason}"));
+            let full = p.app.data.glance.clone();
+            p.app.fetch.began = Some(Instant::now() + Duration::from_millis(1));
+            p.app.snapshot(full);
+            assert_eq!(p.keys("ga"), Effect::None);
+            assert_eq!(
+                (p.app.screen, p.app.text.as_str()),
+                (Screen::Confirm, text.as_str())
+            );
+            let shown = p.text();
+            assert!(
+                shown.contains("keep the glossary")
+                    && shown.contains("did not record")
+                    && shown.contains("esc close")
+                    && !shown.contains("y send "),
+                "{width}x{height}\n{shown}"
+            );
+            // Neither y nor e sends or edits it; the job and its state stay as they were.
+            for key in ["y", "e"] {
+                assert_eq!(p.keys(key), Effect::None);
+                assert_eq!(p.app.screen, Screen::Confirm);
+                assert!(p.status().contains("not sent again"), "{}", p.status());
+            }
+            assert_eq!(p.app.outcomes.len(), 1);
+            assert_eq!(p.app.outcomes[0].job, job);
+            assert!(matches!(p.app.outcomes[0].state, Outcome::Refused(_)));
+            p.keys("\x1b");
+            assert_eq!(p.app.screen, Screen::Glance);
+            assert!(!p.status().contains("nothing was sent"), "{}", p.status());
+        }
+    }
+
+    #[test]
+    fn a_refused_answer_stays_readable_in_the_picker_after_its_ask_leaves() {
+        for (width, height) in [(120, 40), (46, 30)] {
+            let mut p = Pane::new(width, height);
+            let ask = p.app.data.glance.needs_you[0].clone();
+            let mut without = p.app.data.glance.clone();
+            without.needs_you.retain(|a| a.ask_id != ask.ask_id);
+            // A long answer of its own, its end marked.
+            p.keys("a");
+            let options = ask::parse(&ask).options.len();
+            while p.app.choice < options {
+                p.code(KeyCode::Down);
+            }
+            let long = format!("{}END-OF-DRAFT", "word ".repeat(400));
+            paste(&mut p.app, &long);
+            let (job, (_, text, _)) = answered(p.keys("\ny"));
+            assert_eq!(text, long);
+            // Refused, then a snapshot begun after it no longer lists the ask.
+            done(
+                &mut p.app,
+                &job,
+                Ok(Done::Refused("answered concurrently".into())),
+            );
+            p.app.fetch.began = Some(Instant::now() + Duration::from_millis(1));
+            p.app.snapshot(without.clone());
+            // The picker lists it after the open asks, under its own label; the pill and
+            // the open count do not.
+            p.keys("G");
+            let row = p.app.row;
+            p.keys("a");
+            assert_eq!(p.app.screen, Screen::Picker);
+            let shown = p.text();
+            assert!(
+                shown.contains("1 kept answer") && shown.contains("NOT RECORDED"),
+                "{width}x{height}\n{shown}"
+            );
+            assert_eq!(p.app.pickable().len(), without.needs_you.len() + 1);
+            p.keys("G");
+            assert!(p.app.picked_kept());
+            assert_eq!(p.app.picked().map(|a| a.ask_id), Some(ask.ask_id));
+            // A reorder keeps the highlight on it.
+            let mut reordered = without.clone();
+            reordered.needs_you.reverse();
+            p.app.snapshot(reordered);
+            assert_eq!(p.app.picked().map(|a| a.ask_id), Some(ask.ask_id));
+            let shown = p.text();
+            let keys = shown
+                .lines()
+                .find(|l| l.contains("⏎ read"))
+                .unwrap_or_default();
+            assert!(
+                keys.contains("esc close") && !keys.contains("A Asks"),
+                "{width}x{height}\n{shown}"
+            );
+            // `A` has nothing to show for it; ⏎ reads it, in full, as it was sent.
+            assert_eq!(p.keys("A"), Effect::None);
+            assert_eq!(p.app.screen, Screen::Picker);
+            assert_eq!(p.keys("\n"), Effect::None);
+            assert_eq!(
+                (p.app.screen, p.app.text.as_str()),
+                (Screen::Confirm, long.as_str())
+            );
+            let top = p.text();
+            assert!(
+                top.contains("did not record")
+                    && top.contains("ctrl-d ctrl-u scroll")
+                    && !top.contains("END-OF-DRAFT"),
+                "{width}x{height}\n{top}"
+            );
+            for _ in 0..40 {
+                p.code(KeyCode::PageDown);
+            }
+            let end = p.text();
+            assert!(end.contains("END-OF-DRAFT"), "{width}x{height}\n{end}");
+            // Nothing sends it, and esc returns to where the picker was opened.
+            assert_eq!(p.keys("y"), Effect::None);
+            assert!(matches!(
+                p.app.outcome(ask.ask_id).unwrap().state,
+                Outcome::Refused(_)
+            ));
+            p.keys("\x1b");
+            assert_eq!((p.app.screen, p.app.row), (Screen::Glance, row));
+        }
+    }
+
+    #[test]
+    fn an_unknown_answer_waits_for_a_read_begun_after_it_and_resends_the_same_job() {
+        let mut p = Pane::new(46, 30);
+        let id = p.app.data.glance.needs_you[0].ask_id;
+        let full = p.app.data.glance.clone();
+        let mut without = full.clone();
+        without.needs_you.retain(|a| a.ask_id != id);
+        let (job, sent) = answered(p.keys("a\ny"));
+        // In flight: a second `a` (or `y`) cannot send it twice.
+        assert_eq!(p.keys("a"), Effect::None);
+        assert!(p.status().contains("on its way"), "{}", p.status());
+        let older = Instant::now();
+        done(&mut p.app, &job, Err("taskr did not answer in 10s".into()));
+        // The copy is fixed: no reason from the child reaches it.
         assert_eq!(
             p.status(),
-            format!("! answer {id} failed: server unreachable")
+            format!("? ask {id}: answer outcome unknown; checking the ledger")
         );
-        p.keys("a");
-        assert_eq!(p.app.screen, Screen::Answer);
+        let unknown =
+            |p: &Pane| matches!(p.app.outcome(id).unwrap().state, Outcome::Unknown { .. });
+        // Nothing repeats it, and `a` opens no new draft while it is checked.
+        assert_eq!(p.keys("a"), Effect::None);
+        assert_eq!(p.app.screen, Screen::Glance);
+        assert!(p.status().contains("checking the ledger"));
+        // A read begun before the failure proves nothing, even one without the ask; so
+        // does a read with no start time.
+        p.app.fetch.began = Some(older);
+        p.app.snapshot(without.clone());
+        assert!(unknown(&p));
+        p.app.snapshot(full.clone());
+        assert!(unknown(&p));
+        // A read begun after it still lists the ask: the same answer, offered for `y`.
+        p.app.fetch.began = Some(Instant::now() + Duration::from_millis(1));
+        p.app.snapshot(full.clone());
+        assert_eq!(p.app.outcome(id).unwrap().state, Outcome::Open);
+        assert!(p.status().contains("still open"), "{}", p.status());
+        p.keys("ga");
+        assert_eq!(
+            (p.app.screen, p.app.text.as_str()),
+            (Screen::Confirm, sent.1.as_str())
+        );
+        // It is resent unchanged: `e` does not edit it, esc keeps it.
+        p.keys("e");
+        assert_eq!(p.app.screen, Screen::Confirm);
+        assert!(p.status().contains("same answer"), "{}", p.status());
+        p.keys("\x1b");
+        assert!(
+            p.status()
+                .contains("no resend was sent; the answer is kept")
+                && !p.status().contains("nothing was sent"),
+            "{}",
+            p.status()
+        );
+        p.keys("ga");
+        // The resend is the identical job: ask, text, prompt flag and request key.
+        assert_eq!(p.keys("y"), Effect::Run(job.clone()));
+        assert_eq!(p.app.outcome(id).unwrap().state, Outcome::Sending);
+        assert_eq!(p.app.outcomes.len(), 1);
+        // Unknown again, and a later read no longer lists it: never claimed as ours.
+        done(&mut p.app, &job, Err("transport".into()));
+        p.app.fetch.began = Some(Instant::now() + Duration::from_millis(1));
+        p.app.snapshot(without);
+        assert_eq!(p.app.outcome(id).unwrap().state, Outcome::Gone);
+        assert_eq!(
+            p.status(),
+            format!(
+                "ask {id} {} is no longer open (answered or withdrawn elsewhere)",
+                full.needs_you[0].campaign
+            )
+        );
+    }
+
+    #[test]
+    fn a_resend_whose_ask_closes_under_it_sends_nothing_and_claims_nothing() {
+        let mut p = Pane::new(120, 40);
+        let id = p.app.data.glance.needs_you[0].ask_id;
+        let full = p.app.data.glance.clone();
+        let mut without = full.clone();
+        without.needs_you.retain(|a| a.ask_id != id);
+        let (job, _) = answered(p.keys("a\ny"));
+        done(&mut p.app, &job, Err("transport".into()));
+        p.app.fetch.began = Some(Instant::now() + Duration::from_millis(1));
+        p.app.snapshot(full);
+        p.keys("ga");
+        assert!(p.app.resend && p.app.screen == Screen::Confirm);
+        // The next successful read no longer lists it, while the resend is on screen.
+        p.app.fetch.began = Some(Instant::now() + Duration::from_millis(2));
+        p.app.snapshot(without);
+        assert!(p.app.gone);
+        assert_eq!(p.keys("y"), Effect::None);
+        let status = p.status().to_string();
+        assert!(
+            status.contains("no resend was sent")
+                && status.contains("unknown")
+                && !status.contains("nothing was sent"),
+            "{status}"
+        );
+        let shown = p.text();
+        assert!(
+            shown.contains("esc close")
+                && !shown.contains("y resend")
+                && !shown.contains("still open"),
+            "{shown}"
+        );
+        // The job, its key and the draft are kept, and the screen stays until esc.
+        assert_eq!(p.app.screen, Screen::Confirm);
+        assert_eq!(p.app.outcomes.len(), 1);
+        assert_eq!(p.app.outcomes[0].job, job);
+        assert_eq!(p.app.outcomes[0].state, Outcome::Gone);
+        assert_eq!(
+            p.app.text,
+            match &job {
+                Job::Answer { text, .. } => text.clone(),
+                _ => unreachable!(),
+            }
+        );
+        p.keys("\x1b");
+        assert!(!p.status().contains("nothing was sent"), "{}", p.status());
+    }
+
+    #[test]
+    fn only_the_producers_start_time_settles_an_unknown_answer() {
+        use crate::client::{Live, Pace, Update};
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut live = Live::new(rx, Pace::default(), None);
+        let mut p = Pane::new(46, 30);
+        let id = p.app.data.glance.needs_you[0].ask_id;
+        let full = p.app.data.glance.clone();
+        let (job, _) = answered(p.keys("a\ny"));
+        // A read begun before the failure arrives after it: its arrival proves nothing.
+        tx.send(Update::Started(Instant::now())).unwrap();
+        done(&mut p.app, &job, Err("transport".into()));
+        tx.send(Update::Done(Box::new(Ok(full.clone())))).unwrap();
+        live.poll(&mut p.app, Instant::now() + Duration::from_secs(5));
+        assert!(matches!(
+            p.app.outcome(id).unwrap().state,
+            Outcome::Unknown { .. }
+        ));
+        // A failed read begun later proves nothing either.
+        tx.send(Update::Started(Instant::now() + Duration::from_millis(1)))
+            .unwrap();
+        tx.send(Update::Done(Box::new(Err("timeout".into()))))
+            .unwrap();
+        live.poll(&mut p.app, Instant::now());
+        assert!(matches!(
+            p.app.outcome(id).unwrap().state,
+            Outcome::Unknown { .. }
+        ));
+        // A successful read begun after it settles it.
+        tx.send(Update::Started(Instant::now() + Duration::from_millis(1)))
+            .unwrap();
+        tx.send(Update::Done(Box::new(Ok(full)))).unwrap();
+        live.poll(&mut p.app, Instant::now());
+        assert_eq!(p.app.outcome(id).unwrap().state, Outcome::Open);
     }
 
     #[test]
@@ -2652,7 +3207,8 @@ mod tests {
 
     #[test]
     fn the_footer_says_whether_the_view_is_pushed_to_or_polling() {
-        let mut p = Pane::new(100, 30);
+        // Wide enough for every Dashboard hint and the mode together.
+        let mut p = Pane::new(140, 30);
         let last = |p: &mut Pane| {
             p.text()
                 .lines()
@@ -2672,14 +3228,51 @@ mod tests {
         p.app.fetch.loaded = true;
         p.app.fetch.age_ms = 40_000;
         assert!(last(&mut p).contains("? help"));
-        // Narrow: hints give way, the mode and `? help` stay.
+        // Where the hints fill the line, the mode gives way: every hint still shows.
+        let mut p = Pane::new(100, 30);
+        p.app.fetch.live = Some(false);
+        let line = last(&mut p);
+        assert!(
+            !line.ends_with(" polling")
+                && line.contains("D A F I screens")
+                && line.contains("? help"),
+            "{line}"
+        );
+        // Narrow: the mode gives way before any hint, and `? help` stays.
         let mut p = Pane::new(46, 30);
         p.app.fetch.live = Some(false);
         let line = last(&mut p);
         assert!(
-            line.ends_with(" polling") && line.contains("? help"),
+            !line.ends_with(" polling") && line.contains("? help"),
             "{line}"
         );
+        // A dialog's keys all show while polling: the editor, the review, the picker.
+        for (width, height) in [(46, 30), (46, 20), (40, 12)] {
+            let mut p = Pane::new(width, height);
+            p.app.fetch.live = Some(false);
+            p.keys("a");
+            let editor = last(&mut p);
+            assert_eq!(p.app.screen, Screen::Answer);
+            if width >= 46 {
+                assert!(editor.contains("⏎ review"), "{width}x{height} {editor}");
+            }
+            p.keys("\n");
+            let review = last(&mut p);
+            assert!(review.contains("y send"), "{width}x{height} {review}");
+            if width >= 46 {
+                assert!(
+                    review.contains("e edit") && review.contains("esc"),
+                    "{width}x{height} {review}"
+                );
+            }
+            p.keys("\x1bGa");
+            assert_eq!(p.app.screen, Screen::Picker);
+            let picker = last(&mut p);
+            assert!(picker.contains("⏎ answer"), "{width}x{height} {picker}");
+            if width >= 46 {
+                assert!(picker.contains("A Asks"), "{width}x{height} {picker}");
+            }
+        }
     }
 
     #[test]
@@ -2988,14 +3581,16 @@ mod tests {
             assert!(drawn(&p, p.app.row), "{id:?}");
             let hints = glance::hints(&p.app.view(), true);
             assert!(hints.iter().any(|(k, _)| *k == "o"), "{hints:?}");
+            // `a` here only lists the open asks (the picker); it never answers this row.
             assert!(
-                !hints.iter().any(|(k, _)| ["y", "⏎", "a", "p"].contains(k)),
+                !hints
+                    .iter()
+                    .any(|h| ["y", "⏎", "p"].contains(&h.0) || (h.0 == "a" && h.1 != "asks")),
                 "{hints:?}"
             );
             for code in [
                 KeyCode::Enter,
                 KeyCode::Right,
-                KeyCode::Char('a'),
                 KeyCode::Char('p'),
                 KeyCode::Char('l'),
                 KeyCode::Char('y'),
@@ -3005,6 +3600,8 @@ mod tests {
                 assert!(p.status().contains("informational"), "{}", p.status());
             }
             assert!(p.app.pending.is_none() && p.app.ask.is_none());
+            p.text();
+            a_lists_asks(&mut p);
             assert_eq!(p.app.screen, Screen::Glance);
             p.text();
             let Effect::Run(Job::Campaign { root, .. }) = press(&mut p.app, KeyCode::Char('o'))
@@ -3296,7 +3893,6 @@ mod tests {
                         for code in [
                             KeyCode::Enter,
                             KeyCode::Right,
-                            KeyCode::Char('a'),
                             KeyCode::Char('p'),
                             KeyCode::Char('l'),
                             KeyCode::Char('y'),
@@ -3308,6 +3904,7 @@ mod tests {
                                 "{width}x{height}/{id:?}"
                             );
                         }
+                        a_lists_asks(&mut p);
                         assert!(p.app.ask.is_none() && p.app.pending.is_none());
                         assert_eq!(p.app.screen, Screen::Glance);
                     }
@@ -3429,7 +4026,6 @@ mod tests {
                     for code in [
                         KeyCode::Enter,
                         KeyCode::Right,
-                        KeyCode::Char('a'),
                         KeyCode::Char('p'),
                         KeyCode::Char('l'),
                         KeyCode::Char('y'),
@@ -3437,6 +4033,7 @@ mod tests {
                     ] {
                         assert_eq!(press(&mut p.app, code), Effect::None, "{width}x{height}");
                     }
+                    a_lists_asks(&mut p);
                     assert!(p.app.ask.is_none() && p.app.pending.is_none());
                     assert_eq!(p.app.screen, Screen::Glance);
                 }
@@ -3711,12 +4308,14 @@ mod tests {
                 seen.push(title);
                 if i < 10 {
                     // An inert stop: nothing answers, opens, parks, copies or goes.
-                    for key in ['\n', 'a', 'l', 'p', 'y', 'o'] {
+                    for key in ['\n', 'l', 'p', 'y', 'o'] {
                         let effect = p.keys(&key.to_string());
                         assert!(matches!(effect, Effect::None), "{title} {key:?}");
                         assert_eq!(p.app.screen, Screen::Glance, "{title} {key:?}");
                         assert!(p.app.ask.is_none() && p.app.pending.is_none());
                     }
+                    p.text();
+                    a_lists_asks(&mut p);
                     p.app.status = None;
                     assert!(matches!(glance::selected(&p.app.view()), Selected::Nothing));
                 }
@@ -3908,12 +4507,14 @@ mod tests {
         assert_eq!(p.app.screen, Screen::Detail);
         assert!(p.app.target.is_none());
         assert!(p.text().contains("Nothing selected yet"), "{}", p.text());
-        for key in ['\n', 'a', 'l', 'p', 'y', 'o'] {
+        for key in ['\n', 'l', 'p', 'y', 'o'] {
             let effect = p.keys(&key.to_string());
             assert!(matches!(effect, Effect::None), "{key:?}");
             assert_eq!(p.app.screen, Screen::Detail, "{key:?}");
             assert!(p.app.ask.is_none() && p.app.pending.is_none(), "{key:?}");
         }
+        p.text();
+        a_lists_asks(&mut p);
         p.keys("h");
         assert_eq!((p.app.screen, p.app.row), (Screen::Glance, stop));
         assert_eq!(
@@ -4131,5 +4732,356 @@ mod tests {
                 assert!(text.contains("A Asks 12"), "{text}");
             }
         }
+    }
+
+    /// `a` off an ask, on the frame last drawn: the picker and nothing else (no answer, no
+    /// pending write, no effect), and esc gives the exact origin back. Over a pane too small
+    /// for anything but the pill, `a` does nothing at all.
+    fn a_lists_asks(p: &mut Pane) {
+        let before = origin(p);
+        let target = p.app.target.as_ref().map(|t| t.id.clone());
+        let drawn = !p.app.seen.borrow().hits.is_empty();
+        assert_eq!(press(&mut p.app, KeyCode::Char('a')), Effect::None);
+        assert!(p.app.ask.is_none() && p.app.pending.is_none());
+        if !drawn {
+            assert_eq!(origin(p), before);
+            return;
+        }
+        assert_eq!(p.app.screen, Screen::Picker);
+        assert_eq!(press(&mut p.app, KeyCode::Esc), Effect::None);
+        assert_eq!(origin(p), before);
+        assert_eq!(p.app.target.as_ref().map(|t| t.id.clone()), target);
+        p.app.status = None;
+    }
+
+    /// Clicks the first cell of what the last frame recorded as `hit`.
+    fn click_hit(p: &mut Pane, hit: Hit) -> Effect {
+        p.text();
+        let area = p
+            .app
+            .seen
+            .borrow()
+            .hits
+            .iter()
+            .find(|(_, h)| *h == hit)
+            .map(|(r, _)| *r)
+            .unwrap_or_else(|| panic!("{hit:?} is not drawn"));
+        p.click(area.x, area.y)
+    }
+
+    /// Where a screen is: what the picker must give back untouched.
+    fn origin(p: &Pane) -> (Screen, Option<glance::RowId>, usize, String, usize, usize) {
+        let a = &p.app;
+        let at = a.screen.rows().then(|| at_row(p)).flatten();
+        (
+            a.screen,
+            at,
+            a.row,
+            a.filter.clone(),
+            a.scroll,
+            a.back.len(),
+        )
+    }
+
+    #[test]
+    fn a_off_an_ask_opens_the_picker_and_esc_returns_to_the_exact_origin() {
+        for keys in [
+            "G", "/docs\nG", "Fjj", "Fjj/o\n", "GI", "D?", "Dc", "Ds", "Dj\t",
+        ] {
+            for close in ["\x1b", "q"] {
+                let mut p = Pane::new(120, 40);
+                p.app.config.panels = [true; 11];
+                p.keys(keys);
+                let before = origin(&p);
+                let target = p.app.target.as_ref().map(|t| t.id.clone());
+                assert_eq!(p.keys("a"), Effect::None, "{keys}");
+                assert_eq!(p.app.screen, Screen::Picker, "{keys}");
+                // A modal: no source reads under it; the ledger snapshot is not a source.
+                assert!((0..11).all(|i| !p.app.admits(i)), "{keys}");
+                assert!(p.text().contains("open owner asks"), "{keys}");
+                p.keys(close);
+                assert_eq!(origin(&p), before, "{keys} then {close:?}");
+                assert_eq!(p.app.target.as_ref().map(|t| t.id.clone()), target);
+            }
+        }
+        // On an ask row `a` goes straight to the editor, as before.
+        let mut p = Pane::new(120, 40);
+        p.keys("a");
+        assert_eq!(p.app.screen, Screen::Answer);
+    }
+
+    #[test]
+    fn picker_a_shows_the_asks_screen_once_and_the_origin_keeps_its_place() {
+        let mut p = Pane::new(120, 40);
+        let second = p.app.data.glance.needs_you[1].ask_id;
+        // The Asks screen's own filter would hide the ask: it gives way.
+        p.keys("A/zzz\nFjj");
+        let fleet = at_row(&p);
+        p.keys("aj");
+        assert_eq!(p.app.picked().map(|a| a.ask_id), Some(second));
+        p.keys("A");
+        assert_eq!((p.app.screen, p.app.back.len()), (Screen::Asks, 0));
+        assert_eq!(at_row(&p), Some(glance::RowId::Ask(second)));
+        assert_eq!(p.app.filter, "");
+        // One transition: on the Asks screen `A` stays there.
+        p.keys("A");
+        assert_eq!(at_row(&p), Some(glance::RowId::Ask(second)));
+        p.keys("F");
+        assert_eq!((p.app.screen, at_row(&p)), (Screen::Fleet, fleet.clone()));
+        // With nothing open: the picker says so, and A and esc still work.
+        p.app.data.glance.needs_you.clear();
+        p.keys("a");
+        assert!(p.text().contains("Nothing needs you"), "{}", p.text());
+        assert_eq!(p.keys("\n"), Effect::None);
+        assert_eq!(p.app.screen, Screen::Picker);
+        p.keys("A");
+        assert_eq!(p.app.screen, Screen::Asks);
+        p.keys("Fa\x1b");
+        assert_eq!((p.app.screen, at_row(&p)), (Screen::Fleet, fleet));
+    }
+
+    #[test]
+    fn picker_enter_answers_the_highlighted_ask_and_esc_returns_to_the_origin() {
+        let mut p = structured(120, 40);
+        p.keys("Fjj");
+        let before = origin(&p);
+        let ask = p.app.data.glance.needs_you[1].clone();
+        p.keys("aj\n");
+        assert_eq!(p.app.screen, Screen::Answer);
+        assert_eq!(p.app.ask.as_ref().map(|a| a.ask_id), Some(ask.ask_id));
+        // The picker's place went to the editor: esc is back on Fleet, nothing sent.
+        assert_eq!(p.keys("\x1b"), Effect::None);
+        assert_eq!(origin(&p), before);
+        assert_eq!(p.status(), "cancelled, nothing was sent");
+        // The picker owns every key: screen keys, brackets and row keys do nothing.
+        p.keys("a");
+        for c in "DFI[]?s/ycplo0H".chars() {
+            assert_eq!(p.code(KeyCode::Char(c)), Effect::None, "{c}");
+            assert_eq!(p.app.screen, Screen::Picker, "{c}");
+        }
+        // Wheel and click choose; a double-click answers; nothing is sent.
+        p.mouse(MouseEventKind::ScrollDown, 60, 20);
+        assert_eq!(p.app.picked().map(|a| a.ask_id), Some(ask.ask_id));
+        let third = p.app.data.glance.needs_you[2].clone();
+        assert_eq!(click_hit(&mut p, Hit::Ask(third.ask_id)), Effect::None);
+        assert_eq!(p.app.picked().map(|a| a.ask_id), Some(third.ask_id));
+        // A click outside the picker lands on nothing.
+        assert_eq!(p.click(0, 39), Effect::None);
+        assert_eq!(p.app.screen, Screen::Picker);
+        assert_eq!(click_hit(&mut p, Hit::Ask(third.ask_id)), Effect::None);
+        assert_eq!(p.app.screen, Screen::Answer);
+        assert_eq!(p.app.ask.as_ref().map(|a| a.ask_id), Some(third.ask_id));
+    }
+
+    #[test]
+    fn the_picker_follows_its_ask_across_snapshots_and_says_when_it_leaves() {
+        let mut p = structured(120, 40);
+        p.keys("Faj");
+        let id = p.app.picked().map(|a| a.ask_id).unwrap();
+        let mut next = p.app.data.glance.clone();
+        next.needs_you.reverse();
+        p.app.snapshot(next.clone());
+        assert_eq!(p.app.picked().map(|a| a.ask_id), Some(id));
+        assert_eq!(p.app.screen, Screen::Picker);
+        next.needs_you.retain(|a| a.ask_id != id);
+        p.app.snapshot(next.clone());
+        assert!(p.status().contains("is no longer open"), "{}", p.status());
+        assert_eq!(
+            p.app.picked().map(|a| a.ask_id),
+            Some(next.needs_you[0].ask_id)
+        );
+        p.keys("\n");
+        assert_eq!(
+            p.app.ask.as_ref().map(|a| a.ask_id),
+            Some(next.needs_you[0].ask_id)
+        );
+    }
+
+    #[test]
+    fn every_printable_is_text_in_the_editor_and_options_only_choose() {
+        let mut p = structured(120, 40);
+        p.keys("ja");
+        assert_eq!(p.app.screen, Screen::Answer);
+        let options = ask::parse(p.app.ask.as_ref().unwrap()).options.len();
+        // An option click chooses it, a second click too; neither sends nor reviews.
+        assert_eq!(click_hit(&mut p, Hit::Opt(2)), Effect::None);
+        assert_eq!(click_hit(&mut p, Hit::Opt(2)), Effect::None);
+        assert_eq!((p.app.screen, p.app.choice), (Screen::Answer, 2));
+        // The wheel scrolls the ask's text and never moves the choice.
+        p.mouse(MouseEventKind::ScrollDown, 60, 20);
+        p.mouse(MouseEventKind::ScrollUp, 60, 20);
+        assert_eq!(p.app.choice, 2);
+        // Nothing outside the dialog can be clicked.
+        assert_eq!(p.click(0, 39), Effect::None);
+        assert_eq!((p.app.screen, p.app.choice), (Screen::Answer, 2));
+        // "write your own answer": every printable is text, a first bracket included.
+        click_hit(&mut p, Hit::Opt(options));
+        assert_eq!((p.app.choice, p.app.editing), (options, true));
+        let typed = "[]DAFIAa?qjk y/s0H";
+        p.keys(typed);
+        assert_eq!((p.app.screen, p.app.text.as_str()), (Screen::Answer, typed));
+    }
+
+    #[test]
+    fn a_failed_read_never_closes_the_editor_and_a_good_one_does() {
+        use crate::client::{Live, Pace, Update};
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut live = Live::new(rx, Pace::default(), None);
+        let mut p = Pane::new(120, 40);
+        p.keys("a");
+        let id = p.app.ask.as_ref().unwrap().ask_id;
+        tx.send(Update::Started(Instant::now())).unwrap();
+        tx.send(Update::Done(Box::new(Err("timeout".into()))))
+            .unwrap();
+        live.poll(&mut p.app, Instant::now());
+        assert!(!p.app.gone && !p.text().contains("no longer open"));
+        let mut next = p.app.data.glance.clone();
+        next.needs_you.retain(|a| a.ask_id != id);
+        tx.send(Update::Started(Instant::now())).unwrap();
+        tx.send(Update::Done(Box::new(Ok(next)))).unwrap();
+        live.poll(&mut p.app, Instant::now());
+        assert!(p.app.gone && p.text().contains("no longer open"));
+        // Another failure does not reopen it.
+        tx.send(Update::Done(Box::new(Err("timeout".into()))))
+            .unwrap();
+        live.poll(&mut p.app, Instant::now());
+        assert!(p.app.gone);
+    }
+
+    #[test]
+    fn help_open_before_the_first_snapshot_returns_to_the_first_ask() {
+        let mut p = Pane::new(120, 40);
+        let glance = p.app.data.glance.clone();
+        p.app.data = crate::model::Data::default();
+        p.app.fetch.loaded = false;
+        p.app.github = crate::github::demo();
+        // The owner moved onto the PR card and opened the help, then the ledger answered.
+        p.keys("jj?");
+        assert_eq!(p.app.screen, Screen::Help);
+        p.app.snapshot(glance.clone());
+        p.app.fetch.loaded = true;
+        p.keys("\x1b");
+        assert_eq!(
+            (p.app.screen, at_row(&p)),
+            (
+                Screen::Glance,
+                Some(glance::RowId::Ask(glance.needs_you[0].ask_id))
+            )
+        );
+    }
+
+    #[test]
+    fn the_asks_screen_shows_the_selected_ask_in_full() {
+        let ctrl = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL);
+        // Wide: beside the list, scrolled on its own; j k move between asks. (At 120x40 the
+        // long ask fits beside the list; 100x24 makes it scroll.)
+        let mut p = Pane::new(100, 24);
+        p.app.data.glance.needs_you.insert(0, frames::long_ask());
+        let long = p.app.data.glance.needs_you[0].ask_id;
+        p.keys("Ag");
+        let text = p.text();
+        assert!(text.contains(&format!("ask {long} ·")), "{text}");
+        assert!(text.contains("ctrl-d ctrl-u scroll text"), "{text}");
+        key(&mut p.app, ctrl('d'));
+        assert!(p.app.scroll > 0);
+        assert_eq!(at_row(&p), Some(glance::RowId::Ask(long)));
+        p.keys("j");
+        assert_eq!(p.app.scroll, 0);
+        // The place is kept across screens.
+        p.keys("k");
+        key(&mut p.app, ctrl('d'));
+        let scroll = p.app.scroll;
+        p.keys("DA");
+        assert_eq!(
+            (p.app.scroll, at_row(&p)),
+            (scroll, Some(glance::RowId::Ask(long)))
+        );
+        // Narrow with several asks: the list, and ⏎ reads the selected one on Detail.
+        let mut p = Pane::new(46, 30);
+        p.keys("Aj");
+        let id = at_row(&p);
+        assert!(p.text().contains("⏎ read in full"), "{}", p.text());
+        assert_eq!(p.keys("\n"), Effect::None);
+        assert_eq!(p.app.screen, Screen::Detail);
+        assert_eq!(p.app.target.as_ref().map(|t| t.id.clone()), id);
+        p.keys("\x1b");
+        assert_eq!((p.app.screen, at_row(&p)), (Screen::Asks, id));
+        // Narrow with one: its full text under it, and ⏎ answers it.
+        let mut p = Pane::new(46, 30);
+        p.app.data.glance.needs_you.truncate(1);
+        let one = p.app.data.glance.needs_you[0].clone();
+        p.keys("A");
+        let text = p.text();
+        assert!(text.contains(&format!("ask {} ·", one.ask_id)), "{text}");
+        assert!(text.contains("⏎ answer"), "{text}");
+        assert_eq!(p.keys("\n"), Effect::None);
+        assert_eq!(p.app.screen, Screen::Answer);
+        assert_eq!(p.app.ask.as_ref().map(|a| a.ask_id), Some(one.ask_id));
+    }
+
+    #[test]
+    fn enter_answers_the_ask_the_asks_screen_shows_in_full_in_an_80x24_dialog() {
+        for (width, height) in [(120, 40), (80, 30)] {
+            let mut p = Pane::new(width, height);
+            p.app.data.glance.needs_you.insert(0, frames::long_ask());
+            let long = p.app.data.glance.needs_you[0].ask_id;
+            p.keys("Ag");
+            let text = p.text();
+            assert!(
+                text.contains("⏎ answer") && !text.contains("⏎ go"),
+                "{text}"
+            );
+            // ⏎ opens the editor on that ask, never its pane, and sends nothing.
+            assert_eq!(p.keys("\n"), Effect::None);
+            assert_eq!(p.app.screen, Screen::Answer);
+            assert_eq!(p.app.ask.as_ref().map(|a| a.ask_id), Some(long));
+            assert!(p.app.pending.is_none());
+            // The dialog is 24 rows, centred: its title on its top border.
+            let text = p.text();
+            let title = text.lines().position(|l| l.contains("Answer ask")).unwrap();
+            assert_eq!(title, (height as usize - 24) / 2, "{text}");
+            // The wheel scrolls the long ask's text, never the choice.
+            let choice = p.app.choice;
+            p.mouse(MouseEventKind::ScrollDown, width / 2, height / 2);
+            p.mouse(MouseEventKind::ScrollDown, width / 2, height / 2);
+            assert_eq!((p.app.scroll, p.app.choice), (2, choice));
+            p.mouse(MouseEventKind::ScrollUp, width / 2, height / 2);
+            assert_eq!((p.app.scroll, p.app.choice), (1, choice));
+            // esc gives the Asks screen back on the same ask.
+            p.keys("\x1b");
+            assert_eq!(
+                (p.app.screen, at_row(&p)),
+                (Screen::Asks, Some(glance::RowId::Ask(long)))
+            );
+        }
+        // A smaller pane shrinks the dialog to fit; under 60 columns it is full screen.
+        let mut p = Pane::new(70, 20);
+        p.keys("Aa");
+        assert_eq!(p.app.screen, Screen::Answer);
+        assert!(p.text().contains("Answer ask"), "{}", p.text());
+    }
+
+    #[test]
+    fn every_picker_hint_does_what_it_says() {
+        // Narrow: the picker is full screen with its hints in the footer.
+        let mut p = structured(46, 30);
+        p.keys("Fa");
+        let text = p.text();
+        for hint in ["j k choose", "⏎ answer", "A Asks", "esc close"] {
+            assert!(text.contains(hint), "{hint}\n{text}");
+        }
+        p.click_on("j k choose");
+        assert_eq!(
+            p.app.picked().map(|a| a.ask_id),
+            Some(p.app.data.glance.needs_you[1].ask_id)
+        );
+        p.click_on("⏎ answer");
+        assert_eq!(p.app.screen, Screen::Answer);
+        p.keys("\x1ba");
+        p.click_on("A Asks");
+        assert_eq!(p.app.screen, Screen::Asks);
+        p.keys("Fa");
+        p.click_on("esc close");
+        assert_eq!(p.app.screen, Screen::Fleet);
     }
 }

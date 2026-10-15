@@ -1,30 +1,30 @@
  taskr                                        2s ago   ● 5 need you  3 to check
   D Dashboard  [A Asks 5]  F Fleet 11   I Detail
  3 notes still carry OWNER items
- NEEDS YOU ────────────────────────────────────────────────────────────────── 5
- ? ◆ fleet-hub            BLOCKING HUB                                    ⏎  25s
-   Release: Cut the v3.2 release today, or wait for the cache fix? (A) Cut tod…
-▌? ◆ auth-rotation        BLOCKING                                        ⏎   2m
-▌  Tokens: Which signing scheme should the rotated service tokens use? (A) Ed2…
- ? ◆ docs-refresh                                                         ⏎   4m
-   Translations landed for three of the four locales. Locales: Which locales s…
- ? ◇ tui-frames           BLOCKING                                        ⏎  41s
-   Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns). (A)…
- ? ◇ ios-widgets                                                   laptop ↗   6m
-   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). STOPPED, per your rul…
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
- ⏎ go   a answer   l open   D A F I screens   ? help
+ NEEDS YOU ────────────────────────── 5 ╭ ask 61790 · auth-rotation ───────────╮
+ ? ◆ fleet-hub       BLOCKING HUB ⏎  25s│ BLOCKING · asker waiting · 2m ago ·  │
+   Release: Cut the v3.2 release today… │ atlas w20:p1                         │
+▌? ◆ auth-rotation   BLOCKING     ⏎   2m│                                      │
+▌  Tokens: Which signing scheme should… │ Tokens: Which signing scheme should  │
+ ? ◆ docs-refresh                 ⏎   4m│ the rotated service tokens use?      │
+   Translations landed for three of th… │                                      │
+ ? ◇ tui-frames      BLOCKING     ⏎  41s│ Options                              │
+   Frames follow-up is ready: PR #212 … │  A Ed25519  ★ recommended            │
+ ? ◇ ios-widgets           laptop ↗   6m│     Short keys and fast checks;      │
+   WIDGET BATCH: 19 of 23 merged (14:0… │     every client library we ship     │
+                                        │     supports it already.             │
+                                        │  B RSA-2048                          │
+                                        │     Matches today's tokens, so no    │
+                                        │     client changes, but rotation     │
+                                        │     takes four times as long.        │
+                                        │  C HMAC-SHA256                       │
+                                        │     Simplest to run, but every       │
+                                        │     verifier then holds the signing  │
+                                        │     secret.                          │
+                                        │                                      │
+                                        │                                      │
+                                        │                                      │
+                                        │                                      │
+                                        │                                      │
+                                        ╰──────────────────────────────────────╯
+ ⏎ answer   a answer   l open   D A F I screens   ? help

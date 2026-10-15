@@ -1,0 +1,40 @@
+ taskr ❯ dashboard                                                        hub atlas · 2s ago   ● 5 need you  3 to check
+ [D Dashboard]  A Asks 5   F Fleet 11   I Detail
+1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
+H Health-
+ 3 notes still carry OWNER items
+ NEEDS YOU ────────────────────────────────────────────── 5  TO CHECK ─────────────────────────────────────────────── 3
+ ? ◆ fleet-hub            BLOCKING HUB                ⏎  25s ! map-tiles-polish                              laptop   2h
+   Release: Cut the v3.2 release today, or wait for the ca…    lead unregistered and silent
+▌? ◆ auth-rotation  ╭ Answer ask 69902 · docs-site ────────────────────────────────────────────────╮                  2h
+▌  Tokens: Which sig│                                                                              │
+ ? ◆ docs-refresh   │  The ledger did not record this answer: ask is already answered by event     │           mini  12m
+   Translations land│  61850. It is kept here to read; it is not sent again.                       │
+ ? ◇ tui-frames     │                                                                              │
+   Frames follow-up │  to    docs-site lead · atlas w20:p1 · waiting for this answer               │
+ ? ◇ ios-widgets    │  text  a long answer of the owner's own a long answer of the owner's own a   │
+   WIDGET BATCH: 19 │        long answer of the owner's own a long answer of the owner's own a     │
+ CAMPAIGNS ─────────│        long answer of the owner's own a long answer of the owner's own a     │──────────────── 11
+ ◐ search-index     │        long answer of the owner's own a long answer of the owner's own a     │                 19s
+   Research complete│        long answer of the owner's own a long answer of the owner's own a     │
+ ◐ auth-rotation    │        long answer of the owner's own a long answer of the owner's own a     │                 29s
+   Implementation sl│        long answer of the owner's own a long answer of the owner's own a     │
+ ○ billing-export   │        long answer of the owner's own a long answer of the owner's own a     │                 33s
+   FYI 61448 from se│        long answer of the owner's own a long answer of the owner's own a     │
+•○ docs-refresh     │        long answer of the owner's own a long answer of the owner's own a     │                  2m
+   Hub FYI: keep the│        long answer of the owner's own a long answer of the owner's own a     │
+ ○ checkout-flow    │        long answer of the owner's own a long answer of the owner's own a     │                  3m
+   FIX: three P2 fin│        long answer of the owner's own a long answer of the owner's own a     │
+ ◐ ios-widgets      │  1-17/37 · ctrl-d ctrl-u scroll                                              │          laptop  7m
+   Widget batch appr│                                                                              │
+ ◐ tui-frames       │   esc close                                                                  │                  8m
+   NOW: plan rev 3.1│                                                                              │
+ · infra-layout     ╰──────────────────────────────────────────────────────────────────────────────╯                 12m
+   cache-audit lead root=4040 pane=w41:p1: campaign complete, docs PR merged
+ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁                                                                      14m
+   matrix run A finished
+ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                                                                      54m
+   S4 cursor split merged; contract tests green on both hosts
+ ‖ legacy-importer                                                                                            parked  3h
+ · 2 quiet
+ ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   D A F I screens   y copy   s slotr   ? help

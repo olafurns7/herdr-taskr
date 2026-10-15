@@ -1,0 +1,30 @@
+ taskr      2s ago   ● 1 need you  3 to check
+  D Dash  [A Asks 1]  F Fleet 11   I Detail
+ 3 notes still carry OWNER items
+ NEEDS YOU ──────────────────────────────── 1
+▌? ◆ fleet-hub            BLOCKING HUB  ⏎  25s
+▌  Release: Cut the v3.2 release today, or w…
+╭ ask 61811 · fleet-hub ─────────────────────╮
+│ BLOCKING · asker waiting · 25s ago · atlas │
+│ w1:p1                                      │
+│                                            │
+│ Release: Cut the v3.2 release today, or    │
+│ wait for the cache fix?                    │
+│                                            │
+│ Options                                    │
+│  A Cut today                               │
+│     Ships the 14 merged changes now; the   │
+│     cache fix follows in v3.2.1.           │
+│  B Wait for the fix                        │
+│     One release with everything, likely    │
+│     tomorrow afternoon.                    │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+│                                            │
+╰────────────────────────────────────────────╯
+ ⏎ answer   a answer   l open   ? help

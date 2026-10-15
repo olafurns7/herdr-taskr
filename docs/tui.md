@@ -48,7 +48,14 @@ another is shown. The view starts on the Dashboard; the screen is not saved.
 Switching reads nothing; the ledger snapshot keeps refreshing on every screen.
 
 - **Asks** lists every open owner ask, whatever panel 1 shows on the Dashboard,
-  with the row actions an ask has there (`⏎`, `a`, `l`, `y`, `/`).
+  with the row actions an ask has there (`⏎`, `a`, `l`, `y`, `/`). From 80
+  columns the selected ask shows in full beside the list, with its options,
+  recommendation and state; `ctrl-d` `ctrl-u` and `PgDn` `PgUp` scroll it
+  (its title says which lines show) and `j` `k` move between asks. Narrower,
+  a single ask shows in full under the list; with several, `⏎` or `I` reads
+  the selected one on Detail. Wherever the selected ask shows in full, `⏎`
+  answers it, as `a` does. Under the list, **ANSWERED HERE** lists the answers
+  sent from this view, newest first, with what is known of each.
 - **Fleet** lists every listed campaign, parked ones last, whatever panel 3
   shows, with a campaign row's actions (`⏎`, `l`, `p`, `y`, `/`).
 - **Detail** (`I` on a row) shows that row's item in full, at full width:
@@ -333,7 +340,7 @@ pools stay, dimmed. Runs that wait on the old heavy flock show only as
 | `[` `]` | Previous, next screen |
 | `1`-`9`, `0`, `H` | Show/hide a Dashboard panel (remembered; `0` is Issues, `H` Health) |
 | `1`-`5` | Jump to a pane (campaign) |
-| `Enter` | Go to the row's agent pane in Herdr |
+| `Enter` | Go to the row's agent pane in Herdr; on Asks, answer the ask shown in full |
 | `l` | Open the campaign |
 | `h`, `esc` | Back, close; from Detail, back to its row |
 | `/` | Filter rows by name; search in a document |
@@ -362,7 +369,28 @@ Most keys only read. Three do more:
   Herdr pane and the agent's pane is on the same machine (the row shows `⏎`); for a pane on another machine (`↗`) use
   `y` to copy the command and run it there. Focusing moves every client
   attached to that Herdr server.
-- **`a`** records your answer with `taskr answer`. If the ask lists options
+- **`a`** on an ask opens the answer dialog. Anywhere else (another row, no
+  row, Fleet, Detail of another item, help, a document, all campaigns, slotr)
+  it opens the asks picker: every open owner ask in a centred dialog over the
+  dimmed screen, the header still live. `j` `k` or a click choose, `Enter` or a
+  double-click answers the chosen one, `esc` returns to the exact screen, row,
+  filter and scroll it was opened from, and `A` closes it and shows that ask
+  on the Asks screen (the screen it came from keeps its place). With no open
+  ask it says nothing needs you. After the open asks it lists, under
+  `NOT RECORDED`, each answer the ledger refused whose ask is no longer open:
+  `Enter` reads it in full, and `A` has nothing to show for it. The pill and
+  the open-ask counts never include them. The picker and the answer dialog own every
+  key: screen keys, brackets and row keys do nothing there, and while writing
+  an answer every printable key, a first `[` or `]` included, is text. Nothing
+  under a dialog can be clicked; a click on an option chooses it and never
+  sends, and the wheel scrolls the ask's text. No source starts a read while
+  either is open; the ledger snapshot keeps refreshing.
+
+  The answer dialog is 80 by 24 where the pane has room, smaller in a smaller
+  pane, and takes the whole pane under 60 columns. A review longer than its
+  room scrolls with `ctrl-d` `ctrl-u`, `PgDn` `PgUp` or the wheel, its last line
+  saying which lines show. It records your answer with
+  `taskr answer`. If the ask lists options
   like `(A) ...; (B) ...`, the dialog offers them, and you can always write
   your own. A structured ask's options come from its question, with each
   description under its label and `★` on the recommended one. `j` `k`
@@ -377,7 +405,37 @@ Most keys only read. Three do more:
   end and the cursor, with `…` before it.
   On a small screen the options give way first: descriptions shorten or go,
   then each label takes one cut line, then the list shows a window around the
-  chosen option with `↑ n more` and `↓ n more`.
+  chosen option with `↑ n more` and `↓ n more`. When a successful snapshot no
+  longer lists the ask (answered or withdrawn elsewhere), the dialog says so
+  and `y` sends nothing; the draft stays until `esc`. A failed read is not
+  evidence and changes nothing.
+
+  Each answer sent carries its own request key, before the command:
+  `taskr --json --request-key KEY answer [--prompt] -- ID TEXT`. A local-mode
+  taskr (`TASKR_DB` set, or no `server.url`) refuses the key with one exact
+  usage error before it reads or writes anything; only that refusal lets the
+  same answer go once more without the key, within the same 10 s bound. The
+  ledger records one answer per ask either way. What comes back decides the
+  outcome, shown in the footer and under **ANSWERED HERE** on the Asks screen:
+
+  | Outcome | When | Shown |
+  | --- | --- | --- |
+  | Recorded | the reply has an `answer_id`, whatever the exit status | `✓ answered ASK as event ID`, with `not delivered to its pane: …` when the prompt failed |
+  | Not recorded | the ledger's own refusal: exit 6 with `"kind":"rejected"` | `! not recorded: REASON`; the answer is kept to read in full (`a` on its ask, or the picker once the ask has left), and nothing sends it again |
+  | Unknown | anything else: a timeout, transport, exit 5, a queued request, no reply or a malformed one | `? ask ASK: answer outcome unknown; checking the ledger` |
+
+  Nothing repeats an unknown answer by itself. Its ask, text, prompt flag and
+  key are kept, and only a successful snapshot whose read began after the
+  failure settles it; an older read still in flight, or a failed one, proves
+  nothing. If that snapshot no longer lists the ask, it is shown as no longer
+  open (answered or withdrawn elsewhere), with its campaign; the view does not
+  claim its own answer won. If it still lists it, `a` shows the same answer
+  and `y` resends it unchanged, with the same key; `e` cannot edit it and
+  `esc` keeps it. If the ask closes while that review is open, `y` sends
+  nothing and only `esc close` is offered. While an answer is on its way,
+  recorded or being checked, `a` on its ask says so and opens no new draft, and
+  a second `y` sends nothing. A recorded answer's delivery note stays on its
+  own line under ANSWERED HERE.
 - **`p`** parks a campaign (`taskr set ROOT glance.state=parked`) or unparks
   it. A parked campaign stays dim; its owner asks stay red.
 

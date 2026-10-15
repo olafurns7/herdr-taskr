@@ -11,7 +11,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    App, Screen, ask, glance,
+    App, Hit, Screen, ask, glance,
     keys::{self, GROUPS, KEYS},
     model::Need,
     theme::Theme,
@@ -94,7 +94,12 @@ fn where_from(app: &App, a: &Need, pane: bool) -> Span<'static> {
 /// When the rows are short the spacing gives way first, then the scroll marks (folded
 /// onto one row when that fits), then the context; a size that cannot hold the focused
 /// option, the answer and the hints draws an explicit too-small body instead.
-fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>> {
+fn choose(
+    app: &App,
+    a: &Need,
+    width: usize,
+    budget: usize,
+) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
     let t = &app.theme;
     let parsed = ask::parse(a);
     // ` ❯ `, `[x] ` when several can be picked, `A  `, and a column to spare.
@@ -183,7 +188,10 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
     }
     if too_small {
         app.seen.borrow_mut().page = (0, 0);
-        return vec![Line::from(sp("window too small: resize to answer", t.sub))];
+        return (
+            vec![Line::from(sp("window too small: resize to answer", t.sub))],
+            vec![None],
+        );
     }
     let gap_above = usize::from(spacing >= 2);
     let more = |count: usize, arrow: &str| {
@@ -249,6 +257,8 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
     let each = (budget.saturating_sub(fixed) / described.max(1)).min(3);
 
     let mut rows: Vec<Line> = above.into_iter().collect();
+    // Which option each row belongs to, for a click.
+    let mut marks: Vec<Option<usize>> = vec![None; rows.len()];
     for ((i, o), body) in parsed
         .options
         .iter()
@@ -303,13 +313,18 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
                 lines.push(Line::from(ui::spread(line, vec![], width)));
             }
         }
+        marks.extend(std::iter::repeat_n(Some(i), lines.len()));
         rows.extend(
             lines
                 .into_iter()
                 .map(|l| if on { l.style(t.selected()) } else { l }),
         );
     }
+    marks.extend(std::iter::repeat_n(None, below.len()));
     rows.extend(below);
+    // "Write your own answer" is a choice too; the rule and the answer are not.
+    marks.push(Some(own));
+    marks.extend(std::iter::repeat_n(None, tail.len() - 1));
     rows.extend(tail);
 
     let mut context = wrap(&parsed.context, width);
@@ -365,7 +380,32 @@ fn choose(app: &App, a: &Need, width: usize, budget: usize) -> Vec<Line<'static>
     if spacing >= 2 {
         out.push(Line::raw(""));
     }
+    let mut at = vec![None; out.len()];
+    at.extend(marks);
     out.extend(rows);
+    (out, at)
+}
+
+/// The review in `room` lines: a long one scrolls (`ctrl-d ctrl-u`, the wheel), its last
+/// line saying which lines show.
+fn review(app: &App, lines: Vec<Line<'static>>, room: usize) -> Vec<Line<'static>> {
+    let total = lines.len();
+    if total <= room {
+        app.seen.borrow_mut().page = (room, total);
+        return lines;
+    }
+    let shown = room.saturating_sub(1).max(1);
+    app.seen.borrow_mut().page = (shown, total);
+    let first = app.scroll.min(total - shown);
+    let mut out: Vec<Line> = lines.into_iter().skip(first).take(shown).collect();
+    out.push(Line::from(sp(
+        format!(
+            "{}-{}/{total} · ctrl-d ctrl-u scroll",
+            first + 1,
+            first + shown
+        ),
+        app.theme.dim,
+    )));
     out
 }
 
@@ -396,13 +436,23 @@ fn confirm(app: &App, a: &Need, width: usize) -> Vec<Line<'static>> {
         text.replace('"', "\\\"")
     );
     let (dim, plain) = (Style::new().fg(t.dim), Style::new().fg(t.text));
-    let mut out: Vec<Line> = wrap(
-        "You are about to send this answer. It cannot be changed or sent twice.",
-        width,
-    )
-    .into_iter()
-    .map(|l| Line::from(sp(l, t.sub)))
-    .collect();
+    let intro = match (app.refused(), app.resend, app.gone) {
+        (Some(reason), ..) => format!(
+            "The ledger did not record this answer: {reason}. It is kept here to read; it is not \
+             sent again."
+        ),
+        (_, true, true) => "Whether this answer reached the ledger is unknown, and the ask is no \
+                            longer open: nothing is resent."
+            .into(),
+        (_, true, false) => "Whether this answer reached the ledger is unknown, and the ask is \
+                             still open. y sends it again unchanged, with the same request key."
+            .into(),
+        _ => "You are about to send this answer. It cannot be changed or sent twice.".into(),
+    };
+    let mut out: Vec<Line> = wrap(&intro, width)
+        .into_iter()
+        .map(|l| Line::from(sp(l, t.sub)))
+        .collect();
     out.push(Line::raw(""));
     out.extend(field(
         "to    ",
@@ -490,17 +540,26 @@ pub(crate) fn answer(f: &mut Frame, app: &App) {
     let inside = f.area().width.min(80).saturating_sub(6) as usize;
     let fits =
         f.area().width >= 60 && (!parsed.structured || keys_line(t, &long).width() <= inside + 3);
-    let hints: &[(&str, &str)] = if confirming {
-        &[
-            ("y", "send"),
-            ("e", "edit"),
-            ("esc", "cancel, nothing is sent"),
-        ]
-    } else if fits {
-        &long
-    } else {
-        &short
-    };
+    // Only keys that do something here: a refused answer or a resend whose ask closed can
+    // only be closed; a draft whose ask closed can still be edited.
+    let hints: &[(&str, &str)] =
+        if confirming && (app.refused().is_some() || (app.resend && app.gone)) {
+            &[("esc", "close")]
+        } else if confirming && app.gone {
+            &[("e", "edit"), ("esc", "close")]
+        } else if confirming && app.resend {
+            &[("y", "resend"), ("esc", "keep it")]
+        } else if confirming {
+            &[
+                ("y", "send"),
+                ("e", "edit"),
+                ("esc", "cancel, nothing is sent"),
+            ]
+        } else if fits {
+            &long
+        } else {
+            &short
+        };
     let title = format!("ask {} · {}", a.ask_id, a.campaign);
 
     if f.area().width >= 60 {
@@ -510,24 +569,25 @@ pub(crate) fn answer(f: &mut Frame, app: &App) {
         let inner = modal(
             f,
             t,
+            // 80x24 when the pane has room; `modal` shrinks it to fit a smaller one.
             80,
-            // A structured ask's descriptions take more room.
-            if confirming {
-                16
-            } else if parsed.structured {
-                26
-            } else {
-                20
-            },
+            24,
             &format!("Answer {title}"),
         );
         let (w, h) = (inner.width as usize, inner.height as usize);
-        let mut lines = if confirming {
-            confirm(app, a, w)
+        let mut lines = gone(app, a, w);
+        let top = lines.len();
+        let (body, marks) = if confirming {
+            (
+                review(app, confirm(app, a, w), h.saturating_sub(2 + top)),
+                vec![],
+            )
         } else {
-            choose(app, a, w, h - 2)
+            choose(app, a, w, h.saturating_sub(2 + top))
         };
+        lines.extend(body);
         lines.extend([Line::raw(""), keys_line(t, hints)]);
+        options(app, inner, top, &marks);
         f.render_widget(Paragraph::new(lines), inner);
         return;
     }
@@ -575,13 +635,190 @@ pub(crate) fn answer(f: &mut Frame, app: &App) {
     let mut lines = vec![
         Line::from(bold(title, t.text)),
         Line::from(ui::fit(state, w)),
-        Line::raw(""),
     ];
-    lines.extend(if confirming {
-        confirm(app, a, w)
+    lines.extend(gone(app, a, w));
+    lines.push(Line::raw(""));
+    let top = lines.len();
+    let (body, marks) = if confirming {
+        (
+            review(app, confirm(app, a, w), h.saturating_sub(top)),
+            vec![],
+        )
     } else {
-        choose(app, a, w, h - 3)
-    });
+        choose(app, a, w, h.saturating_sub(top))
+    };
+    lines.extend(body);
+    options(app, inner, top, &marks);
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// The dialog's ask left a successful snapshot: answered or withdrawn elsewhere.
+fn gone(app: &App, a: &Need, width: usize) -> Vec<Line<'static>> {
+    if !app.gone {
+        return vec![];
+    }
+    wrap(
+        &format!(
+            "! ask {} is no longer open (answered or withdrawn elsewhere); y sends nothing, \
+             esc closes",
+            a.ask_id
+        ),
+        width,
+    )
+    .into_iter()
+    .map(|l| Line::from(bold(l, app.theme.check)))
+    .collect()
+}
+
+/// A click on an option's rows chooses it; it never sends.
+fn options(app: &App, inner: Rect, top: usize, marks: &[Option<usize>]) {
+    for (i, mark) in marks.iter().enumerate() {
+        let y = top + i;
+        if let Some(o) = mark
+            && y < inner.height as usize
+        {
+            app.hit(
+                Rect {
+                    y: inner.y + y as u16,
+                    height: 1,
+                    ..inner
+                },
+                Hit::Opt(*o),
+            );
+        }
+    }
+}
+
+/// The asks picker: every open owner ask, whatever the screen under it shows, then the
+/// refused answers kept to read whose ask is no longer open. `j k` choose, `⏎` answers the
+/// highlighted ask or reads the kept answer, `A` shows an ask on the Asks screen, `esc`
+/// closes.
+pub(crate) fn picker(f: &mut Frame, app: &App) {
+    let t = &app.theme;
+    let asks = app.pickable();
+    let picked = app.picked().map(|a| a.ask_id);
+    let (n, open) = (asks.len(), app.data.glance.needs_you.len());
+    let title = match open {
+        0 => "Asks".to_string(),
+        1 => "Asks · 1 open owner ask".to_string(),
+        n => format!("Asks · {n} open owner asks"),
+    };
+    let title = match n - open {
+        0 => title,
+        1 => format!("{title} · 1 kept answer"),
+        k => format!("{title} · {k} kept answers"),
+    };
+    let hints: &[(&str, &str)] = if n == 0 {
+        &[("A", "Asks"), ("esc", "close")]
+    } else if app.picked_kept() {
+        &[("j k", "choose"), ("⏎", "read"), ("esc", "close")]
+    } else {
+        &[
+            ("j k", "choose"),
+            ("⏎", "answer"),
+            ("A", "Asks"),
+            ("esc", "close"),
+        ]
+    };
+    let stale = app.fetch.error.as_ref().filter(|_| app.fetch.loaded);
+    let wide = f.area().width >= 60;
+    let (inner, foot) = if wide {
+        crate::background(f, app);
+        // Nothing under a dialog can be clicked.
+        app.seen.borrow_mut().hits.clear();
+        let extra = usize::from(stale.is_some()) as u16 + u16::from(n > open);
+        let height = (2 * n.clamp(2, 12) as u16 + 6 + extra).min(24);
+        (modal(f, t, 66, height, &title), 2)
+    } else {
+        let [head, body, foot] = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .areas(f.area());
+        ui::header(f, app, head, vec![sp("asks", t.dim)]);
+        ui::footer(f, app, foot, hints);
+        let inner = Rect {
+            x: body.x + 1,
+            width: body.width.saturating_sub(2),
+            ..body
+        };
+        f.render_widget(
+            Paragraph::new(Line::from(bold(title.clone(), t.text))),
+            inner,
+        );
+        (
+            Rect {
+                y: inner.y + 1,
+                height: inner.height.saturating_sub(1),
+                ..inner
+            },
+            0,
+        )
+    };
+    let w = inner.width as usize;
+    let mut lines: Vec<Line> = vec![];
+    if let Some(error) = stale {
+        lines.push(Line::from(sp(
+            ui::clip(&format!("! {error} · the last snapshot"), w),
+            t.check,
+        )));
+    }
+    // The kept answers have a label line of their own.
+    let label = usize::from(n > open);
+    let room = (inner.height as usize).saturating_sub(lines.len() + foot + label);
+    if n == 0 {
+        let (first, second) = if app.fetch.loaded {
+            ("Nothing needs you", "No open owner ask in this snapshot.")
+        } else {
+            (
+                "No ledger snapshot yet",
+                "The asks show when the ledger answers.",
+            )
+        };
+        lines.extend([Line::from(sp(first, t.text)), Line::from(sp(second, t.sub))]);
+    } else {
+        // A window of two-line asks that keeps the highlighted one.
+        let fits = if 2 * n <= room {
+            n
+        } else {
+            (room.saturating_sub(1) / 2).clamp(1, n)
+        };
+        let at = asks
+            .iter()
+            .position(|a| Some(a.ask_id) == picked)
+            .unwrap_or(0);
+        let first = (at + 1).saturating_sub(fits).min(n - fits);
+        for (i, a) in asks.iter().enumerate().skip(first).take(fits) {
+            if i == open {
+                lines.push(Line::from(sp(
+                    ui::clip("NOT RECORDED · kept to read, no longer open", w),
+                    t.check,
+                )));
+            }
+            let y = inner.y + lines.len() as u16;
+            if y < inner.bottom() {
+                app.hit(
+                    Rect {
+                        y,
+                        height: 2.min(inner.bottom() - y),
+                        ..inner
+                    },
+                    Hit::Ask(a.ask_id),
+                );
+            }
+            lines.extend(glance::ask_lines(app, a, Some(a.ask_id) == picked, w));
+        }
+        if fits < n {
+            let more = format!("{}-{}/{n} · j k for the rest", first + 1, first + fits);
+            lines.push(Line::from(sp(more, t.dim)));
+        }
+    }
+    if wide {
+        let pad = (inner.height as usize).saturating_sub(lines.len() + 1);
+        lines.extend(std::iter::repeat_n(Line::raw(""), pad));
+        lines.push(keys_line(t, hints));
+    }
     f.render_widget(Paragraph::new(lines), inner);
 }
 

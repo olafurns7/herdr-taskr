@@ -1,0 +1,30 @@
+ taskr      2s ago   ● 5 need you  3 to check
+  D Dash  [A Asks 5]  F Fleet 11   I Detail
+ 3 notes still carry OWNER items
+ NEEDS YOU ──────────────────────────────── 5
+ ? ◆ fleet-hub            BLOCKING HUB  ⏎  25s
+   Release: Cut the v3.2 release today, or w…
+▌? ◆ auth-rotation        BLOCKING      ⏎   2m
+▌  Tokens: Which signing scheme should the r…
+ ? ◆ docs-refresh                       ⏎   4m
+   Translations landed for three of the four…
+ ? ◇ tui-frames           BLOCKING      ⏎  41s
+   Frames follow-up is ready: PR #212 (orpha…
+ ? ◇ ios-widgets                 laptop ↗   6m
+   WIDGET BATCH: 19 of 23 merged (14:02-14:0…
+
+
+
+
+
+
+
+ ANSWERED HERE
+ · 69901 search-index · no longer open (answ…
+ … 61367 ios-widgets · sending
+ ? 61767 tui-frames · still open: a, then y …
+ ? 61802 docs-refresh · outcome unknown; che…
+ ! 61790 auth-rotation · not recorded: ask i…
+ ✓ 61811 fleet-hub · recorded, event 61902
+   not delivered to its pane: no pane
+ ⏎ read in full   a answer   l open   ? help

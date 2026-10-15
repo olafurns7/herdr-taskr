@@ -112,6 +112,116 @@ fn fleet(app: &mut App) {
     app.row = 2;
 }
 
+/// `a` on a Fleet row: the picker over Fleet, the second ask highlighted.
+fn picker(app: &mut App) {
+    fleet(app);
+    with_structured(app);
+    app.picker();
+    app.pick_by(1);
+}
+
+/// The answer dialog after a snapshot no longer lists its ask.
+/// Every outcome an answer sent from here can have, one ask each; the last one's ask has
+/// left the snapshot.
+fn answered(app: &mut App) {
+    use crate::{Outcome, Sent, actions::Job};
+    asks(app);
+    let asks = app.data.glance.needs_you.clone();
+    let mut left = asks[0].clone();
+    (left.ask_id, left.campaign) = (69901, "search-index".into());
+    let states = [
+        Outcome::Recorded {
+            answer_id: 61902,
+            note: "not delivered to its pane: no pane".into(),
+        },
+        Outcome::Refused("ask is already answered by event 61850".into()),
+        Outcome::Unknown {
+            after: std::time::Instant::now(),
+        },
+        Outcome::Open,
+        Outcome::Sending,
+        Outcome::Gone,
+    ];
+    for (i, state) in states.into_iter().enumerate() {
+        let ask = match state {
+            Outcome::Gone => left.clone(),
+            _ => asks[i % asks.len()].clone(),
+        };
+        app.outcomes.push(Sent {
+            job: Job::Answer {
+                ask_id: ask.ask_id,
+                text: "A: yes".into(),
+                prompt: false,
+                key: format!("tui-frame-000{i}"),
+            },
+            ask,
+            state,
+        });
+    }
+}
+
+/// A refused answer whose ask has left the snapshot: kept, its text long.
+fn kept(app: &mut App) {
+    use crate::{Outcome, actions::Job};
+    answered(app);
+    app.screen = Screen::Glance;
+    let sent = app
+        .outcomes
+        .iter_mut()
+        .find(|s| matches!(s.state, Outcome::Refused(_)))
+        .unwrap();
+    (sent.ask.ask_id, sent.ask.campaign) = (69902, "docs-site".into());
+    let text = format!(
+        "{}END-OF-DRAFT",
+        "a long answer of the owner's own ".repeat(30)
+    );
+    sent.job = Job::Answer {
+        ask_id: 69902,
+        text,
+        prompt: false,
+        key: "tui-frame-kept".into(),
+    };
+}
+
+/// The picker on the kept answer.
+fn picker_kept(app: &mut App) {
+    kept(app);
+    app.picker();
+    app.pick = Some(69902);
+}
+
+/// The kept answer, read in the review.
+fn refused(app: &mut App) {
+    kept(app);
+    let sent = app.outcome(69902).cloned().unwrap();
+    let crate::actions::Job::Answer { text, .. } = sent.job else {
+        return;
+    };
+    app.answer(sent.ask);
+    (app.text, app.editing, app.screen) = (text, false, Screen::Confirm);
+}
+
+/// The resend of an answer whose outcome was unknown, its ask still open.
+fn resend(app: &mut App) {
+    answered(app);
+    let sent = app
+        .outcomes
+        .iter()
+        .find(|s| s.state == crate::Outcome::Open)
+        .cloned()
+        .unwrap();
+    app.answer(sent.ask);
+    app.text = "A: yes".into();
+    (app.editing, app.screen, app.resend) = (false, Screen::Confirm, true);
+}
+
+fn answer_gone(app: &mut App) {
+    answer(app);
+    let mut glance = app.data.glance.clone();
+    glance.needs_you.remove(0);
+    app.snapshot(glance);
+}
+
 fn dashboard(app: &mut App) {
     app.observed_at = 1_792_000_000;
     app.github = crate::github::demo();
@@ -231,6 +341,7 @@ fn stale(app: &mut App) {
         tries: 1,
         live: None,
         why: String::new(),
+        began: None,
     };
 }
 
@@ -637,6 +748,42 @@ pub fn all() -> Vec<Spec> {
         spec("glance", 70, 30, "-structured", structured),
         spec("glance", 120, 40, "-structured", structured),
         spec("glance", 46, 20, "-structured", structured),
+        spec("answer", 120, 40, "-gone", answer_gone),
+        spec("answer", 46, 30, "-gone", answer_gone),
+        spec("picker", 120, 40, "", picker),
+        spec("picker", 120, 40, "-light", picker),
+        spec("picker", 80, 30, "", picker),
+        spec("picker", 46, 30, "", picker),
+        spec("picker", 46, 30, "-ascii", |app| {
+            picker(app);
+            app.ascii = true;
+            app.theme = theme::PLAIN;
+        }),
+        spec("picker", 46, 20, "", picker),
+        spec("picker", 80, 30, "-empty", |app| {
+            fleet(app);
+            app.data.glance.needs_you.clear();
+            app.picker();
+        }),
+        spec("asks", 46, 30, "-one", |app| {
+            asks(app);
+            app.data.glance.needs_you.truncate(1);
+            app.row = 0;
+        }),
+        spec("asks", 120, 40, "-scrolled", |app| {
+            asks(app);
+            app.data.glance.needs_you.insert(0, long_ask());
+            app.row = 0;
+            app.scroll = 6;
+        }),
+        spec("asks", 120, 40, "-answered", answered),
+        spec("asks", 46, 30, "-answered", answered),
+        spec("confirm", 120, 40, "-resend", resend),
+        spec("picker", 120, 40, "-kept", picker_kept),
+        spec("picker", 46, 30, "-kept", picker_kept),
+        spec("confirm", 120, 40, "-refused", refused),
+        spec("confirm", 46, 30, "-refused", refused),
+        spec("confirm", 46, 30, "-resend", resend),
         spec("answer", 46, 30, "-single", answer_single),
         spec("answer", 70, 30, "-single", answer_single),
         spec("answer", 120, 40, "-single", answer_single),

@@ -1,0 +1,30 @@
+ taskr                                        2s ago   ● 5 need you  3 to check
+  D Dashboard   A Asks 5  [F Fleet 11]  I Detail
+ 3 notes still carry OWNER items
+ CAMPAIGNS ───────────────────────────────────────────────────────────────── 11
+ ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃                              19s
+   Research complete: reports/ranking-options.md compares three scorers on the…
+ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█                              29s
+   Impl╭ Asks · 5 open owner asks ──────────────────────────────────────╮d ope…
+▌○ bill│                                                                │    33s
+▌  FYI │   ? ◆ fleet-hub            BLOCKING HUB                ⏎  25s  │he le…
+•○ docs│     Release: Cut the v3.2 release today, or wait for the ca…   │     2m
+   Hub │  ▌? ◆ auth-rotation        BLOCKING                    ⏎   2m  │r
+ ○ chec│  ▌  Tokens: Which signing scheme should the rotated service…   │     3m
+   FIX:│   ? ◆ docs-refresh                                     ⏎   4m  │w com…
+ ◐ ios-│     Translations landed for three of the four locales. Loca…   │top  7m
+   Widg│   ? ◇ tui-frames           BLOCKING                    ⏎  41s  │ait f…
+ ◐ tui-│     Frames follow-up is ready: PR #212 (orphaned asks hidde…   │     8m
+   NOW:│   ? ◇ ios-widgets                               laptop ↗   6m  │ight.
+ · infr│     WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…   │    12m
+   cach│                                                                │ged
+ ◐ mode│   j k choose    ⏎ answer    A Asks    esc close                │    14m
+   matr│                                                                │
+ ○ api-╰────────────────────────────────────────────────────────────────╯    54m
+   S4 cursor split merged; contract tests green on both hosts
+ ‖ legacy-importer                                                    parked  3h
+ · 2 quiet
+
+
+
+ ⏎ go   l open   p park   D A F I screens   ? help

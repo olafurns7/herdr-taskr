@@ -7,4 +7,4 @@
  ask ios-widgets WIDGET BATCH…
 
 
- ⏎ go   a answer   ? help
+ ⏎ read in full   ? help

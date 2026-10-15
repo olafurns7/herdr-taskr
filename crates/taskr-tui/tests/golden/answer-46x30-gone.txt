@@ -1,0 +1,30 @@
+ taskr ❯ answer        2s ago   ● 1 need you
+ ask 61767 · tui-frames
+ BLOCKING · waiting · 41s · atlas w31:p1
+ ! ask 61767 is no longer open (answered or
+ withdrawn elsewhere); y sends nothing, esc
+ closes
+
+ Frames follow-up is ready: PR #212 (orphaned
+ asks hidden, close warns).
+
+  ❯ A  merge #212 and release v2.4.1 now
+       recommended
+    B  merge, hold the release for the next
+       change
+    …  write your own answer
+
+ ────────────────────────────────────────────
+  answer  A: merge #212 and release v2.4.1
+          now
+
+
+
+
+
+
+
+
+
+
+ j k choose   tab edit   ⏎ review   esc cancel

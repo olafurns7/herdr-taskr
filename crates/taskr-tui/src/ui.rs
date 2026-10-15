@@ -524,11 +524,21 @@ pub(crate) fn footer(f: &mut Frame, app: &App, area: Rect, hints: &[(&str, &str)
         Some(false) => "   polling ",
         None => "",
     };
-    let room = (area.width as usize).saturating_sub(mode.len());
-    let n = (0..=hints.len())
-        .rev()
-        .find(|&n| size(n) <= room + 3)
-        .unwrap_or(0);
+    let fits = |room: usize| {
+        (0..=hints.len())
+            .rev()
+            .find(|&n| size(n) <= room + 3)
+            .unwrap_or(0)
+    };
+    // The label gives way before any hint does.
+    let full = area.width as usize;
+    let mode = if fits(full.saturating_sub(mode.len())) < hints.len() {
+        ""
+    } else {
+        mode
+    };
+    let room = full.saturating_sub(mode.len());
+    let n = fits(room);
     let mut spans = vec![Span::raw(" ")];
     for (key, label) in shown(n) {
         // A click on a hint is its key.

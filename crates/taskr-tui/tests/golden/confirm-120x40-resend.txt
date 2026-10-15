@@ -1,0 +1,40 @@
+ taskr ❯ asks                                                             hub atlas · 2s ago   ● 5 need you  3 to check
+  D Dashboard  [A Asks 5]  F Fleet 11   I Detail
+ 3 notes still carry OWNER items
+ NEEDS YOU ──────────────────────────────── 5 ╭ ask 61790 · auth-rotation ─────────────────────────────────────────────╮
+ ? ◆ fleet-hub            BLOCKING HUB  ⏎  25s│ BLOCKING · asker waiting · 2m ago · atlas w20:p1                       │
+   Release: Cut the v3.2 release today, or w… │                                                                        │
+▌? ◆ auth-rotation        BLOCKING      ⏎   2m│ Tokens: Which signing scheme should the rotated service tokens use?    │
+▌  Tokens: Which signing scheme should the r… │                                                                        │
+ ? ◆ docs-refresh   ╭ Answer ask 61767 · tui-frames ───────────────────────────────────────────────╮                   │
+   Translations land│                                                                              │                   │
+ ? ◇ tui-frames     │  Whether this answer reached the ledger is unknown, and the ask is still     │ we ship supports  │
+   Frames follow-up │  open. y sends it again unchanged, with the same request key.                │                   │
+ ? ◇ ios-widgets    │                                                                              │                   │
+   WIDGET BATCH: 19 │  to    tui-frames lead · atlas w31:p1 · waiting for this answer              │t rotation takes   │
+                    │  text  A: yes                                                                │                   │
+                    │                                                                              │                   │
+                    │  runs  taskr answer 61767 "A: yes"                                           │he signing secret. │
+                    │                                                                              │                   │
+                    │   y resend    esc keep it                                                    │                   │
+                    │                                                                              │                   │
+                    │                                                                              │                   │
+                    │                                                                              │                   │
+                    │                                                                              │                   │
+                    │                                                                              │                   │
+                    │                                                                              │                   │
+                    │                                                                              │                   │
+                    │                                                                              │                   │
+                    │                                                                              │                   │
+                    │                                                                              │                   │
+                    │                                                                              │                   │
+                    │                                                                              │───────────────────╯
+ ANSWERED HERE      ╰──────────────────────────────────────────────────────────────────────────────╯
+ · 69901 search-index · no longer open (answered or withdrawn elsewhere)
+ … 61367 ios-widgets · sending
+ ? 61767 tui-frames · still open: a, then y resends
+ ? 61802 docs-refresh · outcome unknown; checking
+ ! 61790 auth-rotation · not recorded: ask is already answered by event 61850
+ ✓ 61811 fleet-hub · recorded, event 61902
+   not delivered to its pane: no pane
+ ⏎ answer   a answer   l open   / filter   D A F I screens   y copy   s slotr   q quit   ? help

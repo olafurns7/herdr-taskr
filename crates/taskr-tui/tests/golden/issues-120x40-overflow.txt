@@ -37,4 +37,4 @@ H Health-
  tui-frames #4120 · read 3m ago                              closed: first 100; more may exist
  recent log sample (up to 100 events): decisions only       ▌@alex · 2 open · 2 blocked · 0 closed/24h
  #61301 13:58 D4: one binary for the view and the hub; the … +3 more groups · j k
- 0-9 panels   H health   / filter   D A F I screens   s slotr   q quit   ? help
+ a asks   0-9 panels   H health   / filter   D A F I screens   s slotr   q quit   ? help

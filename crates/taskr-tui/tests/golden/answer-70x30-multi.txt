@@ -1,5 +1,6 @@
  taskr                              2s ago   ● 5 need you  3 to check
  [D Dashboard]  A Asks 5   F Fleet 11   I Detail
+panels 1+ 2+ 3+ 4+ 5+ 6+ 7- 8- 9- 0- H-
 ╭ Answer ask 61802 · docs-refresh ───────────────────────────────────╮
 │                                                                    │
 │  Translations landed for three of the four locales. Locales:       │
@@ -23,8 +24,7 @@
 │                                                                    │
 │                                                                    │
 │                                                                    │
-│                                                                    │
-│                                                                    │
 ╰────────────────────────────────────────────────────────────────────╯
+ ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█                     3m
  +6 more listed · F · 2 quiet unlisted · c
  ⏎ go   a answer   l open   D A F I screens   ? help

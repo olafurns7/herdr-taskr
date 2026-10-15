@@ -1,0 +1,40 @@
+ taskr ❯ dashboard                                                        hub atlas · 2s ago   ● 1 need you  3 to check
+ [D Dashboard]  A Asks 1   F Fleet 11   I Detail
+1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
+H Health-
+ 3 notes still carry OWNER items
+ NEEDS YOU ────────────────────────────────────────────── 1  TO CHECK ─────────────────────────────────────────────── 3
+▌? ◇ ios-widgets                               laptop ↗   6m ! map-tiles-polish                              laptop   2h
+▌  WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…    lead unregistered and silent
+                    ╭ Answer ask 61767 · tui-frames ───────────────────────────────────────────────╮                  2h
+                    │                                                                              │
+                    │  ! ask 61767 is no longer open (answered or withdrawn elsewhere); y sends    │           mini  12m
+                    │  nothing, esc closes                                                         │
+ CAMPAIGNS ─────────│  Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns).     │──────────────── 11
+ ◐ search-index     │                                                                              │                 19s
+   Research complete│   ❯ A  merge #212 and release v2.4.1 now  recommended                        │
+ ◐ auth-rotation    │     B  merge, hold the release for the next change                           │                 29s
+   Implementation sl│     …  write your own answer                                                 │
+ ○ billing-export   │                                                                              │                 33s
+   FYI 61448 from se│  ──────────────────────────────────────────────────────────────────────────  │
+ ○ docs-refresh     │   answer  A: merge #212 and release v2.4.1 now                               │                  2m
+   Hub FYI: keep the│                                                                              │
+ ○ checkout-flow    │   j k choose    tab edit the text    ⏎ review before sending    esc cancel   │                  3m
+   FIX: three P2 fin│                                                                              │
+ ◐ ios-widgets      │                                                                              │          laptop  7m
+   Widget batch appr│                                                                              │
+ ◐ tui-frames       │                                                                              │                  8m
+   NOW: plan rev 3.1│                                                                              │
+ · infra-layout     │                                                                              │                 12m
+   cache-audit lead │                                                                              │
+ ◐ model-evals      │                                                                              │                 14m
+   matrix run A fini│                                                                              │
+ ○ api-pagination   ╰──────────────────────────────────────────────────────────────────────────────╯                 54m
+   S4 cursor split merged; contract tests green on both hosts
+ ‖ legacy-importer                                                                                            parked  3h
+ · 2 quiet
+
+
+
+
+ ⏎ how to get there   a answer   l open   0-9 panels   H health   / filter   D A F I screens   y copy   s slotr   ? help
