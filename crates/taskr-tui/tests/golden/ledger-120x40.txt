@@ -1,5 +1,5 @@
  taskr ❯ glance                                                           hub atlas · 2s ago   ● 2 need you  3 to check
-1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions+ · 8 Fleet+ · 9 Log+
+1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions+ · 8 Fleet+ · 9 Log+ · 0 Issues-
  3 notes still carry OWNER items
 ╭ Glance ──────────────────────────────────────────────────╮╭ decision #61301 · tui-frames ────────────────────────────╮
 │ ask tui-frames Frames follow-up is ready: PR #212 (orpha…││ in force · cached read 3m ago                            │
@@ -37,4 +37,4 @@
 │ campaign tui-frames NOW: plan rev 3.1 sent; the trust ru…││ last NOW: plan rev 3.1 sent; the trust rules and the     │
 │ campaign infra-layout cache-audit lead root=4040 pane=w4…││ first frames are in flight.                              │
 ╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
- o open campaign   1-9 panels   / filter   s slotr   ? help   q quit
+ o open campaign   0-9 panels   / filter   s slotr   ? help   q quit

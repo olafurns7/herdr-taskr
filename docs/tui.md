@@ -39,7 +39,7 @@ one line of JSON.
 
 ![Glance, dark theme](images/glance-dark.png)
 
-The first screen has nine switchable panels, top to bottom:
+The first screen has ten switchable panels, top to bottom:
 
 - **Needs you:** open owner asks. Red in the header means an open owner ask. `BLOCKING` marks an ask whose work has stopped for your answer.
   `HUB` marks a question the hub relayed from its own dialog
@@ -73,29 +73,38 @@ The first screen has nine switchable panels, top to bottom:
   every host or agent, and works with Campaigns hidden.
 - **Decision log (9):** decision events in the same cached read's recent log
   sample (up to 100 events), apart from the decisions in force.
+- **Issues (0):** GitHub issues of `trip-to-japan/trip` only, one row per
+  current assignee plus Unassigned (an explicitly empty assignee list): open,
+  blocked and closed in the rolling last 24 hours. Blocked means an open issue
+  labelled exactly `blocked` or `needs-info`, counted once. An issue with
+  several assignees counts in each group, so groups overlap; the headline
+  counts unique issues. Groups with blocked issues use the amber attention
+  colour, never red. Rows are informational: no key acts on them.
 - **Campaigns:** every open campaign with its lead's state, one dot per
   lane, four hours of activity as a small graph, and its latest milestone.
   Quiet campaigns fold into one line at the bottom.
 
 Press `1` (asks), `2` (checks), `3` (campaigns), `4` (Open PRs), `5` (Shipped), `6` (Build queue),
-`7` (Decisions), `8` (Fleet) or `9` (Decision log) in
+`7` (Decisions), `8` (Fleet), `9` (Decision log) or `0` (Issues) in
 Glance to show or hide a panel. The switch row uses `+` for shown and `-`
-for hidden. The first six start enabled, 7-9 hidden. Hidden owner asks
+for hidden. The first six start enabled, 7-9 and 0 hidden; narrow, the
+hidden four fold into `7-9,0 off`. Hidden owner asks
 remain counted in the header. Hidden rows cannot receive actions. Rows of
 7-9 are informational: only `o` acts on them, opening their campaign. `/`
 filters Fleet by name, not 7 or 9. All panels
-can be hidden; `1`–`9` restore them. Campaign's `1`–`5` keys still select panes.
+can be hidden; `1`–`9` and `0` restore them. Campaign's `1`–`5` keys still select panes.
 
 Visibility and the repository list live in `$XDG_CONFIG_HOME/taskr/tui.json`,
 or `~/.config/taskr/tui.json` when XDG_CONFIG_HOME is unset:
 
 ```json
-{"panels":[true,true,true,true,true,true,false,false,false],"repos":["trip-to-japan/trip"]}
+{"panels":[true,true,true,true,true,true,false,false,false,false],"repos":["trip-to-japan/trip"]}
 ```
 
-Existing four- and six-boolean configs keep their choices and repo list; the
-panels they predate take their defaults (Shipped and Build queue enabled, 7-9
-hidden). Saves use nine booleans. Other lengths or
+Existing four-, six- and nine-boolean configs keep their choices and repo
+list; the panels they predate take their defaults (Shipped and Build queue
+enabled, 7-9 and Issues hidden). Saves use ten booleans. The `repos` list
+does not change the Issues repository. Other lengths or
 non-boolean entries are invalid and retain the bad-config preservation guard.
 Up to eight `owner/repo` names are accepted. Toggle saves preserve the repo
 list and replace this allowlisted config atomically with mode 0600. Bad or
@@ -144,9 +153,24 @@ ledger data. All external sources share the same timeout, throttle and failure
 backoff rules, with at most one in-flight call per source/repo (24 at eight
 repos). Auth remains local to the TUI host; nothing private is cached to disk.
 
+Issues makes one pair of sequential `gh issue list --repo trip-to-japan/trip
+--limit 100 --json number,state,assignees,labels,closedAt,updatedAt` calls,
+`--state open` then `--state closed --search closed:>=<UTC-cutoff>`, at most
+once per five minutes while visible, failure retries included (5, 10, then 15
+minutes, or a longer known provider deadline). `r` never hurries it. Both
+calls share one ten-second deadline and the same output bound. Either
+failing keeps the whole last good pair, labelled stale; a first failure says
+unavailable, never zero. Missing or malformed counts, assignees, labels,
+states or timestamps make the pair unavailable, as does any issue with 100 or
+more assignees or labels, whose completeness is unknown. Each read is a
+sample: at 100 rows it says “first 100; more may exist”, and the two reads are
+not atomic; an issue seen in both keeps its later update. Closed counts use
+`closedAt` and expire on the UI clock without a fetch. Never enabled, hidden
+or in demo it makes no calls.
+
 Scheduled cost is about 60 Open PR + 30 Shipped + 60 Build queue = 150 gh
-invocations per repo per hour per instance (1,200 at eight repos), plus manual
-refreshes. This is not a fixed network-request or GraphQL-point
+invocations per repo per hour per instance (1,200 at eight repos), plus at
+most 24 for Issues (one repository) and manual refreshes. This is not a fixed network-request or GraphQL-point
 budget; several TUI instances multiply the traffic. Failure backoff caps at
 15 minutes except when a longer known provider deadline applies.
 
@@ -208,7 +232,7 @@ pools stay, dimmed. Runs that wait on the old heavy flock show only as
 | `ctrl-d` `ctrl-u` | Half a page |
 | `PgDn` `PgUp` | A page (the focused detail, a document, the answer dialog) |
 | `tab`, `shift-tab` | Next or previous section, then the detail pane (glance), or pane (campaign) |
-| `1`-`9` | Show/hide a Glance panel (remembered) |
+| `1`-`9`, `0` | Show/hide a Glance panel (remembered; `0` is Issues) |
 | `1`-`5` | Jump to a pane (campaign) |
 | `Enter` | Go to the row's agent pane in Herdr |
 | `l` | Open the campaign |

@@ -143,6 +143,12 @@ fn main() -> ExitCode {
     } else {
         github::Dashboard::for_kind(&app.config.repos, github::Kind::Build)
     };
+    app.issues = if options.demo {
+        github::demo_issues(app.observed_at)
+    } else {
+        github::Dashboard::for_kind(&[github::ISSUES_REPO.into()], github::Kind::Issues)
+    };
+    let mut issues = github::Poller::new(github::Kind::Issues);
     let mut shipped = github::Poller::new(github::Kind::Shipped);
     let mut builds = github::Poller::new(github::Kind::Build);
     let mut github = github::Poller::default();
@@ -229,6 +235,9 @@ fn main() -> ExitCode {
                 dirty |= builds.tick(&mut app, now, build_visible, pr_manual);
                 let visible = app.screen == Screen::Glance && app.config.panels[3];
                 dirty |= github.tick(&mut app, now, visible, pr_manual);
+                // Manual `r` reaches it, but its admission budget ignores manual.
+                let issues_visible = glance && app.config.panels[9];
+                dirty |= issues.tick(&mut app, now, issues_visible, pr_manual);
             }
             pr_manual = false;
             if app.screen != Screen::Slotr {
@@ -248,7 +257,7 @@ fn main() -> ExitCode {
             // Draw on a change only: an idle pane costs a poll, not a frame.
             let faces = app.fetch.face()
                 + &app.slotr.face()
-                + &[&app.github, &app.shipped, &app.builds]
+                + &[&app.github, &app.shipped, &app.builds, &app.issues]
                     .into_iter()
                     .flat_map(|d| &d.sources)
                     .map(|s| s.status(now))
@@ -302,6 +311,7 @@ fn main() -> ExitCode {
     drop(github);
     drop(shipped);
     drop(builds);
+    drop(issues);
     if let Some(events) = &events {
         events.stop();
     }

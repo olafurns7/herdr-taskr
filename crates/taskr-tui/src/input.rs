@@ -390,9 +390,10 @@ fn park(app: &mut App, root: i64, name: &str, parked: bool) -> Effect {
 }
 
 fn glance_key(app: &mut App, code: KeyCode) -> Effect {
-    if let KeyCode::Char(n @ '1'..='9') = code {
+    if let KeyCode::Char(n @ '0'..='9') = code {
         let before = glance::ids(&app.view()).get(app.row).cloned();
-        let index = n as usize - '1' as usize;
+        // Key 0 is the tenth panel, Issues.
+        let index = (n as usize + 9 - '0' as usize) % 10;
         app.config.panels[index] = !app.config.panels[index];
         app.restore_row(before);
         return Effect::SaveConfig;
@@ -415,12 +416,14 @@ fn glance_key(app: &mut App, code: KeyCode) -> Effect {
         Selected::Ask(a) => (&a.host, &a.pane_id, a.root_id, &a.campaign),
         Selected::Check(a) => (&a.host, &a.pane_id, a.root_id, &a.campaign),
         Selected::Campaign(c) => (&c.host, &c.pane_id, c.id, &c.name),
-        Selected::Pr(_) | Selected::Author(_) | Selected::Run(_)
+        Selected::Pr(_) | Selected::Author(_) | Selected::Run(_) | Selected::Assignee(_)
             if matches!(code, KeyCode::Tab | KeyCode::BackTab | KeyCode::Char('c')) =>
         {
             (&g.now, &g.now, 0, &g.now)
         }
-        Selected::Pr(_) | Selected::Author(_) | Selected::Run(_) => return Effect::None,
+        Selected::Pr(_) | Selected::Author(_) | Selected::Run(_) | Selected::Assignee(_) => {
+            return Effect::None;
+        }
         // Decisions, Fleet and the decision log only inform: `o` reads their campaign,
         // and nothing else here focuses, answers, parks, copies or writes.
         Selected::Decision(_) | Selected::Logged(_) | Selected::Fleet(_)
@@ -2404,7 +2407,7 @@ mod tests {
         for n in ['7', '8', '9'] {
             assert_eq!(p.code(KeyCode::Char(n)), Effect::SaveConfig);
         }
-        assert_eq!(p.app.config.panels[6..], [true; 3]);
+        assert_eq!(p.app.config.panels[6..9], [true; 3]);
         let text = p.text();
         assert!(text.contains("Select a campaign and press l"), "{text}");
         assert!(text.contains("7 Decisions+ · 8 Fleet+ · 9 Log+"), "{text}");
@@ -2685,13 +2688,16 @@ mod tests {
         let lines = |p: &mut Pane| p.text().lines().map(String::from).collect::<Vec<_>>();
         let text = lines(&mut p);
         assert_eq!(
-            text[2], "4 PRs+ · 5 Shipped+ · 6 Build+ · 7-9 off",
+            text[2], "4 PRs+ · 5 Shipped+ · 6 Build+ · 7-9,0 off",
             "{text:?}"
         );
         assert!(!text[3].contains("Fleet"), "{text:?}");
         assert_eq!(p.code(KeyCode::Char('8')), Effect::SaveConfig);
         let text = lines(&mut p);
-        assert_eq!(text[3], "7 Decisions- · 8 Fleet+ · 9 Log-", "{text:?}");
+        assert_eq!(
+            text[3], "7 Decisions- · 8 Fleet+ · 9 Log- · 0 Issues-",
+            "{text:?}"
+        );
     }
 
     #[test]
@@ -2755,5 +2761,140 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn issues_rows_are_informational_reachable_last_and_expire_without_fetch() {
+        let issues = |p: &mut Pane| {
+            p.app.github = crate::github::demo();
+            p.app.shipped = crate::github::demo_shipped(p.app.observed_at);
+            p.app.builds = crate::github::demo_builds(p.app.observed_at);
+            p.app.issues = crate::github::demo_issues(p.app.observed_at);
+        };
+        // Default narrow: Issues hidden, the switches keep their two lines.
+        let mut p = Pane::new(46, 30);
+        issues(&mut p);
+        let text = p.text();
+        assert!(
+            text.contains("7-9,0 off") && !text.contains("ISSUES"),
+            "{text}"
+        );
+        assert!(
+            !glance::ids(&p.app.view())
+                .iter()
+                .any(|r| matches!(r, glance::RowId::Assignee(..)))
+        );
+        assert_eq!(p.code(KeyCode::Char('0')), Effect::SaveConfig);
+        assert!(p.app.config.panels[9] && p.app.config.panels[..6] == [true; 6]);
+        // Shown, but below the earlier panels' priority in a full narrow pane: its rows
+        // are identities the cursor reaches (checked below), not a guaranteed preview.
+        let text = p.text();
+        assert!(text.contains("0 Issues+"), "{text}");
+        assert!(
+            glance::ids(&p.app.view())
+                .iter()
+                .any(|r| matches!(r, glance::RowId::Assignee(..)))
+        );
+        for width in [46, 120] {
+            for height in 7..=40 {
+                let mut p = Pane::new(width, height);
+                issues(&mut p);
+                p.app.config.panels[6..].fill(true);
+                p.app.scope.read_at = Some(p.app.observed_at);
+                let ids = glance::ids(&p.app.view());
+                let unassigned = glance::RowId::Assignee(crate::github::ISSUES_REPO.into(), None);
+                assert!(ids.contains(&unassigned));
+                // Issues come after every other panel's rows and before the campaigns.
+                let first = ids
+                    .iter()
+                    .position(|r| matches!(r, glance::RowId::Assignee(..)))
+                    .unwrap();
+                assert!(
+                    ids[..first]
+                        .iter()
+                        .all(|r| !matches!(r, glance::RowId::Campaign(_)))
+                );
+                assert!(ids[first..].iter().all(|r| matches!(
+                    r,
+                    glance::RowId::Assignee(..) | glance::RowId::Campaign(_)
+                )));
+                for (i, id) in ids.iter().enumerate() {
+                    p.app.row = i;
+                    let text = p.text();
+                    if height >= 8 {
+                        assert!(drawn(&p, i), "{width}x{height}/{id:?}:\n{text}");
+                    }
+                    if text.contains(" ISSUES ") {
+                        assert!(
+                            text.contains("NEEDS YOU") && text.contains("DECISION LOG"),
+                            "{text}"
+                        );
+                    }
+                    if matches!(id, glance::RowId::Assignee(..)) {
+                        for code in [
+                            KeyCode::Enter,
+                            KeyCode::Right,
+                            KeyCode::Char('a'),
+                            KeyCode::Char('p'),
+                            KeyCode::Char('l'),
+                            KeyCode::Char('y'),
+                            KeyCode::Char('o'),
+                        ] {
+                            assert_eq!(
+                                press(&mut p.app, code),
+                                Effect::None,
+                                "{width}x{height}/{id:?}"
+                            );
+                        }
+                        assert!(p.app.ask.is_none() && p.app.pending.is_none());
+                        assert_eq!(p.app.screen, Screen::Glance);
+                    }
+                }
+            }
+        }
+        // The demo's closure leaves the window at its 24h boundary: a redraw, the same
+        // group kept under the help, no fetch.
+        let mut p = Pane::new(120, 40);
+        issues(&mut p);
+        // Only Issues can expire here, and it is the only external panel.
+        p.app.github = crate::github::Dashboard::default();
+        p.app.shipped = crate::github::Dashboard::default();
+        p.app.builds = crate::github::Dashboard::default();
+        p.app.config.panels[9] = true;
+        let now = p.app.observed_at;
+        let kim = glance::RowId::Assignee(crate::github::ISSUES_REPO.into(), Some("kim".into()));
+        let alex = glance::RowId::Assignee(crate::github::ISSUES_REPO.into(), Some("alex".into()));
+        // kim is the fourth group, past the three-row preview: the cursor brings it in.
+        p.app.row = row_of(&p, &kim);
+        assert!(
+            p.text()
+                .contains("@kim · 0 open · 0 blocked · 1 closed/24h")
+        );
+        p.app.row = row_of(&p, &alex);
+        p.keys("?");
+        assert!(!p.app.advance_time(now + 86400 - 3600, Instant::now()));
+        assert!(p.app.advance_time(now + 86400 - 3599, Instant::now()));
+        assert!(p.app.seen.borrow().hits.is_empty() && p.app.click.is_none());
+        p.keys("\x1b");
+        assert_eq!(glance::ids(&p.app.view())[p.app.row], alex);
+        assert!(!glance::ids(&p.app.view()).contains(&kim));
+        assert!(p.text().contains("0 closed/24h · unique"));
+        // A surviving group that loses a closure also redraws.
+        let mut p = Pane::new(120, 40);
+        issues(&mut p);
+        // Only Issues can expire here, and it is the only external panel.
+        p.app.github = crate::github::Dashboard::default();
+        p.app.shipped = crate::github::Dashboard::default();
+        p.app.builds = crate::github::Dashboard::default();
+        p.app.config.panels[9] = true;
+        let s = &mut p.app.issues.sources[0];
+        s.issues
+            .iter_mut()
+            .find(|i| i.number == 8)
+            .unwrap()
+            .assignees = vec!["alex".into()];
+        let now = p.app.observed_at;
+        assert!(p.app.advance_time(now + 86400 - 3599, Instant::now()));
+        assert!(glance::ids(&p.app.view()).contains(&alex));
     }
 }
