@@ -9,12 +9,12 @@ panels 1+ 2+ 3+ 4+ 5+ 6+ 7- 8- 9- 0- H-
 ▌  Tokens: Which signing scheme should the r…
  ? ◆ docs-refresh                       ⏎   4m
    Translations landed for three of the four…
- ? ◇ tui-frames           BLOCKING      ⏎  41s
-   Frames follow-up is ready: PR #212 (orpha…
+ +2 more asks · j k
  TO CHECK ─────────────────────────────── 1/3
  ! map-tiles-polish                laptop   2h
    lead unregistered and silent
+ +2 more checks · tab here
  CAMPAIGNS ─────────────────────────────── 11
  ◐ search-index      ●       ▁▁▁▁▁█▃       19s
- +12 more · c shows all
+ +10 more listed · F · 2 quiet unlisted · c
  ⏎ go   a answer   l open   ? help

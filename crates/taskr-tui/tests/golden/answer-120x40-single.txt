@@ -3,38 +3,38 @@
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
 H Health-
  3 notes still carry OWNER items
- NEEDS YOU ────────────────────────────────────────────────────────────────────────────────────────────────────────── 5
- ? ◆ fleet-hub            BLOCKING HUB                                                                            ⏎  25s
-   Release: Cut the ╭ Answer ask 61790 · auth-rotation ────────────────────────────────────────────╮ix
-▌? ◆ auth-rotation  │                                                                              │              ⏎   2m
-▌  Tokens: Which sig│  Tokens: Which signing scheme should the rotated service tokens use?         │) HMAC-SHA256
- ? ◆ docs-refresh   │                                                                              │              ⏎   4m
-   Translations land│   ❯ A  Ed25519  ★ recommended                                                │release? (A) Engli…
- ? ◇ tui-frames     │        Short keys and fast checks; every client library we ship supports     │              ⏎  41s
-   Frames follow-up │        it already.                                                           │e v2.4.1 now [reco…
- ? ◇ ios-widgets    │     B  RSA-2048                                                              │       laptop ↗   6m
-   WIDGET BATCH: 19 │        Matches today's tokens, so no client changes, but rotation takes      │): #641 and the th…
- TO CHECK ──────────│        four times as long.                                                   │───────────────── 3
- ! map-tiles-polish │     C  HMAC-SHA256                                                           │         laptop   2h
-   lead unregistered│        Simplest to run, but every verifier then holds the signing secret.    │
- ! infra-layout     │     …  write your own answer                                                 │                  2h
-   lead idle with 3 │                                                                              │
- ! host build-mini  │  ──────────────────────────────────────────────────────────────────────────  │           mini  12m
-   host stale: no he│   answer  A: Ed25519                                                         │
- CAMPAIGNS ─────────│                                                                              │──────────────── 11
- ◐ search-index     │   j k choose    tab add a note    ⏎ review before sending    esc cancel      │                 19s
-   Research complete│                                                                              │
- ◐ auth-rotation    │                                                                              │                 29s
+ NEEDS YOU ────────────────────────────────────────────── 5  TO CHECK ─────────────────────────────────────────────── 3
+ ? ◆ fleet-hub            BLOCKING HUB                ⏎  25s ! map-tiles-polish                              laptop   2h
+   Release: Cut the ╭ Answer ask 61790 · auth-rotation ────────────────────────────────────────────╮
+▌? ◆ auth-rotation  │                                                                              │                  2h
+▌  Tokens: Which sig│  Tokens: Which signing scheme should the rotated service tokens use?         │
+ ? ◆ docs-refresh   │                                                                              │           mini  12m
+   Translations land│   ❯ A  Ed25519  ★ recommended                                                │
+ ? ◇ tui-frames     │        Short keys and fast checks; every client library we ship supports     │
+   Frames follow-up │        it already.                                                           │
+ ? ◇ ios-widgets    │     B  RSA-2048                                                              │
+   WIDGET BATCH: 19 │        Matches today's tokens, so no client changes, but rotation takes      │
+ CAMPAIGNS ─────────│        four times as long.                                                   │──────────────── 11
+ ◐ search-index     │     C  HMAC-SHA256                                                           │                 19s
+   Research complete│        Simplest to run, but every verifier then holds the signing secret.    │
+ ◐ auth-rotation    │     …  write your own answer                                                 │                 29s
    Implementation sl│                                                                              │
- ○ billing-export   │                                                                              │                 33s
-   FYI 61448 from se│                                                                              │
+ ○ billing-export   │  ──────────────────────────────────────────────────────────────────────────  │                 33s
+   FYI 61448 from se│   answer  A: Ed25519                                                         │
  ○ docs-refresh     │                                                                              │                  2m
+   Hub FYI: keep the│   j k choose    tab add a note    ⏎ review before sending    esc cancel      │
  ○ checkout-flow    │                                                                              │                  3m
- ◐ ios-widgets      ╰──────────────────────────────────────────────────────────────────────────────╯          laptop  7m
- ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆                                                                       8m
- · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃                                                                      12m
+   FIX: three P2 fin│                                                                              │
+ ◐ ios-widgets      │                                                                              │          laptop  7m
+   Widget batch appr│                                                                              │
+ ◐ tui-frames       │                                                                              │                  8m
+   NOW: plan rev 3.1│                                                                              │
+ · infra-layout     │                                                                              │                 12m
+   cache-audit lead ╰──────────────────────────────────────────────────────────────────────────────╯
  ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁                                                                      14m
+   matrix run A finished
  ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                                                                      54m
+   S4 cursor split merged; contract tests green on both hosts
  ‖ legacy-importer                                                                                            parked  3h
  · 2 quiet
  ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   D A F I screens   y copy   s slotr   ? help

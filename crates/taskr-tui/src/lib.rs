@@ -485,7 +485,15 @@ impl App {
         let own = |s: Screen| matches!(s, Screen::AllCampaigns | Screen::Slotr | Screen::Detail);
         let glance_row = !own(self.screen) && self.back.iter().all(|b| !own(b.screen));
         let ids = at(self);
-        let before = ids.get(self.row).cloned().filter(|_| glance_row);
+        // The first snapshot places the cursor at the top (the first ask); only later ones
+        // keep it on its row. Before it, only source cards' stops or PRs were listed.
+        let before = ids
+            .get(self.row)
+            .cloned()
+            .filter(|_| glance_row && self.fetch.loaded);
+        if glance_row && !self.fetch.loaded {
+            self.row = 0;
+        }
         let saved = {
             let view = self.glance_view();
             glance::ids(&view).get(view.row).cloned()

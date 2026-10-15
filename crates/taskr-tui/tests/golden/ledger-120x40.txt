@@ -3,38 +3,38 @@
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions+ · 8 Fleet+ · 9 Log+ · 0 Issues-
 H Health-
  3 notes still carry OWNER items
- ask tui-frames Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns). (A) merge #212 and release v2.4…
- ask ios-widgets WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). STOPPED, per your rule (conflict on the way): #6…
- check map-tiles-polish lead unregistered and silent
- check infra-layout lead idle with 3 results
- check host build-mini host stale: no heartbeat for 12 m
- PR failing #42 Keep pending action labels readable @alex
- PR running #41 Refresh campaign milestones @sam
- PR checks passing #40 Clarify owner answer copy @alex
- Shipped @alex · 2 observed / 24h
- Shipped @sam · 2 observed / 24h
- Build running (in_progress) Build and test · dashboard · latest100 sample
- Build queued (queued) Release checks · main · latest100 sample
-▌decision #61301 D4: one binary for the view and the hub; the old suite stays the oracle until parity.
- decision #60790 Trust rule 1: red is an open owner ask and nothing else.
- fleet search-index · 1 working 0 ready 1 open
- fleet auth-rotation · 0 working 1 ready 1 open
- fleet billing-export · 1 working 0 ready 1 open
- fleet docs-refresh · 1 working 0 ready 1 open
- fleet checkout-flow · 1 working 1 ready 2 open
- fleet ios-widgets · 0 working 0 ready 0 open
- fleet tui-frames · 3 working 1 ready 6 open
- fleet infra-layout · 0 working 0 ready 0 open
- fleet model-evals · 5 working 2 ready 9 open
- fleet api-pagination · 1 working 0 ready 1 open
- fleet legacy-importer · 0 working 0 ready 0 open
- logged decision #61301 13:58 D4: one binary for the view and the hub; the old suite stays the oracle until parity.
- campaign search-index Research complete: reports/ranking-options.md compares three scorers on the saved queries
- campaign auth-rotation Implementation slice: key rollover job, fake-clock tests, installer and operator docs
- campaign billing-export FYI 61448 from search-index (root 4310): the tokenizer upgrade drops the legacy stemmer
- campaign docs-refresh Hub FYI: keep the page map machine-readable for the future link checker
- campaign checkout-flow FIX: three P2 findings in the review of the address step; source review complete
- campaign ios-widgets Widget batch approved (asks 61199, 61367): 19 PRs merged; the last 4 wait for your answer.
- campaign tui-frames NOW: plan rev 3.1 sent; the trust rules and the first frames are in flight.
- campaign infra-layout cache-audit lead root=4040 pane=w41:p1: campaign complete, docs PR merged
+ NEEDS YOU ────────────────────────────────────────────── 2  TO CHECK ─────────────────────────────────────────────── 3
+ ? ◇ tui-frames           BLOCKING                    ⏎  41s ! map-tiles-polish                              laptop   2h
+   Frames follow-up is ready: PR #212 (orphaned asks hidde…    lead unregistered and silent
+ ? ◇ ios-widgets                               laptop ↗   6m ! infra-layout                                           2h
+   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…    lead idle with 3 results
+                                                             ! host build-mini                                 mini  12m
+                                                               host stale: no heartbeat for 12 m
+ OPEN PRS ───────────────────────────────────────────────────────────────────────────────────────────────── observed CI
+ CI: 1 fail 1 run 0 ? 1 pass 0 draft
+ 3 open; 0s ago · trip-to-japan/trip
+ ■ failing #42 Keep pending action labels readable
+   @alex · 1h · trip-to-japan/trip
+ ■ running #41 Refresh campaign milestones
+   @sam · 2h · trip-to-japan/trip
+ ■ checks passing #40 Clarify owner answer copy
+   @alex · 3h · trip-to-japan/trip · approved
+ CAMPAIGNS ───────────────────────────────────────────── 11  SHIPPED ───────────────────────────────────────── observed
+ ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃          19s 2 sampled; 0s ago · trip-to-japan/trip
+ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█          29s 2 sampled; 0s ago · trip-to-japan/tools
+ ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁          33s @alex · 2 PRs observed
+•○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂           2m @sam · 2 PRs observed
+ ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█           3m BUILD QUEUE ───────────────────────────────────── observed
+ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁    laptop  7m 6 sampled; 0s ago · trip-to-japan/trip
+ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆           8m latest100-run sample · older may be missing
+ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃          12m running (in_progress) · Build and test
+ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁          14m   dashboard · 5m · trip-to-japan/trip
+ +2 more listed · F · 2 quiet unlisted · c                   +1 more run · tab here
+ DECISIONS · PLAN ───────────────────────────── cached read  FLEET ─────────────────────────────────── listed campaigns
+ tui-frames #4120 · read 3m ago                              2 quiet not listed; no counts
+▌◆ #61301 D4: one binary for the view and the hub; the old … search-index · 1 working 0 ready 1 open · lead working
+ ◆ #60790 Trust rule 1: red is an open owner ask and nothin… auth-rotation · 0 working 1 ready 1 open · lead working
+ DECISION LOG ─────────────────────────────── recent sample  billing-export · 1 working 0 ready 1 open · lead idle
+ tui-frames #4120 · read 3m ago                              docs-refresh · 1 working 0 ready 1 open · lead idle
+ #61301 13:58 D4: one binary for the view and the hub; the … +7 more campaigns · F lists all
  o open campaign   0-9 panels   H health   / filter   D A F I screens   s slotr   q quit   ? help

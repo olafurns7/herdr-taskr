@@ -130,6 +130,47 @@ fn ledger(app: &mut App) {
     app.scope.read_at = Some(app.observed_at - 180);
 }
 
+/// Every card on with every source full: proposal §13 slice 2's all-eleven frames.
+fn all_on(app: &mut App) {
+    ledger(app);
+    app.config.panels = [true; 11];
+    app.issues = crate::github::demo_issues(app.observed_at);
+    app.health = crate::health::sample(app.observed_at, crate::health::CLEAN);
+}
+
+/// All eleven on, the cursor on the first Build run: the viewport scrolled to it.
+fn all_on_build(app: &mut App) {
+    all_on(app);
+    app.row = crate::glance::ids(&app.view())
+        .iter()
+        .position(|r| matches!(r, crate::glance::RowId::Run(..)))
+        .unwrap();
+}
+
+/// All eleven on with only the first ask and Health holding rows: every card between them
+/// empty or unavailable, each an inert stop. The cursor on the Shipped card's stop.
+fn all_on_empty(app: &mut App) {
+    all_on(app);
+    let g = &mut app.data.glance;
+    g.needs_you.truncate(1);
+    g.attention.clear();
+    g.campaigns.clear();
+    g.quiet.count = 0;
+    let s = &mut app.github.sources[0];
+    (s.prs, s.total) = (vec![], 0);
+    app.shipped =
+        crate::github::Dashboard::for_kind(&app.config.repos, crate::github::Kind::Shipped);
+    app.shipped.sources[0].error = Some("GitHub unavailable");
+    app.builds.sources.iter_mut().for_each(|s| s.runs.clear());
+    app.issues = crate::github::Dashboard::for_kind(
+        &[crate::github::ISSUES_REPO.into()],
+        crate::github::Kind::Issues,
+    );
+    app.issues.sources[0].error = Some("GitHub unavailable");
+    app.scope.read_at = None;
+    app.row = 4;
+}
+
 /// Issues (key 0) on with the demo pair, the cursor on its first group.
 fn issues(app: &mut App) {
     dashboard(app);
@@ -283,7 +324,7 @@ pub fn all() -> Vec<Spec> {
         name: format!("{screen}-{width}x{height}{variant}"),
         width,
         height,
-        light: variant == "-light",
+        light: variant.ends_with("-light"),
         setup,
     };
     vec![
@@ -340,6 +381,20 @@ pub fn all() -> Vec<Spec> {
         spec("dashboard", 80, 30, "", dashboard),
         spec("dashboard", 46, 20, "", dashboard),
         spec("dashboard", 30, 10, "", dashboard),
+        spec("board", 120, 40, "-on", all_on),
+        spec("board", 120, 40, "-on-light", all_on),
+        spec("board", 80, 30, "-on", all_on),
+        spec("board", 46, 30, "-on", all_on),
+        spec("board", 46, 20, "-on", all_on),
+        spec("board", 46, 20, "-on-build", all_on_build),
+        spec("board", 46, 20, "-on-ascii", |app| {
+            all_on_build(app);
+            app.ascii = true;
+            app.theme = theme::PLAIN;
+        }),
+        spec("board", 46, 20, "-on-empty", all_on_empty),
+        spec("board", 40, 12, "-on", all_on_build),
+        spec("board", 40, 12, "-on-light", all_on_build),
         spec("detail", 120, 40, "-shipped", |app| {
             dashboard(app);
             inspect(app, |r| matches!(r, crate::glance::RowId::Author(_)));

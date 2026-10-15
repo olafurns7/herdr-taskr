@@ -14,17 +14,17 @@ panels 1+ 2+ 3+ 4- 5- 6- 7+ 8+ 9+ 0- H-
    lead idle with 3 results
  ! host build-mini                   mini  12m
    host stale: no heartbeat for 12 m
- DECISIONS · PLAN ─────────────── cached read
-Select a campaign and press l; Esc returns he…
- FLEET ───────────────────── listed campaigns
-11 listed · 13 working 5 ready 22 open
-2 quiet not listed; no counts
- search-index · 1 working 0 ready 1 open · le…
- auth-rotation · 0 working 1 ready 1 open · l…
- billing-export · 1 working 0 ready 1 open · …
- +8 outside view · j/k to browse
- DECISION LOG ───────────────── recent sample
-Select a campaign and press l; Esc returns he…
  CAMPAIGNS ─────────────────────────────── 11
- +13 more · c shows all
+ ◐ search-index      ●       ▁▁▁▁▁█▃       19s
+ ◐ auth-rotation     ●       ▁▁▁▄▄▁█       29s
+ ○ billing-export    ●       ▁▂▁▁▄█▁       33s
+ +8 more listed · F · 2 quiet unlisted · c
+ DECISIONS · PLAN ─────────────── cached read
+ Select a campaign and press l; Esc returns h…
+ DECISION LOG ───────────────── recent sample
+ Select a campaign and press l; Esc returns h…
+ FLEET ───────────────────── listed campaigns
+ 2 quiet not listed; no counts
+ search-index · 1 working 0 ready 1 open · le…
+ +10 more campaigns · F lists all
  ⏎ go   a answer   l open   ? help

@@ -3,24 +3,17 @@
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
 H Health-
  3 notes still carry OWNER items
- NEEDS YOU ────────────────────────────────────────────────────────────────────────────────────────────────────────── 5
- ? ◆ fleet-hub            BLOCKING HUB                                                                            ⏎  25s
-   Release: Cut the v3.2 release today, or wait for the cache fix? (A) Cut today; (B) Wait for the fix
-▌? ◆ auth-rotation        BLOCKING                                                                                ⏎   2m
-▌  Tokens: Which signing scheme should the rotated service tokens use? (A) Ed25519; (B) RSA-2048; (C) HMAC-SHA256
- ? ◆ docs-refresh                                                                                                 ⏎   4m
-   Translations landed for three of the four locales. Locales: Which locales ship in the first docs release? (A) Engli…
- ? ◇ tui-frames           BLOCKING                                                                                ⏎  41s
-   Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns). (A) merge #212 and release v2.4.1 now [reco…
- ? ◇ ios-widgets                                                                                           laptop ↗   6m
-   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). STOPPED, per your rule (conflict on the way): #641 and the th…
- TO CHECK ─────────────────────────────────────────────────────────────────────────────────────────────────────────── 3
- ! map-tiles-polish                                                                                          laptop   2h
-   lead unregistered and silent
- ! infra-layout                                                                                                       2h
-   lead idle with 3 results
- ! host build-mini                                                                                             mini  12m
-   host stale: no heartbeat for 12 m
+ NEEDS YOU ────────────────────────────────────────────── 5  TO CHECK ─────────────────────────────────────────────── 3
+ ? ◆ fleet-hub            BLOCKING HUB                ⏎  25s ! map-tiles-polish                              laptop   2h
+   Release: Cut the v3.2 release today, or wait for the ca…    lead unregistered and silent
+▌? ◆ auth-rotation        BLOCKING                    ⏎   2m ! infra-layout                                           2h
+▌  Tokens: Which signing scheme should the rotated service…    lead idle with 3 results
+ ? ◆ docs-refresh                                     ⏎   4m ! host build-mini                                 mini  12m
+   Translations landed for three of the four locales. Loca…    host stale: no heartbeat for 12 m
+ ? ◇ tui-frames           BLOCKING                    ⏎  41s
+   Frames follow-up is ready: PR #212 (orphaned asks hidde…
+ ? ◇ ios-widgets                               laptop ↗   6m
+   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…
  CAMPAIGNS ───────────────────────────────────────────────────────────────────────────────────────────────────────── 11
  ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃                                                                      19s
    Research complete: reports/ranking-options.md compares three scorers on the saved queries
@@ -29,12 +22,19 @@ H Health-
  ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁                                                                      33s
    FYI 61448 from search-index (root 4310): the tokenizer upgrade drops the legacy stemmer
  ○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂                                                                       2m
+   Hub FYI: keep the page map machine-readable for the future link checker
  ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█                                                                       3m
+   FIX: three P2 findings in the review of the address step; source review complete
  ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁                                                                laptop  7m
+   Widget batch approved (asks 61199, 61367): 19 PRs merged; the last 4 wait for your answer.
  ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆                                                                       8m
+   NOW: plan rev 3.1 sent; the trust rules and the first frames are in flight.
  · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃                                                                      12m
+   cache-audit lead root=4040 pane=w41:p1: campaign complete, docs PR merged
  ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁                                                                      14m
+   matrix run A finished
  ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                                                                      54m
+   S4 cursor split merged; contract tests green on both hosts
  ‖ legacy-importer                                                                                            parked  3h
  · 2 quiet
  ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   D A F I screens   y copy   s slotr   ? help

@@ -3,38 +3,38 @@
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
 H Health-
  3 notes still carry OWNER items
- NEEDS YOU ────────────────────────────────────────────────────────────────────────────────────────────────────────── 2
-▌? ◇ tui-frames           BLOCKING                                                                                ⏎  41s
-▌  Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns). (A) merge #212 and release v2.4.1 now [reco…
- ? ◇ ios-widgets                                                                                           laptop ↗   6m
-   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). STOPPED, per your rule (conflict on the way): #641 and the th…
- TO CHECK ──────────╭ Answer ask 61767 · tui-frames ───────────────────────────────────────────────╮───────────────── 3
- ! map-tiles-polish │                                                                              │         laptop   2h
-   lead unregistered│  Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns).     │
- ! infra-layout     │                                                                              │                  2h
-   lead idle with 3 │   ❯ A  merge #212 and release v2.4.1 now  recommended                        │
- ! host build-mini  │     B  merge, hold the release for the next change                           │           mini  12m
-   host stale: no he│     …  write your own answer                                                 │
- CAMPAIGNS ─────────│                                                                              │──────────────── 11
- ◐ search-index     │  ──────────────────────────────────────────────────────────────────────────  │                 19s
-   Research complete│   answer  A: merge #212 and release v2.4.1 now                               │
- ◐ auth-rotation    │                                                                              │                 29s
-   Implementation sl│   j k choose    tab edit the text    ⏎ review before sending    esc cancel   │
+ NEEDS YOU ────────────────────────────────────────────── 2  TO CHECK ─────────────────────────────────────────────── 3
+▌? ◇ tui-frames           BLOCKING                    ⏎  41s ! map-tiles-polish                              laptop   2h
+▌  Frames follow-up is ready: PR #212 (orphaned asks hidde…    lead unregistered and silent
+ ? ◇ ios-widgets                               laptop ↗   6m ! infra-layout                                           2h
+   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…    lead idle with 3 results
+                    ╭ Answer ask 61767 · tui-frames ───────────────────────────────────────────────╮           mini  12m
+                    │                                                                              │
+ CAMPAIGNS ─────────│  Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns).     │──────────────── 11
+ ◐ search-index     │                                                                              │                 19s
+   Research complete│   ❯ A  merge #212 and release v2.4.1 now  recommended                        │
+ ◐ auth-rotation    │     B  merge, hold the release for the next change                           │                 29s
+   Implementation sl│     …  write your own answer                                                 │
  ○ billing-export   │                                                                              │                 33s
-   FYI 61448 from se│                                                                              │
- ○ docs-refresh     │                                                                              │                  2m
+   FYI 61448 from se│  ──────────────────────────────────────────────────────────────────────────  │
+ ○ docs-refresh     │   answer  A: merge #212 and release v2.4.1 now                               │                  2m
    Hub FYI: keep the│                                                                              │
- ○ checkout-flow    │                                                                              │                  3m
+ ○ checkout-flow    │   j k choose    tab edit the text    ⏎ review before sending    esc cancel   │                  3m
    FIX: three P2 fin│                                                                              │
  ◐ ios-widgets      │                                                                              │          laptop  7m
-   Widget batch appr╰──────────────────────────────────────────────────────────────────────────────╯
- ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆                                                                       8m
-   NOW: plan rev 3.1 sent; the trust rules and the first frames are in flight.
- · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃                                                                      12m
-   cache-audit lead root=4040 pane=w41:p1: campaign complete, docs PR merged
- ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁                                                                      14m
+   Widget batch appr│                                                                              │
+ ◐ tui-frames       │                                                                              │                  8m
+   NOW: plan rev 3.1│                                                                              │
+ · infra-layout     │                                                                              │                 12m
+   cache-audit lead │                                                                              │
+ ◐ model-evals      ╰──────────────────────────────────────────────────────────────────────────────╯                 14m
    matrix run A finished
  ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                                                                      54m
+   S4 cursor split merged; contract tests green on both hosts
  ‖ legacy-importer                                                                                            parked  3h
  · 2 quiet
+
+
+
+
  ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   D A F I screens   y copy   s slotr   ? help

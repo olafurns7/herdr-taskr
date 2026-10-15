@@ -66,8 +66,8 @@ Switching reads nothing; the ledger snapshot keeps refreshing on every screen.
 
 ![Glance, dark theme](images/glance-dark.png)
 
-The Dashboard spans the full width and has eleven switchable panels, top to
-bottom:
+The Dashboard spans the full width and has eleven switchable panels, each a
+card under its own rule:
 
 - **Needs you:** open owner asks. Red in the header means an open owner ask. `BLOCKING` marks an ask whose work has stopped for your answer.
   `HUB` marks a question the hub relayed from its own dialog
@@ -117,8 +117,40 @@ bottom:
   issues use the amber attention colour, never red; pending and unknown stay
   neutral. One informational row; no key acts on it.
 - **Campaigns:** every open campaign with its lead's state, one dot per
-  lane, four hours of activity as a small graph, and its latest milestone.
-  Quiet campaigns fold into one line at the bottom.
+  lane, four hours of activity as a small graph, and its latest milestone
+  when the card has room. The snapshot counts quiet campaigns without listing
+  them: `· 2 quiet` under the rows, or `+9 more listed · F · 2 quiet unlisted · c`
+  when the card is cut; `c` lists every campaign.
+
+The cards sit in fixed bands, never rebalanced as counts change:
+
+| Band | 80 columns and wider | narrower |
+| --- | --- | --- |
+| A | Needs you │ To check | Needs you, To check |
+| B | Open PRs, full width | Open PRs |
+| C | Campaigns │ Shipped, Build queue | Campaigns, Shipped, Build queue |
+| D | Decisions, Decision log │ Fleet, Issues, Health | Decisions, Decision log, Fleet, Issues, Health |
+
+A hidden card takes no room, and the other side of its band takes the width.
+Each card wants its rule, all its rows and its notices; its floor is the rule,
+its honest notices (each source's status with its read's age or stale or
+unavailable, first 100, the Build sample limit, empty) and one row (two asks),
+plus a `+N more … · tab here` line naming what is cut (`A` or `F` where another
+screen lists everything, `j k` once the cursor is in it).
+When the wants do not fit, cards give rows back from Health up to the asks,
+never below the floor, and spare rows return in band order; nothing stretches,
+so the body can end early. When even the floors do not fit, the body is a
+viewport over the cards at their floors (a split band's shorter side still fills
+the lines its taller side takes): the selected card is drawn whole when
+its floor fits (else its rule and the selected row), every other card is drawn
+whole or not at all, `↑ 3 above: NEEDS YOU 2 · …` and `↓ 4 cards below: … · tab`
+name what is out of view (a click on them is `shift-tab` or `tab`), and only
+drawn rows take clicks. Under 46 columns or 20 rows every card is one line (the
+asks one line each), with no panel switches or notes line; under 30 columns or
+8 rows only the verdict shows. An empty or unavailable card is one inert stop
+for `j k` and `tab`: it shows its state, and no key acts on it. The first ledger
+snapshot opens on the top row (the first ask), whatever source arrived before it;
+later snapshots keep the cursor on its row.
 
 Press `1` (asks), `2` (checks), `3` (campaigns), `4` (Open PRs), `5` (Shipped), `6` (Build queue),
 `7` (Decisions), `8` (Fleet), `9` (Decision log), `0` (Issues) or uppercase `H`
@@ -127,7 +159,7 @@ switches shape the Dashboard only. The
 switch row uses `+` for shown and `-` for hidden. The first six start
 enabled, 7-9, 0 and H hidden; narrow, the hidden five fold into
 `7-9,0,H off`. Under 32 rows the switches share one line of keys,
-`panels 1+ 2+ … H-`, so the tab line costs the list no row. Hidden owner asks
+`panels 1+ 2+ … H-`, so the tab line costs the cards no row. Hidden owner asks
 remain counted in the header and in the Asks tab. A hidden card's rows cannot
 receive actions on the Dashboard; Asks and Fleet list theirs regardless. Rows of
 7-9 are informational: only `o` acts on them, opening their campaign. `/`

@@ -1,0 +1,30 @@
+ taskr                                        2s ago   ● 2 need you  3 to check
+ [D Dashboard]  A Asks 2   F Fleet 11   I Detail
+panels 1+ 2+ 3+ 4+ 5+ 6+ 7+ 8+ 9+ 0+ H+
+ 3 notes still carry OWNER items
+ NEEDS YOU ────────────────────────── 2  TO CHECK ───────────────────────── 1/3
+▌? ◇ tui-frames      BLOCKING     ⏎  41s ! map-tiles-polish          laptop   2h
+▌  Frames follow-up is ready: PR #212 …    lead unregistered and silent
+ ? ◇ ios-widgets           laptop ↗   6m +2 more checks · tab here
+   WIDGET BATCH: 19 of 23 merged (14:0…
+ OPEN PRS ───────────────────────────────────────────────────────── observed CI
+ 3 open; 0s ago · trip-to-japan/trip
+ ■ failing #42 Keep pending action labels readable
+   @alex · 1h · trip-to-japan/trip
+ +2 more PRs · tab here
+ CAMPAIGNS ───────────────────────── 11  SHIPPED ───────────────────── observed
+ ◐ search-index      ●       ▁▁▁▁█▃  19s 2 sampled; 0s ago · trip-to-japan/trip
+ ◐ auth-rotation     ●       ▁▁▄▄▁█  29s 2 sampled; 0s ago · trip-to-japan/tools
+ ○ billing-export    ●       ▂▁▁▄█▁  33s @alex · 2 PRs observed
+•○ docs-refresh      ●       ▁▁▁▁█▂   2m @sam · 2 PRs observed
+ ○ checkout-flow     ●●      ▂▁▃█▄█   3m BUILD QUEUE ───────────────── observed
+ ◐ ios-widgets       —      … laptop  7m 6 sampled; 0s ago · trip-to-japan/trip
+ ◐ tui-frames        ●●●●○○  ▂▄▁▂██   8m latest100-run sample · older may be mi…
+ · infra-layout      —       ▂▁█▁▃▃  12m running (in_progress) · Build and test
+ ◐ model-evals       ●●●●●●+ ██▁██▁  14m   dashboard · 5m · trip-to-japan/trip
+ +2 more listed · F · 2 quiet unlisted … +1 more run · tab here
+
+
+
+ ↓ 5 cards below: DECISIONS · PLAN 2 · DECISION LOG 1 · FLEET 11 · ISSUES 4 · H…
+ ⏎ go   a answer   l open   D A F I screens   ? help
