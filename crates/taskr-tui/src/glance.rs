@@ -21,8 +21,9 @@ use crate::{
     theme::Theme,
     ui::{self, age, bold, clip, one_line, pad, sp, wrap},
 };
+use unicode_width::UnicodeWidthStr;
 
-/// The panels between the checks and the campaigns, in priority order: GitHub's three,
+/// The panels between the checks and the campaigns, in priority order: GitHub's two,
 /// then the ledger's Decisions (7), Fleet (8) and Decision log (9), then Issues (0), then
 /// Health (H).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -34,8 +35,7 @@ enum Panel {
     Health,
 }
 
-const PANELS: [Panel; 8] = [
-    Panel::Gh(Kind::Open),
+const PANELS: [Panel; 7] = [
     Panel::Gh(Kind::Shipped),
     Panel::Gh(Kind::Build),
     Panel::Decisions,
@@ -1056,113 +1056,145 @@ fn observed_card(app: &App, kind: Kind, width: usize, offset: usize) -> Card {
     card
 }
 
+/// My PRs (panel 4): one row per observed PR. Wide: the title and the compact facts on one
+/// line; mid and narrow: two. `I` shows every field. Failing checks are the card's only red.
 fn pr_card(app: &App, width: usize, offset: usize) -> Card {
-    use crate::github::Ci;
+    use crate::prs::Ci;
     let t = &app.theme;
-    let prs = app.github.rows();
-    let mut card = Card::new(app, "OPEN PRS", "observed CI".into(), t.sub, offset);
+    let mine = &app.mine;
+    let right = mine
+        .login
+        .as_ref()
+        .map_or(String::new(), |l| format!("@{l}"));
+    let mut card = Card::new(app, "MY PRS", right, t.sub, offset);
     card.unit = ("PR", "PRs");
-    let counts = [
-        Ci::Failing,
-        Ci::Running,
-        Ci::Unknown,
-        Ci::Passing,
-        Ci::Draft,
-    ]
-    .map(|ci| prs.iter().filter(|p| p.ci == ci).count());
-    let unavailable = app.github.sources.iter().all(|s| s.at.is_none());
-    let summary = if unavailable {
-        "CI counts unavailable".into()
+    let color = if mine.error.is_some() {
+        t.check
     } else {
-        let prefix = if !app.filter.is_empty() {
-            "filtered"
-        } else if app
-            .github
-            .sources
-            .iter()
-            .any(|s| s.at.is_none() || s.error.is_some())
-        {
-            "cached/partial"
-        } else {
-            "CI"
-        };
-        format!(
-            "{prefix}: {} fail {} run {} ? {} pass {} draft",
-            counts[0], counts[1], counts[2], counts[3], counts[4]
-        )
+        t.text
     };
-    card.head(summary, t.sub, unavailable, width);
-    for source in &app.github.sources {
-        let color = if source.error.is_some() {
-            t.check
-        } else {
-            t.text
-        };
-        card.head(source.status(app.observed_tick), color, true, width);
-        if source.total == 100 {
-            card.head("first 100; more may exist", t.check, true, width);
-        }
+    card.head(mine.status(app.observed_tick), color, true, width);
+    for (note, keep) in mine.notes() {
+        card.head(note, t.check, keep, width);
     }
-    if prs.is_empty() && !unavailable {
+    if mine.at.is_some() && mine.prs.is_empty() {
         let none = if app.filter.is_empty() {
-            "No open PRs observed"
+            "0 observed in search sample"
         } else {
             "No PR matches the filter"
         };
         card.head(none, t.sub, true, width);
+    } else if mine.at.is_some() {
+        // Spare lines of whole items, so a narrow card wraps the legend instead of cutting
+        // it and `req ✗` never parts from its rule; help (`?`) has it all at any size.
+        let mut line = String::new();
+        for item in [
+            "? not known",
+            "N+? at least N, more unread",
+            "req ✗ only from an observed required failure",
+            "I every field",
+        ] {
+            let joined = format!("{line} · {item}");
+            if line.is_empty() {
+                line = item.into();
+            } else if joined.width() > width.saturating_sub(2) {
+                card.head(
+                    std::mem::replace(&mut line, item.into()),
+                    t.dim,
+                    false,
+                    width,
+                );
+            } else {
+                line = joined;
+            }
+        }
+        card.head(line, t.dim, false, width);
     }
-    for (i, p) in prs.iter().enumerate() {
+    let several = mine.repos.len() > 1;
+    let now = app.observed_at;
+    for (i, p) in mine.prs.iter().enumerate() {
         let on = app.row == offset + i;
-        let color = match p.ci {
+        let ci = p.ci();
+        let color = match ci {
             Ci::Failing => t.need,
             Ci::Running => t.check,
             Ci::Passing => t.ok,
             Ci::Unknown | Ci::Draft => t.sub,
         };
-        let mark = if app.ascii { "#" } else { "■" };
-        let title = format!(
-            "{mark} {}{} #{} {}",
-            p.ci.word(),
-            if p.truncated { " (truncated)" } else { "" },
-            p.number,
-            p.title
-        );
-        let source = app.github.sources.iter().find(|s| s.repo == p.repo);
-        let now = app.observed_at;
-        let age = if p.created > 0 {
-            age(now.saturating_sub(p.created).saturating_mul(1000))
+        let name = p.repo.rsplit('/').next().unwrap_or(&p.repo);
+        let id = if several {
+            format!("{name}#{}", p.number)
         } else {
-            "age unknown".into()
+            format!("#{}", p.number)
         };
-        let mut metadata = format!("  @{} · {} · {}", p.author, age, p.repo);
-        if !p.review.is_empty() {
-            metadata += &format!(" · {}", p.review);
-        }
-        if source.is_some_and(|s| s.error.is_some()) {
-            metadata += " · stale";
-        }
-        if p.truncated {
-            metadata += " · checks truncated";
-        }
+        let title = match &p.read {
+            Some(f) if f.draft => format!("DRAFT {}", f.title),
+            Some(f) => f.title.clone(),
+            None => "not readable".into(),
+        };
+        let age = p
+            .read
+            .as_ref()
+            .filter(|f| f.updated <= now)
+            .map_or("?".into(), |f| {
+                age(now.saturating_sub(f.updated).saturating_mul(1000))
+            });
+        let stale = if mine.error.is_some() {
+            "stale · "
+        } else {
+            ""
+        };
+        let facts = format!("{stale}{}", p.facts());
+        let head = vec![
+            sp(format!("{} ", ci.mark()), color),
+            sp(format!("{id} "), t.text),
+            sp(title, t.text),
+        ];
+        let lines = if width >= 100 {
+            // The facts and age keep up to three fifths of the line; the title gives way
+            // first, then the facts' end (failing names), never the age.
+            let age = format!("  {age}");
+            let facts = clip(
+                &format!("  {facts}"),
+                ((width - 1) * 3 / 5).saturating_sub(age.width()),
+            );
+            vec![ui::row(
+                t,
+                ui::spread(head, vec![sp(facts + &age, t.sub)], width - 1),
+                on,
+                false,
+                color,
+                width,
+            )]
+        } else {
+            vec![
+                ui::row(
+                    t,
+                    ui::spread(
+                        head,
+                        vec![sp(format!(" {age}"), t.sub)],
+                        width.saturating_sub(1),
+                    ),
+                    on,
+                    false,
+                    color,
+                    width,
+                ),
+                ui::row(
+                    t,
+                    vec![sp(
+                        clip(&format!("  {facts}"), width.saturating_sub(1)),
+                        t.sub,
+                    )],
+                    on,
+                    false,
+                    color,
+                    width,
+                ),
+            ]
+        };
         card.rows.push(Row {
-            lines: vec![
-                ui::row(
-                    t,
-                    vec![sp(clip(&title, width.saturating_sub(1)), color)],
-                    on,
-                    false,
-                    color,
-                    width,
-                ),
-                ui::row(
-                    t,
-                    vec![sp(clip(&metadata, width.saturating_sub(1)), t.sub)],
-                    on,
-                    false,
-                    color,
-                    width,
-                ),
-            ],
+            lines,
             extra: None,
             once: false,
         });
@@ -1182,7 +1214,7 @@ fn slots(app: &App) -> [(usize, usize, bool, bool); 11] {
     [
         (0, 0, false, ledger && p[0]),
         (1, 0, true, ledger && p[1]),
-        (2, 1, false, has(Kind::Open)),
+        (2, 1, false, !app.mine.repos.is_empty()),
         (3, 2, false, ledger && p[2]),
         (4, 2, true, has(Kind::Shipped)),
         (5, 2, true, has(Kind::Build)),
@@ -1507,13 +1539,16 @@ fn label(app: &App, i: usize) -> Option<(String, Color)> {
         ),
         Selected::Pr(p) => (
             format!(
-                "PR{} {}{} #{} {} @{}",
-                if stale(&app.github) { " stale" } else { "" },
-                p.ci.word(),
-                if p.truncated { " truncated" } else { "" },
+                "PR{} {} #{} {} · {}",
+                if app.mine.error.is_some() {
+                    " stale"
+                } else {
+                    ""
+                },
+                p.repo,
                 p.number,
-                p.title,
-                p.author
+                p.read.as_ref().map_or("not readable", |f| f.title.as_str()),
+                p.facts()
             ),
             app.theme.sub,
         ),
@@ -1631,9 +1666,9 @@ pub(crate) fn ids(app: &App) -> Vec<RowId> {
                 .map(|a| RowId::Check(a.root_id, a.kind.clone()))
                 .collect(),
             2 => app
-                .github
-                .rows()
-                .into_iter()
+                .mine
+                .prs
+                .iter()
                 .map(|p| RowId::Pr(p.repo.clone(), p.number))
                 .collect(),
             3 => g
@@ -1700,7 +1735,7 @@ pub(crate) enum Selected<'a> {
     Ask(&'a Need),
     Check(&'a Attention),
     Campaign(&'a CampaignRow),
-    Pr(&'a crate::github::Pr),
+    Pr(&'a crate::prs::Pr),
     Author(String),
     Run(&'a crate::github::Run),
     Decision(&'a Event),
@@ -1730,9 +1765,9 @@ pub(crate) fn selected(app: &App) -> Selected<'_> {
             .find(|c| c.id == *id)
             .map_or(Selected::Nothing, Selected::Campaign),
         Some(RowId::Pr(repo, number)) => app
-            .github
-            .rows()
-            .into_iter()
+            .mine
+            .prs
+            .iter()
             .find(|p| p.repo == *repo && p.number == *number)
             .map_or(Selected::Nothing, Selected::Pr),
         Some(RowId::Author(author)) => Selected::Author(author.clone()),
@@ -2317,7 +2352,7 @@ pub(crate) fn card(id: &RowId) -> &'static str {
         RowId::Ask(_) => "NEEDS YOU",
         RowId::Check(..) => "TO CHECK",
         RowId::Campaign(_) => "CAMPAIGNS",
-        RowId::Pr(..) => "OPEN PRS",
+        RowId::Pr(..) => "MY PRS",
         RowId::Author(_) => "SHIPPED",
         RowId::Run(..) => "BUILD QUEUE",
         RowId::Decision(..) => "DECISIONS",
@@ -2328,7 +2363,7 @@ pub(crate) fn card(id: &RowId) -> &'static str {
         RowId::Card(slot) => [
             "NEEDS YOU",
             "TO CHECK",
-            "OPEN PRS",
+            "MY PRS",
             "CAMPAIGNS",
             "SHIPPED",
             "BUILD QUEUE",
@@ -2538,38 +2573,27 @@ fn detail_lines(app: &App, width: usize) -> Option<(String, Vec<Line<'static>>)>
                 c.status_text().to_string(),
             )
         }
-        Selected::Pr(p) => (
-            format!("{} #{}", p.repo, p.number),
-            vec![Line::from(sp(
-                format!(
-                    "{} · @{}{}",
-                    p.ci.word(),
-                    p.author,
-                    if p.review.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" · {}", p.review)
-                    }
-                ),
-                t.sub,
-            ))],
-            format!(
-                "{}\n{}\nObserved checks only; not merge readiness.{}\n{}",
-                p.title,
-                p.repo,
-                if p.truncated {
-                    " Check list truncated; completeness unknown."
-                } else {
-                    ""
-                },
-                // The read it came from: its age, or stale or unavailable.
-                app.github
-                    .sources
-                    .iter()
-                    .find(|s| s.repo == p.repo)
-                    .map_or_else(String::new, |s| s.status(app.observed_tick))
-            ),
-        ),
+        Selected::Pr(p) => {
+            let mine = &app.mine;
+            let mut text = p.detail(app.observed_at);
+            text.push(String::new());
+            // The read it came from: its age, or stale or unavailable, and its cost.
+            text.push(format!("source: {}", mine.status(app.observed_tick)));
+            text.extend(mine.notes().into_iter().map(|(n, _)| n));
+            if let Some(r) = mine.sample.rate {
+                text.push(format!(
+                    "GraphQL last cycle: cost {} · {} remaining · resets in {}",
+                    r.cost,
+                    r.remaining,
+                    age(r.reset.saturating_sub(app.observed_at).saturating_mul(1000))
+                ));
+            }
+            (
+                format!("PR #{} · {}", p.number, p.repo),
+                vec![Line::from(sp(p.facts(), t.sub))],
+                text.join("\n"),
+            )
+        }
         Selected::Author(author) => {
             let groups = app.shipped.authors(app.observed_at);
             let rows = &groups[&author];

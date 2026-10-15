@@ -3,7 +3,7 @@
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
 H Health-
  3 notes still carry OWNER items
- NEEDS YOU╭ Keys · dashboard ────────────────────────────────────────────────────────────────────────────────╮─────── 3
+ NEEDS YOU╭ Keys · dashboard · 1-26/35 · j k ────────────────────────────────────────────────────────────────╮─────── 3
 ▌? ◇ tui-f│                                                                                                  │aptop   2h
 ▌  Frames │   Move                                           Act                                             │
  ? ◇ ios-w│    j k           down, up (arrows too)            a             answer this ask, else pick one   │        2h

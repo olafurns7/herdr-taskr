@@ -8,14 +8,14 @@ panels 1+ 2+ 3+ 4+ 5+ 6+ 7- 8- 9- 0- H-
             No ledger snapshot yet.
 
               try 3 · next in 4s
- OPEN PRS ─────────────────────── observed CI
- 3 open; 0s ago · trip-to-japan/trip
-▌■ failing #42 Keep pending action labels rea…
-▌  @alex · 1h · trip-to-japan/trip
- ■ running #41 Refresh campaign milestones
-   @sam · 2h · trip-to-japan/trip
- ■ checks passing #40 Clarify owner answer co…
-   @alex · 3h · trip-to-japan/trip · approved
+ MY PRS ───────────────────────── @demo-owner
+ 6 observed · demo-org/demo · 0s ago · search…
+ 1 not readable
+▌✗ #42 Keep pending action labels readable 12m
+▌  ✓2 ✗2 ◷0 · req ✗ · changes · behind · unre…
+ ◷ #41 Refresh campaign milestones         24m
+   ✓1 ✗0 ◷1 · req ? · review · blocked · unre…
+ +4 more PRs · j k
  SHIPPED ─────────────────────────── observed
  2 sampled; 0s ago · trip-to-japan/trip
  2 sampled; 0s ago · trip-to-japan/tools

@@ -7,9 +7,9 @@ panels 1+ 2+ 3+ 4+ 5+ 6+ 7+ 8+ 9+ 0+ H+
    Frames follow-up is ready: PR #212 (orpha…
  TO CHECK ───────────────────────────────── 0
  Nothing to check in this snapshot
- OPEN PRS ─────────────────────── observed CI
- 0 open; 0s ago · trip-to-japan/trip
- No open PRs observed
+ MY PRS ───────────────────────── @demo-owner
+ 0 observed · demo-org/demo · 0s ago · search…
+ 0 observed in search sample
  CAMPAIGNS ──────────────────────────────── 0
  No listed campaigns; not a fleet-wide idle c…
  SHIPPED ─────────────────────────── observed

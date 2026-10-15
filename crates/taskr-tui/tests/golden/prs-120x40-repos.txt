@@ -1,0 +1,40 @@
+ taskr ❯ dashboard                                                        hub atlas · 2s ago   ● 2 need you  3 to check
+ [D Dashboard]  A Asks 2   F Fleet 11   I Detail
+1 asks+ · 2 checks- · 3 camps- · 4 PRs+ · 5 Shipped- · 6 Build- · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
+H Health-
+ 3 notes still carry OWNER items
+ NEEDS YOU ────────────────────────────────────────────────────────────────────────────────────────────────────────── 2
+ ? ◇ tui-frames           BLOCKING                                                                                ⏎  41s
+   Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns). (A) merge #212 and release v2.4.1 now [reco…
+ ? ◇ ios-widgets                                                                                           laptop ↗   6m
+   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). STOPPED, per your rule (conflict on the way): #641 and the th…
+ MY PRS ─────────────────────────────────────────────────────────────────────────────────────────────────── @demo-owner
+ 6 observed · 2 repos · 0s ago · search sample, first 30
+ 1 not readable
+ ? not known · N+? at least N, more unread · req ✗ only from an observed required failure · I every field
+▌✗ demo#42 Keep pending action labels readable        ✓2 ✗2 ◷0 · req ✗ · changes · behind · unres 3 · e2e-web, lint  12m
+ ◷ tools#41 Refresh campaign milestones                               ✓1 ✗0 ◷1 · req ? · review · blocked · unres 0  24m
+ ◷ demo#39 Split the answer editor state                ✓88+? ✗0+? ◷12+? · req ? · approved · unstable · unres 0 · ?  2h
+ ? demo#37 not readable                                                                  not readable · every field ?  ?
+ ✓ demo#40 Clarify owner answer copy                                  ✓2 ✗0 ◷0 · req ? · approved · clean · unres 0  37m
+ □ demo#38 DRAFT Sketch the fleet totals line                   checks ? head moved · req ? · none · draft · unres 0  2h
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ r refresh   a asks   0-9 panels   H health   / filter   D A F I screens   s slotr   q quit   ? help

@@ -1,0 +1,30 @@
+ taskr                                        2s ago   ● 2 need you  3 to check
+ [D Dashboard]  A Asks 2   F Fleet 11   I Detail
+panels 1+ 2- 3- 4+ 5- 6- 7- 8- 9- 0- H-
+ 3 notes still carry OWNER items
+ NEEDS YOU ────────────────────────────────────────────────────────────────── 2
+ ? ◇ tui-frames           BLOCKING                                        ⏎  41s
+   Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns). (A)…
+ ? ◇ ios-widgets                                                   laptop ↗   6m
+   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). STOPPED, per your rul…
+ MY PRS ─────────────────────────────────────────────────────────── @demo-owner
+▌0 observed · demo-org/demo · 0s ago · search sample, first 30
+ 0 observed in search sample
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ c all campaigns   D A F I screens   ? help

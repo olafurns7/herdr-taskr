@@ -1,0 +1,40 @@
+ taskr ❯ detail                                                           hub atlas · 2s ago   ● 2 need you  3 to check
+  D Dashboard   A Asks 2   F Fleet 11  [I Detail]
+╭ PR #42 · demo-org/demo ──────────────────────────────────────────────────────────────────────────────────────────────╮
+│ from Dashboard · MY PRS · row 1                                                                                      │
+│ ✓2 ✗2 ◷0 · req ✗ · changes · behind · unres 3 · e2e-web, lint                                                        │
+│                                                                                                                      │
+│ Keep pending action labels readable                                                                                  │
+│ demo-org/demo #42 · not draft · head 9f3c2ab1                                                                        │
+│ updated 12m ago · 2026-10-14T17:34:40Z                                                                               │
+│                                                                                                                      │
+│ CHECKS · 4 of 4 read · on head 9f3c2ab1                                                                              │
+│ ✓ 2 ✗ 2 ◷ 0 · 0 skipped or neutral · 0 other                                                                         │
+│ ✗ e2e-web · required                                                                                                 │
+│ ✗ lint · not required                                                                                                │
+│ observed required: 1 passed, 1 failed                                                                                │
+│ complete required set: unknown                                                                                       │
+│                                                                                                                      │
+│ merge state: BEHIND                                                                                                  │
+│ mergeable: MERGEABLE                                                                                                 │
+│ review: CHANGES_REQUESTED                                                                                            │
+│ threads: 3 unresolved of 4 (all read)                                                                                │
+│ src/view.rs:142 · current                                                                                            │
+│ src/view.rs:201 · current                                                                                            │
+│ docs/tui.md:12 · outdated                                                                                            │
+│                                                                                                                      │
+│ source: 6 observed · demo-org/demo · 0s ago · search sample, first 30                                                │
+│ 1 not readable                                                                                                       │
+│ GraphQL last cycle: cost 1 · 4989 remaining · resets in 30m                                                          │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ h back   a asks   D A F I screens   s slotr   q quit   ? help

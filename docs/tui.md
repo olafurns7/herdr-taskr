@@ -101,11 +101,16 @@ card under its own rule:
 - **To check:** things that may need a look but are not questions: a lead
   that went silent, a lead sitting on finished results, a host whose daemon
   stopped reporting. These are amber.
-- **Open PRs:** repository-wide open PRs read directly by the installed `gh` on
-  the TUI host, using that host's existing gh authentication. Each PR has one
-  square and a CI word, author and creation age. Failing checks are red only
-  inside this panel; the header verdict remains about owner asks. This differs
-  from campaign PR references and the hub watcher's tracked-PR observations.
+- **My PRs (4):** the open PRs of the GitHub user the installed `gh` on the TUI
+  host is authenticated as, across the configured repos, read directly with that
+  host's existing gh authentication. Each row has a mark (`✗` failing, `◷`
+  pending, `?` unknown, `✓` observed checks passing, `□` draft), the number and
+  title, the update age and the compact facts: check counts `✓ ✗ ◷`, `req`,
+  review, merge state, unresolved threads and failing check names. Wide cards
+  show a PR on one line, narrower ones on two; `I` shows every field. Failing
+  checks are red only inside this panel; the header verdict remains about owner
+  asks. This differs from campaign PR references and the hub watcher's
+  tracked-PR observations.
 - **Shipped:** cached PRs merged within the rolling last 24 hours, grouped by
   author across configured repos. Counts are observed samples; author details list
   titles, repo and PR number. The window expires on the existing UI tick, without
@@ -151,7 +156,7 @@ The cards sit in fixed bands, never rebalanced as counts change:
 | Band | 80 columns and wider | narrower |
 | --- | --- | --- |
 | A | Needs you │ To check | Needs you, To check |
-| B | Open PRs, full width | Open PRs |
+| B | My PRs, full width | My PRs |
 | C | Campaigns │ Shipped, Build queue | Campaigns, Shipped, Build queue |
 | D | Decisions, Decision log │ Fleet, Issues, Health | Decisions, Decision log, Fleet, Issues, Health |
 
@@ -176,7 +181,7 @@ for `j k` and `tab`: it shows its state, and no key acts on it. The first ledger
 snapshot opens on the top row (the first ask), whatever source arrived before it;
 later snapshots keep the cursor on its row.
 
-Press `1` (asks), `2` (checks), `3` (campaigns), `4` (Open PRs), `5` (Shipped), `6` (Build queue),
+Press `1` (asks), `2` (checks), `3` (campaigns), `4` (My PRs), `5` (Shipped), `6` (Build queue),
 `7` (Decisions), `8` (Fleet), `9` (Decision log), `0` (Issues) or uppercase `H`
 (Health) on the Dashboard to show or hide a panel; lowercase `h` stays back. The
 switches shape the Dashboard only. The
@@ -211,29 +216,83 @@ the runtime choices and shows a warning. Demo resolves no user config path,
 reads or writes no config, and runs no external tool. No private PR data or
 credentials are saved.
 
-Open PRs makes one bounded `gh pr list` invocation per visible repository
-every 60 seconds. `r` on the Dashboard can request a refresh after five seconds, but cannot
-bypass failure backoff or a known rate-limit deadline. Hiding the panel,
-switching to another screen or opening an overlay, a dialog or a pending `y`
-question over the Dashboard
-stops scheduled reads; an in-flight read can finish. Coming back keeps each
-source's schedule and backoff: a read that fell due meanwhile may start, once,
-and nothing catches up. Reads
-have a ten-second process deadline and bounded output. Failures retain the
-last good result with its own stale label; a first failure says unavailable.
-Ledger, Open PRs, Shipped and Build queue freshness are independent. Errors show generic messages.
+My PRs first reads the authenticated login once per run with `gh api user
+--jq .login` (a REST request; no GraphQL points), kept in memory only and
+never in `tui.json`. Until it is read the card says so; if it cannot be read
+(or is not a valid login) the card says `unavailable: your GitHub login could
+not be read`, makes no PR read and retries on the failure backoff below. It
+never guesses a login.
 
-Each query returns at most 100 PRs; at that limit the source says
-“first 100; more may exist.” Rows are failing, running, unknown, passing,
-then drafts, newest update first within each group. Passing means at least
-one observed successful check and no observed pending, failing or unknown
-outcome; neutral or skipped alone cannot prove passing. At 100 returned check
-contexts completeness is unknown, so passing is forbidden and the row says
-truncated. This is observed CI, never merge readiness or required-check
-approval. Cheap reviewDecision is shown when supplied; unresolved threads
-are not queried. The list shows a bounded window with an overflow count;
-`j`/`k` browse it without displacing all asks. No key runs commands from PRs
-or opens a browser.
+Then one global cycle covers every configured repo (at most eight), in two
+`gh api graphql` calls. Discovery searches `is:pr is:open author:LOGIN
+repo:R1 … repo:R8` for the first 30 results and learns only repository and
+number. The detail stage then reads each discovered PR through its own alias
+(`repository(owner,name){pullRequest(number)}`): state, title, draft,
+update time, head commit, mergeable, merge state, review decision, the head
+commit's check rollup (first 100 contexts, with each context's `isRequired`
+for this PR), the first 100 review threads (resolved, outdated, path, line;
+never comment text) and `rateLimit`. Every shown field of a row comes from
+its own alias in that one reply. Both calls share one ten-second deadline,
+parsing included, and one 8 MiB output bound; one cycle runs at a time.
+Stage 2 starts only if, when discovery lands, the card is still shown on the
+Dashboard with nothing over it; otherwise the discovery is dropped, nothing is
+marked stale and the schedule stays as if the cycle had run. A running stage
+finishes and is shown later. Results of another cycle are discarded.
+
+The schedule is 60 seconds. `r` on the Dashboard can start a cycle five
+seconds after the previous one started, but never before a failure backoff
+(one minute doubling to 15) or a known provider deadline (gh's rate-limit
+report, a `RATE_LIMITED` reply, or `rateLimit` showing fewer points left
+than a cycle cost, until its `resetAt`). Hiding the panel, switching to another
+screen or opening an overlay, a dialog or a pending `y` question over the
+Dashboard stops new reads; coming back keeps the schedule and backoff, so a
+cycle that fell due may start, once, and nothing catches up. Detail, the cursor
+and screen switches never read. A failed cycle keeps the last good rows with
+their own stale label; a first failure says unavailable. Errors show generic
+messages; nothing gh or GitHub wrote is shown or saved. Ledger, My PRs,
+Shipped and Build queue freshness are independent.
+
+What a row says, and what it never says:
+
+- Discovery is a sample: more than 30 results says `first 30 of N; more may
+  exist`, and an empty result says `0 observed in search sample`, never that
+  there are no open PRs. A result outside the configured repos is ignored and
+  counted; a malformed one fails the cycle.
+- A PR closed or merged between the two calls is dropped and counted (`N
+  closed since search`). A null alias (deleted, renamed, no access, or a field
+  error) keeps the row with repository and number, `not readable`, every field
+  `?`: never zero, never gone. A reply with `data: null` or an error the reader
+  cannot place fails the cycle; an error on one row's review, merge, checks or
+  threads makes only that field `?`, and the card says some fields could not be
+  read. On a short card the `not readable` and `some fields` notes give way
+  first, since each such row says so itself; the cap, closed and outside notes
+  stay at every height.
+- Checks belong to the head: when the check commit is not the PR's head commit
+  the row shows its other fields and `checks ? head moved`; a null rollup is
+  `?`, not zero checks.
+- Counts are exact only when every context was read (at most 100, no next
+  page). Otherwise they are lower bounds, `88+?`, and failing names are `?`
+  (a failure may be unread); the same holds for unresolved threads (`0+?`).
+  Passing means at least one success and no pending, failing or unknown
+  outcome among all contexts; neutral or skipped alone never pass.
+- `req ✗` appears only when an observed context that GitHub marks required
+  for this PR failed on the head commit. Otherwise `req ?`: a reported
+  required success says nothing about required checks that never reported,
+  rules or test-merge checks, so no merge state, review or passing check makes
+  a required check green. Detail says `observed required: N passed, M failed`
+  and `complete required set: unknown`.
+- Merge state `UNKNOWN` (or a value the reader does not know) is `?`.
+- Rows are failing, pending, unknown, passing, then drafts, newest update
+  first within each group; a wide row keeps its age and cuts the facts' end
+  (failing names) instead. A legend under the source line explains `?`,
+  `N+?` and `req ✗`, wrapped onto spare lines on a narrow card; help (`?`)
+  lists every My PRs mark and rule, and the wide help scrolls with `j k`.
+  Detail gives the update time and lists every failing check as required or
+  not, the observed required counts, merge state, mergeable and review in
+  GitHub's words, the head commit, every unresolved thread read by path and
+  line, the read age and the last cycle's GraphQL cost, remaining points and
+  reset. No key runs commands
+  from PRs or opens a browser.
 
 Shipped makes one `gh pr list --state merged --limit 100 --search
 merged:>=<UTC-cutoff> --json number,title,author,mergedAt` call per repo every
@@ -250,8 +309,8 @@ zero active observations. Older active runs may be missing: zero observed
 never means the repository is idle. No per-status or per-PR queries are made.
 These informational rows cannot answer, park, focus agent panes or mutate
 ledger data. All external sources share the same timeout, throttle and failure
-backoff rules, with at most one in-flight call per source/repo (24 at eight
-repos). Auth remains local to the TUI host; nothing private is cached to disk.
+backoff rules, with at most one in-flight call per source/repo (16 at eight
+repos) and one for My PRs. Auth remains local to the TUI host; nothing private is cached to disk.
 
 Issues makes one pair of sequential `gh issue list --repo trip-to-japan/trip
 --limit 100 --json number,state,assignees,labels,closedAt,updatedAt` calls,
@@ -291,9 +350,16 @@ age; there is no expiry, because the hub writes after deploy checks, not on
 a schedule. Never enabled, hidden or in demo it reads nothing (demo shows an
 invented note).
 
-Scheduled cost is about 60 Open PR + 30 Shipped + 60 Build queue = 150 gh
-invocations per repo per hour per instance (1,200 at eight repos), plus at
-most 24 for Issues (one repository) and manual refreshes. Health adds at
+Scheduled cost is about 30 Shipped + 60 Build queue = 90 gh invocations per
+repo per hour per instance (720 at eight repos), plus at most 24 for Issues
+(one repository), plus My PRs' 120 (two calls a minute whatever the repo
+count; an estimated 120-180 GraphQL points, while GitHub's own
+`rateLimit.cost` governs accounting) and its one REST identity read per run
+with any retries, plus manual refreshes. Manual `r` at the five-second gap
+can raise My PRs to an upper bound of 720 cycles, 1,440 invocations and an
+estimated 1,440-2,160 points an hour. GraphQL points are per GitHub user and
+shared with every other GraphQL use of that account; REST requests are
+counted separately. Health adds at
 most 60 `taskr` reads per hour per instance and no `gh` calls. This is not a fixed network-request or GraphQL-point
 budget; several TUI instances multiply the traffic. Failure backoff caps at
 15 minutes except when a longer known provider deadline applies.

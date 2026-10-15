@@ -128,10 +128,11 @@ fn main() -> ExitCode {
         app.config_warning = Some("TUI config path unavailable; choices not saved".into());
     }
     let config_ok = app.config_warning.is_none();
-    app.github = if options.demo {
-        github::demo()
+    // The login is read by the poller, in memory only; demo shows an invented one.
+    app.mine = if options.demo {
+        taskr_tui::prs::demo(app.observed_at)
     } else {
-        github::Dashboard::new(&app.config.repos)
+        taskr_tui::prs::Mine::new(&app.config.repos)
     };
     app.shipped = if options.demo {
         github::demo_shipped(app.observed_at)
@@ -156,7 +157,7 @@ fn main() -> ExitCode {
     let mut issues = github::Poller::new(github::Kind::Issues);
     let mut shipped = github::Poller::new(github::Kind::Shipped);
     let mut builds = github::Poller::new(github::Kind::Build);
-    let mut github = github::Poller::default();
+    let mut mine = taskr_tui::prs::Poller::new(taskr_tui::prs::gh);
     let taskr = client::taskr();
     let pace = client::Pace::default();
     let (updates, wake, events) = if options.demo {
@@ -240,8 +241,11 @@ fn main() -> ExitCode {
                 let build_visible = app.admits(5);
                 dirty |= shipped.tick(&mut app, now, ship_visible, pr_manual);
                 dirty |= builds.tick(&mut app, now, build_visible, pr_manual);
+                // Read afresh every tick: My PRs' stage 2 needs the admission of the tick
+                // its stage 1 lands on.
                 let visible = app.admits(3);
-                dirty |= github.tick(&mut app, now, visible, pr_manual);
+                let wall = time::OffsetDateTime::now_utc().unix_timestamp();
+                dirty |= mine.tick(&mut app, now, wall, visible, pr_manual);
                 // Manual `r` reaches it, but its admission budget ignores manual.
                 let issues_visible = app.admits(9);
                 dirty |= issues.tick(&mut app, now, issues_visible, pr_manual);
@@ -267,7 +271,8 @@ fn main() -> ExitCode {
             // Draw on a change only: an idle pane costs a poll, not a frame.
             let faces = app.fetch.face()
                 + &app.slotr.face()
-                + &[&app.github, &app.shipped, &app.builds, &app.issues]
+                + &app.mine.status(now)
+                + &[&app.shipped, &app.builds, &app.issues]
                     .into_iter()
                     .flat_map(|d| &d.sources)
                     .map(|s| s.status(now))
@@ -319,7 +324,7 @@ fn main() -> ExitCode {
             }
         }
     })();
-    drop(github);
+    drop(mine);
     drop(shipped);
     drop(builds);
     drop(issues);

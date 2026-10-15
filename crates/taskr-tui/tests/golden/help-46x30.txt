@@ -1,5 +1,5 @@
  taskr ❯ help          2s ago   ● 2 need you
- KEYS · dashboard ─────────────────── 1-27/61
+ KEYS · dashboard ─────────────────── 1-27/68
  Move
   j k           down, up (arrows too)
   g G           first, last row

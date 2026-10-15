@@ -5,7 +5,7 @@ use ratatui::{
     buffer::Buffer,
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
 };
-use taskr_tui::{App, Fetch, draw, frames, github, input, model::Data};
+use taskr_tui::{App, Fetch, Screen, draw, frames, github, input, model::Data, prs};
 
 fn render(app: &App, width: u16, height: u16) -> (String, Buffer) {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
@@ -23,7 +23,7 @@ fn fresh_prs_render_with_empty_failed_or_stale_ledger() {
             } else {
                 Data::default()
             });
-            app.github = github::demo();
+            app.mine = prs::demo(app.observed_at);
             app.fetch = Fetch {
                 loaded: state != 1,
                 error: (state > 0).then(|| "hub unreachable".into()),
@@ -31,19 +31,18 @@ fn fresh_prs_render_with_empty_failed_or_stale_ledger() {
             };
             let (text, buffer) = render(&app, width, 30);
             assert!(
-                text.contains("failing #42") && text.contains("@alex"),
+                text.contains("✗ #42") && text.contains("@demo-owner"),
                 "{state}/{width}:\n{text}"
             );
-            assert!(text.contains("3 open"), "{text}");
-            assert_eq!(
-                buffer
-                    .content
-                    .iter()
-                    .find(|c| c.symbol() == "■")
-                    .unwrap()
-                    .fg,
-                app.theme.need
-            );
+            assert!(text.contains("6 observed"), "{text}");
+            // The failing mark is the card's only red.
+            let (y, line) = text
+                .lines()
+                .enumerate()
+                .find(|(_, l)| l.contains("✗ #42"))
+                .unwrap();
+            let x = line.chars().position(|c| c == '✗').unwrap();
+            assert_eq!(buffer[(x as u16, y as u16)].fg, app.theme.need);
             if state == 1 {
                 assert!(text.contains("no data"));
             }
@@ -58,27 +57,21 @@ fn fresh_prs_render_with_empty_failed_or_stale_ledger() {
 fn failed_pr_read_does_not_stale_ledger_or_invent_zero_totals() {
     let mut app = App::new(frames::fixture());
     app.fetch.loaded = true;
-    app.github = github::demo();
-    app.github.sources[0].error = Some("GitHub unavailable");
+    app.mine = prs::demo(app.observed_at);
+    app.mine.error = Some("GitHub unavailable");
     let (text, _) = render(&app, 46, 30);
     let header = text.lines().next().unwrap();
     assert!(
         header.contains("2 need you") && !header.contains("stale"),
         "{text}"
     );
-    assert!(
-        text.contains("stale") && text.contains("failing #42"),
-        "{text}"
-    );
-    app.github = github::Dashboard::new(&["trip-to-japan/trip".into()]);
-    app.github.sources[0].error = Some("GitHub authentication required");
+    assert!(text.contains("stale") && text.contains("✗ #42"), "{text}");
+    // No login: unavailable, never a guessed owner or an empty list.
+    app.mine = prs::Mine::new(&["trip-to-japan/trip".into()]);
+    app.mine.error = Some("GitHub authentication required");
     let (text, _) = render(&app, 46, 30);
     assert!(
-        text.contains("CI counts unavailable") && text.contains("unavailable"),
-        "{text}"
-    );
-    assert!(
-        !text.contains("0 open") && !text.contains("0 fail"),
+        text.contains("unavailable: your GitHub") && !text.contains("0 observed"),
         "{text}"
     );
 }
@@ -87,11 +80,11 @@ fn failed_pr_read_does_not_stale_ledger_or_invent_zero_totals() {
 fn filter_does_not_change_source_totals_and_plain_frames_keep_status_words() {
     let mut app = App::new(frames::fixture());
     app.fetch.loaded = true;
-    app.github = github::demo();
+    app.mine = prs::demo(app.observed_at);
     app.filter = "no matches".into();
     let (text, _) = render(&app, 46, 30);
     assert!(
-        text.contains("3 open") && text.contains("2 need you"),
+        text.contains("6 observed") && text.contains("2 need you"),
         "{text}"
     );
     app.filter.clear();
@@ -100,7 +93,7 @@ fn filter_does_not_change_source_totals_and_plain_frames_keep_status_words() {
     let (text, buffer) = render(&app, 46, 30);
     assert!(text.is_ascii(), "{text}");
     assert!(
-        text.contains("# failing #42") && text.contains("running #41"),
+        text.contains("x #42") && text.contains("~ #41") && text.contains("v2 x2 ~0"),
         "{text}"
     );
     assert!(
@@ -115,12 +108,17 @@ fn filter_does_not_change_source_totals_and_plain_frames_keep_status_words() {
 fn sample_limits_and_check_truncation_are_visible_at_narrow_width() {
     let mut app = App::new(frames::fixture());
     app.fetch.loaded = true;
-    app.github = github::demo();
-    app.github.sources[0].total = 100;
-    app.github.sources[0].prs[0].truncated = true;
+    app.mine = prs::demo(app.observed_at);
+    app.mine.sample.found = 45;
+    app.config.panels = [
+        false, false, false, true, false, false, false, false, false, false, false,
+    ];
     let (text, _) = render(&app, 46, 30);
-    assert!(text.contains("first 100; more may exist"), "{text}");
-    assert!(text.contains("failing (truncated) #42"), "{text}");
+    assert!(text.contains("first 30 of 45; more may exist"), "{text}");
+    assert!(
+        text.contains("◷12+?") && text.contains("1 not readable"),
+        "{text}"
+    );
 }
 
 #[test]
@@ -138,19 +136,19 @@ fn prs_use_empty_ledger_space_without_hiding_truth_placeholder() {
                 false, false, false, true, false, false, false, false, false, false, false,
             ];
         }
-        app.github = github::demo();
-        let pr = app.github.sources[0].prs[0].clone();
-        app.github.sources[0].prs = (1..=12)
+        app.mine = prs::demo(app.observed_at);
+        let pr = app.mine.prs[0].clone();
+        app.mine.prs = (1..=12)
             .map(|number| {
                 let mut p = pr.clone();
                 p.number = number;
                 p
             })
             .collect();
-        app.github.sources[0].total = 12;
+        app.mine.sample.prs = app.mine.prs.clone();
         for (width, height) in [(46, 30), (120, 40)] {
             let (text, _) = render(&app, width, height);
-            assert!(text.matches("■ ").count() > 3, "{state}: {text}");
+            assert!(text.matches("✗ #").count() > 3, "{state}: {text}");
             let placeholder = [
                 "No open campaigns",
                 "Cannot reach the hub",
@@ -165,22 +163,22 @@ fn prs_use_empty_ledger_space_without_hiding_truth_placeholder() {
 fn review_metadata_retry_and_freshness_remain_readable() {
     let mut app = App::new(Data::default());
     app.fetch.loaded = true;
-    app.github = github::demo();
+    app.mine = prs::demo(app.observed_at);
     app.theme = taskr_tui::theme::LIGHT;
     let (text, buffer) = render(&app, 120, 40);
-    assert!(text.contains("approved"), "{text}");
-    for line in text
-        .lines()
-        .filter(|l| l.contains("@alex") || l.contains("@sam"))
-    {
+    assert!(
+        text.contains("approved") && text.contains("changes"),
+        "{text}"
+    );
+    for line in text.lines().filter(|l| l.contains(" · unres ")) {
         assert!(!line.trim_end_matches([' ', '│']).ends_with('·'), "{line}");
     }
     let (y, line) = text
         .lines()
         .enumerate()
-        .find(|(_, line)| line.contains("3 open;"))
+        .find(|(_, line)| line.contains("6 observed ·"))
         .unwrap();
-    let x = line.find("3 open;").unwrap();
+    let x = line[..line.find("6 observed ·").unwrap()].chars().count();
     assert_eq!(buffer[(x as u16, y as u16)].fg, app.theme.text);
     app.fetch.loaded = false;
     app.fetch.error = Some("hub unreachable".into());
@@ -298,7 +296,7 @@ fn spare_panel_space_shows_priority_prs_and_keeps_later_source_status() {
         for failed in [false, true] {
             let mut app = App::new(frames::fixture());
             app.fetch.loaded = true;
-            app.github = github::demo();
+            app.mine = prs::demo(app.observed_at);
             app.shipped = github::demo_shipped(app.observed_at);
             app.builds = github::demo_builds(app.observed_at);
             if failed {
@@ -310,9 +308,7 @@ fn spare_panel_space_shows_priority_prs_and_keeps_later_source_status() {
             let (text, _) = render(&app, width, height);
             // Priority first: asks, checks and the first PR are on the first screen.
             assert!(
-                text.contains("OPEN PRS")
-                    && text.contains("3 open")
-                    && text.contains("failing #42"),
+                text.contains("MY PRS") && text.contains("6 observed") && text.contains("✗ #42"),
                 "{width}x{height}/{failed}: {text}"
             );
             if height == 20 {
@@ -322,7 +318,7 @@ fn spare_panel_space_shows_priority_prs_and_keeps_later_source_status() {
                 );
             }
             // No PR silently dropped: each is drawn or counted on the card's more line.
-            let missing = ["failing #42", "running #41", "checks passing #40"]
+            let missing = ["✗ #42", "◷ #41", "◷ #39", "? #37", "✓ #40", "□ #38"]
                 .iter()
                 .filter(|pr| !text.contains(**pr))
                 .count();
@@ -336,7 +332,7 @@ fn spare_panel_space_shows_priority_prs_and_keeps_later_source_status() {
             }
             // The PR card is not padded with blank lines.
             let lines: Vec<&str> = text.lines().collect();
-            let start = lines.iter().position(|l| l.contains("OPEN PRS")).unwrap();
+            let start = lines.iter().position(|l| l.contains("MY PRS")).unwrap();
             let blank = |l: &str| l.trim_matches([' ', '│']).is_empty();
             let mut end = lines[start + 1..]
                 .iter()
@@ -425,13 +421,13 @@ fn spare_panel_space_shows_priority_prs_and_keeps_later_source_status() {
                 );
             }
             // A stale PR read and its cap stay in the card too.
-            app.github.sources[0].error = Some("GitHub unavailable");
-            app.github.sources[0].total = 100;
+            app.mine.error = Some("GitHub unavailable");
+            app.mine.sample.found = 45;
             // Row 5 is #42 (two asks, three checks before it): the PR card in view.
             app.row = 5;
             let (text, _) = render(&app, width, height);
             assert!(
-                text.contains("stale") && text.contains("first 100; more may exist"),
+                text.contains("stale") && text.contains("first 30 of 45; more may exist"),
                 "{width}x{height}/{failed}: {text}"
             );
         }
@@ -456,10 +452,10 @@ fn the_first_ledger_snapshot_opens_on_the_first_ask_and_later_ones_keep_the_row(
         (true, 46, 30),
     ] {
         let mut app = App::new(Data::default());
-        app.github = github::Dashboard::new(&repos);
+        app.mine = prs::Mine::new(&repos);
         render(&app, w, h);
         if prs_first {
-            app.github = github::demo();
+            app.mine = prs::demo(app.observed_at);
             render(&app, w, h);
         }
         // As client.rs does: the snapshot, then loaded.
@@ -484,7 +480,7 @@ fn the_first_ledger_snapshot_opens_on_the_first_ask_and_later_ones_keep_the_row(
             app.row = 5;
             let (text, _) = render(&app, w, h);
             assert!(
-                selected_line(&text).contains("CI counts unavailable"),
+                selected_line(&text).contains("reading your GitHub login"),
                 "{text}"
             );
             let mut next = app.data.glance.clone();
@@ -493,9 +489,191 @@ fn the_first_ledger_snapshot_opens_on_the_first_ask_and_later_ones_keep_the_row(
             let (text, _) = render(&app, w, h);
             assert_eq!(app.row, 5, "{text}");
             assert!(
-                selected_line(&text).contains("CI counts unavailable"),
+                selected_line(&text).contains("reading your GitHub login"),
                 "{text}"
             );
         }
     }
+}
+
+/// My PRs alone: wide rows carry their facts on one line, narrow rows on a second; Detail
+/// says every field; no frame ever shows a required check green.
+#[test]
+fn my_prs_rows_and_detail_say_every_fact_and_never_a_required_green() {
+    let app = |row: usize| {
+        let mut app = App::new(frames::fixture());
+        app.fetch.loaded = true;
+        app.mine = prs::demo(app.observed_at);
+        app.config.panels = [
+            false, false, false, true, false, false, false, false, false, false, false,
+        ];
+        app.row = row;
+        app
+    };
+    let (text, _) = render(&app(0), 120, 40);
+    let row = text.lines().find(|l| l.contains("✗ #42")).unwrap();
+    assert!(
+        row.contains("Keep pending action labels readable")
+            && row.contains("✓2 ✗2 ◷0 · req ✗ · changes · behind · unres 3"),
+        "{row}"
+    );
+    assert!(
+        text.contains("@demo-owner")
+            && text.contains("6 observed · demo-org/demo")
+            && text.contains("1 not readable")
+            && text.contains("? not known · N+? at least N"),
+        "{text}"
+    );
+    let (text, _) = render(&app(0), 46, 30);
+    let lines: Vec<&str> = text.lines().collect();
+    let i = lines.iter().position(|l| l.contains("✗ #42")).unwrap();
+    assert!(lines[i + 1].contains("✓2 ✗2 ◷0 · req ✗"), "{text}");
+    let detail = |row: usize| {
+        let mut app = app(row);
+        input::key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('I'), KeyModifiers::NONE),
+        );
+        render(&app, 120, 60).0
+    };
+    // Sorted: #42 failing, #41 and #39 pending, #37 unknown, #40 passing, #38 draft.
+    let text = detail(0);
+    for want in [
+        "PR #42 · demo-org/demo",
+        "✗ e2e-web · required",
+        "✗ lint · not required",
+        "observed required: 1 passed, 1 failed",
+        "complete required set: unknown",
+        "merge state: BEHIND",
+        "review: CHANGES_REQUESTED",
+        "threads: 3 unresolved of 4 (all read)",
+        "src/view.rs:142 · current",
+        "docs/tui.md:12 · outdated",
+        "GraphQL last cycle: cost 1 · 4989 remaining",
+    ] {
+        assert!(text.contains(want), "{want}:\n{text}");
+    }
+    let text = detail(2);
+    assert!(
+        text.contains("✓ 88+? ✗ 0+? ◷ 12+?") && text.contains("40 contexts not read"),
+        "{text}"
+    );
+    let text = detail(3);
+    assert!(
+        text.contains("not readable") && text.contains("every field is ?"),
+        "{text}"
+    );
+    let text = detail(4);
+    assert!(
+        text.contains("observed required: 1 passed, 0 failed")
+            && text.contains("complete required set: unknown"),
+        "{text}"
+    );
+    assert!(detail(5).contains("CHECKS · ? head moved"));
+    for (w, h) in [(120, 40), (80, 30), (46, 30), (46, 20)] {
+        for row in 0..6 {
+            let (text, _) = render(&app(row), w, h);
+            assert!(!text.contains("req ✓"), "{w}x{h}:\n{text}");
+        }
+    }
+}
+
+fn prs_only() -> App {
+    let mut app = App::new(frames::fixture());
+    app.fetch.loaded = true;
+    app.mine = prs::demo(app.observed_at);
+    app.config.panels = [
+        false, false, false, true, false, false, false, false, false, false, false,
+    ];
+    app
+}
+
+#[test]
+fn wide_rows_keep_their_age_when_facts_are_long_or_stale() {
+    for (width, stale) in [(100, false), (106, false), (120, true), (100, true)] {
+        let mut app = prs_only();
+        if stale {
+            app.mine.error = Some("GitHub rate limited");
+        }
+        let (text, _) = render(&app, width, 40);
+        // #42's facts and failing names and #39's lower bounds are the longest tails.
+        for (pr, age) in [
+            ("#42 ", "12m"),
+            ("#41 ", "24m"),
+            ("#40 ", "37m"),
+            ("#39 ", "2h"),
+            ("#38 ", "2h"),
+        ] {
+            let row = text
+                .lines()
+                .find(|l| l.contains(pr))
+                .unwrap_or_else(|| panic!("{width}/{stale}: {text}"));
+            assert!(
+                row.trim_end().ends_with(&format!("  {age}")),
+                "{width}/{stale}: {row}"
+            );
+        }
+    }
+    // Narrow rows keep the age on the title line, the facts on their own.
+    let (text, _) = render(&prs_only(), 46, 30);
+    let row = text.lines().find(|l| l.contains("#42 ")).unwrap();
+    assert!(row.trim_end().ends_with(" 12m"), "{row}");
+}
+
+#[test]
+fn card_legend_wraps_whole_below_the_wide_width() {
+    for (width, height) in [(80, 30), (46, 30)] {
+        let (text, _) = render(&prs_only(), width, height);
+        for item in [
+            "? not known",
+            "N+? at least N, more unread",
+            "req ✗ only from an observed required failure",
+            "I every field",
+        ] {
+            assert!(text.contains(item), "{width}x{height}: {item}: {text}");
+        }
+        assert!(!text.contains("requir…"), "{text}");
+    }
+    // Wide, the legend stays one line.
+    let (text, _) = render(&prs_only(), 120, 40);
+    assert!(
+        text.lines()
+            .any(|l| l.contains("? not known · N+? at least N")
+                && l.contains("req ✗ only from an observed required failure · I every field")),
+        "{text}"
+    );
+}
+
+#[test]
+fn help_reaches_the_my_prs_legend_at_every_size() {
+    for (width, height) in [(120, 40), (100, 30), (80, 30), (46, 30), (46, 20)] {
+        let mut app = prs_only();
+        app.screen = Screen::Help;
+        let mut seen = String::new();
+        for scroll in 0..120 {
+            app.scroll = scroll;
+            seen.push_str(&render(&app, width, height).0);
+        }
+        for want in [
+            "My PRs",
+            "failing",
+            "pending",
+            "not known",
+            "checks passing",
+            "draft",
+            "N+? at least N, more unread.",
+            "req ✗ only when a check GitHub marks",
+            "never shown.",
+            // The last campaign marks, which the 30-row wide help used to cut.
+            "recommended",
+        ] {
+            assert!(seen.contains(want), "{width}x{height}: {want}");
+        }
+        assert!(!seen.contains("req ✓"), "{width}x{height}");
+    }
+    // The wide help says it scrolls when it is taller than the modal.
+    let mut app = prs_only();
+    app.screen = Screen::Help;
+    let (text, _) = render(&app, 120, 40);
+    assert!(text.contains("Keys · dashboard · 1-26/"), "{text}");
 }

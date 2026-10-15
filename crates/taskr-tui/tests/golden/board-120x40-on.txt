@@ -3,17 +3,17 @@
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions+ · 8 Fleet+ · 9 Log+ · 0 Issues+
 H Health+
  3 notes still carry OWNER items
- NEEDS YOU ────────────────────────────────────────────── 2  TO CHECK ───────────────────────────────────────────── 2/3
+ NEEDS YOU ────────────────────────────────────────────── 2  TO CHECK ─────────────────────────────────────────────── 3
 ▌? ◇ tui-frames           BLOCKING                    ⏎  41s ! map-tiles-polish                              laptop   2h
 ▌  Frames follow-up is ready: PR #212 (orphaned asks hidde…    lead unregistered and silent
  ? ◇ ios-widgets                               laptop ↗   6m ! infra-layout                                           2h
    WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…    lead idle with 3 results
-                                                             +1 more check · tab here
- OPEN PRS ───────────────────────────────────────────────────────────────────────────────────────────────── observed CI
- 3 open; 0s ago · trip-to-japan/trip
- ■ failing #42 Keep pending action labels readable
-   @alex · 1h · trip-to-japan/trip
- +2 more PRs · tab here
+                                                             ! host build-mini                                 mini  12m
+                                                               host stale: no heartbeat for 12 m
+ MY PRS ─────────────────────────────────────────────────────────────────────────────────────────────────── @demo-owner
+ 6 observed · demo-org/demo · 0s ago · search sample, first 30
+ ✗ #42 Keep pending action labels readable            ✓2 ✗2 ◷0 · req ✗ · changes · behind · unres 3 · e2e-web, lint  12m
+ +5 more PRs · tab here
  CAMPAIGNS ───────────────────────────────────────────── 11  SHIPPED ───────────────────────────────────────── observed
  ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃          19s 2 sampled; 0s ago · trip-to-japan/trip
  ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█          29s 2 sampled; 0s ago · trip-to-japan/tools

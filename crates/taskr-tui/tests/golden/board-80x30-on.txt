@@ -7,11 +7,11 @@ panels 1+ 2+ 3+ 4+ 5+ 6+ 7+ 8+ 9+ 0+ H+
 ▌  Frames follow-up is ready: PR #212 …    lead unregistered and silent
  ? ◇ ios-widgets           laptop ↗   6m +2 more checks · tab here
    WIDGET BATCH: 19 of 23 merged (14:0…
- OPEN PRS ───────────────────────────────────────────────────────── observed CI
- 3 open; 0s ago · trip-to-japan/trip
- ■ failing #42 Keep pending action labels readable
-   @alex · 1h · trip-to-japan/trip
- +2 more PRs · tab here
+ MY PRS ─────────────────────────────────────────────────────────── @demo-owner
+ 6 observed · demo-org/demo · 0s ago · search sample, first 30
+ ✗ #42 Keep pending action labels readable                                   12m
+   ✓2 ✗2 ◷0 · req ✗ · changes · behind · unres 3 · e2e-web, lint
+ +5 more PRs · tab here
  CAMPAIGNS ───────────────────────── 11  SHIPPED ───────────────────── observed
  ◐ search-index      ●       ▁▁▁▁█▃  19s 2 sampled; 0s ago · trip-to-japan/trip
  ◐ auth-rotation     ●       ▁▁▄▄▁█  29s 2 sampled; 0s ago · trip-to-japan/tools
