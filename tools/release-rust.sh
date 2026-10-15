@@ -24,16 +24,18 @@ trap 'case "$stage" in "$PWD"/dist-rust/.build.??????) rm -rf -- "$stage" ;; *) 
 for target in $targets; do
     case "$target" in
         # Let the target linker strip symbols; host strip cannot strip ARM ELF.
-        *linux*) cargo zigbuild --locked --release --config 'profile.release.strip="symbols"' -p taskr --target "$target" ;;
-        *darwin*) cargo build --locked --release --config 'profile.release.strip="symbols"' -p taskr --target "$target" ;;
+        *linux*) cargo zigbuild --locked --release --config 'profile.release.strip="symbols"' -p taskr -p taskr-tui --target "$target" ;;
+        *darwin*) cargo build --locked --release --config 'profile.release.strip="symbols"' -p taskr -p taskr-tui --target "$target" ;;
     esac
-    asset="taskr-rust-$target"
-    cp "$CARGO_TARGET_DIR/$target/release/taskr" "$stage/$asset"
-    strings -a "$stage/$asset" > "$stage/strings"
-    if grep -E 'TASKR_FROZEN_NOW|TASKR_CONTRACT_|--contract-' "$stage/strings"; then
-        echo "release-rust: contract hook found in $asset" >&2
-        exit 1
-    fi
+    for binary in taskr taskr-tui; do
+        asset="$binary-rust-$target"
+        cp "$CARGO_TARGET_DIR/$target/release/$binary" "$stage/$asset"
+        strings -a "$stage/$asset" > "$stage/strings"
+        if grep -E 'TASKR_FROZEN_NOW|TASKR_CONTRACT_|--contract-' "$stage/strings"; then
+            echo "release-rust: contract hook found in $asset" >&2
+            exit 1
+        fi
+    done
 done
 case "$(uname -m):$(uname -s)" in
     x86_64:Linux) native=x86_64-unknown-linux-musl ;;
@@ -60,15 +62,20 @@ for cmd in help status; do
         PATH="$stage/bin:/usr/bin:/bin" HERDR_SOCKET_PATH="$stage/home/absent.sock" \
         "$stage/taskr-rust-$native" "$cmd"
 done
+env -i HOME="$stage/home" TASKR_DB="$stage/home/smoke.db" \
+    PATH="$stage/bin:/usr/bin:/bin" HERDR_SOCKET_PATH="$stage/home/absent.sock" \
+    "$stage/taskr-tui-rust-$native" --help >/dev/null
 for target in $targets; do
-    mv -f "$stage/taskr-rust-$target" "dist-rust/taskr-rust-$target"
+    for binary in taskr taskr-tui; do
+        mv -f "$stage/$binary-rust-$target" "dist-rust/$binary-rust-$target"
+    done
 done
 (
     cd dist-rust
     if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum taskr-rust-* > SHA256SUMS
+        sha256sum taskr-rust-* taskr-tui-rust-* > SHA256SUMS
     else
-        shasum -a 256 taskr-rust-* > SHA256SUMS
+        shasum -a 256 taskr-rust-* taskr-tui-rust-* > SHA256SUMS
     fi
     cat SHA256SUMS
 )

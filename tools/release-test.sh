@@ -34,7 +34,9 @@ pair() { # DIR ARM64_TEXT
 	mkdir -p "$1"
 	macho "$1/taskr-rust-aarch64-apple-darwin" '\014\000\000\001\000\000\000\000' "$2"
 	macho "$1/taskr-rust-x86_64-apple-darwin" '\007\000\000\001\003\000\000\000' 'stub v0.17.0'
-	(cd "$1" && sha256sum taskr-rust-* > SHA256SUMS)
+	macho "$1/taskr-tui-rust-aarch64-apple-darwin" '\014\000\000\001\000\000\000\000' 'tui stub'
+	macho "$1/taskr-tui-rust-x86_64-apple-darwin" '\007\000\000\001\003\000\000\000' 'tui stub'
+	(cd "$1" && sha256sum taskr-rust-* taskr-tui-rust-* > SHA256SUMS)
 }
 
 # A checksummed imported pair with a test-only marker is refused before the gate.
@@ -45,6 +47,25 @@ for marker in TASKR_FROZEN_NOW TASKR_CONTRACT_FROZEN_NOW --contract-seed; do
 	fi
 	grep -q 'contains a test-only hook' "$t/out" || { cat "$t/out"; no "imported pair with $marker: wrong refusal"; }
 	ok "refuses an imported pair with $marker"
+done
+
+# The imported TUI needs its own checksum, architecture and hook checks.
+for fault in checksum architecture hook; do
+	pair "$t/tui-$fault" 'stub v0.17.0'
+	asset="$t/tui-$fault/taskr-tui-rust-aarch64-apple-darwin"
+	case $fault in
+	checksum) printf corrupt >> "$asset"; want='does not match' ;;
+	architecture) macho "$asset" '\007\000\000\001\003\000\000\000' 'tui stub'; want='is not' ;;
+	hook) printf '\nTASKR_CONTRACT_BAD\n' >> "$asset"; want='contains a test-only hook' ;;
+	esac
+	if [ "$fault" != checksum ]; then
+		(cd "$t/tui-$fault" && sha256sum taskr-rust-* taskr-tui-rust-* > SHA256SUMS)
+	fi
+	if ./release.sh v0.17.0 --dry-run --darwin-from "$t/tui-$fault" > "$t/out" 2>&1; then
+		no "TUI $fault accepted"
+	fi
+	grep -q "$want" "$t/out" || { cat "$t/out"; no "TUI $fault: wrong refusal"; }
+	ok "refuses TUI $fault"
 done
 
 # The gate's summary parser, extracted verbatim from release.sh.
@@ -85,4 +106,85 @@ promote v0.9.9 v0.16.1 refuse
 promote v0.17.0 v0.16.1 edit
 promote v0.16.10 v0.16.9 edit
 promote v0.16.1 v0.16.1 edit
+# Exercise complete packaging and both darwin modes in a disposable fake tree.
+mkdir -p "$t/full/tools" "$t/full/plugin" "$t/full/references" "$t/fake-bin" "$t/home"
+cp release.sh install.sh SKILL.md "$t/full/"
+cp plugin/run.sh plugin/herdr-plugin.toml "$t/full/plugin/"
+cp references/format.md "$t/full/references/"
+pair "$t/mac" 'stub v0.17.0'
+cat > "$t/fake-bin/cargo" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+cp "$t/fake-bin/cargo" "$t/fake-bin/zig"
+cp "$t/fake-bin/cargo" "$t/fake-bin/cargo-zigbuild"
+cp "$t/fake-bin/cargo" "$t/fake-bin/git"
+cat > "$t/fake-bin/rustup" <<'EOF'
+#!/bin/sh
+printf '%s\n' x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+EOF
+cat > "$t/fake-bin/file" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$2" >> "$FAKE_FILE_LOG"
+case $2 in
+*linux-amd64)
+  printf '%s\n' 'ELF 64-bit LSB executable, x86-64, statically linked' ;;
+*linux-arm64)
+  link='statically linked'
+  if [ "${FAKE_DYNAMIC_TUI:-}" = 1 ] && [ "${2##*/}" = taskr-tui-linux-arm64 ]; then link='dynamically linked'; fi
+  printf 'ELF 64-bit LSB executable, ARM aarch64, %s\n' "$link" ;;
+*) exec /usr/bin/file "$@" ;;
+esac
+EOF
+cat > "$t/fake-bin/remote" <<'EOF'
+#!/bin/sh
+case $1 in
+'mktemp -d '*) printf '%s\n' /tmp/taskr-release.ABC123 ;;
+'cat '*) cat "$FAKE_MAC/${1##*/}" ;;
+'cd '*|'rm -rf '*|true) ;;
+' tar '*|'tar '*) cat >/dev/null ;;
+*) printf 'unexpected remote: %s\n' "$*" >&2; exit 9 ;;
+esac
+EOF
+cat > "$t/full/tools/release-rust.sh" <<'EOF'
+#!/bin/sh
+set -eu
+mkdir -p dist-rust
+for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
+  printf '#!/bin/sh\nprintf '\''{"version":"%s"}\n'\''\n' "$TASKR_VERSION" > "dist-rust/taskr-rust-$target"
+  printf '#!/bin/sh\nexit 0\n' > "dist-rust/taskr-tui-rust-$target"
+done
+EOF
+chmod +x "$t/fake-bin/"*
+export FAKE_MAC="$t/mac" FAKE_FILE_LOG="$t/file.log"
+for mode in imported remote darwin-only; do
+	: > "$t/file.log"
+	set -- --dry-run
+	case $mode in
+	imported) set -- "$@" --darwin-from "$t/mac" ;;
+	darwin-only) set -- "$@" --darwin-only ;;
+	esac
+	if ! (cd "$t/full" && HOME="$t/home" PATH="$t/fake-bin:$PATH" TASKR_RELEASE_SSH="$t/fake-bin/remote" ./release.sh v0.17.0 "$@") > "$t/out" 2>&1; then
+		cat "$t/out"; no "packaging $mode"
+	fi
+	if [ "$mode" = darwin-only ]; then
+		(cd "$t/full/dist-darwin" && sha256sum -c SHA256SUMS) > "$t/out" 2>&1 || { cat "$t/out"; no 'darwin-only checksums'; }
+		[ "$(wc -l < "$t/full/dist-darwin/SHA256SUMS")" -eq 4 ] || no 'darwin-only asset count'
+	else
+		(cd "$t/full/dist" && sha256sum -c SHA256SUMS) > "$t/out" 2>&1 || { cat "$t/out"; no "$mode checksums"; }
+		[ "$(wc -l < "$t/full/dist/SHA256SUMS")" -eq 12 ] || no 'release checksum count'
+		for binary in taskr taskr-tui; do
+			for platform in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
+				[ -x "$t/full/dist/$binary-$platform" ] || no "missing executable $binary-$platform"
+				grep -qx "dist/$binary-$platform" "$t/file.log" || no "missing final file check $binary-$platform"
+			done
+		done
+	fi
+	ok "packaging $mode includes checksummed TUI assets"
+done
+if (cd "$t/full" && HOME="$t/home" PATH="$t/fake-bin:$PATH" FAKE_DYNAMIC_TUI=1 ./release.sh v0.17.0 --dry-run --darwin-from "$t/mac") > "$t/out" 2>&1; then
+	no 'dynamic Linux TUI accepted'
+fi
+grep -q 'taskr-tui-linux-arm64 is not' "$t/out" || { cat "$t/out"; no 'dynamic Linux TUI: wrong refusal'; }
+ok 'refuses dynamically linked Linux TUI'
 printf 'release-test: all %s passed\n' "$pass"

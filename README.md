@@ -51,14 +51,15 @@ curl -fsSL -o taskr-install.sh \
 rm taskr-install.sh
 ```
 
-This installs the `taskr` binary, the agent skill and the Herdr plugin. The
-[install guide](docs/install.md) has every step, including more than one
-machine.
+This installs `taskr`, `taskr-tui`, the agent skill and the Herdr plugin.
+Set `TASKR_NO_TUI=1` to skip the terminal view. Installing an older release
+without it preserves any existing `taskr-tui`. The [install guide](docs/install.md)
+has every step, including more than one machine.
 
 ## Start the terminal view
 
-`taskr-tui` has no prebuilt download yet (one is planned). Build it from a
-clone of this repository with [Rust](https://rustup.rs):
+`taskr-tui` is installed by the command above. To build it from a clone
+instead, with [Rust](https://rustup.rs):
 
 ```sh
 cargo install --path crates/taskr-tui
