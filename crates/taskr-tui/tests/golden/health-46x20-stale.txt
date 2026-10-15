@@ -4,10 +4,10 @@ panels 1+ 2+ 3+ 4+ 5+ 6+ 7- 8- 9- 0- H+
  3 notes still carry OWNER items
  ↑ 5 above: NEEDS YOU 2 · TO CHECK 3 · MY PRS…
  BUILD QUEUE ─────────────────────── observed
- 6 sampled; 0s ago · trip-to-japan/trip
+ 6 sampled; 0s ago · example-org/app
  latest100-run sample · older may be missing
  running (in_progress) · Build and test
-   dashboard · 5m · trip-to-japan/trip
+   dashboard · 5m · example-org/app
  +1 more run · tab here
  HEALTH ───────────── hub report · production
  Stale · Health notes unavailable · showing r…

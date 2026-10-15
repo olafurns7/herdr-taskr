@@ -130,14 +130,14 @@ card under its own rule:
   every host or agent, and works with Campaigns hidden.
 - **Decision log (9):** decision events in the same cached read's recent log
   sample (up to 100 events), apart from the decisions in force.
-- **Issues (0):** GitHub issues of `trip-to-japan/trip` only, one row per
+- **Issues (0):** GitHub issues of the configured `issues_repo`, one row per
   current assignee plus Unassigned (an explicitly empty assignee list): open,
   blocked and closed in the rolling last 24 hours. Blocked means an open issue
   labelled exactly `blocked` or `needs-info`, counted once. An issue with
   several assignees counts in each group, so groups overlap; the headline
   counts unique issues. Groups with blocked issues use the amber attention
   colour, never red. Rows are informational: no key acts on them.
-- **Health (H):** the hub's latest `HEALTH` note for `trip-to-japan/trip`
+- **Health (H):** the hub's latest `HEALTH` note for the configured `health_repo`
   `production`: the reported SHA, deploy state, Sentry state or issue IDs, the
   checked time with its age, the source note ID and the rollback note ID. It is
   a hub report as of its checked time, not live production state: it never
@@ -185,9 +185,9 @@ Press `1` (asks), `2` (checks), `3` (campaigns), `4` (My PRs), `5` (Shipped), `6
 `7` (Decisions), `8` (Fleet), `9` (Decision log), `0` (Issues) or uppercase `H`
 (Health) on the Dashboard to show or hide a panel; lowercase `h` stays back. The
 switches shape the Dashboard only. The
-switch row uses `+` for shown and `-` for hidden. The first six start
-enabled, 7-9, 0 and H hidden; narrow, the hidden five fold into
-`7-9,0,H off`. Under 32 rows the switches share one line of keys,
+switch row uses `+` for shown and `-` for hidden. The first three start
+enabled; repository panels and 7-9 start hidden. Narrow, hidden optional panels
+fold into a compact switch group. Under 32 rows the switches share one line of keys,
 `panels 1+ 2+ … H-`, so the tab line costs the cards no row. Hidden owner asks
 remain counted in the header and in the Asks tab. A hidden card's rows cannot
 receive actions on the Dashboard; Asks and Fleet list theirs regardless. Rows of
@@ -199,16 +199,29 @@ Visibility and the repository list live in `$XDG_CONFIG_HOME/taskr/tui.json`,
 or `~/.config/taskr/tui.json` when XDG_CONFIG_HOME is unset:
 
 ```json
-{"panels":[true,true,true,true,true,true,false,false,false,false,false],"repos":["trip-to-japan/trip"]}
+{
+  "panels": [true,true,true,true,true,true,false,false,false,true,true],
+  "repos": ["example-org/app", "example-org/tools"],
+  "issues_repo": "example-org/app",
+  "health_repo": "example-org/app"
+}
 ```
 
 Existing four-, six-, nine- and ten-boolean configs keep their choices and
 repo list; the panels they predate take their defaults (Shipped and Build
 queue enabled, 7-9, Issues and Health hidden). Saves use eleven booleans.
-The `repos` list does not change the Issues or Health repository. Other lengths or
-non-boolean entries are invalid and retain the bad-config preservation guard.
-Up to eight `owner/repo` names are accepted. Toggle saves preserve the repo
-list and replace this allowlisted config atomically with mode 0600. Bad or
+Fresh defaults have an empty `repos` list and unset `issues_repo` and
+`health_repo`; My PRs, Shipped and Build start hidden, as do Issues and Health.
+Toggle an unconfigured panel on to see which setting to add. An empty scope
+starts no GitHub process (not even an identity read); Health also skips its
+ledger read when unset. No repository is inferred. `repos` scopes My PRs,
+Shipped and Build, `issues_repo` scopes Issues, and `health_repo` selects the
+repository in HEALTH notes. The optional settings accept one `owner/name`
+string each or `null`; older configs leave them unset. These scopes are independent.
+Other panel-array lengths or non-boolean entries are invalid and retain the bad-config preservation guard.
+An empty list or up to eight distinct `owner/repo` names are accepted for `repos`;
+all three settings use the same repository-name validation. Toggle saves preserve
+all scopes and replace this allowlisted config atomically with mode 0600. Bad or
 unreadable config uses defaults with a visible warning. Toggles then apply
 only to this session and preserve the existing file and warning; repair the
 config and restart to enable saving. A failed save keeps
@@ -312,7 +325,7 @@ ledger data. All external sources share the same timeout, throttle and failure
 backoff rules, with at most one in-flight call per source/repo (16 at eight
 repos) and one for My PRs. Auth remains local to the TUI host; nothing private is cached to disk.
 
-Issues makes one pair of sequential `gh issue list --repo trip-to-japan/trip
+Issues makes one pair of sequential `gh issue list --repo OWNER/NAME
 --limit 100 --json number,state,assignees,labels,closedAt,updatedAt` calls,
 `--state open` then `--state closed --search closed:>=<UTC-cutoff>`, at most
 once per five minutes while visible, failure retries included (5, 10, then 15

@@ -13,15 +13,15 @@ panels 1+ 2+ 3+ 4+ 5+ 6+ 7+ 8+ 9+ 0+ H+
    ✓2 ✗2 ◷0 · req ✗ · changes · behind · unres 3 · e2e-web, lint
  +5 more PRs · tab here
  CAMPAIGNS ───────────────────────── 11  SHIPPED ───────────────────── observed
- ◐ search-index      ●       ▁▁▁▁█▃  19s 2 sampled; 0s ago · trip-to-japan/trip
- ◐ auth-rotation     ●       ▁▁▄▄▁█  29s 2 sampled; 0s ago · trip-to-japan/tools
+ ◐ search-index      ●       ▁▁▁▁█▃  19s 2 sampled; 0s ago · example-org/app
+ ◐ auth-rotation     ●       ▁▁▄▄▁█  29s 2 sampled; 0s ago · example-org/tools
  ○ billing-export    ●       ▂▁▁▄█▁  33s @alex · 2 PRs observed
 •○ docs-refresh      ●       ▁▁▁▁█▂   2m @sam · 2 PRs observed
  ○ checkout-flow     ●●      ▂▁▃█▄█   3m BUILD QUEUE ───────────────── observed
- ◐ ios-widgets       —      … laptop  7m 6 sampled; 0s ago · trip-to-japan/trip
+ ◐ ios-widgets       —      … laptop  7m 6 sampled; 0s ago · example-org/app
  ◐ tui-frames        ●●●●○○  ▂▄▁▂██   8m latest100-run sample · older may be mi…
  · infra-layout      —       ▂▁█▁▃▃  12m running (in_progress) · Build and test
- ◐ model-evals       ●●●●●●+ ██▁██▁  14m   dashboard · 5m · trip-to-japan/trip
+ ◐ model-evals       ●●●●●●+ ██▁██▁  14m   dashboard · 5m · example-org/app
  +2 more listed · F · 2 quiet unlisted … +1 more run · tab here
 
 

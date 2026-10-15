@@ -311,7 +311,7 @@ pub struct App {
     pub mine: prs::Mine,
     pub shipped: github::Dashboard,
     pub builds: github::Dashboard,
-    /// Issues by assignee (panel 0): the fixed repository only, never `config.repos`.
+    /// Issues by assignee (panel 0): `config.issues_repo`, separate from `config.repos`.
     pub issues: github::Dashboard,
     /// Health (panel H): the hub's latest HEALTH note, read by its own poller.
     pub health: health::Health,

@@ -22,19 +22,19 @@ H Health+
  □ #38 DRAFT Sketch the fleet totals line                       checks ? head moved · req ? · none · draft · unres 0  2h
  CAMPAIGNS ───────────────────────────────────────────── 11  SHIPPED ───────────────────────────────────────── observed
  ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃          19s 4 observed merged / rolling 24h
-   Research complete: reports/ranking-options.md compares …  2 sampled; 0s ago · trip-to-japan/trip
- ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█          29s 2 sampled; 0s ago · trip-to-japan/tools
+   Research complete: reports/ranking-options.md compares …  2 sampled; 0s ago · example-org/app
+ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█          29s 2 sampled; 0s ago · example-org/tools
  ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁          33s @alex · 2 PRs observed
 •○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂           2m @sam · 2 PRs observed
  ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█           3m BUILD QUEUE ───────────────────────────────────── observed
  ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁    laptop  7m 2 active observed · 0 unknown
- ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆           8m 6 sampled; 0s ago · trip-to-japan/trip
+ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆           8m 6 sampled; 0s ago · example-org/app
  · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃          12m latest100-run sample · older may be missing
  ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁          14m running (in_progress) · Build and test
- ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁          54m   dashboard · 5m · trip-to-japan/trip
+ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁          54m   dashboard · 5m · example-org/app
  ‖ legacy-importer                                parked  3h queued (queued) · Release checks
- · 2 quiet                                                     main · 1m · trip-to-japan/trip
+ · 2 quiet                                                     main · 1m · example-org/app
  HEALTH ─────────────────────────────────────────────────────────────────────────────────────── hub report · production
- Hub report · trip-to-japan/trip · read 17:46
+ Hub report · example-org/app · read 17:46
 ▌as of 17:42Z 4m ago · deploy live · sentry new:TRIP-12,TRIP-14 · sha 0a1b2c3d4e
  a asks   0-9 panels   H health   / filter   D A F I screens   s slotr   q quit   ? help

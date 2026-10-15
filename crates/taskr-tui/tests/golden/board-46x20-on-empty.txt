@@ -14,7 +14,7 @@ panels 1+ 2+ 3+ 4+ 5+ 6+ 7+ 8+ 9+ 0+ H+
  No listed campaigns; not a fleet-wide idle c…
  SHIPPED ─────────────────────────── observed
 ▌Counts unavailable
- unavailable; unavailable · trip-to-japan/trip
+ unavailable; unavailable · example-org/app
 
  ↓ 6 cards below: BUILD QUEUE 6 sampled; 0s a…
  c all campaigns   D A F I screens   ? help

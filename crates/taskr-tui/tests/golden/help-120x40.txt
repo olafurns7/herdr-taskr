@@ -30,7 +30,7 @@ H Health-
  ◐ model-e│    7, 9: the campaign last opened with l, as      ● lane   ● ready   · idle   × gone   ‖ parked  │       14m
    matrix │    cached; l or o reads it again, r does not. 8:  ✓ done   ⊘ abandoned   ✗ rejected              │
  ○ api-pag│    listed campaigns only; / filters it, not 7 or  ⏎ pane on this machine   ↗ another             │       54m
-   S4 curs│    9. 0: trip-to-japan/trip issues by current     • changed since you looked                     │
+   S4 curs│    9. 0: issues_repo issues by current assignee,  • changed since you looked                     │
  ‖ legacy-│                                                                                                  │parked  3h
  · 2 quiet╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 

@@ -1,4 +1,4 @@
-//! Health (key H): the hub's latest `HEALTH` note on its root, one fixed repository and
+//! Health (key H): the hub's latest `HEALTH` note on its root, one configured repository and
 //! environment. A report as of the time the hub checked, never a claim about production now.
 use crate::{App, client, github};
 use serde_json::{Map, Value};
@@ -13,8 +13,7 @@ use std::{
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-/// The owner-authorized scope: one repository, one environment, the hub's root.
-pub const REPO: &str = "trip-to-japan/trip";
+/// Health notes remain scoped to production on the hub root.
 pub const ENV: &str = "production";
 pub const ROOT: i64 = 2899;
 /// At most one read a minute while shown, manual `r`, failures and hide-show included.
@@ -72,6 +71,7 @@ pub struct Seen {
 
 #[derive(Debug, Clone, Default)]
 pub struct Health {
+    pub repo: Option<String>,
     pub seen: Option<Seen>,
     /// The last read failed: `seen`, if any, is stale.
     pub error: Option<&'static str>,
@@ -116,7 +116,11 @@ impl Health {
             (None, None) if self.inflight => "Unknown · reading hub notes".into(),
             (None, None) => "Unknown · hub notes not read yet".into(),
             (Some(s), Some(e)) => format!("Stale · {e} · showing read {}", hhmm(s.read_at)),
-            (Some(s), None) => format!("Hub report · {REPO} · read {}", hhmm(s.read_at)),
+            (Some(s), None) => format!(
+                "Hub report · {} · read {}",
+                self.repo.as_deref().unwrap_or_default(),
+                hhmm(s.read_at)
+            ),
         }
     }
     /// The row's label. Stale, unknown and "as of" come first: a narrow row clips its end.
@@ -161,9 +165,10 @@ impl Health {
         match self.seen.as_ref().map(|s| (s, &s.reading)) {
             Some((s, Reading::Report(r))) => {
                 format!(
-                    "repo {REPO} · env {ENV}\nsha {}\ndeploy {}\nsentry {}\nchecked {} ({} \
+                    "repo {} · env {ENV}\nsha {}\ndeploy {}\nsentry {}\nchecked {} ({} \
                      ago)\nnote #{} on hub root {ROOT}, written {}\nrollback note #{}\nread {} \
                      UTC from the latest 100 hub events",
+                    self.repo.as_deref().unwrap_or_default(),
                     r.sha,
                     r.deploy,
                     r.sentry,
@@ -194,7 +199,7 @@ fn positive(o: &Map<String, Value>, key: &str) -> Option<i64> {
 /// `taskr --json log` lines: launch records and a pagination trailer may come with the
 /// events. Anything else that is not a well-formed root event, in ascending ID order,
 /// fails the whole read.
-pub fn parse(body: &[u8], read_at: i64) -> Result<Reading, &'static str> {
+pub fn parse(body: &[u8], read_at: i64, repo: &str) -> Result<Reading, &'static str> {
     let text = std::str::from_utf8(body).map_err(|_| UNAVAILABLE)?;
     let mut last = 0;
     let mut latest = None;
@@ -243,12 +248,12 @@ pub fn parse(body: &[u8], read_at: i64) -> Result<Reading, &'static str> {
     // The latest note decides, valid or not: an older report never stands in for it.
     Ok(match latest {
         None => Reading::Unknown(NO_NOTE),
-        Some((note, summary, created)) => payload(note, &summary, &created, read_at),
+        Some((note, summary, created)) => payload(note, &summary, &created, read_at, repo),
     })
 }
 
-fn payload(note: i64, summary: &str, created: &str, read_at: i64) -> Reading {
-    match report(note, summary, created, read_at) {
+fn payload(note: i64, summary: &str, created: &str, read_at: i64, repo: &str) -> Reading {
+    match report(note, summary, created, read_at, repo) {
         Ok(r) => Reading::Report(r),
         Err(why) => Reading::Unknown(why),
     }
@@ -256,7 +261,13 @@ fn payload(note: i64, summary: &str, created: &str, read_at: i64) -> Reading {
 
 /// The raw line, validated as written: one space between tokens, printable ASCII only, so
 /// no control, bidi or other text reaches the screen.
-fn report(note: i64, summary: &str, created: &str, read_at: i64) -> Result<Report, &'static str> {
+fn report(
+    note: i64,
+    summary: &str,
+    created: &str,
+    read_at: i64,
+    repo: &str,
+) -> Result<Report, &'static str> {
     if summary.len() > 1024 || !summary.bytes().all(|b| b == b' ' || b.is_ascii_graphic()) {
         return Err(MALFORMED);
     }
@@ -271,7 +282,7 @@ fn report(note: i64, summary: &str, created: &str, read_at: i64) -> Result<Repor
     if fields.len() != KEYS.len() {
         return Err(MALFORMED);
     }
-    if fields["repo"] != REPO || fields["env"] != ENV {
+    if fields["repo"] != repo || fields["env"] != ENV {
         return Err(OTHER);
     }
     let sha = fields["sha"];
@@ -328,11 +339,16 @@ pub fn command() -> Command {
 }
 
 /// One bounded read through GitHub's process runner; a parse that ends late fails.
-fn fetch(command: Command, budget: Duration, cancel: &AtomicBool) -> Result<Seen, &'static str> {
+fn fetch(
+    command: Command,
+    budget: Duration,
+    cancel: &AtomicBool,
+    repo: &str,
+) -> Result<Seen, &'static str> {
     let deadline = Instant::now() + budget;
     let body = github::output(command, deadline, cancel).map_err(|_| UNAVAILABLE)?;
     let read_at = OffsetDateTime::now_utc().unix_timestamp();
-    let reading = parse(&body, read_at)?;
+    let reading = parse(&body, read_at, repo)?;
     if Instant::now() >= deadline {
         return Err(UNAVAILABLE);
     }
@@ -361,13 +377,21 @@ impl Poller {
             app.health.observe(result, now);
             dirty = true;
         }
-        if visible && self.worker.is_none() && app.health.ready(now) {
+        if visible && app.health.repo.is_some() && self.worker.is_none() && app.health.ready(now) {
             app.health.last_start = Some(now);
             app.health.inflight = true;
             let cancel = Arc::new(AtomicBool::new(false));
             let flag = cancel.clone();
             let command = (self.command)();
-            self.worker = Some((cancel, thread::spawn(move || fetch(command, BUDGET, &flag))));
+            let repo = app
+                .health
+                .repo
+                .clone()
+                .expect("configured health repository");
+            self.worker = Some((
+                cancel,
+                thread::spawn(move || fetch(command, BUDGET, &flag, &repo)),
+            ));
             dirty = true;
         }
         dirty
@@ -406,14 +430,15 @@ pub fn sample(now: i64, payload: &str) -> Health {
         stamp(created)
     );
     Health {
+        repo: Some("example-org/app".into()),
         seen: Some(Seen {
             read_at: now - 30,
-            reading: parse(body.as_bytes(), now - 30).expect("sample parses"),
+            reading: parse(body.as_bytes(), now - 30, "example-org/app").expect("sample parses"),
         }),
         ..Health::default()
     }
 }
-pub const CLEAN: &str = "HEALTH repo=trip-to-japan/trip env=production sha=0a1b2c3d4e \
+pub const CLEAN: &str = "HEALTH repo=example-org/app env=production sha=0a1b2c3d4e \
     deploy=live sentry=clean checked={checked} rollback=7000";
 pub fn demo(now: i64) -> Health {
     sample(now, CLEAN)
@@ -422,6 +447,7 @@ pub fn demo(now: i64) -> Health {
 #[cfg(test)]
 mod tests {
     use super::*;
+    const REPO: &str = "example-org/app";
 
     const NOW: i64 = 1_792_000_000;
     /// 2026-10-14T17:46:40Z is NOW.
@@ -453,7 +479,7 @@ mod tests {
         out
     }
     fn read(lines: &[String]) -> Result<Reading, &'static str> {
-        parse((lines.join("\n") + "\n").as_bytes(), NOW)
+        parse((lines.join("\n") + "\n").as_bytes(), NOW, REPO)
     }
     fn unknown(lines: &[String]) -> &'static str {
         match read(lines).unwrap() {
@@ -565,7 +591,7 @@ mod tests {
     #[test]
     fn latest_event_decides_and_launches_trailers_and_other_events_are_safe() {
         let old = event(3, "note", &good(&KEYS));
-        let newer_bad = event(9, "note", "HEALTH repo=trip-to-japan/trip");
+        let newer_bad = event(9, "note", "HEALTH repo=example-org/app");
         // Invalid latest never falls back to the older clean note.
         assert_eq!(unknown(&[old.clone(), newer_bad.clone()]), MALFORMED);
         // A later event with an older checked instant stays the latest.
@@ -596,7 +622,7 @@ mod tests {
             read(&[event(5, "ready", "x"), old.clone()]),
             Err(UNAVAILABLE)
         );
-        assert_eq!(parse(b"", NOW), Ok(Reading::Unknown(NO_NOTE)));
+        assert_eq!(parse(b"", NOW, REPO), Ok(Reading::Unknown(NO_NOTE)));
         // Structural failures fail the whole read.
         for lines in [
             vec!["not json".to_string()],
@@ -618,7 +644,7 @@ mod tests {
         ] {
             assert_eq!(read(&lines), Err(UNAVAILABLE), "{lines:?}");
         }
-        assert_eq!(parse(b"\xff\n", NOW), Err(UNAVAILABLE));
+        assert_eq!(parse(b"\xff\n", NOW, REPO), Err(UNAVAILABLE));
         // A note without text, as taskr prints it (the key omitted) or as null, is no
         // candidate: it neither fails the read nor displaces the latest HEALTH note.
         let absent = event(9, "note", "x").replace("\"summary\":\"x\",", "");
@@ -711,14 +737,21 @@ mod tests {
             test "$*" = "--json log 2899 --limit 100" || exit 1
             printf '%s\n' '{body}'"#
         );
-        let seen = fetch(fake(&ok), Duration::from_secs(5), &AtomicBool::new(false)).unwrap();
+        let seen = fetch(
+            fake(&ok),
+            Duration::from_secs(5),
+            &AtomicBool::new(false),
+            REPO,
+        )
+        .unwrap();
         assert!(matches!(seen.reading, Reading::Report(ref r) if r.note == 5));
         let start = Instant::now();
         assert_eq!(
             fetch(
                 fake("exec sleep 20"),
                 Duration::from_millis(150),
-                &AtomicBool::new(false)
+                &AtomicBool::new(false),
+                REPO,
             ),
             Err(UNAVAILABLE)
         );
@@ -732,6 +765,7 @@ mod tests {
                 fake(script),
                 Duration::from_secs(5),
                 &AtomicBool::new(cancel),
+                REPO,
             );
             assert_eq!(e, Err(UNAVAILABLE));
             assert!(start.elapsed() < Duration::from_secs(3));
@@ -755,6 +789,7 @@ mod tests {
     #[test]
     fn poller_reads_only_while_shown_lands_hidden_and_drop_joins() {
         let mut app = App::new(crate::model::Data::default());
+        app.health.repo = Some(REPO.into());
         let mut poller = Poller::new(fake_command);
         let now = Instant::now();
         assert!(!poller.tick(&mut app, now, false));
@@ -777,12 +812,30 @@ mod tests {
         // One in flight: a running read admits no other, however long it takes.
         let mut slow = Poller::new(slow_command);
         let mut app = App::new(crate::model::Data::default());
+        app.health.repo = Some(REPO.into());
         assert!(slow.tick(&mut app, now, true));
         assert!(!slow.tick(&mut app, now + Duration::from_secs(600), true));
         assert!(app.health.inflight && slow.worker.is_some());
         let start = Instant::now();
         drop(slow);
         assert!(start.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn configured_repo_controls_health_scope_and_unset_does_not_read() {
+        let body = event(5, "note", &good(&KEYS).replace(REPO, "other/health"));
+        assert!(matches!(
+            parse(body.as_bytes(), NOW, "other/health"),
+            Ok(Reading::Report(_))
+        ));
+        assert_eq!(
+            parse(body.as_bytes(), NOW, REPO),
+            Ok(Reading::Unknown(OTHER))
+        );
+        let mut app = App::new(crate::model::Data::default());
+        let mut poller = Poller::new(|| panic!("unset health repo must not start a command"));
+        assert!(!poller.tick(&mut app, Instant::now(), true));
+        assert!(poller.worker.is_none());
     }
 
     #[test]

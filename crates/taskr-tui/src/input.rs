@@ -1220,6 +1220,10 @@ mod tests {
     impl Pane {
         fn new(width: u16, height: u16) -> Self {
             let mut app = App::new(frames::fixture());
+            app.config.repos = vec!["example-org/app".into()];
+            app.config.issues_repo = Some("example-org/app".into());
+            app.config.health_repo = Some("example-org/app".into());
+            app.config.panels[3..6].fill(true);
             app.fetch.loaded = true;
             let terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
             Self {
@@ -3874,7 +3878,7 @@ mod tests {
                 p.app.config.panels[6..10].fill(true);
                 p.app.scope.read_at = Some(p.app.observed_at);
                 let ids = glance::ids(&p.app.view());
-                let unassigned = glance::RowId::Assignee(crate::github::ISSUES_REPO.into(), None);
+                let unassigned = glance::RowId::Assignee("example-org/app".into(), None);
                 assert!(ids.contains(&unassigned));
                 // Issues come after every other card's rows (band D, after Fleet); Health
                 // is off here, so they are last.
@@ -3934,8 +3938,8 @@ mod tests {
         p.app.builds = crate::github::Dashboard::default();
         p.app.config.panels[9] = true;
         let now = p.app.observed_at;
-        let kim = glance::RowId::Assignee(crate::github::ISSUES_REPO.into(), Some("kim".into()));
-        let alex = glance::RowId::Assignee(crate::github::ISSUES_REPO.into(), Some("alex".into()));
+        let kim = glance::RowId::Assignee("example-org/app".into(), Some("kim".into()));
+        let alex = glance::RowId::Assignee("example-org/app".into(), Some("alex".into()));
         // kim is the fourth group, past the three-row preview: the cursor brings it in.
         p.app.row = row_of(&p, &kim);
         assert!(
@@ -3979,7 +3983,7 @@ mod tests {
             p.app.issues = crate::github::demo_issues(p.app.observed_at);
             p.app.health = crate::health::demo(p.app.observed_at);
         };
-        let row = glance::RowId::Health(crate::health::REPO, crate::health::ENV);
+        let row = glance::RowId::Health("example-org/app".into(), crate::health::ENV);
         // Default off, folded with 7-9 and 0; lowercase h stays back and toggles nothing.
         let mut p = Pane::new(46, 30);
         health(&mut p);
@@ -4001,7 +4005,10 @@ mod tests {
         assert_eq!(p.code(KeyCode::Char('H')), Effect::SaveConfig);
         assert!(
             p.app.config.panels[10]
-                && p.app.config.panels[..10] == crate::config::DEFAULT_PANELS[..10]
+                && p.app.config.panels[..10]
+                    == [
+                        true, true, true, true, true, true, false, false, false, false
+                    ]
         );
         let text = p.text();
         assert!(text.contains("0- H+"), "{text}");
@@ -4075,7 +4082,7 @@ mod tests {
         p.keys("I");
         let text = p.text();
         assert!(
-            text.contains("Health · trip-to-japan/trip production"),
+            text.contains("Health · example-org/app production"),
             "{text}"
         );
         p.keys("\x1b");
@@ -4106,7 +4113,7 @@ mod tests {
             p.app.observed_at,
             &crate::health::CLEAN.replace("sentry=clean", "sentry=new:TRIP-12,TRIP-14"),
         );
-        let row = glance::RowId::Health(crate::health::REPO, crate::health::ENV);
+        let row = glance::RowId::Health("example-org/app".into(), crate::health::ENV);
         p.app.row = row_of(&p, &row);
         let text = p.text();
         for value in ["0a1b2c3d4e", "new:TRIP-12,TRIP-14", "#7002", "#7000"] {
@@ -4287,7 +4294,7 @@ mod tests {
             app.shipped = Dashboard::for_kind(&repos, Kind::Shipped);
             app.shipped.sources[0].error = Some("GitHub unavailable");
             app.builds.sources.iter_mut().for_each(|s| s.runs.clear());
-            app.issues = Dashboard::for_kind(&[crate::github::ISSUES_REPO.into()], Kind::Issues);
+            app.issues = Dashboard::for_kind(&["example-org/app".into()], Kind::Issues);
             app.issues.sources[0].error = Some("GitHub unavailable");
             app.scope.read_at = None;
             let ids = glance::ids(&p.app.view());
@@ -4611,13 +4618,13 @@ mod tests {
             assert!(heads >= 3, "{w}x{h}: right-column heads drawn:\n{text}");
             // The capped source (100 sampled, clipped at 80 columns) and the other one whole.
             let capped = if w == 120 {
-                "100 sampled; 0s ago · trip-to-japan/trip"
+                "100 sampled; 0s ago · example-org/app"
             } else {
                 "100 sampled; 0s ago · "
             };
             for whole in [
                 capped,
-                "2 sampled; 0s ago · trip-to-japan/tools",
+                "2 sampled; 0s ago · example-org/tools",
                 "latest100-run sample",
                 "first 100; more may exist",
             ] {

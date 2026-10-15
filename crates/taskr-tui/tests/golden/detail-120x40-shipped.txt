@@ -5,10 +5,10 @@
 │ 2 observed / rolling 24h                                                                                             │
 │                                                                                                                      │
 │ Observed cached sample; not a full total.                                                                            │
-│ 2 sampled; 0s ago · trip-to-japan/trip                                                                               │
-│ 2 sampled; 0s ago · trip-to-japan/tools                                                                              │
-│ trip-to-japan/tools #39 Preserve owner action identity                                                               │
-│ trip-to-japan/trip #38 Preserve owner action identity                                                                │
+│ 2 sampled; 0s ago · example-org/app                                                                                  │
+│ 2 sampled; 0s ago · example-org/tools                                                                                │
+│ example-org/app #38 Preserve owner action identity                                                                   │
+│ example-org/tools #39 Preserve owner action identity                                                                 │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │

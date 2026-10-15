@@ -45,12 +45,21 @@ const PANELS: [Panel; 7] = [
     Panel::Health,
 ];
 
+fn github_shown(app: &App, kind: Kind) -> bool {
+    let (index, unset) = match kind {
+        Kind::Shipped => (4, app.config.repos.is_empty()),
+        Kind::Build => (5, app.config.repos.is_empty()),
+        Kind::Issues => (9, app.config.issues_repo.is_none()),
+    };
+    app.config.panels[index] && (unset || !kind.dashboard(app).sources.is_empty())
+}
+
 /// The panels on screen. A hidden GitHub panel's sources are cleared by `App::view`.
 fn shown(app: &App) -> Vec<Panel> {
     PANELS
         .into_iter()
         .filter(|p| match p {
-            Panel::Gh(kind) => !kind.dashboard(app).sources.is_empty(),
+            Panel::Gh(kind) => github_shown(app, *kind),
             Panel::Decisions => app.config.panels[6],
             Panel::Fleet => app.config.panels[7],
             Panel::Log => app.config.panels[8],
@@ -688,6 +697,10 @@ fn health_card(app: &App, width: usize, offset: usize) -> Card {
         t.sub,
         offset,
     );
+    if h.repo.is_none() {
+        card.head(crate::config::HEALTH_HINT, t.sub, true, width);
+        return card;
+    }
     let state = if h.error.is_some() { t.check } else { t.sub };
     card.head(h.state(), state, true, width);
     let on = app.row == offset;
@@ -917,11 +930,24 @@ fn observed_card(app: &App, kind: Kind, width: usize, offset: usize) -> Card {
     let unavailable = d.sources.iter().all(|s| s.at.is_none());
     let (title, right, unit) = match kind {
         Kind::Shipped => ("SHIPPED", "observed", ("author", "authors")),
-        Kind::Issues => ("ISSUES", crate::github::ISSUES_REPO, ("group", "groups")),
+        Kind::Issues => (
+            "ISSUES",
+            app.config.issues_repo.as_deref().unwrap_or_default(),
+            ("group", "groups"),
+        ),
         _ => ("BUILD QUEUE", "observed", ("run", "runs")),
     };
     let mut card = Card::new(app, title, right.into(), t.sub, offset);
     card.unit = unit;
+    if d.sources.is_empty() {
+        let hint = if kind == Kind::Issues {
+            crate::config::ISSUES_HINT
+        } else {
+            crate::config::REPOS_HINT
+        };
+        card.head(hint, t.sub, true, width);
+        return card;
+    }
     let summary = if unavailable {
         "Counts unavailable".into()
     } else {
@@ -1068,6 +1094,10 @@ fn pr_card(app: &App, width: usize, offset: usize) -> Card {
         .map_or(String::new(), |l| format!("@{l}"));
     let mut card = Card::new(app, "MY PRS", right, t.sub, offset);
     card.unit = ("PR", "PRs");
+    if mine.repos.is_empty() {
+        card.head(crate::config::REPOS_HINT, t.sub, true, width);
+        return card;
+    }
     let color = if mine.error.is_some() {
         t.check
     } else {
@@ -1209,19 +1239,23 @@ fn pr_card(app: &App, width: usize, offset: usize) -> Card {
 /// checks and campaigns give way to the ledger's state while it has none of them.
 fn slots(app: &App) -> [(usize, usize, bool, bool); 11] {
     let p = &app.config.panels;
-    let has = |kind: Kind| !kind.dashboard(app).sources.is_empty();
     let ledger = !ledger_state(app);
     [
         (0, 0, false, ledger && p[0]),
         (1, 0, true, ledger && p[1]),
-        (2, 1, false, !app.mine.repos.is_empty()),
+        (
+            2,
+            1,
+            false,
+            p[3] && (app.config.repos.is_empty() || !app.mine.repos.is_empty()),
+        ),
         (3, 2, false, ledger && p[2]),
-        (4, 2, true, has(Kind::Shipped)),
-        (5, 2, true, has(Kind::Build)),
+        (4, 2, true, github_shown(app, Kind::Shipped)),
+        (5, 2, true, github_shown(app, Kind::Build)),
         (6, 3, false, p[6]),
         (7, 3, false, p[8]),
         (8, 3, true, p[7]),
-        (9, 3, true, has(Kind::Issues)),
+        (9, 3, true, github_shown(app, Kind::Issues)),
         (10, 3, true, p[10]),
     ]
 }
@@ -1642,8 +1676,8 @@ pub(crate) enum RowId {
     Logged(i64, i64),
     /// An Issues group: repository and raw login; None is Unassigned, apart from any login.
     Assignee(String, Option<String>),
-    /// Health's row: its fixed repository and environment, never the note it shows.
-    Health(&'static str, &'static str),
+    /// Health's row: its configured repository and environment, never the note it shows.
+    Health(String, &'static str),
     /// An empty or unavailable card's state, by its slot: a place to look, never a target.
     Card(usize),
 }
@@ -1705,7 +1739,13 @@ pub(crate) fn ids(app: &App) -> Vec<RowId> {
                 .into_iter()
                 .map(|g| RowId::Assignee(g.repo, g.login))
                 .collect(),
-            _ => vec![RowId::Health(crate::health::REPO, crate::health::ENV)],
+            _ => app
+                .health
+                .repo
+                .as_ref()
+                .map(|repo| RowId::Health(repo.clone(), crate::health::ENV))
+                .into_iter()
+                .collect(),
         };
         if rows.is_empty() {
             out.push(RowId::Card(slot));
@@ -2718,7 +2758,11 @@ fn detail_lines(app: &App, width: usize) -> Option<(String, Vec<Line<'static>>)>
             ),
         ),
         Selected::Health => (
-            format!("Health · {} {}", crate::health::REPO, crate::health::ENV),
+            format!(
+                "Health · {} {}",
+                app.health.repo.as_deref().unwrap_or_default(),
+                crate::health::ENV
+            ),
             vec![Line::from(sp(app.health.state(), health_color(app)))],
             app.health.detail(app.observed_at),
         ),

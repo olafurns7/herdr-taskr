@@ -7,6 +7,15 @@ use ratatui::{
 };
 use taskr_tui::{App, Fetch, Screen, draw, frames, github, input, model::Data, prs};
 
+fn configured_app(data: Data) -> App {
+    let mut app = App::new(data);
+    app.config.repos = vec!["example-org/app".into()];
+    app.config.issues_repo = Some("example-org/app".into());
+    app.config.health_repo = Some("example-org/app".into());
+    app.config.panels[3..6].fill(true);
+    app
+}
+
 fn render(app: &App, width: u16, height: u16) -> (String, Buffer) {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal.draw(|f| draw(f, app)).unwrap();
@@ -18,7 +27,7 @@ fn render(app: &App, width: u16, height: u16) -> (String, Buffer) {
 fn fresh_prs_render_with_empty_failed_or_stale_ledger() {
     for width in [46, 120] {
         for state in 0..3 {
-            let mut app = App::new(if state == 2 {
+            let mut app = configured_app(if state == 2 {
                 frames::fixture()
             } else {
                 Data::default()
@@ -55,7 +64,7 @@ fn fresh_prs_render_with_empty_failed_or_stale_ledger() {
 
 #[test]
 fn failed_pr_read_does_not_stale_ledger_or_invent_zero_totals() {
-    let mut app = App::new(frames::fixture());
+    let mut app = configured_app(frames::fixture());
     app.fetch.loaded = true;
     app.mine = prs::demo(app.observed_at);
     app.mine.error = Some("GitHub unavailable");
@@ -78,7 +87,7 @@ fn failed_pr_read_does_not_stale_ledger_or_invent_zero_totals() {
 
 #[test]
 fn filter_does_not_change_source_totals_and_plain_frames_keep_status_words() {
-    let mut app = App::new(frames::fixture());
+    let mut app = configured_app(frames::fixture());
     app.fetch.loaded = true;
     app.mine = prs::demo(app.observed_at);
     app.filter = "no matches".into();
@@ -106,7 +115,7 @@ fn filter_does_not_change_source_totals_and_plain_frames_keep_status_words() {
 
 #[test]
 fn sample_limits_and_check_truncation_are_visible_at_narrow_width() {
-    let mut app = App::new(frames::fixture());
+    let mut app = configured_app(frames::fixture());
     app.fetch.loaded = true;
     app.mine = prs::demo(app.observed_at);
     app.mine.sample.found = 45;
@@ -124,7 +133,7 @@ fn sample_limits_and_check_truncation_are_visible_at_narrow_width() {
 #[test]
 fn prs_use_empty_ledger_space_without_hiding_truth_placeholder() {
     for state in 0..3 {
-        let mut app = App::new(if state == 2 {
+        let mut app = configured_app(if state == 2 {
             frames::fixture()
         } else {
             Data::default()
@@ -161,7 +170,7 @@ fn prs_use_empty_ledger_space_without_hiding_truth_placeholder() {
 
 #[test]
 fn review_metadata_retry_and_freshness_remain_readable() {
-    let mut app = App::new(Data::default());
+    let mut app = configured_app(Data::default());
     app.fetch.loaded = true;
     app.mine = prs::demo(app.observed_at);
     app.theme = taskr_tui::theme::LIGHT;
@@ -192,7 +201,7 @@ fn review_metadata_retry_and_freshness_remain_readable() {
 fn new_sources_render_independently_and_errors_never_imply_zero() {
     for width in [46, 120] {
         for state in 0..3 {
-            let mut app = App::new(if state == 2 {
+            let mut app = configured_app(if state == 2 {
                 frames::fixture()
             } else {
                 Data::default()
@@ -220,7 +229,7 @@ fn new_sources_render_independently_and_errors_never_imply_zero() {
         }
     }
     for kind in [github::Kind::Shipped, github::Kind::Build] {
-        let mut app = App::new(Data::default());
+        let mut app = configured_app(Data::default());
         app.fetch.loaded = true;
         let mut d = github::Dashboard::for_kind(&["a/b".into()], kind);
         d.sources[0].error = Some("GitHub authentication required");
@@ -243,7 +252,7 @@ fn new_sources_render_independently_and_errors_never_imply_zero() {
 
 #[test]
 fn retained_samples_keep_independent_stale_and_coverage_copy() {
-    let mut app = App::new(Data::default());
+    let mut app = configured_app(Data::default());
     app.fetch.loaded = true;
     app.shipped = github::demo_shipped(app.observed_at);
     app.shipped.sources[0].total = 100;
@@ -276,7 +285,7 @@ fn retained_samples_keep_independent_stale_and_coverage_copy() {
 
 #[test]
 fn build_height_includes_the_sample_line_and_both_observed_rows() {
-    let mut app = App::new(Data::default());
+    let mut app = configured_app(Data::default());
     app.fetch.loaded = true;
     app.builds = github::demo_builds(app.observed_at);
     let (text, _) = render(&app, 46, 30);
@@ -294,7 +303,7 @@ fn build_height_includes_the_sample_line_and_both_observed_rows() {
 fn spare_panel_space_shows_priority_prs_and_keeps_later_source_status() {
     for (width, height) in [(46, 20), (46, 30), (120, 40)] {
         for failed in [false, true] {
-            let mut app = App::new(frames::fixture());
+            let mut app = configured_app(frames::fixture());
             app.fetch.loaded = true;
             app.mine = prs::demo(app.observed_at);
             app.shipped = github::demo_shipped(app.observed_at);
@@ -451,7 +460,7 @@ fn the_first_ledger_snapshot_opens_on_the_first_ask_and_later_ones_keep_the_row(
         (false, 46, 30),
         (true, 46, 30),
     ] {
-        let mut app = App::new(Data::default());
+        let mut app = configured_app(Data::default());
         app.mine = prs::Mine::new(&repos);
         render(&app, w, h);
         if prs_first {
@@ -501,7 +510,7 @@ fn the_first_ledger_snapshot_opens_on_the_first_ask_and_later_ones_keep_the_row(
 #[test]
 fn my_prs_rows_and_detail_say_every_fact_and_never_a_required_green() {
     let app = |row: usize| {
-        let mut app = App::new(frames::fixture());
+        let mut app = configured_app(frames::fixture());
         app.fetch.loaded = true;
         app.mine = prs::demo(app.observed_at);
         app.config.panels = [
@@ -579,7 +588,7 @@ fn my_prs_rows_and_detail_say_every_fact_and_never_a_required_green() {
 }
 
 fn prs_only() -> App {
-    let mut app = App::new(frames::fixture());
+    let mut app = configured_app(frames::fixture());
     app.fetch.loaded = true;
     app.mine = prs::demo(app.observed_at);
     app.config.panels = [

@@ -7,6 +7,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub const REPOS_HINT: &str = "set \"repos\" in ~/.config/taskr/tui.json";
+pub const ISSUES_HINT: &str = "set \"issues_repo\" in ~/.config/taskr/tui.json";
+pub const HEALTH_HINT: &str = "set \"health_repo\" in ~/.config/taskr/tui.json";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -15,18 +19,22 @@ pub struct Config {
     /// Health.
     pub panels: [bool; 11],
     pub repos: Vec<String>,
+    pub issues_repo: Option<String>,
+    pub health_repo: Option<String>,
 }
 impl Default for Config {
     fn default() -> Self {
         Self {
             panels: DEFAULT_PANELS,
-            repos: vec!["trip-to-japan/trip".into()],
+            repos: vec![],
+            issues_repo: None,
+            health_repo: None,
         }
     }
 }
-/// The six earlier panels on, the three ledger panels (7-9), Issues (0) and Health (H) off.
+/// Ledger overview on; repository panels and the optional ledger panels start hidden.
 pub const DEFAULT_PANELS: [bool; 11] = [
-    true, true, true, true, true, true, false, false, false, false, false,
+    true, true, true, false, false, false, false, false, false, false, false,
 ];
 /// An older file's choices are kept; the panels it predates take their defaults.
 fn panels<'de, D: serde::Deserializer<'de>>(d: D) -> Result<[bool; 11], D::Error> {
@@ -37,6 +45,7 @@ fn panels<'de, D: serde::Deserializer<'de>>(d: D) -> Result<[bool; 11], D::Error
         ));
     }
     let mut out = DEFAULT_PANELS;
+    out[3..6].fill(true);
     out[..values.len()].copy_from_slice(&values);
     Ok(out)
 }
@@ -60,14 +69,15 @@ pub fn repo_valid(repo: &str) -> bool {
 }
 impl Config {
     fn valid(&self) -> bool {
-        !self.repos.is_empty()
-            && self.repos.len() <= 8
+        self.repos.len() <= 8
             && self.repos.iter().enumerate().all(|(i, r)| {
                 repo_valid(r)
                     && !self.repos[..i]
                         .iter()
                         .any(|previous| previous.eq_ignore_ascii_case(r))
             })
+            && self.issues_repo.as_deref().is_none_or(repo_valid)
+            && self.health_repo.as_deref().is_none_or(repo_valid)
     }
     pub fn load(path: &Path) -> (Self, Option<String>) {
         let read = || -> io::Result<Vec<u8>> {
@@ -142,12 +152,13 @@ mod tests {
             ]
         );
         assert_eq!(c.repos, ["kept/private"]);
+        assert!(c.issues_repo.is_none() && c.health_repo.is_none());
         let read: Config = serde_json::from_slice(&serde_json::to_vec(&c).unwrap()).unwrap();
         assert_eq!(read.panels, c.panels);
         assert_eq!(
             Config::default().panels,
             [
-                true, true, true, true, true, true, false, false, false, false, false
+                true, true, true, false, false, false, false, false, false, false, false
             ]
         );
         let six: Config = serde_json::from_str(
@@ -203,6 +214,42 @@ mod tests {
         }
     }
     #[test]
+    fn empty_and_optional_repo_settings_are_validated() {
+        let dir = env::temp_dir().join(format!("taskr-tui-repos-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("tui.json");
+        for json in [
+            r#"{}"#,
+            r#"{"repos":[],"issues_repo":null,"health_repo":null}"#,
+            r#"{"repos":["example-org/app"],"issues_repo":"other/issues","health_repo":"other/health"}"#,
+        ] {
+            fs::write(&path, json).unwrap();
+            assert!(Config::load(&path).1.is_none(), "{json}");
+        }
+        for key in ["repos", "issues_repo", "health_repo"] {
+            for bad in ["", "--bad/repo", "a/b/c", "a/..", "a/b\n"] {
+                let value = if key == "repos" {
+                    serde_json::json!([bad])
+                } else {
+                    serde_json::json!(bad)
+                };
+                fs::write(
+                    &path,
+                    serde_json::to_vec(&serde_json::json!({key: value})).unwrap(),
+                )
+                .unwrap();
+                let (config, warning) = Config::load(&path);
+                assert!(warning.is_some(), "{key}: {bad:?}");
+                assert!(
+                    config.repos.is_empty()
+                        && config.issues_repo.is_none()
+                        && config.health_repo.is_none()
+                );
+            }
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn roundtrip_defaults_bad_and_failed_paths() {
         let dir = env::temp_dir().join(format!("taskr-tui-config-{}", std::process::id()));
         let path = dir.join("tui.json");
@@ -211,12 +258,16 @@ mod tests {
         let c = Config {
             panels: [false; 11],
             repos: vec!["owner/other.repo".into()],
+            issues_repo: Some("example-org/issues".into()),
+            health_repo: Some("example-org/health".into()),
         };
         c.save(&path).unwrap();
         let (read, warning) = Config::load(&path);
         assert!(warning.is_none());
         assert_eq!(read.panels, [false; 11]);
         assert_eq!(read.repos, c.repos);
+        assert_eq!(read.issues_repo, c.issues_repo);
+        assert_eq!(read.health_repo, c.health_repo);
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(
             fs::metadata(&path).unwrap().permissions().mode() & 0o777,

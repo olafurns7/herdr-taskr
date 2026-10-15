@@ -53,7 +53,7 @@ for i, original in enumerate(cases):
             until(lambda: b'using defaults' in output)
             toggled_at = len(output)
             os.write(master, b'4\x0c')
-            until(lambda: b'4 PRs-' in output[toggled_at:] and b'using defaults' in output[toggled_at:])
+            until(lambda: b'4 PRs+' in output[toggled_at:] and b'using defaults' in output[toggled_at:])
             # Ctrl-L asks for a full frame, proving both the toggle and retained warning.
             os.write(master, b'q')
             until(lambda: child.poll() is not None)
@@ -121,7 +121,7 @@ for initial in [[F, T, F, T], [F, T, F, T, T, T], [F, T, F, T, T, T, F, F, F], [
             finally:
                 if child.poll() is None: child.kill(); child.wait()
                 os.close(master)
-            assert json.loads(config.read_text()) == {'panels': expected, 'repos': ['kept/private']}
+            assert json.loads(config.read_text()) == {'panels': expected, 'repos': ['kept/private'], 'issues_repo': None, 'health_repo': None}
             assert config.stat().st_mode & 0o777 == 0o600
             assert set(config.parent.iterdir()) == {config}
 print('PASS: real four/six/nine/ten/eleven config saves and restarts retain choices, repos and 0600 permissions')

@@ -242,6 +242,10 @@ fn answer_gone(app: &mut App) {
 }
 
 fn dashboard(app: &mut App) {
+    app.config.repos = vec!["example-org/app".into()];
+    app.config.issues_repo = Some("example-org/app".into());
+    app.config.health_repo = Some("example-org/app".into());
+    app.config.panels[3..6].fill(true);
     app.observed_at = 1_792_000_000;
     app.mine = crate::prs::demo(app.observed_at);
     app.shipped = crate::github::demo_shipped(app.observed_at);
@@ -301,7 +305,7 @@ fn all_on_empty(app: &mut App) {
     app.shipped.sources[0].error = Some("GitHub unavailable");
     app.builds.sources.iter_mut().for_each(|s| s.runs.clear());
     app.issues = crate::github::Dashboard::for_kind(
-        &[crate::github::ISSUES_REPO.into()],
+        &["example-org/app".into()],
         crate::github::Kind::Issues,
     );
     app.issues.sources[0].error = Some("GitHub unavailable");
@@ -763,7 +767,7 @@ pub fn all() -> Vec<Spec> {
         spec("issues", 46, 30, "-unavailable", |app| {
             issues(app);
             app.issues = crate::github::Dashboard::for_kind(
-                &[crate::github::ISSUES_REPO.into()],
+                &["example-org/app".into()],
                 crate::github::Kind::Issues,
             );
             app.issues.sources[0].error = Some("GitHub unavailable");
@@ -829,7 +833,7 @@ pub fn all() -> Vec<Spec> {
             health_note(app, "deploy check started");
         }),
         spec("health", 46, 30, "-malformed", |app| {
-            health_note(app, "HEALTH repo=trip-to-japan/trip env=production");
+            health_note(app, "HEALTH repo=example-org/app env=production");
         }),
         spec("health", 46, 30, "-stale", |app| {
             // Controlled export: the last report kept after a failed read.
@@ -845,6 +849,7 @@ pub fn all() -> Vec<Spec> {
             // The first read failed: unknown, never a report.
             health(app);
             app.health = crate::health::Health::default();
+            app.health.repo = app.config.health_repo.clone();
             app.health.error = Some(crate::health::UNAVAILABLE);
         }),
         spec("health", 120, 40, "-overflow", |app| {
@@ -988,6 +993,10 @@ pub fn all() -> Vec<Spec> {
 
 pub fn render(spec: &Spec) -> Buffer {
     let mut app = App::new(fixture());
+    app.config.repos = vec!["example-org/app".into()];
+    app.config.issues_repo = Some("example-org/app".into());
+    app.config.health_repo = Some("example-org/app".into());
+    app.config.panels[3..6].fill(true);
     app.fetch.age_ms = 2000;
     app.fetch.loaded = true;
     if spec.light {

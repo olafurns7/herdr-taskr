@@ -128,6 +128,12 @@ fn main() -> ExitCode {
         app.config_warning = Some("TUI config path unavailable; choices not saved".into());
     }
     let config_ok = app.config_warning.is_none();
+    if options.demo {
+        app.config.repos = vec!["example-org/app".into()];
+        app.config.issues_repo = Some("example-org/app".into());
+        app.config.health_repo = Some("example-org/app".into());
+        app.config.panels[3..6].fill(true);
+    }
     // The login is read by the poller, in memory only; demo shows an invented one.
     app.mine = if options.demo {
         taskr_tui::prs::demo(app.observed_at)
@@ -147,11 +153,16 @@ fn main() -> ExitCode {
     app.issues = if options.demo {
         github::demo_issues(app.observed_at)
     } else {
-        github::Dashboard::for_kind(&[github::ISSUES_REPO.into()], github::Kind::Issues)
+        github::Dashboard::for_kind(
+            &app.config.issues_repo.iter().cloned().collect::<Vec<_>>(),
+            github::Kind::Issues,
+        )
     };
     // Demo shows an invented note and never reads.
     if options.demo {
         app.health = health::demo(app.observed_at);
+    } else {
+        app.health.repo = app.config.health_repo.clone();
     }
     let mut hub_health = health::Poller::new(health::command);
     let mut issues = github::Poller::new(github::Kind::Issues);
