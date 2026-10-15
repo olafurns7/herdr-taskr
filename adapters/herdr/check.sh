@@ -40,9 +40,12 @@ fail "$1-$2"
 case "$1 $2" in
 'pane get')
 	if [ -n "${PANE_OUTPUT:-}" ]; then printf '%s\n' "$PANE_OUTPUT"; else
-		jq -cn --arg cwd "$FAKE_ROOT/work dir" '{workspace_id:"w1",tab_id:"w1:t2",cwd:$cwd,tokens:{cwd:"ignored nested value"}}'
+		jq -cn --arg cwd "$FAKE_ROOT/work dir" '{id:"cli:pane:get",result:{type:"pane_info",pane:{workspace_id:"w1",tab_id:"w1:t2",cwd:$cwd,tokens:{cwd:"ignored nested value"}}}}'
 	fi ;;
-'pane process-info') printf '%s\n' "${PROCESS_OUTPUT:-{\"shell_pid\":22,\"foreground_process_group_id\":22}}" ;;
+'pane process-info')
+	if [ -n "${PROCESS_OUTPUT:-}" ]; then printf '%s\n' "$PROCESS_OUTPUT"; else
+		printf '%s\n' '{"id":"cli:pane:process_info","result":{"process_info":{"shell_pid":22,"foreground_process_group_id":22}}}'
+	fi ;;
 'pane send-keys') fail "key-$4" ;;
 'pane run')
 	case $4 in
@@ -188,13 +191,13 @@ for output in 'l1 {"launch_id":"73;bad"}' 'l1 {"launch_id":0}' 'l1 {"launch_id":
 	assert '[ "$code" -ne 0 ] && ! calls '\''any(.[]; .[0:3] == ["herdr","pane","run"])'\''' 'invalid launch identity never reaches shell'
 done
 unset LAUNCH_OUTPUT
-PROCESS_OUTPUT='{"shell_pid":22,"foreground_process_group_id":23}'; export PROCESS_OUTPUT
+PROCESS_OUTPUT='{"id":"cli:pane:process_info","result":{"process_info":{"shell_pid":22,"foreground_process_group_id":23}}}'; export PROCESS_OUTPUT
 plain
-assert '[ "$code" -ne 0 ] && ! calls '\''any(.[]; .[0] == "taskr")'\''' 'busy pane refused before registration'
+assert '[ "$code" -ne 0 ] && grep -q "pane is not at its shell prompt" "$scratch/err" && ! calls '\''any(.[]; .[0] == "taskr")'\''' 'busy pane refused before registration'
 unset PROCESS_OUTPUT
-PANE_OUTPUT='{"workspace_id":"w1","tab_id":"w1:t2","tokens":{"cwd":"/"}}'; export PANE_OUTPUT
+PANE_OUTPUT='{"id":"cli:pane:get","cwd":"/","result":{"type":"pane_info","pane":{"workspace_id":"w1","tab_id":"w1:t2","tokens":{"cwd":"/"}}}}'; export PANE_OUTPUT
 plain
-assert '[ "$code" -ne 0 ] && ! calls '\''any(.[]; .[0] == "taskr")'\''' 'nested cwd cannot substitute for pane cwd'
+assert '[ "$code" -ne 0 ] && grep -q "pane cwd is missing or invalid" "$scratch/err" && ! calls '\''any(.[]; .[0] == "taskr")'\''' 'nested or top-level cwd cannot substitute for pane cwd'
 unset PANE_OUTPUT
 for args in 'pi' 'codex'; do
 	run --push "$args" w1:p2 "$scratch/brief with spaces.md" --

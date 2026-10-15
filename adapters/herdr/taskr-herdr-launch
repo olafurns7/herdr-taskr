@@ -53,7 +53,7 @@ unset TASKR_FORMAT
 info=$(herdr pane get "$pane") || die 'herdr pane get failed'
 field() {
 	printf '%s\n' "$info" | jq -er --arg key "$1" \
-		'.[$key] | select(type == "string" and length > 0 and (test("[\\x00-\\x1f\\x7f]") | not))'
+		'.result.pane[$key] | select(type == "string" and length > 0 and (test("[\\x00-\\x1f\\x7f]") | not))'
 }
 workspace=$(field workspace_id) || die 'pane workspace_id is missing or invalid'
 tab=$(field tab_id) || die 'pane tab_id is missing or invalid'
@@ -61,7 +61,7 @@ cwd=$(field cwd) || die 'pane cwd is missing or invalid'
 [ -d "$cwd" ] || die 'pane cwd is not a local directory'
 info=$(herdr pane process-info --pane "$pane") || die 'herdr pane process-info failed'
 printf '%s\n' "$info" | jq -e '
-	.shell_pid as $s | .foreground_process_group_id as $f |
+	.result.process_info | .shell_pid as $s | .foreground_process_group_id as $f |
 	($s | type == "number" and . > 0 and floor == .) and $s == $f
 ' >/dev/null || die 'pane is not at its shell prompt'
 herdr pane send-keys "$pane" ctrl+c >/dev/null || die 'could not clear the pane shell input'
