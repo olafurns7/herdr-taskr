@@ -95,6 +95,19 @@ fn dashboard(app: &mut App) {
     glance(app);
 }
 
+/// Panels 7-9 on, after `l` read the fixture's campaign three minutes ago.
+fn ledger(app: &mut App) {
+    dashboard(app);
+    app.config.panels[6..].fill(true);
+    app.scope.read_at = Some(app.observed_at - 180);
+}
+
+/// The same with GitHub's panels off: what a narrow pane shows of the ledger's.
+fn ledger_only(app: &mut App) {
+    ledger(app);
+    app.config.panels[3..6].fill(false);
+}
+
 fn glance(app: &mut App) {
     // docs-refresh changed since the owner last looked.
     app.changed = vec![4296];
@@ -223,7 +236,7 @@ pub fn all() -> Vec<Spec> {
             app.config.panels[0] = false;
         }),
         spec("dashboard", 46, 30, "-off", |app| {
-            app.config.panels = [false; 6];
+            app.config.panels = [false; 9];
             app.config_warning = Some("TUI config not saved; choices kept for this session".into());
         }),
         spec("dashboard", 46, 30, "-empty-ledger", |app| {
@@ -272,6 +285,35 @@ pub fn all() -> Vec<Spec> {
                 .iter()
                 .position(|r| matches!(r, crate::glance::RowId::Run(..)))
                 .unwrap();
+        }),
+        spec("ledger", 120, 40, "", |app| {
+            ledger(app);
+            app.row = crate::glance::ids(&app.view())
+                .iter()
+                .position(|r| matches!(r, crate::glance::RowId::Decision(..)))
+                .unwrap();
+        }),
+        spec("ledger", 120, 40, "-light", ledger),
+        spec("ledger", 46, 30, "", ledger_only),
+        spec("ledger", 46, 30, "-light", ledger_only),
+        spec("ledger", 46, 20, "", ledger_only),
+        spec("ledger", 46, 30, "-unscoped", |app| {
+            ledger_only(app);
+            app.scope.read_at = None;
+        }),
+        spec("ledger", 46, 30, "-stale", |app| {
+            // The glance is stale and the last re-read failed: both say so, nothing is zero.
+            ledger_only(app);
+            stale(app);
+            app.scope.error = Some("reading tui-frames failed: hub unreachable".into());
+            app.data.glance.campaigns[0].lanes.known = [true, false, false];
+        }),
+        spec("ledger", 46, 30, "-fleet", |app| {
+            // Campaigns hidden, Fleet shown from the same snapshot.
+            ledger_only(app);
+            app.config.panels[2] = false;
+            app.config.panels[6] = false;
+            app.config.panels[8] = false;
         }),
         spec("glance", 46, 30, "", glance),
         spec("glance", 70, 30, "", glance),

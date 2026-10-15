@@ -49,9 +49,10 @@ pub(crate) const KEYS: &[Key] = &[
     key("Move", "tab", "next", "next pane; shift-tab back", CAMPAIGN),
     key(
         "View",
-        "1-6",
+        "1-9",
         "panels",
-        "toggle asks, checks, campaigns, PRs, Shipped, Build (+ shown, - hidden)",
+        "toggle asks, checks, campaigns, PRs, Shipped, Build, Decisions, Fleet, Decision log \
+         (+ shown, - hidden)",
         GLANCE,
     ),
     key("Move", "1-5", "jump", "jump to a pane", CAMPAIGN),
@@ -104,12 +105,13 @@ pub(crate) const KEYS: &[Key] = &[
         "park or unpark (confirms)",
         GLANCE | CAMPAIGN,
     ),
+    key("Act", "o", "report", "read the report or doc", CAMPAIGN),
     key(
         "Act",
         "o",
-        "report",
-        "read the report or doc",
-        GLANCE | CAMPAIGN,
+        "open",
+        "Decisions, Fleet or log row: open (re-read) its campaign",
+        GLANCE,
     ),
     key("Act", "y", "copy", "copy the jump command", ALL),
     key(
@@ -135,6 +137,10 @@ pub(crate) const KEYS: &[Key] = &[
 /// How the glance's detail pane is read; the help says so under "Move".
 pub(crate) const DETAIL_NOTE: &str = "shift-tab goes back. In the wide view, with the detail \
     focused, j k g G ctrl-d ctrl-u PgDn PgUp scroll it; h or esc returns to the list.";
+
+/// What panels 7-9 show and what refreshes them; the glance's help says so under "Go".
+pub(crate) const LEDGER_NOTE: &str = "7, 9: the campaign last opened with l, as cached; l \
+    or o reads it again, r does not. 8: listed campaigns only; / filters it, not 7 or 9.";
 
 /// The answer dialog's own keys; the help says so under "Act".
 pub(crate) const ANSWER_NOTE: &str = "Answering: j k choose, tab types (a note after a \

@@ -1,0 +1,40 @@
+ taskr ❯ glance                                                           hub atlas · 2s ago   ● 2 need you  3 to check
+1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions+ · 8 Fleet+ · 9 Log+
+ 3 notes still carry OWNER items
+╭ Glance ──────────────────────────────────────────────────╮╭ decision #61301 · tui-frames ────────────────────────────╮
+│ ask tui-frames Frames follow-up is ready: PR #212 (orpha…││ in force · cached read 3m ago                            │
+│ ask ios-widgets WIDGET BATCH: 19 of 23 merged (14:02-14:…││                                                          │
+│ check map-tiles-polish lead unregistered and silent      ││ D4: one binary for the view and the hub; the old suite   │
+│ check infra-layout lead idle with 3 results              ││ stays the oracle until parity.                           │
+│ check host build-mini host stale: no heartbeat for 12 m  ││ From the campaign read on hand. Glance r does not        │
+│ PR failing #42 Keep pending action labels readable @alex ││ refresh it; o reads it again.                            │
+│ PR running #41 Refresh campaign milestones @sam          ││                                                          │
+│ PR checks passing #40 Clarify owner answer copy @alex    ││                                                          │
+│ Shipped @alex · 2 observed / 24h                         ││                                                          │
+│ Shipped @sam · 2 observed / 24h                          ││                                                          │
+│ Build running (in_progress) Build and test · dashboard ·…││                                                          │
+│ Build queued (queued) Release checks · main · latest100 …││                                                          │
+│▌decision #61301 D4: one binary for the view and the hub;…││                                                          │
+│ decision #60790 Trust rule 1: red is an open owner ask a…││                                                          │
+│ fleet search-index · 1 working 0 ready 1 open            ││                                                          │
+│ fleet auth-rotation · 0 working 1 ready 1 open           ││                                                          │
+│ fleet billing-export · 1 working 0 ready 1 open          ││                                                          │
+│ fleet docs-refresh · 1 working 0 ready 1 open            ││                                                          │
+│ fleet checkout-flow · 1 working 1 ready 2 open           ││                                                          │
+│ fleet ios-widgets · 0 working 0 ready 0 open             ││                                                          │
+│ fleet tui-frames · 3 working 1 ready 6 open              ││                                                          │
+│ fleet infra-layout · 0 working 0 ready 0 open            ││                                                          │
+│ fleet model-evals · 5 working 2 ready 9 open             ││                                                          │
+│ fleet api-pagination · 1 working 0 ready 1 open          ││                                                          │
+│ fleet legacy-importer · 0 working 0 ready 0 open         ││                                                          │
+│ logged decision #61301 13:58 D4: one binary for the view…│╰──────────────────────────────────────────────────────────╯
+│ campaign search-index Research complete: reports/ranking…│╭ tui-frames · last 4 h ───────────────────────────────────╮
+│ campaign auth-rotation Implementation slice: key rollove…││       ██      ██        ██      ██                       │
+│ campaign billing-export FYI 61448 from search-index (roo…││       ██      ██  ██▂▂  ██▂▂    ██          ████         │
+│ campaign docs-refresh Hub FYI: keep the page map machine…││     ▇▇██    ▇▇██▇▇████  ████▂▂  ██  ▄▄▇▇▂▂▄▄████         │
+│ campaign checkout-flow FIX: three P2 findings in the rev…││                                                          │
+│ campaign ios-widgets Widget batch approved (asks 61199, …││ lead ◐ working   lanes ●●●●○○                            │
+│ campaign tui-frames NOW: plan rev 3.1 sent; the trust ru…││ last NOW: plan rev 3.1 sent; the trust rules and the     │
+│ campaign infra-layout cache-audit lead root=4040 pane=w4…││ first frames are in flight.                              │
+╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
+ o open campaign   1-9 panels   / filter   s slotr   ? help   q quit

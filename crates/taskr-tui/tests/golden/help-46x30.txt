@@ -1,5 +1,5 @@
  taskr ❯ help          2s ago   ● 2 need you
- KEYS · glance ────────────────────── 1-27/49
+ KEYS · glance ────────────────────── 1-27/53
  Move
   j k           down, up (arrows too)
   g G           first, last row
@@ -21,10 +21,10 @@
   click         select; double-click is ⏎
   ⏎ moves every client attached to that Herdr
   server.
+  7, 9: the campaign last opened with l, as
+  cached; l or o reads it again, r does not.
+  8: listed campaigns only; / filters it, not
+  7 or 9.
 
  Act
-  a             answer the selected ask
-  p             park or unpark (confirms)
-  o             read the report or doc
-  y             copy the jump command
  j k scroll   h close

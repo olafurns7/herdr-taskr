@@ -103,6 +103,30 @@ pub(crate) struct Back {
     filter: String,
 }
 
+/// What the Decisions and Decision log panels (7, 9) read: `data.campaign`, but only once
+/// a campaign the owner opened on purpose (`l`, or `o` on their rows) has arrived. Glance `r`
+/// does not refresh it; opening the campaign again does.
+#[derive(Debug, Clone, Default)]
+pub struct Scope {
+    /// When the campaign on hand was read, on the observation clock. None: nothing opened.
+    pub read_at: Option<i64>,
+    /// The last failed read of the opened campaign, or of one being opened. The last good
+    /// read stays on hand under it.
+    pub error: Option<String>,
+    /// Bumped by every deliberate open. A reply from before the latest one is dropped.
+    pub(crate) generation: u64,
+    /// The deliberate open still awaited, and the screen and depth it was asked from.
+    pub(crate) want: Option<(i64, Screen, usize)>,
+}
+
+impl Scope {
+    /// Age of the read on hand, as the panels show it.
+    pub(crate) fn age(&self, at: i64) -> Option<String> {
+        self.read_at
+            .map(|read| ui::age(at.saturating_sub(read).saturating_mul(1000)))
+    }
+}
+
 impl Fetch {
     /// Everything the screen shows of the fetch. The loop redraws when this changes.
     pub fn face(&self) -> String {
@@ -184,6 +208,10 @@ pub struct App {
     /// One clock observation shared by the rendered view and its input identities.
     pub observed_at: i64,
     pub observed_tick: Instant,
+    pub scope: Scope,
+    /// Fleet's rows (panel 8): the snapshot's listed campaigns, whether or not panel 3
+    /// shows them. Filled by [`App::view`]; empty on the app itself.
+    pub(crate) fleet: Vec<model::CampaignRow>,
 }
 
 impl App {
@@ -225,6 +253,8 @@ impl App {
             builds: github::Dashboard::default(),
             observed_at: time::OffsetDateTime::now_utc().unix_timestamp(),
             observed_tick: Instant::now(),
+            scope: Scope::default(),
+            fleet: vec![],
         }
     }
 
@@ -243,10 +273,13 @@ impl App {
                 })
                 .collect::<Vec<_>>()
         };
+        // A cached panel's age is on screen: a new minute is a new frame.
+        let aged = (self.config.panels[6] || self.config.panels[8])
+            && self.scope.age(self.observed_at) != self.scope.age(at);
         if signature(self, self.observed_at) == signature(self, at) {
             self.observed_at = at;
             self.observed_tick = tick;
-            return false;
+            return aged;
         }
         let view = self.glance_view();
         let selected = glance::ids(&view).get(view.row).cloned();
@@ -269,6 +302,18 @@ impl App {
     pub(crate) fn view(&self) -> App {
         let mut v = self.clone();
         let q = self.filter.to_lowercase();
+        // Fleet reads the snapshot itself, so hiding panel 3 does not empty it. Every
+        // screen fills it: the help draws the glance behind itself.
+        v.fleet = if self.config.panels[7] && self.fetch.loaded {
+            let all = &self.data.glance.campaigns;
+            all.iter()
+                .filter(|c| !c.parked)
+                .chain(all.iter().filter(|c| c.parked))
+                .cloned()
+                .collect()
+        } else {
+            vec![]
+        };
         if self.screen == Screen::Glance {
             let g = &mut v.data.glance;
             v.counts = Some((g.needs_you.len(), g.attention.len()));
@@ -325,6 +370,8 @@ impl App {
                 g.needs_you.retain(|a| has(&a.campaign));
                 g.attention.retain(|a| has(&a.campaign));
                 g.campaigns.retain(|c| has(&c.name));
+                // Decisions and the decision log are one campaign's; the filter leaves them.
+                v.fleet.retain(|c| has(&c.name));
             }
         }
         v
@@ -338,8 +385,13 @@ impl App {
         // The slotr view's cursor is `row` too.
         let own = |s: Screen| matches!(s, Screen::AllCampaigns | Screen::Slotr);
         let glance_row = !own(self.screen) && self.back.iter().all(|b| !own(b.screen));
-        let was = at(self).get(self.row).cloned();
+        let ids = at(self);
+        let was = ids.get(self.row).cloned();
         let before = was.clone().filter(|_| glance_row);
+        let saved = {
+            let view = self.glance_view();
+            glance::ids(&view).get(view.row).cloned()
+        };
         self.sent
             .retain(|id| glance.needs_you.iter().any(|a| a.ask_id == *id));
         // "Changed since you looked": a campaign whose last event, owner note, lead, lanes
@@ -399,6 +451,20 @@ impl App {
                 Some(b) if b.screen == Screen::Glance => b.scroll = 0,
                 _ => self.scroll = 0,
             }
+        }
+        // Under an overlay the glance's row waits in `back`, and Esc returns to it.
+        if glance_row
+            && self.screen != Screen::Glance
+            && self
+                .back
+                .first()
+                .is_some_and(|b| b.screen == Screen::Glance)
+        {
+            self.restore_row(saved);
+        }
+        // Rows that moved are not where the last click landed.
+        if at(self) != ids {
+            self.click = None;
         }
     }
 
@@ -534,7 +600,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         if app.screen == Screen::Glance && !app.config.panels.iter().any(|p| *p) && area.height > 1
         {
             f.render_widget(
-                Paragraph::new("1-6 show hidden panels"),
+                Paragraph::new("1-9 show hidden panels"),
                 Rect {
                     y: area.y + 1,
                     height: 1,

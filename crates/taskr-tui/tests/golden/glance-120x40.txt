@@ -1,5 +1,5 @@
  taskr ❯ glance                                                           hub atlas · 2s ago   ● 2 need you  3 to check
-1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+
+1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log-
  3 notes still carry OWNER items
 ╭ Glance ──────────────────────────────────────────────────╮╭ ask 61767 · tui-frames ──────────────────────────────────╮
 │ NEEDS YOU ──────────────────────────────────────────── 2 ││ BLOCKING · asker waiting · 41s ago · atlas w31:p1        │
@@ -37,4 +37,4 @@
 │ ‖ legacy-importer                              parked  3h││ last NOW: plan rev 3.1 sent; the trust rules and the     │
 │ · 2 quiet                                                ││ first frames are in flight.                              │
 ╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
- ⏎ go to lead   a answer   l open   1-6 panels   / filter   y copy   s slotr   ? help   q quit
+ ⏎ go to lead   a answer   l open   1-9 panels   / filter   y copy   s slotr   ? help   q quit

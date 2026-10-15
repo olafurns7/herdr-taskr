@@ -1,0 +1,30 @@
+ taskr      2s ago   ● 2 need you  3 to check
+1 asks+ · 2 checks+ · 3 camps+
+4 PRs- · 5 Shipped- · 6 Build-
+7 Decisions+ · 8 Fleet+ · 9 Log+
+ 3 notes still carry OWNER items
+ NEEDS YOU ──────────────────────────────── 2
+▌? ◇ tui-frames           BLOCKING      ⏎  41s
+▌  Frames follow-up is ready: PR #212 (orpha…
+ ? ◇ ios-widgets                 laptop ↗   6m
+   WIDGET BATCH: 19 of 23 merged (14:02-14:0…
+ TO CHECK ─────────────────────────────── 2/3
+ ! map-tiles-polish                laptop   2h
+   lead unregistered and silent
+ ! infra-layout                             2h
+   lead idle with 3 results
+ DECISIONS · PLAN ─────────────── cached read
+Select a campaign and press l; Esc returns he…
+ FLEET ───────────────────── listed campaigns
+11 listed · 13 working 5 ready 22 open
+2 quiet not listed; no counts
+ search-index · 1 working 0 ready 1 open · le…
+ auth-rotation · 0 working 1 ready 1 open · l…
+ billing-export · 1 working 0 ready 1 open · …
+ +8 outside view · j/k to browse
+ DECISION LOG ───────────────── recent sample
+Select a campaign and press l; Esc returns he…
+ CAMPAIGNS ─────────────────────────────── 10
+ ◐ search-index      ●       ▁▁▁▁▁█▃       19s
+ +12 more · c shows all
+ ⏎ go   a answer   l open   ? help

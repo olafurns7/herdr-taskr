@@ -1,5 +1,5 @@
  taskr ❯ glance                                                           hub atlas · 2s ago   ● 2 need you  3 to check
-1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+
+1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log-
  3 notes still carry OWNER items
 ╭ Glance ──────────────────────────────────────────────────╮╭ ask 61767 · tui-frames ──────────────────────────────────╮
 │ NEEDS YOU ──────────────────────────────────────────── 2 ││ BLOCKING · asker waiting · 41s ago · atlas w31:p1        │
@@ -8,7 +8,7 @@
 │ ? ◇ ios-│   Move                                           Act                                             │ v2.4.1  │
 │   WIDGET│    j k           down, up (arrows too)            a             answer the selected ask          │or the   │
 │ TO CHECK│    g G           first, last row                  p             park or unpark (confirms)        │         │
-│ ! map-ti│    ctrl-d ctrl-u half page                        o             read the report or doc           │         │
+│ ! map-ti│    ctrl-d ctrl-u half page                        o             Decisions, Fleet or log row: op  │         │
 │   lead u│    tab           next section, then the detail    y             copy the jump command            │         │
 │ ! infra-│    wheel         scroll                           r             refresh now                      │d        │
 │   lead i│    shift-tab goes back. In the wide view, with    Answering: j k choose, tab types (a note       │         │
@@ -17,7 +17,7 @@
 │ CAMPAIGN│    list.                                          reviews the set.                               │         │
 │ ◐ search│                                                                                                  │         │
 │   Resear│   Go                                             View                                            │         │
-│ ◐ auth-r│    ⏎             go to the row's agent pane       1-6           toggle asks, checks, campaigns,  │         │
+│ ◐ auth-r│    ⏎             go to the row's agent pane       1-9           toggle asks, checks, campaigns,  │         │
 │   Implem│    l             open the campaign                ?             this help                        │         │
 │ ○ billin│    h             back, close (esc too)            m             mouse on or off                  │         │
 │   FYI 61│    /             filter rows by name              t             theme: dark, light, terminal     │         │
@@ -26,10 +26,10 @@
 │ ○ checko│    click         select; double-click is ⏎                                                       │         │
 │   FIX: t│    ⏎ moves every client attached to that Herdr   Marks                                           │         │
 │ ◐ ios-wi│    server.                                        ? ask   ! to check   ◐ working   ○ waiting     │         │
-│   Widget│                                                   ● lane   ● ready   · idle   × gone   ‖ parked  │         │
-│ ◐ tui-fr│                                                   ✓ done   ⊘ abandoned   ✗ rejected              │─────────╯
-│   NOW: p│                                                   ⏎ pane on this machine   ↗ another             │─────────╮
-│ · infra-│                                                   • changed since you looked                     │         │
+│   Widget│    7, 9: the campaign last opened with l, as      ● lane   ● ready   · idle   × gone   ‖ parked  │         │
+│ ◐ tui-fr│    cached; l or o reads it again, r does not. 8:  ✓ done   ⊘ abandoned   ✗ rejected              │─────────╯
+│   NOW: p│    listed campaigns only; / filters it, not 7 or  ⏎ pane on this machine   ↗ another             │─────────╮
+│ · infra-│    9.                                             • changed since you looked                     │         │
 │   cache-│                                                   ◆ structured ask   ◇ options from its text     │         │
 │ ◐ model-│                                                                                                  │         │
 │   matrix╰──────────────────────────────────────────────────────────────────────────────────────────────────╯         │
@@ -37,4 +37,4 @@
 │ ‖ legacy-importer                              parked  3h││ last NOW: plan rev 3.1 sent; the trust rules and the     │
 │ · 2 quiet                                                ││ first frames are in flight.                              │
 ╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
- ⏎ go to lead   a answer   l open   1-6 panels   / filter   y copy   s slotr   ? help   q quit
+ ⏎ go to lead   a answer   l open   1-9 panels   / filter   y copy   s slotr   ? help   q quit

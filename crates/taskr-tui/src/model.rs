@@ -182,11 +182,41 @@ fn strip_owner_nothing(text: &str) -> &str {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default)]
+#[serde(from = "RawLanes")]
 pub struct LaneCounts {
     pub working: u32,
     pub ready: u32,
     pub open: u32,
+    /// Which of working, ready and open the snapshot carried. A missing count decodes as 0
+    /// for the pips, but Fleet shows it as unknown, never as an observed zero.
+    pub known: [bool; 3],
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct RawLanes {
+    working: Option<u32>,
+    ready: Option<u32>,
+    open: Option<u32>,
+}
+
+impl From<RawLanes> for LaneCounts {
+    fn from(raw: RawLanes) -> Self {
+        Self {
+            working: raw.working.unwrap_or(0),
+            ready: raw.ready.unwrap_or(0),
+            open: raw.open.unwrap_or(0),
+            known: [raw.working, raw.ready, raw.open].map(|n| n.is_some()),
+        }
+    }
+}
+
+impl LaneCounts {
+    /// Working, ready and open as Fleet shows them: `?` where the snapshot said nothing.
+    pub fn observed(&self) -> [Option<u32>; 3] {
+        let counts = [self.working, self.ready, self.open];
+        std::array::from_fn(|i| self.known[i].then_some(counts[i]))
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -596,6 +626,30 @@ mod tests {
         );
         // Before P1b there is no server name, and nothing is known to be local.
         assert!(!Glance::default().local(""));
+    }
+
+    #[test]
+    fn missing_lane_counts_stay_unknown() {
+        let g: Glance = serde_json::from_value(serde_json::json!({"campaigns": [
+            {"id": 1, "lanes": {"working": 2, "ready": 0, "open": 3}},
+            {"id": 2, "lanes": {"working": 1}},
+            {"id": 3},
+        ]}))
+        .unwrap();
+        let seen: Vec<_> = g.campaigns.iter().map(|c| c.lanes.observed()).collect();
+        assert_eq!(
+            seen,
+            [
+                [Some(2), Some(0), Some(3)],
+                [Some(1), None, None],
+                [None, None, None]
+            ]
+        );
+        // The pips still draw what is known.
+        assert_eq!(
+            (g.campaigns[1].lanes.working, g.campaigns[1].lanes.open),
+            (1, 0)
+        );
     }
 
     #[test]

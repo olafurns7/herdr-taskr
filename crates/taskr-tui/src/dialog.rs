@@ -675,7 +675,9 @@ fn group(t: &Theme, name: &str, view: u8, width: usize) -> Vec<Line<'static>> {
         "Act" if view & (keys::GLANCE | keys::CAMPAIGN) != 0 => Some(keys::ANSWER_NOTE),
         _ => None,
     };
-    if let Some(note) = note {
+    // The wide help's left column has the room for it.
+    let ledger = (name == "Go" && view == keys::GLANCE).then_some(keys::LEDGER_NOTE);
+    for note in note.into_iter().chain(ledger) {
         out.extend(
             wrap(note, width.saturating_sub(2))
                 .into_iter()

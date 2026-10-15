@@ -26,7 +26,14 @@ pub enum Job {
     /// `taskr set ROOT glance.state=parked`, or `glance.state=` to unpark.
     Park { root: i64, name: String, park: bool },
     /// `taskr campaign ROOT --all`. `open` shows it when it arrives; a refresh does not.
-    Campaign { root: i64, name: String, open: bool },
+    /// `seq` is the view's open generation when it was asked for: a reply from before a
+    /// later deliberate open is dropped.
+    Campaign {
+        root: i64,
+        name: String,
+        open: bool,
+        seq: u64,
+    },
     /// `taskr doc get ID`: the text of a document the campaign read listed.
     Doc { row: DocRow },
     /// `taskr --json slotr`: slotr's pools, read on the hub.
@@ -256,6 +263,7 @@ mod tests {
             root: 3,
             name: "x".into(),
             open: true,
+            seq: 1,
         };
         assert_eq!(read.args().unwrap(), ["--json", "campaign", "3", "--all"]);
         assert!(read.reads() && !park(true).reads());
@@ -307,6 +315,7 @@ mod tests {
             root: 1,
             name: "demo-checkout".into(),
             open: true,
+            seq: 1,
         };
         let Ok(Done::Campaign(c)) = read.run(&cat) else {
             panic!("a campaign")
@@ -475,6 +484,7 @@ mod tests {
             root: 1,
             name: "demo".into(),
             open: true,
+            seq: 1,
         })
         .run(&taskr)
         {

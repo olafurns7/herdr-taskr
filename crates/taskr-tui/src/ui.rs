@@ -618,6 +618,7 @@ mod tests {
                 working: w,
                 ready: r,
                 open: o,
+                known: [true; 3],
             };
             pips(&t, &lanes, 7)
                 .iter()

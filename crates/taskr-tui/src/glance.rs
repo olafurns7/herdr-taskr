@@ -10,13 +10,83 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+use ratatui::style::Color;
+
 use crate::{
     App, Hit, ask,
+    github::Kind,
     keys::hint,
-    model::{Attention, CampaignRow, Glance, Need},
+    model::{Attention, Campaign, CampaignRow, Event, Glance, Need},
     theme::Theme,
     ui::{self, age, bold, clip, one_line, pad, sp, wrap},
 };
+
+/// The panels between the checks and the campaigns, in priority order: GitHub's three,
+/// then the ledger's Decisions (7), Fleet (8) and Decision log (9).
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Panel {
+    Gh(Kind),
+    Decisions,
+    Fleet,
+    Log,
+}
+
+const PANELS: [Panel; 6] = [
+    Panel::Gh(Kind::Open),
+    Panel::Gh(Kind::Shipped),
+    Panel::Gh(Kind::Build),
+    Panel::Decisions,
+    Panel::Fleet,
+    Panel::Log,
+];
+
+/// The panels on screen. A hidden GitHub panel's sources are cleared by `App::view`.
+fn shown(app: &App) -> Vec<Panel> {
+    PANELS
+        .into_iter()
+        .filter(|p| match p {
+            Panel::Gh(kind) => !kind.dashboard(app).sources.is_empty(),
+            Panel::Decisions => app.config.panels[6],
+            Panel::Fleet => app.config.panels[7],
+            Panel::Log => app.config.panels[8],
+        })
+        .collect()
+}
+
+/// Cursor rows a panel adds.
+fn row_count(app: &App, panel: Panel) -> usize {
+    match panel {
+        Panel::Gh(Kind::Open) => app.github.rows().len(),
+        Panel::Gh(Kind::Shipped) => app.shipped.authors(app.observed_at).len(),
+        Panel::Gh(Kind::Build) => app.builds.runs().len(),
+        Panel::Decisions => decisions(app).len(),
+        Panel::Fleet => app.fleet.len(),
+        Panel::Log => logged(app).len(),
+    }
+}
+
+/// The campaign panels 7 and 9 read: the last one opened on purpose, once it arrived.
+/// Never the cursor's campaign, and never a total over campaigns.
+fn scoped(app: &App) -> Option<&Campaign> {
+    app.scope.read_at.map(|_| &app.data.campaign)
+}
+
+/// Decisions in force, from the campaign read on hand.
+fn decisions(app: &App) -> &[Event] {
+    match scoped(app) {
+        Some(c) if app.config.panels[6] => &c.decisions,
+        _ => &[],
+    }
+}
+
+/// The decision events in the read's recent log sample: history, apart from those in force.
+fn logged(app: &App) -> Vec<&Event> {
+    scoped(app)
+        .filter(|_| app.config.panels[8])
+        .map_or(vec![], |c| {
+            c.log.iter().filter(|e| e.kind == "decision").collect()
+        })
+}
 
 /// What fits in the list, decided before anything is drawn.
 ///
@@ -483,6 +553,29 @@ fn compact_layout(
                 ),
                 app.theme.sub,
             ),
+            Selected::Decision(e) => (
+                format!("decision #{} {}", e.id, one_line(&e.text)),
+                app.theme.text,
+            ),
+            Selected::Logged(e) => (
+                format!(
+                    "logged decision #{} {} {}",
+                    e.id,
+                    ui::hhmm(&e.at),
+                    one_line(&e.text)
+                ),
+                app.theme.sub,
+            ),
+            Selected::Fleet(c) => {
+                let [w, r, o] = c
+                    .lanes
+                    .observed()
+                    .map(|n| n.map_or("?".into(), |n| n.to_string()));
+                (
+                    format!("fleet {} · {w} working {r} ready {o} open", c.name),
+                    app.theme.text,
+                )
+            }
             Selected::Nothing => continue,
         };
         let mut line = ui::row(
@@ -493,8 +586,15 @@ fn compact_layout(
             color,
             width,
         );
-        if !matches!(ids[i], RowId::Pr(..) | RowId::Author(_) | RowId::Run(..))
-            && app.fetch.loaded
+        // Cached campaign reads are not the glance's; a stale glance does not dim them.
+        if !matches!(
+            ids[i],
+            RowId::Pr(..)
+                | RowId::Author(_)
+                | RowId::Run(..)
+                | RowId::Decision(..)
+                | RowId::Logged(..)
+        ) && app.fetch.loaded
             && app.fetch.error.is_some()
         {
             for span in &mut line.spans {
@@ -520,8 +620,19 @@ fn dim_ledger(app: &App, lines: &mut [Line<'_>], prs: Range<usize>) {
 }
 
 /// Full panel demand and the header/status/overflow minimum retained for later kinds.
-fn external_budget(app: &App, kind: crate::github::Kind) -> (usize, usize) {
-    use crate::github::Kind;
+fn external_budget(app: &App, panel: Panel) -> (usize, usize) {
+    let Panel::Gh(kind) = panel else {
+        if !shown(app).contains(&panel) {
+            return (0, 0);
+        }
+        // As the GitHub panels: three rows and an overflow line while ledger rows are listed.
+        let (head, rows) = cached_parts(app, panel);
+        let cap = if ledger_rows(app) { 3 } else { usize::MAX };
+        return (
+            1 + head.len() + rows.len().min(cap) + usize::from(rows.len() > cap),
+            1 + head.len() + usize::from(!rows.is_empty()),
+        );
+    };
     let sources = &kind.dashboard(app).sources;
     if sources.is_empty() {
         return (0, 0);
@@ -539,12 +650,7 @@ fn external_budget(app: &App, kind: crate::github::Kind) -> (usize, usize) {
         Kind::Shipped => app.shipped.authors(app.observed_at).len(),
         Kind::Build => app.builds.runs().len(),
     };
-    let g = &app.data.glance;
-    let cap = if kind == Kind::Open
-        && g.needs_you.is_empty()
-        && g.attention.is_empty()
-        && g.campaigns.is_empty()
-    {
+    let cap = if kind == Kind::Open && !ledger_rows(app) {
         usize::MAX
     } else {
         3
@@ -558,8 +664,14 @@ fn external_budget(app: &App, kind: crate::github::Kind) -> (usize, usize) {
     )
 }
 
+/// The glance lists asks, checks or campaigns: panels below them preview, not fill.
+fn ledger_rows(app: &App) -> bool {
+    let g = &app.data.glance;
+    !(g.needs_you.is_empty() && g.attention.is_empty() && g.campaigns.is_empty())
+}
+
 fn external_count(app: &App) -> usize {
-    app.github.rows().len() + app.shipped.authors(app.observed_at).len() + app.builds.runs().len()
+    PANELS.into_iter().map(|p| row_count(app, p)).sum()
 }
 fn external_height(app: &App, height: usize) -> usize {
     let g = &app.data.glance;
@@ -567,14 +679,10 @@ fn external_height(app: &App, height: usize) -> usize {
         + usize::from(!g.attention.is_empty()) * 3
         + usize::from(!g.campaigns.is_empty()) * 2;
     let floor = if floor == 0 { 8 } else { floor };
-    let wanted: usize = [
-        crate::github::Kind::Open,
-        crate::github::Kind::Shipped,
-        crate::github::Kind::Build,
-    ]
-    .into_iter()
-    .map(|kind| external_budget(app, kind).0)
-    .sum();
+    let wanted: usize = PANELS
+        .into_iter()
+        .map(|panel| external_budget(app, panel).0)
+        .sum();
     let available = wanted.min(height.saturating_sub(floor));
     // A two-line row plus its overflow hint may leave one unusable line; return it to the ledger.
     external_lines(app, 1, available, g.needs_you.len() + g.attention.len())
@@ -587,11 +695,8 @@ fn external_lines(
     height: usize,
     offset: usize,
 ) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
-    use crate::github::Kind;
-    let mut kinds: Vec<_> = [Kind::Open, Kind::Shipped, Kind::Build]
-        .into_iter()
-        .filter(|k| !k.dashboard(app).sources.is_empty())
-        .collect();
+    // Ordered prefix: a later panel keeps its minimum only once every earlier one has its.
+    let mut kinds = shown(app);
     let mut minimum = 0;
     let keep = kinds
         .iter()
@@ -614,30 +719,235 @@ fn external_lines(
         let share = external_budget(app, *kind)
             .0
             .min(remaining.saturating_sub(later_min));
-        let (lines, rows) = if *kind == Kind::Open {
-            pr_lines(app, width, share, offset)
-        } else {
-            observed_lines(app, *kind, width, share, offset)
+        let (lines, rows) = match kind {
+            Panel::Gh(Kind::Open) => pr_lines(app, width, share, offset),
+            Panel::Gh(kind) => observed_lines(app, *kind, width, share, offset),
+            _ => cached_lines(app, *kind, width, share, offset),
         };
         remaining = remaining.saturating_sub(lines.len());
         out.extend(lines);
         hits.extend(rows);
-        offset += match kind {
-            Kind::Open => app.github.rows().len(),
-            Kind::Shipped => app.shipped.authors(app.observed_at).len(),
-            Kind::Build => app.builds.runs().len(),
-        };
+        offset += row_count(app, *kind);
     }
     (out, hits)
 }
-fn observed_lines(
+
+const SELECT: &str = "Select a campaign and press l; Esc returns here";
+
+/// A ledger panel's lines under its rule, then its rows, each with its colour. Every line
+/// says what it is drawn from: the campaign read on hand and its age, or the glance's
+/// listed campaigns; unknown stays unknown.
+/// A line of text and its colour, before it is clipped to the pane.
+type Text = (String, Color);
+
+fn cached_parts(app: &App, panel: Panel) -> (Vec<Text>, Vec<Text>) {
+    let (t, g) = (&app.theme, &app.data.glance);
+    let mut head = vec![];
+    if panel == Panel::Fleet {
+        let fleet = &app.fleet;
+        if !app.fetch.loaded {
+            let why = if app.fetch.error.is_some() {
+                "Ledger unreachable; counts unknown"
+            } else {
+                "Ledger not read yet; counts unknown"
+            };
+            return (vec![(why.into(), t.sub)], vec![]);
+        }
+        // Totals of what was reported; `+?` where some campaign did not say.
+        let total = |i: usize| {
+            let seen = fleet.iter().map(|c| c.lanes.observed()[i]);
+            let sum: u32 = seen.clone().flatten().sum();
+            if seen.clone().any(|n| n.is_none()) {
+                format!("{sum}+?")
+            } else {
+                sum.to_string()
+            }
+        };
+        head.push((
+            format!(
+                "{}{} listed · {} working {} ready {} open",
+                if app.filter.is_empty() {
+                    ""
+                } else {
+                    "filtered: "
+                },
+                fleet.len(),
+                total(0),
+                total(1),
+                total(2)
+            ),
+            t.sub,
+        ));
+        if g.quiet.count > 0 {
+            head.push((
+                format!("{} quiet not listed; no counts", g.quiet.count),
+                t.dim,
+            ));
+        }
+        if app.fetch.error.is_some() {
+            head.push((
+                format!("! ledger stale · as of {}", ui::hhmm(&g.now)),
+                t.check,
+            ));
+        }
+        if fleet.is_empty() {
+            let none = if app.filter.is_empty() {
+                "No listed campaigns; not a fleet-wide idle claim"
+            } else {
+                "No listed campaign matches the filter"
+            };
+            head.push((none.into(), t.sub));
+        }
+        let rows = fleet
+            .iter()
+            .map(|c| {
+                let [w, r, o] = c
+                    .lanes
+                    .observed()
+                    .map(|n| n.map_or("?".into(), |n| n.to_string()));
+                let lead = if c.lead.is_empty() {
+                    "?"
+                } else {
+                    c.lead.as_str()
+                };
+                let parked = if c.parked { " · parked" } else { "" };
+                (
+                    format!(
+                        "{} · {w} working {r} ready {o} open · lead {lead}{parked}",
+                        c.name
+                    ),
+                    t.text,
+                )
+            })
+            .collect();
+        return (head, rows);
+    }
+    let Some(c) = scoped(app) else {
+        head.push((SELECT.into(), t.sub));
+        if let Some(error) = &app.scope.error {
+            head.push((format!("! {error}"), t.check));
+        }
+        return (head, vec![]);
+    };
+    let age = app.scope.age(app.observed_at).unwrap_or_default();
+    head.push((
+        format!("{} #{} · read {age} ago", c.root.name, c.root.id),
+        t.text,
+    ));
+    if let Some(error) = &app.scope.error {
+        head.push((format!("! {error} · showing the last good read"), t.check));
+    }
+    if panel == Panel::Decisions {
+        head.push((
+            c.goal.first().map_or_else(
+                || "goal: none captured".into(),
+                |goal| format!("goal: {}", one_line(goal)),
+            ),
+            t.sub,
+        ));
+        let doc = match c.docs.iter().find(|d| d.kind == "plan") {
+            Some(d) if d.captured => format!(" · plan doc v{} captured", d.version),
+            Some(d) => format!(" · plan doc v{} not captured", d.version),
+            None => " · no plan doc listed".into(),
+        };
+        head.push((
+            if c.plan.version == 0 {
+                format!("plan: no version recorded{doc}")
+            } else {
+                format!(
+                    "plan v{} · {} decisions, {} closed lanes since{doc}",
+                    c.plan.version, c.plan.decisions_since, c.plan.closed_since
+                )
+            },
+            t.sub,
+        ));
+        if c.decisions.is_empty() {
+            head.push(("No decisions in force in this read".into(), t.sub));
+        }
+        let rows = c
+            .decisions
+            .iter()
+            .map(|e| (format!("◆ #{} {}", e.id, one_line(&e.text)), t.text))
+            .collect();
+        return (head, rows);
+    }
+    head.push((
+        "recent log sample (up to 100 events): decisions only".into(),
+        t.sub,
+    ));
+    let rows: Vec<_> = logged(app)
+        .into_iter()
+        .map(|e| {
+            (
+                format!("#{} {} {}", e.id, ui::hhmm(&e.at), one_line(&e.text)),
+                t.sub,
+            )
+        })
+        .collect();
+    if rows.is_empty() {
+        head.push(("No decision events in this log sample".into(), t.sub));
+    }
+    (head, rows)
+}
+
+fn cached_lines(
     app: &App,
-    kind: crate::github::Kind,
+    panel: Panel,
     width: usize,
     height: usize,
     offset: usize,
 ) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
-    use crate::github::Kind;
+    let t = &app.theme;
+    let (title, right) = match panel {
+        Panel::Decisions => ("DECISIONS · PLAN", "cached read"),
+        Panel::Fleet => ("FLEET", "listed campaigns"),
+        _ => ("DECISION LOG", "recent sample"),
+    };
+    let (head, rows) = cached_parts(app, panel);
+    let mut out = vec![ui::rule(t, title, right, t.sub, width)];
+    let mut hits = vec![None];
+    for (text, color) in head {
+        out.push(Line::from(sp(clip(&text, width), color)));
+        hits.push(None);
+    }
+    let remaining = height.saturating_sub(out.len());
+    let mut fit = remaining.min(rows.len());
+    if fit < rows.len() {
+        fit = remaining.saturating_sub(1);
+    }
+    let cursor = app.row.checked_sub(offset).filter(|i| *i < rows.len());
+    let start = cursor
+        .map_or(0, |i| (i + 1).saturating_sub(fit))
+        .min(rows.len().saturating_sub(fit));
+    for (i, (label, color)) in rows.iter().enumerate().skip(start).take(fit) {
+        out.push(ui::row(
+            t,
+            vec![sp(clip(label, width.saturating_sub(1)), *color)],
+            app.row == offset + i,
+            false,
+            *color,
+            width,
+        ));
+        hits.push(Some(offset + i));
+    }
+    if fit < rows.len() {
+        out.push(Line::from(sp(
+            format!(" +{} outside view · j/k to browse", rows.len() - fit),
+            t.dim,
+        )));
+        hits.push(None);
+    }
+    out.truncate(height);
+    hits.truncate(height);
+    (out, hits)
+}
+fn observed_lines(
+    app: &App,
+    kind: Kind,
+    width: usize,
+    height: usize,
+    offset: usize,
+) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
     let t = &app.theme;
     let d = kind.dashboard(app);
     let groups = d.authors(app.observed_at);
@@ -917,6 +1227,12 @@ pub(crate) enum RowId {
     Pr(String, u64),
     Author(String),
     Run(String, u64),
+    /// A decision in force in the campaign read on hand: root, event.
+    Decision(i64, i64),
+    /// A listed campaign's Fleet row: apart from its campaign row.
+    Fleet(i64),
+    /// A decision event in that read's log sample: apart from the same event in force.
+    Logged(i64, i64),
 }
 
 /// Every row the cursor can be on, in cursor order.
@@ -957,10 +1273,17 @@ pub(crate) fn ids(app: &App) -> Vec<RowId> {
         .into_iter()
         .filter(|_| app.config.panels[5])
         .map(|r| RowId::Run(r.repo.clone(), r.id));
+    let root = app.data.campaign.root.id;
+    let decisions = decisions(app).iter().map(|e| RowId::Decision(root, e.id));
+    let fleet = app.fleet.iter().map(|c| RowId::Fleet(c.id));
+    let logged = logged(app).into_iter().map(|e| RowId::Logged(root, e.id));
     asks.chain(checks)
         .chain(prs)
         .chain(authors)
         .chain(runs)
+        .chain(decisions)
+        .chain(fleet)
+        .chain(logged)
         .chain(campaigns)
         .collect()
 }
@@ -987,6 +1310,9 @@ pub(crate) enum Selected<'a> {
     Pr(&'a crate::github::Pr),
     Author(String),
     Run(&'a crate::github::Run),
+    Decision(&'a Event),
+    Logged(&'a Event),
+    Fleet(&'a CampaignRow),
     Nothing,
 }
 
@@ -1021,6 +1347,19 @@ pub(crate) fn selected(app: &App) -> Selected<'_> {
             .into_iter()
             .find(|r| r.repo == *repo && r.id == *id)
             .map_or(Selected::Nothing, Selected::Run),
+        Some(RowId::Decision(_, id)) => decisions(app)
+            .iter()
+            .find(|e| e.id == *id)
+            .map_or(Selected::Nothing, Selected::Decision),
+        Some(RowId::Logged(_, id)) => logged(app)
+            .into_iter()
+            .find(|e| e.id == *id)
+            .map_or(Selected::Nothing, Selected::Logged),
+        Some(RowId::Fleet(id)) => app
+            .fleet
+            .iter()
+            .find(|c| c.id == *id)
+            .map_or(Selected::Nothing, Selected::Fleet),
         None => Selected::Nothing,
     }
 }
@@ -1051,6 +1390,9 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
             Some(hint("p", None)),
         ],
         Selected::Pr(_) | Selected::Author(_) | Selected::Run(_) => vec![Some(hint("r", None))],
+        Selected::Decision(_) | Selected::Logged(_) | Selected::Fleet(_) => {
+            vec![Some(hint("o", Some("open campaign")))]
+        }
         Selected::Nothing => vec![Some(hint("c", Some("all campaigns")))],
     }
     .into_iter()
@@ -1064,7 +1406,7 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
         out.splice(0..0, [hint("j k", Some("scroll")), hint("h", Some("list"))]);
     }
     if wide {
-        out.push(hint("1-6", None));
+        out.push(hint("1-9", None));
         out.extend([
             hint("/", None),
             hint("y", None),
@@ -1077,7 +1419,12 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
     }
     if matches!(
         selected(app),
-        Selected::Pr(_) | Selected::Author(_) | Selected::Run(_)
+        Selected::Pr(_)
+            | Selected::Author(_)
+            | Selected::Run(_)
+            | Selected::Decision(_)
+            | Selected::Logged(_)
+            | Selected::Fleet(_)
     ) {
         out.retain(|(key, _)| *key != "y");
     }
@@ -1089,9 +1436,10 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
     let wide = area.width >= 100;
     let stale = app.fetch.error.as_deref().filter(|_| app.fetch.loaded);
+    let toggle_lines = toggles(app, area.width as usize, wide);
     let [head, switches, warning, notes, banner, body, foot] = Layout::vertical([
         Constraint::Length(1),
-        Constraint::Length(if wide { 1 } else { 2 }),
+        Constraint::Length(toggle_lines.len() as u16),
         Constraint::Length(u16::from(app.config_warning.is_some())),
         Constraint::Length(u16::from(g.owner_notes_pending > 0)),
         Constraint::Length(u16::from(stale.is_some())),
@@ -1109,29 +1457,6 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
             vec![]
         },
     );
-    let labels = ["asks", "checks", "camps", "PRs", "Shipped", "Build"];
-    let toggles = labels
-        .iter()
-        .enumerate()
-        .map(|(i, name)| {
-            format!(
-                "{} {}{}",
-                i + 1,
-                name,
-                if app.config.panels[i] { "+" } else { "-" }
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(" · ");
-    let toggle_lines = if wide {
-        vec![Line::from(sp(toggles, t.sub))]
-    } else {
-        let parts: Vec<_> = toggles.split(" · ").collect();
-        vec![
-            Line::from(sp(parts[..3].join(" · "), t.sub)),
-            Line::from(sp(parts[3..].join(" · "), t.sub)),
-        ]
-    };
     f.render_widget(Paragraph::new(toggle_lines), switches);
     if let Some(text) = &app.config_warning {
         f.render_widget(
@@ -1146,7 +1471,7 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
 
     if !app.config.panels.iter().any(|p| *p) {
         f.render_widget(
-            Paragraph::new("All panels hidden · press 1-6 to show").centered(),
+            Paragraph::new("All panels hidden · press 1-9 to show").centered(),
             body,
         );
         return;
@@ -1165,7 +1490,14 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
         && g.campaigns.is_empty()
         && g.quiet.count == 0;
     let state_height = if ledger_state && (!compact || ids(app).is_empty()) {
-        (list.height as usize).saturating_sub(external_height(app, list.height as usize))
+        let reserve =
+            (list.height as usize).saturating_sub(external_height(app, list.height as usize));
+        // Under panels 7-9 the state keeps only the lines it draws; they take the rest.
+        if shown(app).iter().any(|p| !matches!(p, Panel::Gh(_))) {
+            reserve.min(state_lines(app, list.width as usize).map_or(0, |(l, _)| l.len()))
+        } else {
+            reserve
+        }
     } else {
         0
     };
@@ -1184,11 +1516,7 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
         height: list.height.saturating_sub(state_height as u16),
         ..list
     };
-    let (mut lines, mut hits) = if ledger_state
-        && [&app.github, &app.shipped, &app.builds]
-            .iter()
-            .any(|d| !d.sources.is_empty())
-    {
+    let (mut lines, mut hits) = if ledger_state && !shown(app).is_empty() {
         // The placeholder reserve was already removed from list_rows.
         external_lines(app, list_rows.width as usize, list_rows.height as usize, 0)
     } else if compact {
@@ -1257,13 +1585,84 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     }
 }
 
+/// The panel switches: one line when wide, else 1-3, 4-6 and 7-9 on lines of their own
+/// (7-9 folded into the second while all hidden), each wrapped to the width.
+fn toggles(app: &App, width: usize, wide: bool) -> Vec<Line<'static>> {
+    const LABELS: [&str; 9] = [
+        "asks",
+        "checks",
+        "camps",
+        "PRs",
+        "Shipped",
+        "Build",
+        "Decisions",
+        "Fleet",
+        "Log",
+    ];
+    let mut parts: Vec<String> = LABELS
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let on = if app.config.panels[i] { "+" } else { "-" };
+            format!("{} {name}{on}", i + 1)
+        })
+        .collect();
+    // Narrow, 7-9 all hidden (the default) cost no extra line: the six-panel layout keeps
+    // its rows. The help names them.
+    let folded = !wide && !app.config.panels[6..].iter().any(|p| *p);
+    if folded {
+        parts.truncate(6);
+        parts.push("7-9 off".into());
+    }
+    let groups: Vec<&[String]> = if wide {
+        vec![&parts[..]]
+    } else if folded {
+        vec![&parts[..3], &parts[3..]]
+    } else {
+        vec![&parts[..3], &parts[3..6], &parts[6..]]
+    };
+    let mut out = vec![];
+    for group in groups {
+        let mut line = String::new();
+        for part in group {
+            if !line.is_empty() && line.chars().count() + 3 + part.chars().count() > width {
+                out.push(Line::from(sp(std::mem::take(&mut line), app.theme.sub)));
+            }
+            if !line.is_empty() {
+                line += " · ";
+            }
+            line += part;
+        }
+        out.push(Line::from(sp(line, app.theme.sub)));
+    }
+    out
+}
+
 /// Instead of the list: before the first snapshot, without one, or with nothing in it.
 fn state(f: &mut Frame, app: &App, area: Rect) -> bool {
+    let Some((lines, centred)) = state_lines(app, area.width as usize) else {
+        return false;
+    };
+    if !centred {
+        f.render_widget(Paragraph::new(lines), area);
+        return true;
+    }
+    let height = (lines.len() as u16).min(area.height);
+    let middle = Rect {
+        y: area.y + (area.height - height) / 3,
+        height,
+        ..area
+    };
+    f.render_widget(Paragraph::new(lines).centered(), middle);
+    true
+}
+
+/// The state's lines, and whether they are centred (the loading shape is not).
+fn state_lines(app: &App, w: usize) -> Option<(Vec<Line<'static>>, bool)> {
     let (t, g, fetch) = (&app.theme, &app.data.glance, &app.fetch);
     let lines = match (&fetch.error, fetch.loaded) {
         (None, false) => {
             // The shape of what is coming, so the pane does not jump when it arrives.
-            let w = area.width as usize;
             let bar =
                 |pct: usize| Line::from(sp(format!(" {}", "░".repeat(w * pct / 100)), t.rule));
             let lines = vec![
@@ -1277,15 +1676,14 @@ fn state(f: &mut Frame, app: &App, area: Rect) -> bool {
                 bar(84),
                 bar(68),
             ];
-            f.render_widget(Paragraph::new(lines), area);
-            return true;
+            return Some((lines, false));
         }
         (Some(error), false) => {
             let mut lines = vec![
                 Line::from(bold("Cannot reach the hub", t.check)),
                 Line::raw(""),
             ];
-            let why = wrap(error, area.width.saturating_sub(4) as usize);
+            let why = wrap(error, w.saturating_sub(4));
             lines.extend(why.into_iter().take(3).map(|l| Line::from(sp(l, t.sub))));
             lines.push(Line::from(sp("No ledger snapshot yet.", t.sub)));
             lines.push(Line::raw(""));
@@ -1300,10 +1698,22 @@ fn state(f: &mut Frame, app: &App, area: Rect) -> bool {
             && g.attention.is_empty()
             && g.campaigns.is_empty() =>
         {
-            vec![
-                Line::from(sp("No visible ledger rows", t.sub)),
-                Line::from(sp("1-3 show panels · / filters", t.dim)),
-            ]
+            // Above panels 7-9 the line names what is missing; their own rows follow.
+            let first = if !shown(app).iter().any(|p| !matches!(p, Panel::Gh(_))) {
+                "No visible ledger rows"
+            } else if !app.filter.is_empty() {
+                "No matching asks, checks or campaigns"
+            } else if !app.config.panels[..3].iter().any(|p| *p) {
+                "Asks, checks and campaigns hidden"
+            } else {
+                "No asks, checks or campaigns shown"
+            };
+            let second = match first {
+                "No visible ledger rows" => "1-3 show panels · / filters",
+                "No matching asks, checks or campaigns" => "Esc clears the filter",
+                _ => "1-3 show them · / filters",
+            };
+            vec![Line::from(sp(first, t.sub)), Line::from(sp(second, t.dim))]
         }
         _ if g.needs_you.is_empty()
             && g.attention.is_empty()
@@ -1319,16 +1729,9 @@ fn state(f: &mut Frame, app: &App, area: Rect) -> bool {
                 Line::from(vec![bold("c", t.accent), sp(" all campaigns", t.dim)]),
             ]
         }
-        _ => return false,
+        _ => return None,
     };
-    let height = (lines.len() as u16).min(area.height);
-    let middle = Rect {
-        y: area.y + (area.height - height) / 3,
-        height,
-        ..area
-    };
-    f.render_widget(Paragraph::new(lines).centered(), middle);
-    true
+    Some((lines, true))
 }
 
 /// The right pane follows the cursor: an ask's full text and options, what a "to check"
@@ -1475,6 +1878,57 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
                     .map_or_else(String::new, |s| s.status(app.observed_tick))
             ),
         ),
+        Selected::Decision(e) => (
+            format!("decision #{} · {}", e.id, app.data.campaign.root.name),
+            vec![Line::from(sp(
+                format!(
+                    "in force · cached read {} ago",
+                    app.scope.age(app.observed_at).unwrap_or_default()
+                ),
+                t.sub,
+            ))],
+            format!(
+                "{}\nFrom the campaign read on hand. Glance r does not refresh it; o reads it again.",
+                e.text
+            ),
+        ),
+        Selected::Logged(e) => (
+            format!(
+                "logged decision #{} · {}",
+                e.id, app.data.campaign.root.name
+            ),
+            vec![Line::from(sp(
+                format!("{} · {} · recent log sample", e.at, e.lane),
+                t.sub,
+            ))],
+            format!(
+                "{}\nHistory from the read's recent log sample, not necessarily in force.",
+                e.text
+            ),
+        ),
+        Selected::Fleet(c) => {
+            let mut head = vec![
+                sp("lead ", t.dim),
+                ui::lead_mark(t, &c.lead, c.lead_waiting),
+                sp(format!(" {}", c.lead), t.sub),
+            ];
+            if c.parked {
+                head.push(sp(" · parked", t.dim));
+            }
+            let [w, r, o] = c
+                .lanes
+                .observed()
+                .map(|n| n.map_or("?".into(), |n| n.to_string()));
+            (
+                format!("{} · #{} · fleet", c.name, c.id),
+                vec![Line::from(head)],
+                format!(
+                    "{w} working · {r} ready · {o} open lanes, as the glance reported them; ? \
+                     where it did not.\nListed campaigns only: not every host or agent.\n{}",
+                    c.status_text()
+                ),
+            )
+        }
         Selected::Nothing => return,
     };
     // The pane's inside, as `ui::pane` will draw it, so the text wraps before the title
@@ -1543,7 +1997,8 @@ fn activity(f: &mut Frame, app: &App, area: Rect) {
     let root = match selected(app) {
         Selected::Ask(a) => a.root_id,
         Selected::Check(a) => a.root_id,
-        Selected::Campaign(c) => c.id,
+        Selected::Campaign(c) | Selected::Fleet(c) => c.id,
+        Selected::Decision(_) | Selected::Logged(_) => app.data.campaign.root.id,
         Selected::Pr(_) | Selected::Author(_) | Selected::Run(_) | Selected::Nothing => return,
     };
     let Some(c) = g.campaigns.iter().find(|c| c.id == root) else {
@@ -1586,6 +2041,7 @@ mod tests {
             working: 3,
             ready: 2,
             open: 7,
+            known: [true; 3],
         };
         c.tmp = serde_json::Value::Null;
         let row = |app: &App, width| {

@@ -11,26 +11,31 @@ use std::{
 #[serde(default)]
 pub struct Config {
     #[serde(deserialize_with = "panels")]
-    pub panels: [bool; 6],
+    /// Asks, checks, campaigns, PRs, Shipped, Build, Decisions, Fleet, Decision log.
+    pub panels: [bool; 9],
     pub repos: Vec<String>,
 }
 impl Default for Config {
     fn default() -> Self {
         Self {
-            panels: [true; 6],
+            panels: DEFAULT_PANELS,
             repos: vec!["trip-to-japan/trip".into()],
         }
     }
 }
-fn panels<'de, D: serde::Deserializer<'de>>(d: D) -> Result<[bool; 6], D::Error> {
+/// The six earlier panels on, the three ledger panels (7-9) off.
+pub const DEFAULT_PANELS: [bool; 9] = [true, true, true, true, true, true, false, false, false];
+/// An older file's choices are kept; the panels it predates take their defaults.
+fn panels<'de, D: serde::Deserializer<'de>>(d: D) -> Result<[bool; 9], D::Error> {
     let values = Vec::<bool>::deserialize(d)?;
-    match values.as_slice() {
-        [a, b, c, d] => Ok([*a, *b, *c, *d, true, true]),
-        [a, b, c, d, e, f] => Ok([*a, *b, *c, *d, *e, *f]),
-        _ => Err(serde::de::Error::custom(
-            "expected four or six panel booleans",
-        )),
+    if ![4, 6, 9].contains(&values.len()) {
+        return Err(serde::de::Error::custom(
+            "expected four, six or nine panel booleans",
+        ));
     }
+    let mut out = DEFAULT_PANELS;
+    out[..values.len()].copy_from_slice(&values);
+    Ok(out)
 }
 pub fn repo_valid(repo: &str) -> bool {
     let Some((owner, name)) = repo.split_once('/') else {
@@ -127,17 +132,41 @@ mod tests {
         let c: Config =
             serde_json::from_str(r#"{"panels":[false,true,false,true],"repos":["kept/private"]}"#)
                 .unwrap();
-        assert_eq!(c.panels, [false, true, false, true, true, true]);
+        assert_eq!(
+            c.panels,
+            [false, true, false, true, true, true, false, false, false]
+        );
         assert_eq!(c.repos, ["kept/private"]);
         let read: Config = serde_json::from_slice(&serde_json::to_vec(&c).unwrap()).unwrap();
         assert_eq!(read.panels, c.panels);
-        assert_eq!(Config::default().panels, [true; 6]);
+        assert_eq!(
+            Config::default().panels,
+            [true, true, true, true, true, true, false, false, false]
+        );
+        let six: Config = serde_json::from_str(
+            r#"{"panels":[false,true,false,true,false,true],"repos":["kept/six"]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            (six.panels, six.repos),
+            (
+                [false, true, false, true, false, true, false, false, false],
+                vec!["kept/six".to_string()]
+            )
+        );
+        let nine = [true, false, true, false, true, false, true, true, false];
+        let c: Config = serde_json::from_value(serde_json::json!({"panels": nine})).unwrap();
+        let read: Config = serde_json::from_slice(&serde_json::to_vec(&c).unwrap()).unwrap();
+        assert_eq!((c.panels, read.panels), (nine, nine));
         for values in [
             "[]",
             "[true]",
             "[true,true,true,true,true]",
             "[true,true,true,true,true,true,true]",
+            "[true,true,true,true,true,true,true,true]",
+            "[true,true,true,true,true,true,true,true,true,true]",
             "[true,true,true,1]",
+            "[true,true,true,true,true,true,true,true,1]",
         ] {
             assert!(serde_json::from_str::<Config>(&format!(r#"{{"panels":{values}}}"#)).is_err());
         }
@@ -149,13 +178,13 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         assert!(Config::load(&path).1.is_none());
         let c = Config {
-            panels: [false; 6],
+            panels: [false; 9],
             repos: vec!["owner/other.repo".into()],
         };
         c.save(&path).unwrap();
         let (read, warning) = Config::load(&path);
         assert!(warning.is_none());
-        assert_eq!(read.panels, [false; 6]);
+        assert_eq!(read.panels, [false; 9]);
         assert_eq!(read.repos, c.repos);
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(

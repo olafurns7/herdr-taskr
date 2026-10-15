@@ -39,7 +39,7 @@ one line of JSON.
 
 ![Glance, dark theme](images/glance-dark.png)
 
-The first screen has six switchable panels, top to bottom:
+The first screen has nine switchable panels, top to bottom:
 
 - **Needs you:** open owner asks. Red in the header means an open owner ask. `BLOCKING` marks an ask whose work has stopped for your answer.
   `HUB` marks a question the hub relayed from its own dialog
@@ -60,25 +60,42 @@ The first screen has six switchable panels, top to bottom:
   fetching or changing the identity of an unrelated selection.
 - **Build queue:** observed running and queued GitHub Actions runs, workflow,
   branch, age and exact state. Unknown states are disclosed separately.
+- **Decisions (7):** the goal summary, plan version and plan-document metadata,
+  and the decisions in force of one campaign: the last one you opened with `l`
+  (or `o` on a row of these panels), as cached when it was read, with its name,
+  id and read age. Until you open one it says so. Moving the cursor never
+  changes it, and Glance `r` does not refresh it; `l` or `o` reads it again and
+  `esc` returns to the glance. A failed read keeps the last good one and shows
+  the error.
+- **Fleet (8):** one row per campaign the glance lists, with working, ready and
+  open lane counts as reported and the lead's state. A count the snapshot left
+  out shows `?` and marks the totals `+?`. It covers listed campaigns only, not
+  every host or agent, and works with Campaigns hidden.
+- **Decision log (9):** decision events in the same cached read's recent log
+  sample (up to 100 events), apart from the decisions in force.
 - **Campaigns:** every open campaign with its lead's state, one dot per
   lane, four hours of activity as a small graph, and its latest milestone.
   Quiet campaigns fold into one line at the bottom.
 
-Press `1` (asks), `2` (checks), `3` (campaigns), `4` (Open PRs), `5` (Shipped), or `6` (Build queue) in
+Press `1` (asks), `2` (checks), `3` (campaigns), `4` (Open PRs), `5` (Shipped), `6` (Build queue),
+`7` (Decisions), `8` (Fleet) or `9` (Decision log) in
 Glance to show or hide a panel. The switch row uses `+` for shown and `-`
-for hidden. All six start enabled. Hidden owner asks
-remain counted in the header. Hidden rows cannot receive actions. All panels
-can be hidden; `1`–`6` restore them. Campaign's `1`–`5` keys still select panes.
+for hidden. The first six start enabled, 7-9 hidden. Hidden owner asks
+remain counted in the header. Hidden rows cannot receive actions. Rows of
+7-9 are informational: only `o` acts on them, opening their campaign. `/`
+filters Fleet by name, not 7 or 9. All panels
+can be hidden; `1`–`9` restore them. Campaign's `1`–`5` keys still select panes.
 
 Visibility and the repository list live in `$XDG_CONFIG_HOME/taskr/tui.json`,
 or `~/.config/taskr/tui.json` when XDG_CONFIG_HOME is unset:
 
 ```json
-{"panels":[true,true,true,true,true,true],"repos":["trip-to-japan/trip"]}
+{"panels":[true,true,true,true,true,true,false,false,false],"repos":["trip-to-japan/trip"]}
 ```
 
-Existing four-boolean configs keep their choices and repo list, appending
-Shipped and Build queue enabled. Saves use six booleans. Other lengths or
+Existing four- and six-boolean configs keep their choices and repo list; the
+panels they predate take their defaults (Shipped and Build queue enabled, 7-9
+hidden). Saves use nine booleans. Other lengths or
 non-boolean entries are invalid and retain the bad-config preservation guard.
 Up to eight `owner/repo` names are accepted. Toggle saves preserve the repo
 list and replace this allowlisted config atomically with mode 0600. Bad or
@@ -191,7 +208,7 @@ pools stay, dimmed. Runs that wait on the old heavy flock show only as
 | `ctrl-d` `ctrl-u` | Half a page |
 | `PgDn` `PgUp` | A page (the focused detail, a document, the answer dialog) |
 | `tab`, `shift-tab` | Next or previous section, then the detail pane (glance), or pane (campaign) |
-| `1`-`4` | Show/hide a Glance panel (remembered) |
+| `1`-`9` | Show/hide a Glance panel (remembered) |
 | `1`-`5` | Jump to a pane (campaign) |
 | `Enter` | Go to the row's agent pane in Herdr |
 | `l` | Open the campaign |
@@ -201,7 +218,7 @@ pools stay, dimmed. Runs that wait on the old heavy flock show only as
 | `s` | Slotr: who holds a slot and who waits; `s` again closes |
 | `a` | Answer the selected ask |
 | `p` | Park or unpark a campaign (asks first) |
-| `o` | Read the report or document |
+| `o` | Read the report or document; on a Decisions, Fleet or log row, open its campaign |
 | `y` | Copy the command that jumps to the row's pane |
 | `r` | Refresh now |
 | `m` | Mouse on or off |
