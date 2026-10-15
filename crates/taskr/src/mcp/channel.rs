@@ -860,6 +860,9 @@ impl Loop {
                 if ran.outcome == "rejected" {
                     return self.stopped(format!("message alarm refused: {}", ran.error()));
                 }
+                if ran.outcome == "usage" {
+                    self.tracks.get_mut(&e).expect("tracked event").exhausted = true;
+                }
                 if ran.outcome != "committed" {
                     return log(format!(
                         "message {e} alarm {}: {}",

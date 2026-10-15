@@ -85,7 +85,18 @@ fn routing_identity_text_status_and_loss_safe_waits() {
         &["prompt", &target, "--as", &sender, "--text", "hello"],
         6,
     );
-    refused(&h, &[], &["prompt", &target, "--text", "hello"], 6);
+    refused(
+        &h,
+        &[],
+        &["prompt", &target, "--as", &target, "--text", "hello"],
+        6,
+    );
+    refused(
+        &h,
+        &[],
+        &["prompt", &worker, "--as", &sender, "--text", "hello"],
+        6,
+    );
     refused(
         &h,
         &[],
@@ -238,6 +249,37 @@ fn pane_fallback_overrides_and_hidden_route_share_the_decision() {
     );
     let pane = h.ok(&[], &["prompt", &target, "--as", &sender, "--text", "pane"]);
     assert_eq!(pane["path"], "pane");
+    let (_, _, worker_env) = h.lane("claude", "implementer");
+    // P2: the worker environment does not change the existing pane protocol.
+    for extra in [
+        vec![],
+        vec!["--pane"],
+        vec!["--as", sender.as_str(), "--pane"],
+    ] {
+        let mut args = vec!["prompt", target.as_str(), "--text", "worker pane"];
+        args.extend(extra);
+        assert_eq!(h.ok(&worker_env, &args)["path"], "pane");
+    }
+    // P3: begin still reopens completed roots on the pane path.
+    for status in ["done", "ready", "failed"] {
+        h.conn()
+            .execute(
+                "update tasks set status=? where id=?",
+                taskr_core::db::params![status, target],
+            )
+            .unwrap();
+        assert_eq!(
+            h.ok(&[], &["prompt", &target, "--text", "reopen"])["path"],
+            "pane"
+        );
+        let status: String = h
+            .conn()
+            .query_row("select status from tasks where id=?", [&target], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(status, "open");
+    }
     let generation = taskr_core::store::delivery::generation(&h.conn(), target.parse().unwrap())
         .unwrap()
         .to_string();
@@ -263,6 +305,13 @@ fn pane_fallback_overrides_and_hidden_route_share_the_decision() {
         ],
     );
     assert_eq!(pane["path"], "pane");
+    assert_eq!(
+        h.ok(
+            &worker_env,
+            &["prompt", &target, "--text", "legacy live root"]
+        )["path"],
+        "pane"
+    );
     let push = h.ok(
         &[],
         &["prompt", &target, "--as", &sender, "--text", "hidden push"],
@@ -286,6 +335,7 @@ fn incoming_message_drives_glance_activity_without_owner_badges() {
     let h = Harness::new();
     let sender = root(&h, "sender");
     let target = root(&h, "receiver");
+    h.ok(&[], &["set", &sender, "glance.state=parked"]);
     h.ok(&[], &["set", &target, "glance.state=parked"]);
     lease(&h, &target, "mcp-channel-test");
     let sent = h.ok(
@@ -310,6 +360,7 @@ fn incoming_message_drives_glance_activity_without_owner_badges() {
         "{glance}"
     );
     let attention = glance["attention"].as_array().unwrap();
+    assert!(!attention.iter().any(|a|a["kind"]=="parked_active" && a["root_id"]==sender.parse::<i64>().unwrap()), "{glance}");
     assert!(
         attention
             .iter()

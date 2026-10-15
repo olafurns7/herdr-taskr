@@ -203,10 +203,12 @@ fn client_ask_stores_the_same_data_on_the_hub() {
         .spawn()
         .unwrap());
     let mut url = String::new();
-    std::io::BufReader::new(hub.0.stdout.take().unwrap())
-        .read_line(&mut url)
-        .unwrap();
+    let mut output = std::io::BufReader::new(hub.0.stdout.take().unwrap());
+    output.read_line(&mut url).unwrap();
+    let mut loopback = String::new();
+    output.read_line(&mut loopback).unwrap();
     assert!(url.starts_with("http://[::1]:"), "{url:?}");
+    assert!(loopback.starts_with("http://127.0.0.1:"), "{loopback:?}");
     std::fs::create_dir_all(h.home.join("client/.local/state/taskr")).unwrap();
     std::fs::write(h.home.join("client/.local/state/taskr/server.url"), &url).unwrap();
     let mut client = contract.to_vec();

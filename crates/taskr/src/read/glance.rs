@@ -326,7 +326,7 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
             r.activity_id = one(
                 db,
                 &format!(
-                    "{TREES}select max(e.id) as id from tree join events e on (e.task_id=tree.id or (e.kind='message' and e.recipient_task_id=tree.id)) where tree.root=? and (e.task_id!=tree.root or e.kind in ('prompt','message')) and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not {noise}",
+                    "{TREES}select max(e.id) as id from tree join events e on (e.task_id=tree.id or (e.kind='message' and e.recipient_task_id=tree.id)) where tree.root=? and (e.task_id!=tree.root or e.kind='prompt' or (e.kind='message' and e.recipient_task_id=tree.root)) and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not {noise}",
                     noise = noise
                 ),
                 vec![rid.into()],

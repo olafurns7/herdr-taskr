@@ -975,6 +975,8 @@ fn client_lane(h: &Harness, client: &Env) -> (String, Env) {
 
 enum Act {
     Pass,
+    /// An older hub's response, without executing the request.
+    Reply(Value),
     /// The hub runs it; the reply never reaches the caller.
     LoseReply,
     /// Never sent to the hub.
@@ -1026,6 +1028,16 @@ fn proxy(hub_port: u16, rule: Rule) -> (u16, mpsc::Receiver<Value>) {
                 let argv: Vec<String> = serde_json::from_value(req["argv"].clone()).unwrap();
                 let act = rule(&argv);
                 let _ = send.send(req);
+                if let Act::Reply(value) = &act {
+                    let body = serde_json::to_vec(value).unwrap();
+                    let head = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    let _ = client.write_all(head.as_bytes());
+                    let _ = client.write_all(&body);
+                    return;
+                }
                 if matches!(act, Act::LoseRequest) {
                     return;
                 }
@@ -1037,7 +1049,7 @@ fn proxy(hub_port: u16, rule: Rule) -> (u16, mpsc::Receiver<Value>) {
                 let mut reply = Vec::new();
                 hub.read_to_end(&mut reply).unwrap();
                 match act {
-                    Act::LoseReply | Act::LoseRequest => {}
+                    Act::LoseReply | Act::LoseRequest | Act::Reply(_) => {}
                     Act::Pass => {
                         let _ = client.write_all(&reply);
                     }
@@ -1889,6 +1901,16 @@ fn orchestrator_messages_receive_ack_restart_generation_and_alarm() {
     assert_eq!(status(&e)["state"], "acked");
     let second = send("nobody is listening");
     let e2 = second["event"].to_string();
+    let (_, _, worker_env) = h.lane("claude", "implementer");
+    h.ok(
+        &worker_env,
+        &[
+            "note",
+            "squatted alarm key",
+            "--key",
+            &format!("message_unreceived:{e2}"),
+        ],
+    );
     for _ in 0..3 {
         c.expect_push(Duration::from_secs(20));
     }
@@ -1907,6 +1929,21 @@ fn orchestrator_messages_receive_ack_restart_generation_and_alarm() {
     );
     assert_eq!(alarm["event"]["data"]["reason"], "message_unreceived");
     assert_eq!(alarm["event"]["data"]["event"], second["event"]);
+    assert_eq!(alarm["event"]["task_id"], n(&sender));
+    let log = run(&h, &[], &["--json", "log", &sender]);
+    assert_eq!(log.0, Some(0));
+    assert!(
+        log.1
+            .contains(&format!("message {e2} to root {target} has no receipt")),
+        "{log:?}"
+    );
+    let campaign = h.ok(&[], &["campaign", &sender]);
+    assert!(
+        campaign
+            .to_string()
+            .contains(&format!("message {e2} to root {target} has no receipt")),
+        "{campaign}"
+    );
     assert_eq!(c.close().0, Some(0));
     let mut c = Chan::start(&h, &[], &["--as", &target, "--session", &generation], 60);
     c.expect_push(Duration::from_secs(20));
@@ -1920,6 +1957,53 @@ fn orchestrator_messages_receive_ack_restart_generation_and_alarm() {
         ),
         "1"
     );
+    assert_eq!(c.close().0, Some(0));
+}
+
+#[test]
+fn orchestrator_alarm_usage_is_not_retried_on_an_older_hub() {
+    let h = Harness::new();
+    let sender = id(
+        &h.ok(&[], &["new", "sender", "--role", "orchestrator"]),
+        "task_id",
+    );
+    let (_hub, url, _) = start_hub(&h);
+    let client_env = client(&h, &url);
+    let target = id(
+        &h.ok(&client_env, &["new", "target", "--role", "orchestrator"]),
+        "task_id",
+    );
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let (proxy_port, _) = proxy(
+        port(&url),
+        Arc::new(move |argv| {
+            if argv.iter().any(|a| a == "exhausted") {
+                seen.fetch_add(1, Ordering::SeqCst);
+                Act::Reply(
+                    json!({"exit":2,"stdout":"{\"error\":\"unknown delivery exhausted\"}\n","stderr":""}),
+                )
+            } else {
+                Act::Pass
+            }
+        }),
+    );
+    let client_env = client(&h, &format!("http://[::1]:{proxy_port}"));
+    let mut c = Chan::start(&h, &client_env, &["--as", &target, "--session", "0"], 60);
+    held(&h, &target);
+    h.ok(
+        &[],
+        &["prompt", &target, "--as", &sender, "--text", "older hub"],
+    );
+    for _ in 0..3 {
+        c.expect_push(Duration::from_secs(20));
+    }
+    until("the usage reply", Duration::from_secs(20), || {
+        c.stderr().contains("alarm usage")
+    });
+    assert!(c.quiet(Duration::from_secs(3)).is_empty());
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "usage was retried");
+    assert_eq!(c.stderr().matches("alarm usage").count(), 1);
     assert_eq!(c.close().0, Some(0));
 }
 

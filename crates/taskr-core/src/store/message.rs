@@ -17,42 +17,35 @@ pub fn route(
     transaction(db, |tx| {
         let to = open_task(tx, target)?;
         if to.parent.is_some() {
+            if sender != 0 {
+                return Err(reject(
+                    "--as needs a root target; worker prompts use the pane protocol",
+                ));
+            }
             if push {
                 return Err(reject("--push needs a root target"));
             }
             return Ok(None);
         }
-        if to.status != "open" || to.launch.is_some() {
-            return Err(reject(format!(
-                "target {target} must be an open root without a launch"
-            )));
+        if sender == target {
+            return Err(reject("a root cannot message itself"));
         }
         let generation = consumer::push_generation(tx, &to)?;
-        let from = if sender != 0 {
-            let t = worker::resolve(tx, sender)?;
-            if t.launch.is_some() {
-                return Err(reject("the sender root must have no launch"));
-            }
-            Some(t)
-        } else {
-            if push
-                || !pane && generation.is_some()
-                || !env("TASKR_TASK").is_empty()
-                || !env("TASKR_LAUNCH").is_empty()
-            {
-                return Err(reject(
-                    "root messages need --as SENDER_ROOT (a worker cannot send them)",
-                ));
-            }
-            None
-        };
-        if pane || generation.is_none() {
+        if pane || sender == 0 || generation.is_none() {
             if push {
+                if sender == 0 {
+                    return Err(reject(
+                        "root messages need --as SENDER_ROOT (a worker cannot send them)",
+                    ));
+                }
                 return Err(reject(format!("root {target} is not push-live")));
             }
             return Ok(None);
         }
-        let from = from.expect("push sender checked");
+        let from = worker::resolve(tx, sender)?;
+        if from.launch.is_some() {
+            return Err(reject("the sender root must have no launch"));
+        }
         if !file.is_empty()
             || text.is_empty()
             || text.len() > 4096
@@ -144,9 +137,8 @@ pub fn unreceived(
         if count < 3 || received || to.acked >= event_id {
             return Ok(json!({"alarmed":false}));
         }
-        let key = format!("message_unreceived:{event_id}");
         if let Some(e) = tx
-            .query_row("select id from events where event_key=?", [&key], |r| {
+            .query_row("select id from events where kind='herdr' and related_event_id=? and task_id=? and recipient_task_id=? and json_extract(data,'$.reason')='message_unreceived'", params![event_id,sender,sender], |r| {
                 r.get::<_, i64>(0)
             })
             .optional()?
@@ -156,7 +148,7 @@ pub fn unreceived(
         let e = event(
             tx,
             Event {
-                task: to.id,
+                task: sender,
                 to: Some(sender),
                 kind: "herdr",
                 summary: &format!(
@@ -167,7 +159,6 @@ pub fn unreceived(
                     json!({"reason":"message_unreceived","event":event_id,"target":to.id,"gen":session}),
                 ),
                 related: Some(event_id),
-                key: &key,
                 ..Event::default()
             },
         )?;
