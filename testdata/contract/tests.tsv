@@ -298,6 +298,7 @@ TestInstallRunbookBootstrap	write:new	no	b	no executable CLI seam; subprocess fi
 TestInstallSkillGH	write:new	no	b	no executable CLI seam; subprocess fixture bypasses TASKR_BIN: needs target-process protocol
 TestInstallSkillLinks	write:new	no	b	no executable CLI seam; subprocess fixture bypasses TASKR_BIN: needs target-process protocol
 TestInstallSkillPermsNoAgentLinks	write:new	no	b	no executable CLI seam; subprocess fixture bypasses TASKR_BIN: needs target-process protocol
+TestInstallTUI	write:new	no	b	no executable CLI seam; subprocess fixture bypasses TASKR_BIN: needs target-process protocol
 TestInstallTokenTransport	write:new	no	b	no executable CLI seam; subprocess fixture bypasses TASKR_BIN: needs target-process protocol
 TestLateReceiptAfterNoReceipt	write:new	yes	a	CLI through executable seam; Go SQL seed/read helpers and data types only
 TestLaunchRejectsRootTask	write:launch	yes	a	CLI through executable seam; Go SQL seed/read helpers and data types only

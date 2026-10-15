@@ -363,6 +363,8 @@ TestInstallSkillLinks		install_test.go	write:new	b	todo		install:install.sh
 TestInstallSkillLinks	tc.name	install_test.go	write:new	b	todo		install:install.sh		
 TestInstallSkillPermsNoAgentLinks		install_test.go	write:new	b	todo		install:install.sh		
 TestInstallSkillPermsNoAgentLinks	tc.name	install_test.go	write:new	b	todo		install:install.sh		
+TestInstallTUI		install_test.go	write:new	b	todo		install:install.sh		
+TestInstallTUI	transport+"/"+scenario	install_test.go	write:new	b	todo		install:install.sh		
 TestInstallTokenTransport		install_test.go	write:new	b	todo		install:install.sh		
 TestInstallTokenTransport	tc.name	install_test.go	write:new	b	todo		install:install.sh		
 TestInstallTokenTransport	"missing"	install_test.go	write:new	b	todo		install:install.sh		
