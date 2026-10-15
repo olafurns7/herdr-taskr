@@ -11,10 +11,14 @@ pub fn relay(
     cwd: &str,
     env: &Value,
     json_mode: bool,
+    key: &str,
 ) -> Result<Option<ExitCode>> {
     let mut f = taskr_core::goflag::FlagSet::new("prompt", json_mode);
     f.string("file", "", "")
         .string("text", "", "")
+        .int("as", 0, "")
+        .bool("push", false, "")
+        .bool("pane", false, "")
         .bool("confirm", false, "")
         .int("confirm-timeout", 60000, "")
         .int("receipt-timeout", 300000, "");
@@ -44,6 +48,18 @@ pub fn relay(
             receipt.to_string()
         },
     ];
+    for name in ["as", "push", "pane"] {
+        if f.was_set(name) {
+            begin.push(format!(
+                "--{name}={}",
+                if name == "as" {
+                    f.get_int(name).to_string()
+                } else {
+                    f.get_bool(name).to_string()
+                }
+            ));
+        }
+    }
     if !file.is_empty() {
         begin.extend(["--file".into(), file.into()]);
         if let Ok(b) = std::fs::read(file) {
@@ -62,7 +78,17 @@ pub fn relay(
     if crate::write::herdr::up(&sock) {
         begin.push("--local-herdr".into());
     }
-    let rep=cl.call(&request(&begin,cwd,&new_key()?,env.clone(),None),Duration::from_secs(40),true).map_err(|mut e| {if e.kind=="transport"{e.message=format!("server unreachable ({}); no attempt is known; inspect `taskr log` before any resend",e.message);}e})?;
+    let begin_key = format!("prompt_{:x}", Sha256::digest(key.as_bytes()));
+    let rep = cl.call(&request(&begin, cwd, &begin_key, env.clone(), None), Duration::from_secs(40), true).map_err(|mut e| {
+        if e.kind == "transport" {
+            e.message = if f.was_set("as") {
+                format!("prompt outcome unknown ({}); retry with: taskr --request-key {key} prompt {}; never fall back to pane", e.message, super::shell_join(args))
+            } else {
+                format!("server unreachable ({}); no attempt is known; inspect `taskr log` before any resend", e.message)
+            };
+        }
+        e
+    })?;
     let b: Value = serde_json::from_str(
         rep["stdout"]
             .as_str()
@@ -74,6 +100,13 @@ pub fn relay(
     )
     .unwrap_or(Value::Null);
     if rep["exit"] != 0 {
+        let mut message = reply_error(&rep);
+        if f.was_set("as") && rep["exit"] == 5 && message.contains("unknown") {
+            message = format!(
+                "{message}; retry with: taskr --request-key {key} prompt {}; never fall back to pane",
+                super::shell_join(args)
+            );
+        }
         return Err(Error::new(
             exit(rep["exit"].as_i64().unwrap()),
             match b["kind"].as_str() {
@@ -87,13 +120,71 @@ pub fn relay(
                 Some("route") => "route",
                 _ => "rejected",
             },
-            reply_error(&rep),
+            message,
         ));
     }
-    if b["route"] == "server" {
-        return Ok(None);
+    if b["path"] == "push" {
+        println!(
+            "{}{}",
+            if f.json() { "" } else { "m1 " },
+            taskr_core::compact_json(&b).unwrap()
+        );
+        return Ok(Some(ExitCode::Ok));
     }
-    let attempt = b["attempt_id"].as_i64().unwrap_or(0);
+    if b["route"] == "server" {
+        if b["path"] != "pane" {
+            return Ok(None);
+        }
+        // The server already chose pane; a newly live lease must not change that route.
+        let mut argv: Vec<String> = lead
+            .iter()
+            .cloned()
+            .chain(["prompt".into(), f.positional[0].clone(), "--pane".into()])
+            .collect();
+        if f.json() && !argv.iter().any(|s| s == "--json") {
+            argv.insert(0, "--json".into());
+        }
+        for name in [
+            "file",
+            "text",
+            "as",
+            "confirm",
+            "confirm-timeout",
+            "receipt-timeout",
+        ] {
+            if f.was_set(name) {
+                let value = match name {
+                    "file" | "text" => f.get_string(name).to_string(),
+                    "confirm" => f.get_bool(name).to_string(),
+                    _ => f.get_int(name).to_string(),
+                };
+                argv.push(format!("--{name}={value}"));
+            }
+        }
+        let rep = cl.call(
+            &request(&argv, cwd, key, env.clone(), None),
+            super::rpc::budget(&argv) + Duration::from_secs(10),
+            true,
+        )?;
+        print!("{}", rep["stdout"].as_str().unwrap_or(""));
+        eprint!("{}", rep["stderr"].as_str().unwrap_or(""));
+        if rep["exit"] == 0 {
+            let _ = super::doc::uploads(cl, &rep, cwd, env, None);
+        }
+        return Ok(Some(exit(rep["exit"].as_i64().unwrap_or(5))));
+    }
+    let attempt = b["attempt_id"].as_i64().filter(|id| *id > 0);
+    if b["route"] != "here" || attempt.is_none() {
+        return Err(Error::transport(
+            format!(
+                "prompt outcome unknown; retry with: taskr --request-key {key} prompt {}; never fall back to pane",
+                super::shell_join(args)
+            ),
+            false,
+            true,
+        ));
+    }
+    let attempt = attempt.expect("pane route validated");
     let (outcome, detail) = crate::write::herdr::run_prompt(
         &sock,
         b["target"].as_str().unwrap_or(""),

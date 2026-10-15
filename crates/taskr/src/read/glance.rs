@@ -58,7 +58,7 @@ fn rank(kind: &str) -> i64 {
         "lead_gone" => 3,
         "host_stale" | "lead_unknown" => 4,
         "daemon_unhealthy" => 5,
-        "lead_idle_results" | "parked_active" | "lead_unregistered_silent" => 6,
+        "lead_idle_results" | "parked_active" | "lead_unregistered_silent" | "message_pending" => 6,
         _ => 0,
     }
 }
@@ -289,7 +289,7 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
         if let Some(a) = one(
             db,
             &format!(
-                "{TREES}select e.id,e.created_at from tree join events e on e.task_id=tree.id where tree.root=? and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not (e.kind='prompt_outcome' and exists(select 1 from events p where p.id=e.related_event_id and json_extract(p.data,'$.nudge') is not null)) and not {noise} order by e.id desc limit 1",
+                "{TREES}select e.id,e.created_at from tree join events e on (e.task_id=tree.id or (e.kind='message' and e.recipient_task_id=tree.id)) where tree.root=? and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not (e.kind='prompt_outcome' and exists(select 1 from events p where p.id=e.related_event_id and json_extract(p.data,'$.nudge') is not null)) and not {noise} order by e.id desc limit 1",
                 noise = noise
             ),
             vec![rid.into()],
@@ -326,7 +326,7 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
             r.activity_id = one(
                 db,
                 &format!(
-                    "{TREES}select max(e.id) as id from tree join events e on e.task_id=tree.id where tree.root=? and (e.task_id!=tree.root or e.kind='prompt') and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not {noise}",
+                    "{TREES}select max(e.id) as id from tree join events e on (e.task_id=tree.id or (e.kind='message' and e.recipient_task_id=tree.id)) where tree.root=? and (e.task_id!=tree.root or e.kind in ('prompt','message')) and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not {noise}",
                     noise = noise
                 ),
                 vec![rid.into()],
@@ -432,6 +432,20 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
         omit(&mut v, "pane_id", s(t, "pane"));
         attention.push(v);
     }
+    for pending in rows(
+        db,
+        "select r.id as root_id,r.name as campaign,min(e.created_at) as since,count(*) as count from tasks r join events e on e.recipient_task_id=r.id where r.parent_id is null and r.status='open' and e.kind='message' and e.id>r.acked_event_id and e.created_at<? group by r.id",
+        vec![
+            store::stamp(taskr_core::frozen_now().unwrap() - taskr_core::Duration::minutes(10))
+                .into(),
+        ],
+    )? {
+        let rid = n(&pending, "root_id");
+        if let Some(r) = roots.get_mut(&rid) {
+            r.active = true;
+        }
+        attention.push(json!({"kind":"message_pending","root_id":rid,"campaign":pending["campaign"],"text":"message pending","count":pending["count"],"age_ms":elapsed(s(&pending,"since"))}));
+    }
     for (host, fresh) in hosts {
         if !fresh {
             let at = meta(db, &format!("daemon_heartbeat:{host}"))?.unwrap_or_default();
@@ -455,7 +469,8 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
             || s(&r.v, "pane_id").is_empty() && n(&r.v["lanes"], "open") > 0;
     }
     attention.retain(|a| {
-        n(a, "root_id") == 0
+        s(a, "kind") == "message_pending"
+            || n(a, "root_id") == 0
             || roots[&n(a, "root_id")].active && roots[&n(a, "root_id")].v["parked"] != true
     });
     let mut ordered: Vec<_> = roots.values_mut().collect();
@@ -552,6 +567,7 @@ pub(super) fn snapshot(db: &Connection) -> Result<Value> {
             "lead_blocked"
                 | "lead_gone"
                 | "lead_idle_results"
+                | "message_pending"
                 | "parked_active"
                 | "lead_unregistered_silent"
         ) {

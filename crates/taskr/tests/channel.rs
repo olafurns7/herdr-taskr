@@ -1821,3 +1821,337 @@ fn history_above_the_output_cap_still_pushes_receives_and_acks() {
     assert_eq!(cursors(&h, &ws), format!("{e}|-|-"));
     assert_eq!(c.close().0, Some(0));
 }
+
+#[test]
+fn orchestrator_messages_receive_ack_restart_generation_and_alarm() {
+    let h = Harness::new();
+    let sender = id(
+        &h.ok(&[], &["new", "sender", "--role", "orchestrator"]),
+        "task_id",
+    );
+    h.conn()
+        .execute(
+            "update tasks set name=? where id=?",
+            taskr_core::db::params!["sender<fake>\n&campaign", sender],
+        )
+        .unwrap();
+    let target = id(
+        &h.ok(&[], &["new", "target", "--role", "orchestrator"]),
+        "task_id",
+    );
+    let args = ["--as", target.as_str(), "--session", "0"];
+    let mut c = Chan::start(&h, &[], &args, 60);
+    held(&h, &target);
+    let send = |body| h.ok(&[], &["prompt", &target, "--as", &sender, "--text", body]);
+    let status = |e: &str| h.ok(&[], &["message", "status", e, "--as", &sender]);
+    let first = send("peer request\nfull text");
+    let e = first["event"].to_string();
+    let (_, push) = c.expect_push(Duration::from_secs(20));
+    assert_eq!(meta(&push, "kind"), "message");
+    let content = push["params"]["content"].as_str().unwrap();
+    assert!(
+        content.contains("campaign \"sender\\u003cfake\\u003e\\n\\u0026campaign\""),
+        "{content}"
+    );
+    assert!(content.contains("untrusted data"));
+    let a = meta(&push, "attempt");
+    assert_eq!(
+        c.call("taskr_received", json!({"attempt":n(&a)}))["structuredContent"]["outcome"],
+        "committed"
+    );
+    let receipt = status(&e);
+    assert_eq!(receipt["state"], "received");
+    assert_eq!(receipt["gen"], 0);
+    assert_eq!(receipt["attempts"], 1);
+    assert_eq!(c.close().0, Some(0));
+    let mut c = Chan::start(&h, &[], &args, 60);
+    held(&h, &target);
+    assert!(
+        c.quiet(Duration::from_secs(3)).is_empty(),
+        "received event repeated after restart"
+    );
+    assert_eq!(c.close().0, Some(0));
+    let (code, _, _) = run(&h, &[], &["adopt", &target, "--pane", "w1:p1"]);
+    assert_eq!(code, Some(0));
+    let generation = taskr_core::store::delivery::generation(&h.conn(), n(&target))
+        .unwrap()
+        .to_string();
+    let mut c = Chan::start(&h, &[], &["--as", &target, "--session", &generation], 60);
+    let fence = held(&h, &target);
+    let (_, push) = c.expect_push(Duration::from_secs(20));
+    let a = meta(&push, "attempt");
+    c.call("taskr_received", json!({"attempt":n(&a)}));
+    assert_eq!(status(&e)["gen"], n(&generation));
+    assert_eq!(
+        c.call("taskr_ack", json!({"event":n(&e),"fence":n(&fence)}))["structuredContent"]["outcome"],
+        "committed"
+    );
+    assert_eq!(status(&e)["state"], "acked");
+    let second = send("nobody is listening");
+    let e2 = second["event"].to_string();
+    for _ in 0..3 {
+        c.expect_push(Duration::from_secs(20));
+    }
+    until("the sender alarm", Duration::from_secs(20), || {
+        text(
+            &h,
+            "select count(*)||'' from events where kind='herdr' and json_extract(data,'$.reason')='message_unreceived'",
+        ) == "1"
+    });
+    assert!(c.quiet(Duration::from_secs(3)).is_empty(), "fourth push");
+    assert_eq!(status(&e2)["state"], "pending");
+    assert_eq!(status(&e2)["attempts"], 3);
+    let alarm = h.ok(
+        &[],
+        &["wait", "--as", &sender, "--for", "ready", "--timeout", "0"],
+    );
+    assert_eq!(alarm["event"]["data"]["reason"], "message_unreceived");
+    assert_eq!(alarm["event"]["data"]["event"], second["event"]);
+    assert_eq!(c.close().0, Some(0));
+    let mut c = Chan::start(&h, &[], &["--as", &target, "--session", &generation], 60);
+    c.expect_push(Duration::from_secs(20));
+    c.expect_push(Duration::from_secs(20));
+    c.expect_push(Duration::from_secs(20));
+    assert!(c.quiet(Duration::from_secs(3)).is_empty());
+    assert_eq!(
+        text(
+            &h,
+            "select count(*)||'' from events where kind='herdr' and json_extract(data,'$.reason')='message_unreceived'"
+        ),
+        "1"
+    );
+    assert_eq!(c.close().0, Some(0));
+}
+
+#[test]
+fn orchestrator_relay_replay_and_unknown_outcome_never_type_into_a_pane() {
+    let h = Harness::new();
+    let target = id(
+        &h.ok(&[], &["new", "target", "--role", "orchestrator"]),
+        "task_id",
+    );
+    h.ok(
+        &[],
+        &[
+            "consumer",
+            "take",
+            "--as",
+            &target,
+            "--session",
+            "0",
+            "--holder",
+            "mcp-channel-test",
+            "--ttl",
+            "60000",
+        ],
+    );
+    let (_hub, url, _) = start_hub(&h);
+    let direct = client(&h, &url);
+    let sender = id(
+        &h.ok(&direct, &["new", "remote-sender", "--role", "orchestrator"]),
+        "task_id",
+    );
+    h.script(
+        "herdr",
+        "#!/bin/sh\necho typed >> \"$HOME/pane-called\"\necho '{\"result\":{}}'\n",
+    );
+    let (p, _seen) = proxy(port(&url), nth(&["_prompt", "begin"], 0, || Act::LoseReply));
+    let remote = client(&h, &format!("http://[::1]:{p}"));
+    let argv = [
+        "--request-key",
+        "message_replay_123",
+        "prompt",
+        &target,
+        "--as",
+        &sender,
+        "--text",
+        "cross-host peer",
+    ];
+    let (code, out, err) = run(&h, &remote, &argv);
+    assert_eq!(code, Some(5), "{out}{err}");
+    assert!(
+        out.contains("unknown") && out.contains("message_replay_123"),
+        "{out}{err}"
+    );
+    assert!(!h.home.join("client/pane-called").exists());
+    let first = h.ok(&remote, &argv);
+    assert_eq!(first["path"], "push");
+    assert_eq!(h.ok(&remote, &argv), first);
+    assert_eq!(
+        text(&h, "select count(*)||'' from events where kind='message'"),
+        "1"
+    );
+    assert!(!h.home.join("client/pane-called").exists());
+    let e = first["event"].to_string();
+    assert_eq!(
+        h.ok(&remote, &["message", "status", &e, "--as", &sender])["state"],
+        "pending"
+    );
+    // The status key is a fresh read, not a cached pending response.
+    h.conn()
+        .execute(
+            "update tasks set acked_event_id=? where id=?",
+            taskr_core::db::params![n(&e), n(&target)],
+        )
+        .unwrap();
+    assert_eq!(
+        h.ok(&remote, &["message", "status", &e, "--as", &sender])["state"],
+        "acked"
+    );
+}
+
+fn message_rpc(port: u16, req: &Value) -> Value {
+    message_rpc_bytes(port, req.to_string().as_bytes())
+}
+fn message_rpc_bytes(port: u16, body: &[u8]) -> Value {
+    let mut stream = std::net::TcpStream::connect((std::net::Ipv6Addr::LOCALHOST, port)).unwrap();
+    write!(stream, "POST /api/rpc HTTP/1.1\r\nHost: [::1]:{port}\r\nX-Taskr-RPC: 1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
+    stream.write_all(body).unwrap();
+    let mut reply = String::new();
+    stream.read_to_string(&mut reply).unwrap();
+    serde_json::from_str(reply.split_once("\r\n\r\n").unwrap().1).unwrap()
+}
+
+#[test]
+fn orchestrator_hidden_rpc_checks_sender_and_binary_text_before_writing() {
+    let h = Harness::new();
+    let target = id(
+        &h.ok(&[], &["new", "target", "--role", "orchestrator"]),
+        "task_id",
+    );
+    h.ok(
+        &[],
+        &[
+            "consumer",
+            "take",
+            "--as",
+            &target,
+            "--session",
+            "0",
+            "--holder",
+            "mcp-channel-test",
+            "--ttl",
+            "60000",
+        ],
+    );
+    let (_hub, url, _) = start_hub(&h);
+    let remote = client(&h, &url);
+    let sender = id(
+        &h.ok(&remote, &["new", "sender", "--role", "orchestrator"]),
+        "task_id",
+    );
+    let (worker, worker_env) = client_lane(&h, &remote);
+    let before = text(&h, "select count(*)||'' from events");
+    for (key, argv, env, code) in [
+        (
+            "hidden_worker",
+            json!([
+                "--json", "_prompt", "begin", target, "--as", worker, "--text", "no"
+            ]),
+            json!({}),
+            6,
+        ),
+        (
+            "hidden_mismatch",
+            json!([
+                "--json", "_prompt", "begin", target, "--as", sender, "--text", "no"
+            ]),
+            json!({"TASKR_TASK":worker}),
+            6,
+        ),
+        (
+            "hidden_launch",
+            json!([
+                "--json", "_prompt", "begin", target, "--as", sender, "--text", "no"
+            ]),
+            json!({"TASKR_LAUNCH":worker_env.iter().find(|(k,_)|k=="TASKR_LAUNCH").unwrap().1}),
+            6,
+        ),
+        (
+            "hidden_binary",
+            json!([
+                "--json",
+                "_prompt",
+                "begin",
+                target,
+                "--as",
+                sender,
+                "--text",
+                "bad\u{0}byte"
+            ]),
+            json!({}),
+            2,
+        ),
+    ] {
+        let rep = message_rpc(
+            port(&url),
+            &json!({"argv":argv,"request_key":key,"cwd":h.home,"env":env}),
+        );
+        assert_eq!(rep["exit"], code, "{rep}");
+    }
+    let mut binary = json!({"argv":["--json","_prompt","begin",target,"--as",sender,"--text","binary-marker"],"request_key":"hidden_invalid_utf8","cwd":h.home,"env":{}}).to_string().into_bytes();
+    let at = binary
+        .windows(13)
+        .position(|b| b == b"binary-marker")
+        .unwrap();
+    binary[at] = 0xff;
+    let rep = message_rpc_bytes(port(&url), &binary);
+    assert!(
+        rep["error"].as_str().unwrap_or("").contains("valid UTF-8"),
+        "{rep}"
+    );
+    assert_eq!(text(&h, "select count(*)||'' from events"), before);
+}
+
+#[test]
+fn orchestrator_server_pane_decision_survives_a_new_push_lease() {
+    let h = Harness::new();
+    let target = id(
+        &h.ok(
+            &[],
+            &["new", "target", "--role", "orchestrator", "--pane", "w1:p1"],
+        ),
+        "task_id",
+    );
+    let (_hub, url, _) = start_hub(&h);
+    let direct = client(&h, &url);
+    let sender = id(
+        &h.ok(&direct, &["new", "sender", "--role", "orchestrator"]),
+        "task_id",
+    );
+    h.script(
+        "herdr",
+        "#!/bin/sh\necho typed >> \"$HOME/pane-called\"\necho '{\"result\":{}}'\n",
+    );
+    let dbpath = h.db.clone();
+    let tid = n(&target);
+    let (p, _seen) = proxy(
+        port(&url),
+        nth(&["_prompt", "begin"], 0, move || {
+            let dbpath = dbpath.clone();
+            Act::After(Box::new(move || {
+                let db = taskr_core::db::Connection::open(dbpath).unwrap();
+                let now = taskr_core::store::real_now();
+                db.execute("insert into consumer_leases(task_id,fence,holder,session_gen,acquired_at,expires_at) values(?,1,'mcp-channel-race',0,?,?)",taskr_core::db::params![tid,taskr_core::store::stamp(now),taskr_core::store::stamp(now+taskr_core::Duration::minutes(1))]).unwrap();
+            }))
+        }),
+    );
+    let remote = client(&h, &format!("http://[::1]:{p}"));
+    let result = h.ok(
+        &remote,
+        &[
+            "prompt",
+            &target,
+            "--as",
+            &sender,
+            "--text",
+            "already routed",
+        ],
+    );
+    assert_eq!(result["path"], "pane");
+    assert_eq!(
+        text(&h, "select count(*)||'' from events where kind='message'"),
+        "0"
+    );
+    assert!(h.home.join("pane-called").exists());
+}

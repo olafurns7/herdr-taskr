@@ -137,7 +137,7 @@ func commandTable() map[string]command {
 const usageText = `usage: taskr <command> [args]
 worker:       start | got ATTEMPT_ID | note TEXT | ready TEXT --report PATH [--kv K=V]... | ask TEXT [--blocking] [--owner] | done [TEXT] | fail TEXT
               note TEXT [--owner] --as ID | ask TEXT --owner --as ID   (a root orchestrator: no parent, no launch; note --owner requires TASKR_TASK unset)
-orchestrator: new NAME --role ROLE [--parent ID] [--planned] ... | launch ID --provider P --model M --effort E | prompt ID (--file PATH | --text TEXT) [--receipt-timeout MS] [--confirm [--confirm-timeout MS]]
+orchestrator: new NAME --role ROLE [--parent ID] [--planned] ... | launch ID --provider P --model M --effort E | prompt ID (--file PATH | --text TEXT) [--as SENDER_ROOT] [--push | --pane] [--receipt-timeout MS] [--confirm [--confirm-timeout MS]] | message status EVENT --as SENDER_ROOT
               answer ASK_ID TEXT [--prompt [--confirm [--confirm-timeout MS]]] | close ID [--outcome accepted|reworked|rejected|abandoned]
 outcomes:     accepted (work taken as delivered), reworked (taken after a fix round), rejected (not taken), abandoned (stopped before a result)
 plan:         next ID TEXT | next ID --clear | set ID KEY=VALUE... (KEY= deletes) | decide --as ID TEXT | decide --as ID --revoke EVENT_ID

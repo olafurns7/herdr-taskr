@@ -20,6 +20,7 @@ pub(super) fn poll_interval() -> Duration {
 }
 pub fn code(kind: &str) -> &str {
     match kind {
+        "message" => "m",
         "got" => "g",
         "ready" => "r",
         "ask" => "q",

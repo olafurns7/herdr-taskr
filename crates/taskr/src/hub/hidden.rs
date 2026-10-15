@@ -71,7 +71,10 @@ pub(super) fn hook(args: &[String], req: &super::protocol::RpcRequest) -> store:
 
 pub(super) fn prompt(args: &[String], json: bool) -> store::Result<Value> {
     let mut f = FlagSet::new("_prompt", json);
-    f.string("text", "", "literal prompt text")
+    f.int("as", 0, "the sender root")
+        .bool("push", false, "require push")
+        .bool("pane", false, "force pane")
+        .string("text", "", "literal prompt text")
         .string(
             "file",
             "",
@@ -116,6 +119,9 @@ pub(super) fn prompt(args: &[String], json: bool) -> store::Result<Value> {
     let mut db = super::child::open()?;
     match f.positional[0].as_str() {
         "begin" => {
+            if let Some(push) = crate::write::prompt_route(&mut db, id, &f)? {
+                return Ok(push);
+            }
             let text = f.get_string("text");
             let file = f.get_string("file");
             if file.is_empty() == text.is_empty() {
@@ -173,7 +179,13 @@ pub(super) fn prompt(args: &[String], json: bool) -> store::Result<Value> {
                 Ok(())
             })?;
             match attempt {
-                None => Ok(json!({"ok":true,"route":"server"})),
+                None => {
+                    let mut out = json!({"ok":true,"route":"server"});
+                    if store::task(&db, id)?.parent.is_none() {
+                        out["path"] = json!("pane");
+                    }
+                    Ok(out)
+                }
                 Some(a) => Ok(
                     json!({"ok":true,"route":"here","task_id":id,"attempt_id":a.id,"target":a.target,"agent":a.agent,"text":a.text}),
                 ),
@@ -199,8 +211,8 @@ pub(super) fn prompt(args: &[String], json: bool) -> store::Result<Value> {
                 }
             }
             let a = store::transaction(&mut db, |tx| {
-                let row=tx.query_row("select e.task_id,e.launch_id,l.machine,coalesce(e.data,'{}') from events e left join launches l on l.id=e.launch_id where e.id=? and e.kind='prompt'",[id],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,Option<i64>>(1)?,r.get::<_,Option<String>>(2)?,r.get::<_,String>(3)?))).optional()?.ok_or_else(||store::reject(format!("event {id} is not a prompt attempt")))?;
-                if row.1.is_none() || row.2 != store::caller_machine() {
+                let row=tx.query_row("select e.task_id,e.launch_id,case when e.launch_id is null then t.machine else l.machine end,coalesce(e.data,'{}') from events e join tasks t on t.id=e.task_id left join launches l on l.id=e.launch_id where e.id=? and e.kind='prompt'",[id],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,Option<i64>>(1)?,r.get::<_,Option<String>>(2)?,r.get::<_,String>(3)?))).optional()?.ok_or_else(||store::reject(format!("event {id} is not a prompt attempt")))?;
+                if row.2 != store::caller_machine() {
                     return Err(store::reject(format!(
                         "prompt attempt {id} is not for a lane on {}",
                         store::caller_machine().unwrap_or_default()

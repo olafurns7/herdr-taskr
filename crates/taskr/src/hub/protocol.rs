@@ -68,6 +68,9 @@ fn wants_help(args: &[String]) -> bool {
 
 pub(super) fn stored(argv: &[String]) -> bool {
     let (name, args) = command(argv);
+    if name == "_prompt" && flag(args, "as").is_some() && !wants_help(args) {
+        return true;
+    }
     if name == "_hook" {
         return true;
     }
@@ -103,6 +106,7 @@ pub(super) fn stored(argv: &[String]) -> bool {
             && args
                 .first()
                 .is_none_or(|s| matches!(s.as_str(), "ls" | "state")))
+        && name != "message"
         && !(name == "consumer" && args.first().is_none_or(|s| s == "show"))
         && !wants_help(args)
 }
@@ -139,6 +143,7 @@ pub(super) fn check_args(argv: &[String]) -> Result<(), String> {
             )
     });
     let once: &[&str] = match name {
+        "prompt" | "_prompt" | "message" => &["as", "push", "pane", "help"],
         "inbox" => &["as", "limit", "help"],
         "delivery" => &["as", "session", "adapter", "fence", "after", "help"],
         "consumer" => &["as", "session", "holder", "ttl", "fence", "force", "help"],
@@ -187,7 +192,12 @@ pub(super) fn check_args(argv: &[String]) -> Result<(), String> {
         if !seen.insert(key) {
             return Err(format!("repeated RPC flag --{key}"));
         }
-        if value.is_none() && !matches!(key, "planned" | "confirm" | "prompt" | "help" | "force") {
+        if value.is_none()
+            && !matches!(
+                key,
+                "planned" | "confirm" | "prompt" | "help" | "force" | "push" | "pane"
+            )
+        {
             iter.next();
         }
     }
@@ -209,6 +219,12 @@ pub(super) fn check_args(argv: &[String]) -> Result<(), String> {
             );
         }
         _ => {}
+    }
+    if matches!(name, "prompt" | "_prompt")
+        && flag(args, "as").is_some()
+        && flag(args, "text").is_some_and(|text| text.contains('\0'))
+    {
+        return Err("message text must not contain NUL".into());
     }
     let paths: &[&str] = match name {
         "new" => &["cwd", "brief", "report"],
@@ -403,7 +419,15 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RpcRequest, String> {
             }
         }
     }
-    serde_json::from_value(value).map_err(|e| e.to_string())
+    let req: RpcRequest = serde_json::from_value(value).map_err(|e| e.to_string())?;
+    let (name, args) = command(&req.argv);
+    if matches!(name, "prompt" | "_prompt")
+        && flag(args, "as").is_some()
+        && std::str::from_utf8(bytes).is_err()
+    {
+        return Err("messages need valid UTF-8".into());
+    }
+    Ok(req)
 }
 
 fn null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>

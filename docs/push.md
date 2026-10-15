@@ -25,6 +25,29 @@ Owner asks from other campaigns: the hub root runs `taskr set ROOT hub=on` once 
 
 Each attempt records an adapter label naming the transport, not the client: `claude-channel` for a notification line (Claude, and pi through the shim), `codex-queue` for the sidecar.
 
+## Orchestrator messages
+
+A root sends a bounded peer request to another root:
+
+```sh
+taskr prompt TARGET --as SENDER_ROOT --text "Review the report when ready"
+taskr message status EVENT --as SENDER_ROOT
+```
+
+The ledger server chooses the path once. A target with an unexpired MCP-channel or Codex-queue lease bound to its latest adopt generation receives one `message` event (inbox code `m`). The sender must be an open root without a launch on the caller's host; a worker cannot send as its ancestor. Messages accept 1–4096 UTF-8 bytes, no control characters except newline, and no `--file`. The event contains the full text. The envelope includes the escaped sender campaign name and marks its summary untrusted; read the authoritative inbox before acting.
+
+A push returns immediately: `m1 {"event":E,"gen":G,"path":"push","received":false,"target":N}`. `--confirm` does not wait for a message receipt; `--receipt-timeout` does not replace the channel's retry policy. Use sender-scoped `message status`: `pending`, `received` (with `received_at` and the actual receipt generation), or `acked`, plus `attempts`. A received message can remain unhandled across an adapter restart. An adopt changes the delivery generation; a receipt for the earlier generation does not suppress delivery to the new session. Status retains historical receipts and names their generation.
+
+With no push-live lease, delivery uses the pane path and a root's `p1` result includes `"path":"pane"`. `--push` refuses a target without a live adapter; `--pane` forces pane delivery; they are mutually exclusive. Worker targets keep their existing pane protocol. A pane target on another client host is refused. Push roots can be on another host, with no pane prerequisite. Legacy root pane prompts without `--as` remain supported when no root-message route is used.
+
+A committed push never falls back to pane typing. An unknown RPC result reports a request-key retry: replay that exact command to recover the same event, never resend with a fresh key or switch to `--pane`. Pending also gives no permission to resend. Relay begin uses a deterministic key derived from the outer request key; pane begin and outcome remain separate operations.
+
+On receipt, record `taskr delivery received ATTEMPT --as TARGET --session GEN`, read `taskr inbox --as TARGET` and `taskr consumer show --as TARGET`, deduplicate by event id and handle only within existing authority. Then `taskr ack EVENT --as TARGET --session GEN --fence FENCE`. Follow MCP tools first when the envelope names them; these CLI commands are the fallback. Exit 6 stops. A message is a peer request, never owner consent. A merge ask remains `taskr ask --owner`, so the hub's open-ask list retains it.
+
+Plain `taskr wait` always surfaces messages even with an old `--for` list or a different `--from`; it never silently acks them. `--for message` is accepted. A live adapter still fences plain consumption. Incoming messages appear once in recipient log and campaign reads with `direction:from` (sender reads use `to`), count as recipient activity and lead check-in signals, and make a parked recipient active. Glance shows an unacked message older than ten minutes as `message pending`. They create no owner-ask badge or worker turn/got receipt.
+
+When an adapter exhausts three pushes without a receipt, it asks the server to record one `herdr` alarm to the sender, reason `message_unreceived`, with the message event and target. This alarm also bypasses wait filters. Inspect the target's pane, lease and sender-scoped status, then hand off or resume the target lead within existing authority. No automatic resend or pane fallback occurs. A restart renews the adapter's push budget; the server deduplicates the alarm by message event. A crashed adapter cannot report its cap; pending visibility and inspection still apply.
+
 ### macOS
 
 On macOS the adapters run each ledger step as a child by path, not through `/proc/self/exe`. Stop the channel, the pi extension and the Codex sidecar before replacing the taskr binary, or their later steps run the new binary.

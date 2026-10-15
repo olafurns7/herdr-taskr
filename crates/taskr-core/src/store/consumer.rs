@@ -60,6 +60,23 @@ fn live(db: &Connection, t: &Task, l: &Lease) -> Result<bool> {
     })
 }
 
+/// Read target liveness without impersonating its consumer.
+pub fn push_generation(db: &Connection, t: &Task) -> Result<Option<i64>> {
+    if t.parent.is_some() || t.launch.is_some() || t.status != "open" {
+        return Ok(None);
+    }
+    if let Some(l) = load(db, t.id)?
+        && live(db, t, &l)?
+        && l.holder
+            .as_deref()
+            .is_some_and(|h| h.starts_with("mcp-channel-") || h.starts_with("codex-queue-"))
+        && let Some(Binding::Session(g)) = l.binding
+    {
+        return Ok(Some(g));
+    }
+    Ok(None)
+}
+
 fn held_message(task_id: i64, l: &Lease) -> String {
     format!(
         "task {task_id}'s inbox is held by consumer {} with fence {} until {}; the holder hands it back with `taskr consumer release --fence {}`, or take it over with `taskr consumer take --force`",

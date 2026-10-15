@@ -34,7 +34,7 @@ fn anchor(
     if busy {
         return Ok(None);
     }
-    let latest = db.query_row(&format!("{tree}select e.id,e.created_at from tree join events e on e.task_id=tree.id where (e.task_id!=? or e.kind='prompt') and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not (e.kind='prompt_outcome' and exists(select 1 from events p where p.id=e.related_event_id and json_extract(p.data,'$.nudge') is not null)) and not {noise} order by e.id desc limit 1", noise = super::github::PR_NOISE), params![root.id, root.id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))).optional()?;
+    let latest = db.query_row(&format!("{tree}select e.id,e.created_at from tree join events e on (e.task_id=tree.id or (e.kind='message' and e.recipient_task_id=tree.id)) where (e.task_id!=? or e.kind='prompt') and not (e.kind='prompt' and json_extract(e.data,'$.nudge') is not null) and not (e.kind='prompt_outcome' and exists(select 1 from events p where p.id=e.related_event_id and json_extract(p.data,'$.nudge') is not null)) and not {noise} order by e.id desc limit 1", noise = super::github::PR_NOISE), params![root.id, root.id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))).optional()?;
     let (id, at) = latest.unwrap_or((0, root.created.clone()));
     Ok(old(&at, now, 90).then_some(("R2", id, at)))
 }
@@ -224,4 +224,37 @@ pub(super) fn sweep(db: &mut db::Connection, sock: &str, log: &Log) -> Result<()
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod message_tests {
+    use super::*;
+    #[test]
+    fn incoming_message_is_an_idle_signal_and_recent_activity() {
+        let db = db::Connection::open_in_memory().unwrap();
+        db.execute_batch(taskr_core::schema::SCHEMA).unwrap();
+        let now = store::real_now();
+        let old = store::stamp(now - time::Duration::hours(2));
+        for id in [1, 2] {
+            db.execute("insert into tasks(id,name,role,status,created_at,updated_at) values(?,?,'orchestrator','open',?,?)",params![id,format!("root{id}"),old,old]).unwrap();
+        }
+        let root = Root {
+            id: 2,
+            name: "root2".into(),
+            pane: "w:p1".into(),
+            machine: None,
+            created: old,
+            acked: 0,
+        };
+        assert_eq!(anchor(&db, &root, now).unwrap().unwrap().0, "R2");
+        let recent = store::stamp(now - time::Duration::minutes(11));
+        db.execute("insert into events(task_id,recipient_task_id,kind,summary,created_at) values(1,2,'message','peer',?)",[recent]).unwrap();
+        assert!(anchor(&db, &root, now).unwrap().is_none());
+        db.execute(
+            "update events set created_at=?",
+            [store::stamp(now - time::Duration::minutes(31))],
+        )
+        .unwrap();
+        assert_eq!(anchor(&db, &root, now).unwrap().unwrap().0, "R1");
+    }
 }

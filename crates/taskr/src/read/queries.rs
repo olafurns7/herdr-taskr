@@ -316,7 +316,7 @@ pub fn log(f: &FlagSet) -> Result<()> {
         m["record"] = json!("launch");
     }
     let mut sql = format!(
-        "select {EVENT_COLS} from events e join tasks t on t.id=e.task_id where e.task_id in ({ids})"
+        "select {EVENT_COLS} from events e join tasks t on t.id=e.task_id where (e.task_id in ({ids}) or (e.kind='message' and e.recipient_task_id in ({ids})))"
     );
     let mut args = vec![];
     if f.was_set("since") {
@@ -329,6 +329,15 @@ pub fn log(f: &FlagSet) -> Result<()> {
     }
     sql.push_str(" order by e.id");
     let mut events = event_rows(&db, &sql, args)?;
+    for e in &mut events {
+        if e["kind"] == "message" {
+            e["direction"] = json!(if e["recipient_task_id"] == id {
+                "from"
+            } else {
+                "to"
+            });
+        }
+    }
     let count = events.len();
     let mut trailer = None;
     if !f.json() || f.was_set("limit") || f.was_set("since") || f.was_set("before") {

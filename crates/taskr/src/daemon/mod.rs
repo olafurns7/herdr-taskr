@@ -32,7 +32,7 @@ use taskr_core::{
     goflag::FlagSet,
     store::{self, Error, Result},
 };
-pub(crate) const LEAD_IDLE_SIGNALS: &str = "select e.id,e.recipient_task_id,e.created_at from events e where (e.kind in ('ready','done','fail') or (e.kind='prompt_outcome' and json_extract(e.data,'$.outcome')='no_receipt' and e.launch_id is (select current_launch_id from tasks where id=e.task_id)) or (e.kind='herdr' and (json_extract(e.data,'$.quota')='limit' or (json_extract(e.data,'$.reason')='stall' and e.launch_id is (select current_launch_id from tasks where id=e.task_id)))))";
+pub(crate) const LEAD_IDLE_SIGNALS: &str = "select e.id,e.recipient_task_id,e.created_at from events e where (e.kind in ('ready','done','fail','message') or (e.kind='prompt_outcome' and json_extract(e.data,'$.outcome')='no_receipt' and e.launch_id is (select current_launch_id from tasks where id=e.task_id)) or (e.kind='herdr' and (json_extract(e.data,'$.quota')='limit' or (json_extract(e.data,'$.reason')='stall' and e.launch_id is (select current_launch_id from tasks where id=e.task_id)))))";
 const VERSION: &str = match option_env!("TASKR_VERSION") {
     Some(s) => s,
     None => "dev",
