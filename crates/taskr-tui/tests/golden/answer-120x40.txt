@@ -1,5 +1,6 @@
  taskr ❯ glance                                                           hub atlas · 2s ago   ● 2 need you  3 to check
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
+H Health-
  3 notes still carry OWNER items
 ╭ Glance ──────────────────────────────────────────────────╮╭ ask 61767 · tui-frames ──────────────────────────────────╮
 │ NEEDS YOU ──────────────────────────────────────────── 2 ││ BLOCKING · asker waiting · 41s ago · atlas w31:p1        │
@@ -7,34 +8,33 @@
 │▌  Frames follow-up is ready: PR #212 (orphaned asks hid… ││ Frames follow-up is ready: PR #212 (orphaned asks        │
 │ ? ◇ ios-widgets                             laptop ↗   6m││ hidden, close warns). (A) merge #212 and release v2.4.1  │
 │   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash).… ││ now [recommended]; (B) merge, hold the release for the   │
-│ TO CHECK ───────────────────────────────────────────── 3 ││ next change.                                             │
-│ ! map-tiles-polish╭ Answer ask 61767 · tui-frames ───────────────────────────────────────────────╮                   │
-│   lead unregistere│                                                                              │                   │
-│ ! infra-layout    │  Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns).     │recommended        │
-│   lead idle with 3│                                                                              │t change           │
-│ ! host build-mini │   ❯ A  merge #212 and release v2.4.1 now  recommended                        │                   │
-│   host stale: no h│     B  merge, hold the release for the next change                           │                   │
-│ CAMPAIGNS ────────│     …  write your own answer                                                 │                   │
-│ ◐ search-index    │                                                                              │                   │
-│   Research complet│  ──────────────────────────────────────────────────────────────────────────  │                   │
-│ ◐ auth-rotation   │   answer  A: merge #212 and release v2.4.1 now                               │                   │
-│   Implementation s│                                                                              │                   │
-│ ○ billing-export  │   j k choose    tab edit the text    ⏎ review before sending    esc cancel   │                   │
+│ TO CHECK ─────────╭ Answer ask 61767 · tui-frames ───────────────────────────────────────────────╮                   │
+│ ! map-tiles-polish│                                                                              │                   │
+│   lead unregistere│  Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns).     │                   │
+│ ! infra-layout    │                                                                              │recommended        │
+│   lead idle with 3│   ❯ A  merge #212 and release v2.4.1 now  recommended                        │t change           │
+│ ! host build-mini │     B  merge, hold the release for the next change                           │                   │
+│   host stale: no h│     …  write your own answer                                                 │                   │
+│ CAMPAIGNS ────────│                                                                              │                   │
+│ ◐ search-index    │  ──────────────────────────────────────────────────────────────────────────  │                   │
+│   Research complet│   answer  A: merge #212 and release v2.4.1 now                               │                   │
+│ ◐ auth-rotation   │                                                                              │                   │
+│   Implementation s│   j k choose    tab edit the text    ⏎ review before sending    esc cancel   │                   │
+│ ○ billing-export  │                                                                              │                   │
 │   FYI 61448 from s│                                                                              │                   │
 │ ○ docs-refresh    │                                                                              │                   │
 │   Hub FYI: keep th│                                                                              │                   │
 │ ○ checkout-flow   │                                                                              │                   │
 │   FIX: three P2 fi│                                                                              │                   │
 │ ◐ ios-widgets     │                                                                              │                   │
-│   Widget batch app│                                                                              │                   │
-│ ◐ tui-frames      ╰──────────────────────────────────────────────────────────────────────────────╯───────────────────╯
-│   NOW: plan rev 3.1 sent; the trust rules and the first… │╭ tui-frames · last 4 h ───────────────────────────────────╮
-│ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃        12m││       ██      ██        ██      ██                       │
-│   cache-audit lead root=4040 pane=w41:p1: campaign comp… ││       ██      ██  ██▂▂  ██▂▂    ██          ████         │
-│ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁        14m││     ▇▇██    ▇▇██▇▇████  ████▂▂  ██  ▄▄▇▇▂▂▄▄████         │
-│   matrix run A finished                                  ││                                                          │
+│   Widget batch app╰──────────────────────────────────────────────────────────────────────────────╯───────────────────╯
+│ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆         8m│╭ tui-frames · last 4 h ───────────────────────────────────╮
+│   NOW: plan rev 3.1 sent; the trust rules and the first… ││       ██      ██        ██      ██                       │
+│ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃        12m││       ██      ██  ██▂▂  ██▂▂    ██          ████         │
+│   cache-audit lead root=4040 pane=w41:p1: campaign comp… ││     ▇▇██    ▇▇██▇▇████  ████▂▂  ██  ▄▄▇▇▂▂▄▄████         │
+│ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁        14m││                                                          │
 │ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁        54m││ lead ◐ working   lanes ●●●●○○                            │
 │ ‖ legacy-importer                              parked  3h││ last NOW: plan rev 3.1 sent; the trust rules and the     │
 │ · 2 quiet                                                ││ first frames are in flight.                              │
 ╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
- ⏎ go to lead   a answer   l open   0-9 panels   / filter   y copy   s slotr   ? help   q quit
+ ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   y copy   s slotr   q quit   ? help

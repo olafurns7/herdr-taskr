@@ -390,10 +390,15 @@ fn park(app: &mut App, root: i64, name: &str, parked: bool) -> Effect {
 }
 
 fn glance_key(app: &mut App, code: KeyCode) -> Effect {
-    if let KeyCode::Char(n @ '0'..='9') = code {
+    // Key 0 is the tenth panel, Issues; uppercase H the eleventh, Health. Lowercase h is
+    // back, on every screen.
+    let panel = match code {
+        KeyCode::Char(n @ '0'..='9') => Some((n as usize + 9 - '0' as usize) % 10),
+        KeyCode::Char('H') => Some(10),
+        _ => None,
+    };
+    if let Some(index) = panel {
         let before = glance::ids(&app.view()).get(app.row).cloned();
-        // Key 0 is the tenth panel, Issues.
-        let index = (n as usize + 9 - '0' as usize) % 10;
         app.config.panels[index] = !app.config.panels[index];
         app.restore_row(before);
         return Effect::SaveConfig;
@@ -416,12 +421,20 @@ fn glance_key(app: &mut App, code: KeyCode) -> Effect {
         Selected::Ask(a) => (&a.host, &a.pane_id, a.root_id, &a.campaign),
         Selected::Check(a) => (&a.host, &a.pane_id, a.root_id, &a.campaign),
         Selected::Campaign(c) => (&c.host, &c.pane_id, c.id, &c.name),
-        Selected::Pr(_) | Selected::Author(_) | Selected::Run(_) | Selected::Assignee(_)
+        Selected::Pr(_)
+        | Selected::Author(_)
+        | Selected::Run(_)
+        | Selected::Assignee(_)
+        | Selected::Health
             if matches!(code, KeyCode::Tab | KeyCode::BackTab | KeyCode::Char('c')) =>
         {
             (&g.now, &g.now, 0, &g.now)
         }
-        Selected::Pr(_) | Selected::Author(_) | Selected::Run(_) | Selected::Assignee(_) => {
+        Selected::Pr(_)
+        | Selected::Author(_)
+        | Selected::Run(_)
+        | Selected::Assignee(_)
+        | Selected::Health => {
             return Effect::None;
         }
         // Decisions, Fleet and the decision log only inform: `o` reads their campaign,
@@ -1607,8 +1620,9 @@ mod tests {
         assert_eq!((p.app.row, p.app.scroll, p.app.detail), (2, 2, true));
         p.mouse(MouseEventKind::ScrollUp, 80, 10);
         assert_eq!(p.app.scroll, 1);
-        // Over the list: the cursor moves, and the detail starts at the top.
-        p.mouse(MouseEventKind::ScrollDown, 5, 5);
+        // Over the list (its first ask row, under the two-line wide switches): the cursor
+        // moves, and the detail starts at the top.
+        p.mouse(MouseEventKind::ScrollDown, 5, 6);
         assert_eq!((p.app.row, p.app.scroll, p.app.detail), (3, 0, false));
     }
 
@@ -2424,12 +2438,12 @@ mod tests {
         };
         assert!(!scoped(&p));
         // The demo serves the read: `l` shows the campaign, Esc returns to the panels.
-        p.app.config.panels[6..].fill(false);
+        p.app.config.panels[6..10].fill(false);
         p.app.row = row_of(&p, &glance::RowId::Campaign(4120));
         p.keys("l");
         assert_eq!(p.app.screen, Screen::Campaign);
         p.keys("\x1b");
-        p.app.config.panels[6..].fill(true);
+        p.app.config.panels[6..10].fill(true);
         assert_eq!(
             (p.app.screen, p.app.scope.read_at),
             (Screen::Glance, Some(now))
@@ -2536,7 +2550,7 @@ mod tests {
     #[test]
     fn informational_rows_only_open_their_campaign() {
         let mut p = Pane::new(120, 40);
-        p.app.config.panels[6..].fill(true);
+        p.app.config.panels[6..10].fill(true);
         p.app.scope.read_at = Some(p.app.observed_at);
         let ids = glance::ids(&p.app.view());
         let rows = [
@@ -2625,7 +2639,7 @@ mod tests {
     #[test]
     fn ledger_panels_preview_under_listed_asks_and_fill_an_empty_ledger() {
         let mut p = Pane::new(120, 40);
-        p.app.config.panels[6..].fill(true);
+        p.app.config.panels[6..10].fill(true);
         p.app.scope.read_at = Some(p.app.observed_at);
         let decision = p.app.data.campaign.decisions[0].clone();
         p.app.data.campaign.decisions = (1..=14)
@@ -2688,7 +2702,7 @@ mod tests {
         let lines = |p: &mut Pane| p.text().lines().map(String::from).collect::<Vec<_>>();
         let text = lines(&mut p);
         assert_eq!(
-            text[2], "4 PRs+ · 5 Shipped+ · 6 Build+ · 7-9,0 off",
+            text[2], "4 PRs+ · 5 Shipped+ · 6 Build+ · 7-9,0,H off",
             "{text:?}"
         );
         assert!(!text[3].contains("Fleet"), "{text:?}");
@@ -2698,6 +2712,8 @@ mod tests {
             text[3], "7 Decisions- · 8 Fleet+ · 9 Log- · 0 Issues-",
             "{text:?}"
         );
+        // H wraps to a line of its own at 46 columns: no hidden switch reads as enabled.
+        assert_eq!(text[4], "H Health-", "{text:?}");
     }
 
     #[test]
@@ -2722,7 +2738,7 @@ mod tests {
                 p.app.github = crate::github::demo();
                 p.app.shipped = crate::github::demo_shipped(p.app.observed_at);
                 p.app.builds = crate::github::demo_builds(p.app.observed_at);
-                p.app.config.panels[6..].fill(true);
+                p.app.config.panels[6..10].fill(true);
                 p.app.scope.read_at = Some(p.app.observed_at);
                 let ids = glance::ids(&p.app.view());
                 for id in [
@@ -2776,7 +2792,7 @@ mod tests {
         issues(&mut p);
         let text = p.text();
         assert!(
-            text.contains("7-9,0 off") && !text.contains("ISSUES"),
+            text.contains("7-9,0,H off") && !text.contains("ISSUES"),
             "{text}"
         );
         assert!(
@@ -2799,7 +2815,7 @@ mod tests {
             for height in 7..=40 {
                 let mut p = Pane::new(width, height);
                 issues(&mut p);
-                p.app.config.panels[6..].fill(true);
+                p.app.config.panels[6..10].fill(true);
                 p.app.scope.read_at = Some(p.app.observed_at);
                 let ids = glance::ids(&p.app.view());
                 let unassigned = glance::RowId::Assignee(crate::github::ISSUES_REPO.into(), None);
@@ -2896,5 +2912,185 @@ mod tests {
         let now = p.app.observed_at;
         assert!(p.app.advance_time(now + 86400 - 3599, Instant::now()));
         assert!(glance::ids(&p.app.view()).contains(&alex));
+    }
+
+    #[test]
+    fn health_is_uppercase_h_informational_last_and_says_stale_first() {
+        let health = |p: &mut Pane| {
+            p.app.github = crate::github::demo();
+            p.app.shipped = crate::github::demo_shipped(p.app.observed_at);
+            p.app.builds = crate::github::demo_builds(p.app.observed_at);
+            p.app.issues = crate::github::demo_issues(p.app.observed_at);
+            p.app.health = crate::health::demo(p.app.observed_at);
+        };
+        let row = glance::RowId::Health(crate::health::REPO, crate::health::ENV);
+        // Default off, folded with 7-9 and 0; lowercase h stays back and toggles nothing.
+        let mut p = Pane::new(46, 30);
+        health(&mut p);
+        assert!(p.text().contains("7-9,0,H off") && !glance::ids(&p.app.view()).contains(&row));
+        // The help names H: its View keys are on the help's last page.
+        p.keys("?G");
+        assert_eq!(p.app.screen, Screen::Help);
+        let help = p.text();
+        assert!(help.contains("toggle Health"), "{help}");
+        assert_eq!(p.code(KeyCode::Char('h')), Effect::None);
+        assert_eq!(p.app.screen, Screen::Glance);
+        assert_eq!(p.code(KeyCode::Char('h')), Effect::None);
+        assert!(!p.app.config.panels[10]);
+        // H is Glance's only: on the campaign view it does nothing.
+        p.app.go(Screen::Campaign);
+        assert_eq!(p.code(KeyCode::Char('H')), Effect::None);
+        p.app.close();
+        assert!(!p.app.config.panels[10]);
+        assert_eq!(p.code(KeyCode::Char('H')), Effect::SaveConfig);
+        assert!(
+            p.app.config.panels[10]
+                && p.app.config.panels[..10] == crate::config::DEFAULT_PANELS[..10]
+        );
+        let text = p.text();
+        assert!(
+            text.contains("H Health+") && !text.contains("H off"),
+            "{text}"
+        );
+        // Its row comes after Issues' and before the campaigns.
+        p.app.config.panels[9] = true;
+        let ids = glance::ids(&p.app.view());
+        let at = ids.iter().position(|r| *r == row).unwrap();
+        assert!(
+            ids[..at]
+                .iter()
+                .all(|r| !matches!(r, glance::RowId::Campaign(_)))
+        );
+        assert!(matches!(ids[at - 1], glance::RowId::Assignee(..)));
+        assert!(
+            ids[at + 1..]
+                .iter()
+                .all(|r| matches!(r, glance::RowId::Campaign(_)))
+        );
+        // Every height: the row is drawn, informational, and stale or unknown comes first.
+        for width in [46, 120] {
+            for height in 7..=40 {
+                for state in 0..3 {
+                    let mut p = Pane::new(width, height);
+                    health(&mut p);
+                    p.app.config.panels[6..].fill(true);
+                    p.app.scope.read_at = Some(p.app.observed_at);
+                    match state {
+                        1 => p.app.health.error = Some(crate::health::UNAVAILABLE),
+                        2 => {
+                            p.app.health = crate::health::sample(p.app.observed_at, "no note");
+                            p.app.health.error = Some(crate::health::UNAVAILABLE);
+                        }
+                        _ => {}
+                    }
+                    p.app.row = row_of(&p, &row);
+                    let text = p.text();
+                    if height >= 8 {
+                        assert!(drawn(&p, p.app.row), "{width}x{height}:\n{text}");
+                    }
+                    let cue = ["as of ", "Stale · as of ", "Stale · Unknown · "][state];
+                    if height >= 8 {
+                        assert!(text.contains(cue), "{width}x{height}/{state}:\n{text}");
+                    }
+                    for code in [
+                        KeyCode::Enter,
+                        KeyCode::Right,
+                        KeyCode::Char('a'),
+                        KeyCode::Char('p'),
+                        KeyCode::Char('l'),
+                        KeyCode::Char('y'),
+                        KeyCode::Char('o'),
+                    ] {
+                        assert_eq!(press(&mut p.app, code), Effect::None, "{width}x{height}");
+                    }
+                    assert!(p.app.ask.is_none() && p.app.pending.is_none());
+                    assert_eq!(p.app.screen, Screen::Glance);
+                }
+            }
+        }
+        // Narrow and short: the compact row puts the stale cue before what it clips.
+        let mut p = Pane::new(46, 20);
+        health(&mut p);
+        p.app.config.panels[10] = true;
+        p.app.health.error = Some(crate::health::UNAVAILABLE);
+        p.app.row = row_of(&p, &row);
+        let text = p.text();
+        assert!(text.contains("Health · Stale · as of"), "{text}");
+        // A double click selects and goes nowhere; a new report keeps the selection.
+        let mut p = Pane::new(120, 40);
+        health(&mut p);
+        p.app.config.panels[10] = true;
+        p.app.row = row_of(&p, &row);
+        let text = p.text();
+        assert!(
+            text.contains("Health · trip-to-japan/trip production"),
+            "{text}"
+        );
+        assert_eq!(p.click_on("as of "), Effect::None);
+        assert_eq!(p.click_on("as of "), Effect::None);
+        assert!(p.app.ask.is_none() && p.app.pending.is_none() && p.app.status.is_none());
+        p.app.health = crate::health::sample(
+            p.app.observed_at,
+            &crate::health::CLEAN.replace("deploy=live", "deploy=failed"),
+        );
+        assert_eq!(glance::ids(&p.app.view())[p.app.row], row);
+        assert!(p.text().contains("deploy failed"));
+        // Every panel hidden: the recovery line names H, and H brings Health back.
+        p.app.config.panels = [false; 11];
+        assert!(p.text().contains("1-9, 0 or H"));
+        assert_eq!(p.code(KeyCode::Char('H')), Effect::SaveConfig);
+        assert_eq!(glance::ids(&p.app.view()), [row]);
+    }
+
+    #[test]
+    fn narrow_health_wraps_every_reported_value_with_one_cursor_line() {
+        // Health alone at 46 columns: the expanded block wraps, nothing the note says is cut.
+        let mut p = Pane::new(46, 30);
+        p.app.config.panels = [false; 11];
+        p.app.config.panels[10] = true;
+        p.app.health = crate::health::sample(
+            p.app.observed_at,
+            &crate::health::CLEAN.replace("sentry=clean", "sentry=new:TRIP-12,TRIP-14"),
+        );
+        let row = glance::RowId::Health(crate::health::REPO, crate::health::ENV);
+        p.app.row = row_of(&p, &row);
+        let text = p.text();
+        for value in ["0a1b2c3d4e", "new:TRIP-12,TRIP-14", "#7002", "#7000"] {
+            assert!(text.contains(value), "{value}:\n{text}");
+        }
+        assert!(text.contains("checked "), "{text}");
+        // Only the row's first line is the cursor's.
+        let hits = p.app.seen.borrow().hits.clone();
+        let lines = hits
+            .iter()
+            .filter(|(_, h)| *h == Hit::Row(p.app.row))
+            .count();
+        assert_eq!(lines, 1, "{text}");
+        let first = text.lines().position(|l| l.contains("as of ")).unwrap();
+        let (area, _) = hits
+            .iter()
+            .find(|(_, h)| *h == Hit::Row(p.app.row))
+            .unwrap();
+        assert_eq!(area.y as usize, first, "{text}");
+        // Short of room it keeps its minimum: the rule, the source line and the row.
+        for height in 8..=12 {
+            let mut p = Pane::new(46, height);
+            p.app.config.panels[10] = true;
+            p.app.health = crate::health::demo(p.app.observed_at);
+            p.app.row = row_of(&p, &row);
+            let text = p.text();
+            assert!(drawn(&p, p.app.row), "{height}:\n{text}");
+            assert!(text.contains("as of "), "{height}:\n{text}");
+        }
+        // The wide default view cuts the row to one line: it ends in `…`, not a bare key.
+        for name in ["health-120x40", "health-120x40-new"] {
+            let spec = frames::all().into_iter().find(|s| s.name == name).unwrap();
+            let text = frames::text(&frames::render(&spec));
+            let row = text.lines().find(|l| l.contains("as of ")).unwrap();
+            assert!(
+                row.trim_end_matches([' ', '│']).ends_with('…'),
+                "{name}:\n{text}"
+            );
+        }
     }
 }

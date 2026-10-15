@@ -130,7 +130,7 @@ fn prs_use_empty_ledger_space_without_hiding_truth_placeholder() {
         app.fetch.error = (state == 1).then(|| "hub unreachable".into());
         if state == 2 {
             app.config.panels = [
-                false, false, false, true, false, false, false, false, false, false,
+                false, false, false, true, false, false, false, false, false, false, false,
             ];
         }
         app.github = github::demo();

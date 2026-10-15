@@ -1,40 +1,40 @@
  taskr ❯ glance                                                           hub atlas · 2s ago   ● 3 need you  3 to check
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
+H Health-
  3 notes still carry OWNER items
-╭ Glance ──────────────────────────────────────────────────╮╭ ask 61812 · infra-layout · 10-34/34 ─────────────────────╮
-│ NEEDS YOU ──────────────────────────────────────────── 3 ││ architectures.                                           │
-│ ? ◇ tui-frames           BLOCKING                  ⏎  41s││ 4. Run the full suite on the build host with the slow    │
-│   Frames follow-up is ready: PR #212 (orphaned asks hid… ││ tests switched on.                                       │
-│ ? ◇ ios-widgets                             laptop ↗   6m││ 5. Install the candidate on the staging host and replay  │
-│   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash).… ││ one day of traffic.                                      │
-│▌? ◇ infra-layout         BLOCKING                  ⏎   3m││ 6. Compare the replay's error rate and latency with the  │
-│▌  Release runbook for v2.5, ready to run once you pick … ││ last release.                                            │
-│ TO CHECK ───────────────────────────────────────────── 3 ││ 7. Write the changelog from the merged pull requests     │
-│ ! map-tiles-polish                            laptop   2h││ since v2.4.                                              │
-│   lead unregistered and silent                           ││ 8. Publish the candidate to the beta channel and wait    │
-│ ! infra-layout                                         2h││ one hour for crash reports.                              │
-│   lead idle with 3 results                               ││ 9. Promote the candidate to stable if the beta channel   │
-│ ! host build-mini                               mini  12m││ stays quiet.                                             │
-│   host stale: no heartbeat for 12 m                      ││ 10. Update the install docs and the upgrade notes for    │
-│ CAMPAIGNS ─────────────────────────────────────────── 10 ││ the new flags.                                           │
-│ ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃        19s││ 11. Unfreeze the release branch and merge it back into   │
-│   Research complete: reports/ranking-options.md compare… ││ main.                                                    │
-│ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█        29s││ 12. Close the release milestone and archive the runbook  │
-│   Implementation slice: key rollover job, fake-clock te… ││ with the timings.                                        │
-│ ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁        33s││ When: (A) tonight after 22:00 [recommended]; (B)         │
-│   FYI 61448 from search-index (root 4310): the tokenize… ││ tomorrow morning.                                        │
-│ ○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂         2m││                                                          │
-│   Hub FYI: keep the page map machine-readable for the f… ││ Options                                                  │
-│ ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█         3m││  A tonight after 22:00  recommended                      │
-│   FIX: three P2 findings in the review of the address s… ││  B tomorrow morning                                      │
-│ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁  laptop  7m│╰──────────────────────────────────────────────────────────╯
-│   Widget batch approved (asks 61199, 61367): 19 PRs mer… │╭ infra-layout · last 4 h ─────────────────────────────────╮
-│ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆         8m││ ██    ██                                ██               │
-│   NOW: plan rev 3.1 sent; the trust rules and the first… ││ ██    ████    ██  ██▂▂██                ██               │
+╭ Glance ──────────────────────────────────────────────────╮╭ ask 61812 · infra-layout · 11-34/34 ─────────────────────╮
+│ NEEDS YOU ──────────────────────────────────────────── 3 ││ 4. Run the full suite on the build host with the slow    │
+│ ? ◇ tui-frames           BLOCKING                  ⏎  41s││ tests switched on.                                       │
+│   Frames follow-up is ready: PR #212 (orphaned asks hid… ││ 5. Install the candidate on the staging host and replay  │
+│ ? ◇ ios-widgets                             laptop ↗   6m││ one day of traffic.                                      │
+│   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash).… ││ 6. Compare the replay's error rate and latency with the  │
+│▌? ◇ infra-layout         BLOCKING                  ⏎   3m││ last release.                                            │
+│▌  Release runbook for v2.5, ready to run once you pick … ││ 7. Write the changelog from the merged pull requests     │
+│ TO CHECK ───────────────────────────────────────────── 3 ││ since v2.4.                                              │
+│ ! map-tiles-polish                            laptop   2h││ 8. Publish the candidate to the beta channel and wait    │
+│   lead unregistered and silent                           ││ one hour for crash reports.                              │
+│ ! infra-layout                                         2h││ 9. Promote the candidate to stable if the beta channel   │
+│   lead idle with 3 results                               ││ stays quiet.                                             │
+│ ! host build-mini                               mini  12m││ 10. Update the install docs and the upgrade notes for    │
+│   host stale: no heartbeat for 12 m                      ││ the new flags.                                           │
+│ CAMPAIGNS ─────────────────────────────────────────── 10 ││ 11. Unfreeze the release branch and merge it back into   │
+│ ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃        19s││ main.                                                    │
+│   Research complete: reports/ranking-options.md compare… ││ 12. Close the release milestone and archive the runbook  │
+│ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█        29s││ with the timings.                                        │
+│   Implementation slice: key rollover job, fake-clock te… ││ When: (A) tonight after 22:00 [recommended]; (B)         │
+│ ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁        33s││ tomorrow morning.                                        │
+│   FYI 61448 from search-index (root 4310): the tokenize… ││                                                          │
+│ ○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂         2m││ Options                                                  │
+│   Hub FYI: keep the page map machine-readable for the f… ││  A tonight after 22:00  recommended                      │
+│ ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█         3m││  B tomorrow morning                                      │
+│   FIX: three P2 findings in the review of the address s… │╰──────────────────────────────────────────────────────────╯
+│ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁  laptop  7m│╭ infra-layout · last 4 h ─────────────────────────────────╮
+│   Widget batch approved (asks 61199, 61367): 19 PRs mer… ││ ██    ██                                ██               │
+│ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆         8m││ ██    ████    ██  ██▂▂██                ██               │
 │ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃        12m││ ██  ▂▂████▇▇▂▂██▇▇██████▄▄▂▂  ▂▂▂▂▄▄▄▄  ██▂▂▇▇▇▇         │
 │ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁        14m││                                                          │
 │ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁        54m││ lead · idle   lanes —                                    │
 │ ‖ legacy-importer                              parked  3h││ last cache-audit lead root=4040 pane=w41:p1: campaign    │
 │ · 2 quiet                                                ││ complete, docs PR merged                                 │
 ╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
- j k scroll   h list   ⏎ go to lead   a answer   l open   0-9 panels   / filter   y copy   s slotr   ? help   q quit
+ j k scroll   h list   ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   y copy   s slotr   ? help

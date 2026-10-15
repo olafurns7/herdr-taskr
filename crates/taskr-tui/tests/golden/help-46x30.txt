@@ -1,5 +1,5 @@
  taskr ❯ help          2s ago   ● 2 need you
- KEYS · glance ────────────────────── 1-27/55
+ KEYS · glance ────────────────────── 1-27/60
  Move
   j k           down, up (arrows too)
   g G           first, last row
@@ -26,5 +26,5 @@
   8: listed campaigns only; / filters it, not
   7 or 9. 0: trip-to-japan/trip issues by
   current assignee, read at most every 5 min
-  while shown; r does not hurry it.
+  while shown; r does not hurry it. H: the
  j k scroll   h close

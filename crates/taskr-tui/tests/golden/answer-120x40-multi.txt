@@ -1,32 +1,32 @@
  taskr ❯ glance                                                           hub atlas · 2s ago   ● 5 need you  3 to check
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
+H Health-
  3 notes still carry OWNER items
 ╭ Glance ──────────────────────────────────────────────────╮╭ ask 61802 · docs-refresh ────────────────────────────────╮
 │ NEEDS YOU ──────────────────────────────────────────── 5 ││ not blocking · asker waiting · 4m ago · atlas w28:p1     │
 │ ? ◆ fleet-hub            BLOCKING HUB              ⏎  25s││                                                          │
-│   Release: Cut the v3.2 release today, or wait for the … ││ Translations landed for three of the four locales.       │
-│ ? ◆ auth-rotation ╭ Answer ask 61802 · docs-refresh ─────────────────────────────────────────────╮st docs release?   │
-│   Tokens: Which si│                                                                              │                   │
-│▌? ◆ docs-refresh  │  Translations landed for three of the four locales. Locales: Which locales   │                   │
-│▌  Translations lan│  ship in the first docs release?                                             │                   │
-│ ? ◇ tui-frames    │                                                                              │                   │
-│   Frames follow-up│     [ ] A  English                                                           │                   │
-│ ? ◇ ios-widgets   │            The source text; always complete.                                 │week.              │
-│   WIDGET BATCH: 19│     [x] B  German                                                            │                   │
-│ TO CHECK ─────────│            Reviewed by the partner team last week.                           │unreviewed.        │
-│ ! map-tiles-polish│   ❯ [x] C  Japanese                                                          │                   │
-│   lead unregistere│            Machine draft; 40 pages are still unreviewed.                     │ot settled yet.    │
-│ ! infra-layout    │     [ ] D  Portuguese                                                        │                   │
-│   lead idle with 3│            Half translated; the glossary is not settled yet.                 │                   │
-│ ! host build-mini │     …  write your own answer                                                 │                   │
-│   host stale: no h│                                                                              │                   │
-│ CAMPAIGNS ────────│  ──────────────────────────────────────────────────────────────────────────  │                   │
-│ ◐ search-index    │   answer  B: German; C: Japanese                                             │                   │
-│   Research complet│                                                                              │                   │
-│ ◐ auth-rotation   │   j k choose    space pick    tab add a note    ⏎ review    esc cancel       │                   │
+│   Release: Cut the╭ Answer ask 61802 · docs-refresh ─────────────────────────────────────────────╮our locales.       │
+│ ? ◆ auth-rotation │                                                                              │st docs release?   │
+│   Tokens: Which si│  Translations landed for three of the four locales. Locales: Which locales   │                   │
+│▌? ◆ docs-refresh  │  ship in the first docs release?                                             │                   │
+│▌  Translations lan│                                                                              │                   │
+│ ? ◇ tui-frames    │     [ ] A  English                                                           │                   │
+│   Frames follow-up│            The source text; always complete.                                 │                   │
+│ ? ◇ ios-widgets   │     [x] B  German                                                            │week.              │
+│   WIDGET BATCH: 19│            Reviewed by the partner team last week.                           │                   │
+│ TO CHECK ─────────│   ❯ [x] C  Japanese                                                          │unreviewed.        │
+│ ! map-tiles-polish│            Machine draft; 40 pages are still unreviewed.                     │                   │
+│   lead unregistere│     [ ] D  Portuguese                                                        │ot settled yet.    │
+│ ! infra-layout    │            Half translated; the glossary is not settled yet.                 │                   │
+│   lead idle with 3│     …  write your own answer                                                 │                   │
+│ ! host build-mini │                                                                              │                   │
+│   host stale: no h│  ──────────────────────────────────────────────────────────────────────────  │                   │
+│ CAMPAIGNS ────────│   answer  B: German; C: Japanese                                             │                   │
+│ ◐ search-index    │                                                                              │                   │
+│   Research complet│   j k choose    space pick    tab add a note    ⏎ review    esc cancel       │                   │
+│ ◐ auth-rotation   │                                                                              │                   │
 │   Implementation s│                                                                              │                   │
 │ ○ billing-export  │                                                                              │                   │
-│   FYI 61448 from s│                                                                              │                   │
 │ ○ docs-refresh    │                                                                              │───────────────────╯
 │ ○ checkout-flow   │                                                                              │───────────────────╮
 │ ◐ ios-widgets     │                                                                              │      ██           │
@@ -37,4 +37,4 @@
 │ ‖ legacy-importer                              parked  3h││ last Hub FYI: keep the page map machine-readable for the │
 │ · 2 quiet                                                ││ future link checker                                      │
 ╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
- ⏎ go to lead   a answer   l open   0-9 panels   / filter   y copy   s slotr   ? help   q quit
+ ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   y copy   s slotr   q quit   ? help

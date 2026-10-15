@@ -1,40 +1,40 @@
  taskr ❯ glance                                                           hub atlas · 2s ago   ● 2 need you  3 to check
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
+H Health-
  3 notes still carry OWNER items
 ╭ Glance ──────────────────────────────────────────────────╮╭ ask 61767 · tui-frames ──────────────────────────────────╮
-│ NEEDS YOU ──────────────────────────────────────────── 2 ││ BLOCKING · asker waiting · 41s ago · atlas w31:p1        │
-│▌? ◇ tui-╭ Keys · glance ───────────────────────────────────────────────────────────────────────────────────╮         │
-│▌  Frames│                                                                                                  │s        │
-│ ? ◇ ios-│   Move                                           Act                                             │ v2.4.1  │
-│   WIDGET│    j k           down, up (arrows too)            a             answer the selected ask          │or the   │
-│ TO CHECK│    g G           first, last row                  p             park or unpark (confirms)        │         │
-│ ! map-ti│    ctrl-d ctrl-u half page                        o             Decisions, Fleet or log row: op  │         │
-│   lead u│    tab           next section, then the detail    y             copy the jump command            │         │
-│ ! infra-│    wheel         scroll                           r             refresh now                      │d        │
-│   lead i│    shift-tab goes back. In the wide view, with    Answering: j k choose, tab types (a note       │         │
-│ ! host b│    the detail focused, j k g G ctrl-d ctrl-u      after a structured ask's option), ⏎ reviews,   │         │
-│   host s│    PgDn PgUp scroll it; h or esc returns to the   y sends. A multi-select ask: space picks, ⏎    │         │
-│ CAMPAIGN│    list.                                          reviews the set.                               │         │
-│ ◐ search│                                                                                                  │         │
-│   Resear│   Go                                             View                                            │         │
-│ ◐ auth-r│    ⏎             go to the row's agent pane       0-9           toggle asks, checks, campaigns,  │         │
-│   Implem│    l             open the campaign                ?             this help                        │         │
-│ ○ billin│    h             back, close (esc too)            m             mouse on or off                  │         │
-│   FYI 61│    /             filter rows by name              t             theme: dark, light, terminal     │         │
-│ ○ docs-r│    c             all campaigns, closed too        ctrl-l        clear and redraw the screen      │         │
-│   Hub FY│    s             slotr holders and queue          q             close; quits on the glance       │         │
-│ ○ checko│    click         select; double-click is ⏎                                                       │         │
-│   FIX: t│    ⏎ moves every client attached to that Herdr   Marks                                           │         │
-│ ◐ ios-wi│    server.                                        ? ask   ! to check   ◐ working   ○ waiting     │         │
-│   Widget│    7, 9: the campaign last opened with l, as      ● lane   ● ready   · idle   × gone   ‖ parked  │         │
-│ ◐ tui-fr│    cached; l or o reads it again, r does not. 8:  ✓ done   ⊘ abandoned   ✗ rejected              │─────────╯
-│   NOW: p│    listed campaigns only; / filters it, not 7 or  ⏎ pane on this machine   ↗ another             │─────────╮
-│ · infra-│    9. 0: trip-to-japan/trip issues by current     • changed since you looked                     │         │
-│   cache-│    assignee, read at most every 5 min while       ◆ structured ask   ◇ options from its text     │         │
-│ ◐ model-│                                                                                                  │         │
-│   matrix╰──────────────────────────────────────────────────────────────────────────────────────────────────╯         │
+│ NEEDS YO╭ Keys · glance ───────────────────────────────────────────────────────────────────────────────────╮1        │
+│▌? ◇ tui-│                                                                                                  │         │
+│▌  Frames│   Move                                           Act                                             │s        │
+│ ? ◇ ios-│    j k           down, up (arrows too)            a             answer the selected ask          │ v2.4.1  │
+│   WIDGET│    g G           first, last row                  p             park or unpark (confirms)        │or the   │
+│ TO CHECK│    ctrl-d ctrl-u half page                        o             Decisions, Fleet or log row: op  │         │
+│ ! map-ti│    tab           next section, then the detail    y             copy the jump command            │         │
+│   lead u│    wheel         scroll                           r             refresh now                      │         │
+│ ! infra-│    shift-tab goes back. In the wide view, with    Answering: j k choose, tab types (a note       │d        │
+│   lead i│    the detail focused, j k g G ctrl-d ctrl-u      after a structured ask's option), ⏎ reviews,   │         │
+│ ! host b│    PgDn PgUp scroll it; h or esc returns to the   y sends. A multi-select ask: space picks, ⏎    │         │
+│   host s│    list.                                          reviews the set.                               │         │
+│ CAMPAIGN│                                                                                                  │         │
+│ ◐ search│   Go                                             View                                            │         │
+│   Resear│    ⏎             go to the row's agent pane       0-9           toggle asks, checks, campaigns,  │         │
+│ ◐ auth-r│    l             open the campaign                H             toggle Health, the hub's produc  │         │
+│   Implem│    h             back, close (esc too)            ?             this help                        │         │
+│ ○ billin│    /             filter rows by name              m             mouse on or off                  │         │
+│   FYI 61│    c             all campaigns, closed too        t             theme: dark, light, terminal     │         │
+│ ○ docs-r│    s             slotr holders and queue          ctrl-l        clear and redraw the screen      │         │
+│   Hub FY│    click         select; double-click is ⏎        q             close; quits on the glance       │         │
+│ ○ checko│    ⏎ moves every client attached to that Herdr                                                   │         │
+│   FIX: t│    server.                                       Marks                                           │         │
+│ ◐ ios-wi│    7, 9: the campaign last opened with l, as      ? ask   ! to check   ◐ working   ○ waiting     │         │
+│   Widget│    cached; l or o reads it again, r does not. 8:  ● lane   ● ready   · idle   × gone   ‖ parked  │─────────╯
+│ ◐ tui-fr│    listed campaigns only; / filters it, not 7 or  ✓ done   ⊘ abandoned   ✗ rejected              │─────────╮
+│   NOW: p│    9. 0: trip-to-japan/trip issues by current     ⏎ pane on this machine   ↗ another             │         │
+│ · infra-│    assignee, read at most every 5 min while       • changed since you looked                     │         │
+│   cache-│                                                                                                  │         │
+│ ◐ model-╰──────────────────────────────────────────────────────────────────────────────────────────────────╯         │
 │ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁        54m││ lead ◐ working   lanes ●●●●○○                            │
 │ ‖ legacy-importer                              parked  3h││ last NOW: plan rev 3.1 sent; the trust rules and the     │
 │ · 2 quiet                                                ││ first frames are in flight.                              │
 ╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
- ⏎ go to lead   a answer   l open   0-9 panels   / filter   y copy   s slotr   ? help   q quit
+ ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   y copy   s slotr   q quit   ? help

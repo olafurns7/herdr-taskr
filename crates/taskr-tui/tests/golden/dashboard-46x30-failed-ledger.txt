@@ -1,6 +1,6 @@
  taskr                             ! no data
 1 asks+ · 2 checks+ · 3 camps+
-4 PRs+ · 5 Shipped+ · 6 Build+ · 7-9,0 off
+4 PRs+ · 5 Shipped+ · 6 Build+ · 7-9,0,H off
              Cannot reach the hub
 
      taskr: server unreachable (connection

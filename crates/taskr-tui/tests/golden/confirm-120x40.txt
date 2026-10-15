@@ -1,5 +1,6 @@
  taskr ❯ glance                                                           hub atlas · 2s ago   ● 2 need you  3 to check
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
+H Health-
  3 notes still carry OWNER items
 ╭ Glance ──────────────────────────────────────────────────╮╭ ask 61767 · tui-frames ──────────────────────────────────╮
 │ NEEDS YOU ──────────────────────────────────────────── 2 ││ BLOCKING · asker waiting · 41s ago · atlas w31:p1        │
@@ -9,32 +10,31 @@
 │   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash).… ││ now [recommended]; (B) merge, hold the release for the   │
 │ TO CHECK ───────────────────────────────────────────── 3 ││ next change.                                             │
 │ ! map-tiles-polish                            laptop   2h││                                                          │
-│   lead unregistered and silent                           ││ Options                                                  │
-│ ! infra-layout    ╭ Answer ask 61767 · tui-frames ───────────────────────────────────────────────╮recommended        │
-│   lead idle with 3│                                                                              │t change           │
-│ ! host build-mini │  You are about to send this answer. It cannot be changed or sent twice.      │                   │
-│   host stale: no h│                                                                              │                   │
-│ CAMPAIGNS ────────│  to    tui-frames lead · atlas w31:p1 · waiting for this answer              │                   │
-│ ◐ search-index    │  text  A: merge #212 and release v2.4.1 now                                  │                   │
-│   Research complet│                                                                              │                   │
-│ ◐ auth-rotation   │  runs  taskr answer 61767 "A: merge #212 and release v2.4.1 now"             │                   │
-│   Implementation s│                                                                              │                   │
-│ ○ billing-export  │   y send    e edit    esc cancel, nothing is sent                            │                   │
+│   lead unregistere╭ Answer ask 61767 · tui-frames ───────────────────────────────────────────────╮                   │
+│ ! infra-layout    │                                                                              │recommended        │
+│   lead idle with 3│  You are about to send this answer. It cannot be changed or sent twice.      │t change           │
+│ ! host build-mini │                                                                              │                   │
+│   host stale: no h│  to    tui-frames lead · atlas w31:p1 · waiting for this answer              │                   │
+│ CAMPAIGNS ────────│  text  A: merge #212 and release v2.4.1 now                                  │                   │
+│ ◐ search-index    │                                                                              │                   │
+│   Research complet│  runs  taskr answer 61767 "A: merge #212 and release v2.4.1 now"             │                   │
+│ ◐ auth-rotation   │                                                                              │                   │
+│   Implementation s│   y send    e edit    esc cancel, nothing is sent                            │                   │
+│ ○ billing-export  │                                                                              │                   │
 │   FYI 61448 from s│                                                                              │                   │
 │ ○ docs-refresh    │                                                                              │                   │
 │   Hub FYI: keep th│                                                                              │                   │
 │ ○ checkout-flow   │                                                                              │                   │
-│   FIX: three P2 fi│                                                                              │                   │
-│ ◐ ios-widgets     ╰──────────────────────────────────────────────────────────────────────────────╯                   │
-│   Widget batch approved (asks 61199, 61367): 19 PRs mer… ││                                                          │
-│ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆         8m│╰──────────────────────────────────────────────────────────╯
-│   NOW: plan rev 3.1 sent; the trust rules and the first… │╭ tui-frames · last 4 h ───────────────────────────────────╮
-│ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃        12m││       ██      ██        ██      ██                       │
-│   cache-audit lead root=4040 pane=w41:p1: campaign comp… ││       ██      ██  ██▂▂  ██▂▂    ██          ████         │
-│ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁        14m││     ▇▇██    ▇▇██▇▇████  ████▂▂  ██  ▄▄▇▇▂▂▄▄████         │
-│   matrix run A finished                                  ││                                                          │
+│   FIX: three P2 fi╰──────────────────────────────────────────────────────────────────────────────╯                   │
+│ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁  laptop  7m││                                                          │
+│   Widget batch approved (asks 61199, 61367): 19 PRs mer… │╰──────────────────────────────────────────────────────────╯
+│ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆         8m│╭ tui-frames · last 4 h ───────────────────────────────────╮
+│   NOW: plan rev 3.1 sent; the trust rules and the first… ││       ██      ██        ██      ██                       │
+│ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃        12m││       ██      ██  ██▂▂  ██▂▂    ██          ████         │
+│   cache-audit lead root=4040 pane=w41:p1: campaign comp… ││     ▇▇██    ▇▇██▇▇████  ████▂▂  ██  ▄▄▇▇▂▂▄▄████         │
+│ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁        14m││                                                          │
 │ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁        54m││ lead ◐ working   lanes ●●●●○○                            │
 │ ‖ legacy-importer                              parked  3h││ last NOW: plan rev 3.1 sent; the trust rules and the     │
 │ · 2 quiet                                                ││ first frames are in flight.                              │
 ╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
- ⏎ go to lead   a answer   l open   0-9 panels   / filter   y copy   s slotr   ? help   q quit
+ ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   y copy   s slotr   q quit   ? help

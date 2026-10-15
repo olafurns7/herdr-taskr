@@ -2,6 +2,7 @@
 1 asks+ · 2 checks+ · 3 camps+
 4 PRs- · 5 Shipped- · 6 Build-
 7 Decisions+ · 8 Fleet+ · 9 Log+ · 0 Issues-
+H Health-
  3 notes still carry OWNER items
  NEEDS YOU ──────────────────────────────── 2
 ▌? ◇ tui-frames           BLOCKING      ⏎  41s
@@ -25,6 +26,5 @@ Select a campaign and press l; Esc returns he…
  DECISION LOG ───────────────── recent sample
 Select a campaign and press l; Esc returns he…
  CAMPAIGNS ─────────────────────────────── 10
- ◐ search-index      ●       ▁▁▁▁▁█▃       19s
- +12 more · c shows all
+ +13 more · c shows all
  ⏎ go   a answer   l open   ? help

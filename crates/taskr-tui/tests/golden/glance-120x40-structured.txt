@@ -1,5 +1,6 @@
  taskr ❯ glance                                                           hub atlas · 2s ago   ● 5 need you  3 to check
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
+H Health-
  3 notes still carry OWNER items
 ╭ Glance ──────────────────────────────────────────────────╮╭ ask 61790 · auth-rotation ───────────────────────────────╮
 │ NEEDS YOU ──────────────────────────────────────────── 5 ││ BLOCKING · asker waiting · 2m ago · atlas w20:p1         │
@@ -26,7 +27,6 @@
 │ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█        29s││                                                          │
 │   Implementation slice: key rollover job, fake-clock te… ││                                                          │
 │ ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁        33s││                                                          │
-│   FYI 61448 from search-index (root 4310): the tokenize… ││                                                          │
 │ ○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂         2m│╰──────────────────────────────────────────────────────────╯
 │ ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█         3m│╭ auth-rotation · last 4 h ────────────────────────────────╮
 │ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁  laptop  7m││                                               ██         │
@@ -37,4 +37,4 @@
 │ ‖ legacy-importer                              parked  3h││ last Implementation slice: key rollover job, fake-clock  │
 │ · 2 quiet                                                ││ tests, installer and operator docs                       │
 ╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
- ⏎ go to lead   a answer   l open   0-9 panels   / filter   y copy   s slotr   ? help   q quit
+ ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   y copy   s slotr   q quit   ? help

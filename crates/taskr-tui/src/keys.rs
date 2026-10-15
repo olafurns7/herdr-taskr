@@ -55,6 +55,13 @@ pub(crate) const KEYS: &[Key] = &[
          0 Issues (+ shown, - hidden)",
         GLANCE,
     ),
+    key(
+        "View",
+        "H",
+        "health",
+        "toggle Health, the hub's production report (h stays back)",
+        GLANCE,
+    ),
     key("Move", "1-5", "jump", "jump to a pane", CAMPAIGN),
     key("Move", "wheel", "scroll", "scroll", ALL),
     key(
@@ -138,11 +145,13 @@ pub(crate) const KEYS: &[Key] = &[
 pub(crate) const DETAIL_NOTE: &str = "shift-tab goes back. In the wide view, with the detail \
     focused, j k g G ctrl-d ctrl-u PgDn PgUp scroll it; h or esc returns to the list.";
 
-/// What panels 7-9 and 0 show and what refreshes them; the glance's help says so under "Go".
+/// What panels 7-9, 0 and H show and what refreshes them; the glance's help says so under
+/// "Go".
 pub(crate) const LEDGER_NOTE: &str = "7, 9: the campaign last opened with l, as cached; l \
     or o reads it again, r does not. 8: listed campaigns only; / filters it, not 7 or 9. \
     0: trip-to-japan/trip issues by current assignee, read at most every 5 min while shown; \
-    r does not hurry it.";
+    r does not hurry it. H: the hub's latest HEALTH note for trip-to-japan/trip production, \
+    as of its checked time, not live health; read at most once a minute while shown.";
 
 /// The answer dialog's own keys; the help says so under "Act".
 pub(crate) const ANSWER_NOTE: &str = "Answering: j k choose, tab types (a note after a \
