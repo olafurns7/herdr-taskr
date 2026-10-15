@@ -40,18 +40,25 @@ Paste this into Claude Code or Codex running inside Herdr:
 Install taskr for Herdr: fetch https://raw.githubusercontent.com/olafurns7/herdr-taskr/master/docs/install.md and follow it step by step. Ask me before changing any hook or agent settings.
 ```
 
-Or install by hand on macOS or Linux:
+Setting up a new machine from scratch, or not using Herdr yet? Follow
+[AGENTS_SETUP.md](AGENTS_SETUP.md), a tested first-time setup guide.
+
+Or install by hand on macOS or Linux. Pin the release: `taskr-tui` ships from
+v0.21.0 on, and `releases/latest` skips prereleases, so it may lag behind the
+newest prerelease (it has pointed at v0.18.0, which has no `taskr-tui`).
 
 ```sh
+export TASKR_VERSION=v0.22.0   # or a newer tag
 curl -fsSL -o taskr-install.sh \
-  https://github.com/olafurns7/herdr-taskr/releases/latest/download/install.sh &&
+  "https://github.com/olafurns7/herdr-taskr/releases/download/$TASKR_VERSION/install.sh" &&
   test -s taskr-install.sh &&
   TASKR_LINK_SKILLS=1 sh taskr-install.sh &&
   PATH="$HOME/.local/bin:$PATH" taskr version
 rm taskr-install.sh
 ```
 
-This installs `taskr`, `taskr-tui`, the agent skill and the Herdr plugin.
+This installs `taskr`, `taskr-tui` (v0.21.0 and newer), the agent skill and
+the Herdr plugin.
 Set `TASKR_NO_TUI=1` to skip the terminal view. Installing an older release
 without it preserves any existing `taskr-tui`. The [install guide](docs/install.md)
 has every step, including more than one machine.

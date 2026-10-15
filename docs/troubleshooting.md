@@ -24,6 +24,12 @@ export PATH="$HOME/.local/bin:$PATH"
 Herdr's plugin looks in the same place; if you installed elsewhere, Herdr
 needs `TASKR_INSTALL_DIR` in its environment too.
 
+## taskr-tui: command not found
+
+`taskr-tui` ships from v0.21.0 on. `taskr version` older than that, often
+v0.18.0, means the install used `releases/latest`, which skips prereleases.
+Reinstall with the tag pinned: [install.md, step 2](install.md#2-install).
+
 ## The daemon is not running
 
 `taskr daemon --status` shows `running: false`.
@@ -41,6 +47,11 @@ herdr plugin list --json | grep olafurns7.taskr
 ```
 
 If it is missing, link it: `herdr plugin link "$HOME/.local/share/taskr/plugin"`.
+
+Without Herdr, a plain daemon exits at once (`exit: socket removed` in the
+log), and `--restart` with no daemon running exits 6 saying the new daemon
+exited at start. Run `taskr daemon --stay` instead; a later `--restart` keeps
+its `--stay`.
 
 ## The daemon is an old version
 
@@ -65,7 +76,7 @@ yourself to see the error.
 
 - `taskr` not found: fix `PATH`, or point `TASKR_BIN` at the binary.
 - "Cannot reach the hub": on a client host, see the next section.
-- "No open campaigns" is not an error: the ledger has nothing open. Try
+- "No listed campaigns" or "No open campaigns" is not an error: the ledger has nothing open. Try
   `taskr-tui --demo` to see what a busy one looks like.
 
 ## The hub is unreachable from a client
