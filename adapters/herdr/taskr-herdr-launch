@@ -1,0 +1,112 @@
+#!/bin/sh
+# Register a worker in an existing, idle pane, verify its env, then deliver its brief.
+set -u
+
+usage='usage: taskr-herdr-launch [--push] --name NAME --role ROLE --parent ID --model MODEL --effort E --report PATH [--provider P] KIND PANE BRIEF -- [AGENT_ARGS...]'
+task= launch= config=
+die() {
+	printf 'taskr-herdr-launch: %s (task=%s launch=%s pane=%s config=%s)\n' \
+		"$1" "${task:--}" "${launch:--}" "${pane:--}" "${config:--}" >&2
+	exit "${2:-1}"
+}
+
+push= name= role= parent= provider= model= effort= report= pane=
+while [ $# -gt 0 ]; do
+	case $1 in
+	--push) push=1; shift ;;
+	--name|--role|--parent|--provider|--model|--effort|--report)
+		[ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value; $usage" 2
+		case $1 in
+		--name) name=$2 ;; --role) role=$2 ;; --parent) parent=$2 ;;
+		--provider) provider=$2 ;; --model) model=$2 ;; --effort) effort=$2 ;; --report) report=$2 ;;
+		esac
+		shift 2 ;;
+	--help) printf '%s\n' "$usage"; exit 0 ;;
+	--*) die "unknown option $1; $usage" 2 ;;
+	*) break ;;
+	esac
+done
+[ $# -ge 4 ] || die "$usage" 2
+kind=$1 pane=$2 brief=$3
+[ "$4" = -- ] || die "$usage" 2
+shift 4
+case $kind in claude|codex|pi|opencode) ;; *) die "unsupported kind: $kind" 2 ;; esac
+[ -n "$name" ] && [ -n "$model" ] && [ -n "$effort" ] && [ -n "$pane" ] || die "$usage" 2
+case $role in implementer|reviewer|researcher|sub-orchestrator|gate) ;; *) die 'a worker --role is required' 2 ;; esac
+case $parent in ''|*[!0-9]*|0) die '--parent must be a positive task id' 2 ;; esac
+case $report in /*) ;; *) die '--report must be an absolute path' 2 ;; esac
+[ -f "$brief" ] && [ -r "$brief" ] || die "brief is not a readable file: $brief" 2
+# taskr reads paths on the launcher's host, independently of the pane cwd.
+case $brief in /*) ;; *) brief=$(pwd -P)/$brief ;; esac
+[ -n "$provider" ] || provider=$kind
+[ -z "$push" ] || [ "$kind" = claude ] || die '--push supports Claude; see docs/push.md for pi and Codex adapters' 2
+for tool in taskr herdr jq "$kind"; do
+	command -v "$tool" >/dev/null 2>&1 || die "required command not found: $tool" 2
+done
+if [ -n "$push" ]; then
+	[ -d "${HOME:-}" ] || die '--push requires an existing HOME directory' 2
+	command -v mktemp >/dev/null 2>&1 || die '--push requires mktemp' 2
+fi
+unset TASKR_FORMAT
+
+# jq keeps spaces, escapes and nested fields in pane JSON out of shell parsing.
+info=$(herdr pane get "$pane") || die 'herdr pane get failed'
+field() {
+	printf '%s\n' "$info" | jq -er --arg key "$1" \
+		'.result.pane[$key] | select(type == "string" and length > 0 and (test("[\\x00-\\x1f\\x7f]") | not))'
+}
+workspace=$(field workspace_id) || die 'pane workspace_id is missing or invalid'
+tab=$(field tab_id) || die 'pane tab_id is missing or invalid'
+cwd=$(field cwd) || die 'pane cwd is missing or invalid'
+[ -d "$cwd" ] || die 'pane cwd is not a local directory'
+info=$(herdr pane process-info --pane "$pane") || die 'herdr pane process-info failed'
+printf '%s\n' "$info" | jq -e '
+	.result.process_info | .shell_pid as $s | .foreground_process_group_id as $f |
+	($s | type == "number" and . > 0 and floor == .) and $s == $f
+' >/dev/null || die 'pane is not at its shell prompt'
+herdr pane send-keys "$pane" ctrl+c >/dev/null || die 'could not clear the pane shell input'
+
+out=$(taskr new "$name" --parent "$parent" --role "$role" --workspace "$workspace" \
+	--tab "$tab" --pane "$pane" --cwd "$cwd" --brief "$brief" --report "$report") \
+	|| die 'taskr new failed' "$?"
+case $out in 'n1 '*) task=${out#n1 } ;; *) die 'taskr new did not return n1 TASK' ;; esac
+case $task in ''|*[!0-9]*|0) task=; die 'taskr new returned an invalid task id' ;; esac
+out=$(taskr launch "$task" --provider "$provider" --model "$model" --effort "$effort") \
+	|| die 'taskr launch failed' "$?"
+case $out in 'l1 '*) ;; *) die 'taskr launch did not return l1 JSON' ;; esac
+launch=$(printf '%s\n' "${out#l1 }" | jq -er \
+	'.launch_id | select(type == "number" and . > 0 and floor == .) | tostring') \
+	|| die 'taskr launch returned an invalid launch id'
+case $launch in ''|*[!0-9]*) launch=; die 'taskr launch returned a non-decimal launch id' ;; esac
+
+herdr pane run "$pane" " export TASKR_TASK=$task TASKR_LAUNCH=$launch" >/dev/null \
+	|| die 'could not export worker identity'
+herdr pane run "$pane" 'printf "taskr-herdr-env=%s/%s\n" "$TASKR_TASK" "$TASKR_LAUNCH"' >/dev/null \
+	|| die 'could not check worker identity'
+herdr pane wait-output "$pane" --match "taskr-herdr-env=$task/$launch" --timeout 15000 >/dev/null \
+	|| die 'pane shell did not confirm the worker identity'
+
+if [ -n "$push" ]; then
+	# A fresh private directory avoids overwriting any existing project or push config.
+	umask 077
+	config_dir=$(mktemp -d "$HOME/.taskr-herdr-push.XXXXXX") || die 'could not create private push directory'
+	config=$config_dir/mcp.json
+	chmod 0700 "$config_dir" || die 'could not protect push directory'
+	(set -C; printf '%s\n' '{"mcpServers":{"taskr":{"command":"taskr","args":["mcp","--channel"]}}}' >"$config") \
+		|| die 'could not create push config exclusively'
+	chmod 0600 "$config" || die 'could not protect push config'
+	set -- "$@" --mcp-config "$config" --dangerously-load-development-channels server:taskr
+fi
+
+if ! herdr agent start "$name" --kind "$kind" --pane "$pane" --timeout 90000 -- "$@" >/dev/null; then
+	[ -n "$push" ] || die 'herdr agent start failed'
+	screen=$(herdr pane read "$pane" --source visible --lines 40) || die 'could not read development-channel dialog'
+	case $screen in
+	*'Loading development channels'*) ;;
+	*) die 'agent start failed without a development-channel dialog' ;;
+	esac
+	herdr pane send-keys "$pane" Enter >/dev/null || die 'could not confirm development-channel dialog'
+	herdr agent wait "$name" --until idle --timeout 90000 >/dev/null || die 'agent did not become idle after dialog'
+fi
+taskr prompt "$task" --file "$brief" >/dev/null || die 'taskr prompt failed' "$?"
+printf 'task=%s launch=%s pane=%s%s\n' "$task" "$launch" "$pane" "${config:+ config=$config}"

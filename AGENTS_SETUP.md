@@ -312,6 +312,29 @@ own tab beside the session after `taskr start` registered the thread:
 The check in [step 7](#7-verify-end-to-end) starts the server for a
 throwaway lane, sends it the MCP handshake and lists its nine tools.
 
+### Start a worker
+
+After setting up taskr and Herdr, a source checkout includes a generic worker
+launcher. It needs `jq`, `taskr`, `herdr` and the chosen agent on PATH, plus an
+existing unused pane at its shell prompt and a brief file:
+
+```sh
+sh adapters/herdr/taskr-herdr-launch \
+  --name worker-api --role implementer --parent 42 \
+  --model chosen-model --effort medium --report "$PWD/worker-report.md" \
+  claude WORKER_PANE "$PWD/worker-brief.md" -- \
+  --model chosen-model --effort medium
+```
+
+Replace the example IDs, model and paths. Expect `task=ID launch=ID pane=PANE`:
+the worker inherits `TASKR_TASK` and `TASKR_LAUNCH`, and receives the brief through
+taskr. It still runs `got`, reports progress and finishes with `ready`/`done` or
+`fail` as instructed by its brief. The launcher chooses no model or account
+policy, installs nothing and creates no tabs. `--push` opts a Claude worker into
+a private push config and confirms its development-channel dialog. For full
+arguments, failure recovery and pi/Codex push setup, see
+[Start a Herdr worker](docs/push.md#start-a-herdr-worker).
+
 ## 6. Terminal view settings
 
 `taskr-tui` keeps its choices in `~/.config/taskr/tui.json`
