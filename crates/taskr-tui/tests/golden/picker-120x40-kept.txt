@@ -1,0 +1,40 @@
+ taskr ❯ dashboard                                                        hub atlas · 2s ago   ● 5 need you  3 to check
+ [D Dashboard]  A Asks 5   F Fleet 11   I Detail
+1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
+H Health-
+ 3 notes still carry OWNER items
+ NEEDS YOU ────────────────────────────────────────────── 5  TO CHECK ─────────────────────────────────────────────── 3
+ ? ◆ fleet-hub            BLOCKING HUB                ⏎  25s ! map-tiles-polish                              laptop   2h
+   Release: Cut the v3.2 release today, or wait for the ca…    lead unregistered and silent
+▌? ◆ auth-rotation        BLOCKING                    ⏎   2m ! infra-layout                                           2h
+▌  Tokens: Which signing scheme should the rotated service…    lead idle with 3 results
+ ? ◆ docs-refresh          ╭ Asks · 5 open owner asks · 1 kept answer ──────────────────────╮                  mini  12m
+   Translations landed for │                                                                │2 m
+ ? ◇ tui-frames           B│   ? ◆ fleet-hub            BLOCKING HUB                ⏎  25s  │
+   Frames follow-up is read│     Release: Cut the v3.2 release today, or wait for the ca…   │
+ ? ◇ ios-widgets           │   ? ◆ auth-rotation        BLOCKING                    ⏎   2m  │
+   WIDGET BATCH: 19 of 23 m│     Tokens: Which signing scheme should the rotated service…   │
+ CAMPAIGNS ────────────────│   ? ◆ docs-refresh                                     ⏎   4m  │─────────────────────── 11
+ ◐ search-index        ●   │     Translations landed for three of the four locales. Loca…   │                        19s
+   Research complete: repor│   ? ◇ tui-frames           BLOCKING                    ⏎  41s  │
+ ◐ auth-rotation       ●   │     Frames follow-up is ready: PR #212 (orphaned asks hidde…   │                        29s
+   Implementation slice: ke│   ? ◇ ios-widgets                               laptop ↗   6m  │
+ ○ billing-export      ●   │     WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…   │                        33s
+   FYI 61448 from search-in│  NOT RECORDED · kept to read, no longer open                   │
+•○ docs-refresh        ●   │  ▌? ◆ docs-site            BLOCKING                    ⏎   2m  │                         2m
+   Hub FYI: keep the page m│  ▌  Tokens: Which signing scheme should the rotated service…   │
+ ○ checkout-flow       ●●  │                                                                │                         3m
+   FIX: three P2 findings i│   j k choose    ⏎ read    esc close                            │
+ ◐ ios-widgets         —   │                                                                │                 laptop  7m
+   Widget batch approved (a╰────────────────────────────────────────────────────────────────╯
+ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆                                                                       8m
+   NOW: plan rev 3.1 sent; the trust rules and the first frames are in flight.
+ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃                                                                      12m
+   cache-audit lead root=4040 pane=w41:p1: campaign complete, docs PR merged
+ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁                                                                      14m
+   matrix run A finished
+ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                                                                      54m
+   S4 cursor split merged; contract tests green on both hosts
+ ‖ legacy-importer                                                                                            parked  3h
+ · 2 quiet
+ ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   D A F I screens   y copy   s slotr   ? help

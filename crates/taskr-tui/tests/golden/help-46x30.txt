@@ -10,7 +10,7 @@
  Go
   D A F I       Dashboard, Asks, Fleet; I: the
   [ ]           previous, next screen
-  ⏎             go to the row's agent pane
+  ⏎             go to the row's agent pane; on
   l             open the campaign
   h             back, close (esc too)
   /             filter rows by name

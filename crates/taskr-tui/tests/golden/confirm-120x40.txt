@@ -6,30 +6,30 @@ H Health-
  NEEDS YOU ────────────────────────────────────────────── 2  TO CHECK ─────────────────────────────────────────────── 3
 ▌? ◇ tui-frames           BLOCKING                    ⏎  41s ! map-tiles-polish                              laptop   2h
 ▌  Frames follow-up is ready: PR #212 (orphaned asks hidde…    lead unregistered and silent
- ? ◇ ios-widgets                               laptop ↗   6m ! infra-layout                                           2h
-   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…    lead idle with 3 results
-                                                             ! host build-mini                                 mini  12m
-                                                               host stale: no heartbeat for 12 m
- CAMPAIGNS ─────────╭ Answer ask 61767 · tui-frames ───────────────────────────────────────────────╮──────────────── 11
- ◐ search-index     │                                                                              │                 19s
-   Research complete│  You are about to send this answer. It cannot be changed or sent twice.      │
- ◐ auth-rotation    │                                                                              │                 29s
-   Implementation sl│  to    tui-frames lead · atlas w31:p1 · waiting for this answer              │
- ○ billing-export   │  text  A: merge #212 and release v2.4.1 now                                  │                 33s
+ ? ◇ ios-widgets    ╭ Answer ask 61767 · tui-frames ───────────────────────────────────────────────╮                  2h
+   WIDGET BATCH: 19 │                                                                              │
+                    │  You are about to send this answer. It cannot be changed or sent twice.      │           mini  12m
+                    │                                                                              │
+ CAMPAIGNS ─────────│  to    tui-frames lead · atlas w31:p1 · waiting for this answer              │──────────────── 11
+ ◐ search-index     │  text  A: merge #212 and release v2.4.1 now                                  │                 19s
+   Research complete│                                                                              │
+ ◐ auth-rotation    │  runs  taskr answer 61767 "A: merge #212 and release v2.4.1 now"             │                 29s
+   Implementation sl│                                                                              │
+ ○ billing-export   │   y send    e edit    esc cancel, nothing is sent                            │                 33s
    FYI 61448 from se│                                                                              │
- ○ docs-refresh     │  runs  taskr answer 61767 "A: merge #212 and release v2.4.1 now"             │                  2m
+ ○ docs-refresh     │                                                                              │                  2m
    Hub FYI: keep the│                                                                              │
- ○ checkout-flow    │   y send    e edit    esc cancel, nothing is sent                            │                  3m
+ ○ checkout-flow    │                                                                              │                  3m
    FIX: three P2 fin│                                                                              │
  ◐ ios-widgets      │                                                                              │          laptop  7m
    Widget batch appr│                                                                              │
  ◐ tui-frames       │                                                                              │                  8m
    NOW: plan rev 3.1│                                                                              │
- · infra-layout     ╰──────────────────────────────────────────────────────────────────────────────╯                 12m
-   cache-audit lead root=4040 pane=w41:p1: campaign complete, docs PR merged
- ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁                                                                      14m
-   matrix run A finished
- ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                                                                      54m
+ · infra-layout     │                                                                              │                 12m
+   cache-audit lead │                                                                              │
+ ◐ model-evals      │                                                                              │                 14m
+   matrix run A fini│                                                                              │
+ ○ api-pagination   ╰──────────────────────────────────────────────────────────────────────────────╯                 54m
    S4 cursor split merged; contract tests green on both hosts
  ‖ legacy-importer                                                                                            parked  3h
  · 2 quiet

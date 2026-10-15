@@ -37,4 +37,4 @@ H Health-
  DECISION LOG ─────────────────────────────── recent sample  billing-export · 1 working 0 ready 1 open · lead idle
  tui-frames #4120 · read 3m ago                              docs-refresh · 1 working 0 ready 1 open · lead idle
  #61301 13:58 D4: one binary for the view and the hub; the … +7 more campaigns · F lists all
- o open campaign   0-9 panels   H health   / filter   D A F I screens   s slotr   q quit   ? help
+ o open campaign   a asks   0-9 panels   H health   / filter   D A F I screens   s slotr   q quit   ? help

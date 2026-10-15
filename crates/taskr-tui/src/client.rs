@@ -24,7 +24,8 @@ const SPINNER_FRAME: Duration = Duration::from_millis(150);
 pub const TIMEOUT: Duration = Duration::from_secs(10);
 
 pub enum Update {
-    Started,
+    /// A read began, at this moment in the fetch thread.
+    Started(Instant),
     Done(Box<Result<Glance, String>>),
 }
 
@@ -298,7 +299,7 @@ pub fn spawn(
     thread::spawn(move || {
         loop {
             let started = Instant::now();
-            if tx.send(Update::Started).is_err()
+            if tx.send(Update::Started(started)).is_err()
                 || tx
                     .send(Update::Done(Box::new(fetch(&command, TIMEOUT))))
                     .is_err()
@@ -331,6 +332,8 @@ pub struct Live {
     /// None when nothing is fetched at all (`--demo`).
     events: Option<Events>,
     started: Option<Instant>,
+    /// When the read in flight began, as the fetch thread says.
+    began: Option<Instant>,
     fetched: Option<Instant>,
     next: Option<Instant>,
 }
@@ -342,6 +345,7 @@ impl Live {
             pace,
             events,
             started: None,
+            began: None,
             fetched: None,
             next: None,
         }
@@ -366,13 +370,15 @@ impl Live {
         };
         for update in self.updates.try_iter() {
             match update {
-                Update::Started => self.started = Some(now),
+                Update::Started(at) => (self.started, self.began) = (Some(now), Some(at)),
                 Update::Done(result) => {
                     self.started = None;
+                    let began = self.began.take();
                     self.next = Some(now + every);
                     match *result {
                         Ok(glance) => {
                             // The last good snapshot stays on screen through a failure.
+                            app.fetch.began = began;
                             app.snapshot(glance);
                             app.fetch.loaded = true;
                             app.fetch.error = None;
@@ -459,7 +465,7 @@ mod tests {
         let at = |ms: u64| t0 + Duration::from_millis(ms);
 
         // Loading: no snapshot, no error; the spinner only after 300 ms.
-        tx.send(Update::Started).unwrap();
+        tx.send(Update::Started(Instant::now())).unwrap();
         live.poll(&mut app, at(0));
         assert!(!app.fetch.loaded && !app.fetch.in_flight);
         live.poll(&mut app, at(450));

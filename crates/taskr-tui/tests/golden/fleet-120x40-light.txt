@@ -37,4 +37,4 @@
 
 
 
- ⏎ go to lead   l open   p park   / filter   D A F I screens   y copy   s slotr   q quit   ? help
+ ⏎ go to lead   l open   p park   a asks   / filter   D A F I screens   y copy   s slotr   q quit   ? help

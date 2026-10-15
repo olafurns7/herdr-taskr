@@ -6,7 +6,7 @@ H Health-
  NEEDS YOU╭ Keys · dashboard ────────────────────────────────────────────────────────────────────────────────╮─────── 3
 ▌? ◇ tui-f│                                                                                                  │aptop   2h
 ▌  Frames │   Move                                           Act                                             │
- ? ◇ ios-w│    j k           down, up (arrows too)            a             answer the selected ask          │        2h
+ ? ◇ ios-w│    j k           down, up (arrows too)            a             answer this ask, else pick one   │        2h
    WIDGET │    g G           first, last row                  p             park or unpark (confirms)        │
           │    ctrl-d ctrl-u half page                        o             Decisions, Fleet or log row: op  │ mini  12m
           │    tab           next card; shift-tab back        y             copy the jump command            │
@@ -15,7 +15,7 @@ H Health-
    Researc│   Go                                              after a structured ask's option), ⏎ reviews,   │
  ◐ auth-ro│    D A F I       Dashboard, Asks, Fleet; I: the   y sends. A multi-select ask: space picks, ⏎    │       29s
    Impleme│    [ ]           previous, next screen            reviews the set.                               │
- ○ billing│    ⏎             go to the row's agent pane                                                      │       33s
+ ○ billing│    ⏎             go to the row's agent pane; on                                                  │       33s
    FYI 614│    l             open the campaign               View                                            │
  ○ docs-re│    h             back, close (esc too)            0-9           toggle asks, checks, campaigns,  │        2m
    Hub FYI│    /             filter rows by name              H             toggle Health, the hub's produc  │

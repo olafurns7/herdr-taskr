@@ -1,0 +1,30 @@
+ taskr                                                   2s ago   ! 3 to check
+  D Dashboard   A Asks 0  [F Fleet 11]  I Detail
+ 3 notes still carry OWNER items
+ CAMPAIGNS ───────────────────────────────────────────────────────────────── 11
+ ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃                              19s
+   Research complete: reports/ranking-options.md compares three scorers on the…
+ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█                              29s
+   Implementation slice: key rollover job, fake-clock tests, installer and ope…
+▌○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁                              33s
+▌  FYI 61448 from search-index (root 4310): the tokenizer upgrade drops the le…
+•○ docs╭ Asks ──────────────────────────────────────────────────────────╮     2m
+   Hub │                                                                │r
+ ○ chec│  Nothing needs you                                             │     3m
+   FIX:│  No open owner ask in this snapshot.                           │w com…
+ ◐ ios-│                                                                │top  7m
+   Widg│                                                                │ait f…
+ ◐ tui-│                                                                │     8m
+   NOW:│   A Asks    esc close                                          │ight.
+ · infr│                                                                │    12m
+   cach╰────────────────────────────────────────────────────────────────╯ged
+ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁                              14m
+   matrix run A finished
+ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                              54m
+   S4 cursor split merged; contract tests green on both hosts
+ ‖ legacy-importer                                                    parked  3h
+ · 2 quiet
+
+
+
+ ⏎ go   l open   p park   D A F I screens   ? help

@@ -1,0 +1,40 @@
+ taskr ❯ asks                                                             hub atlas · 2s ago   ● 5 need you  3 to check
+  D Dashboard  [A Asks 5]  F Fleet 11   I Detail
+ 3 notes still carry OWNER items
+ NEEDS YOU ──────────────────────────────── 5 ╭ ask 61790 · auth-rotation ─────────────────────────────────────────────╮
+ ? ◆ fleet-hub            BLOCKING HUB  ⏎  25s│ BLOCKING · asker waiting · 2m ago · atlas w20:p1                       │
+   Release: Cut the v3.2 release today, or w… │                                                                        │
+▌? ◆ auth-rotation        BLOCKING      ⏎   2m│ Tokens: Which signing scheme should the rotated service tokens use?    │
+▌  Tokens: Which signing scheme should the r… │                                                                        │
+ ? ◆ docs-refresh                       ⏎   4m│ Options                                                                │
+   Translations landed for three of the four… │  A Ed25519  ★ recommended                                              │
+ ? ◇ tui-frames           BLOCKING      ⏎  41s│     Short keys and fast checks; every client library we ship supports  │
+   Frames follow-up is ready: PR #212 (orpha… │     it already.                                                        │
+ ? ◇ ios-widgets                 laptop ↗   6m│  B RSA-2048                                                            │
+   WIDGET BATCH: 19 of 23 merged (14:02-14:0… │     Matches today's tokens, so no client changes, but rotation takes   │
+                                              │     four times as long.                                                │
+                                              │  C HMAC-SHA256                                                         │
+                                              │     Simplest to run, but every verifier then holds the signing secret. │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              │                                                                        │
+                                              ╰────────────────────────────────────────────────────────────────────────╯
+ ANSWERED HERE
+ · 69901 search-index · no longer open (answered or withdrawn elsewhere)
+ … 61367 ios-widgets · sending
+ ? 61767 tui-frames · still open: a, then y resends
+ ? 61802 docs-refresh · outcome unknown; checking
+ ! 61790 auth-rotation · not recorded: ask is already answered by event 61850
+ ✓ 61811 fleet-hub · recorded, event 61902
+   not delivered to its pane: no pane
+ ⏎ answer   a answer   l open   / filter   D A F I screens   y copy   s slotr   q quit   ? help

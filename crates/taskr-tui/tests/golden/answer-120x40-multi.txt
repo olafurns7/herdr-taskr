@@ -5,32 +5,32 @@ H Health-
  3 notes still carry OWNER items
  NEEDS YOU ────────────────────────────────────────────── 5  TO CHECK ─────────────────────────────────────────────── 3
  ? ◆ fleet-hub            BLOCKING HUB                ⏎  25s ! map-tiles-polish                              laptop   2h
-   Release: Cut the ╭ Answer ask 61802 · docs-refresh ─────────────────────────────────────────────╮
- ? ◆ auth-rotation  │                                                                              │                  2h
-   Tokens: Which sig│  Translations landed for three of the four locales. Locales: Which locales   │
-▌? ◆ docs-refresh   │  ship in the first docs release?                                             │           mini  12m
-▌  Translations land│                                                                              │
- ? ◇ tui-frames     │     [ ] A  English                                                           │
-   Frames follow-up │            The source text; always complete.                                 │
- ? ◇ ios-widgets    │     [x] B  German                                                            │
-   WIDGET BATCH: 19 │            Reviewed by the partner team last week.                           │
- CAMPAIGNS ─────────│   ❯ [x] C  Japanese                                                          │──────────────── 11
- ◐ search-index     │            Machine draft; 40 pages are still unreviewed.                     │                 19s
-   Research complete│     [ ] D  Portuguese                                                        │
- ◐ auth-rotation    │            Half translated; the glossary is not settled yet.                 │                 29s
-   Implementation sl│     …  write your own answer                                                 │
- ○ billing-export   │                                                                              │                 33s
-   FYI 61448 from se│  ──────────────────────────────────────────────────────────────────────────  │
- ○ docs-refresh     │   answer  B: German; C: Japanese                                             │                  2m
-   Hub FYI: keep the│                                                                              │
- ○ checkout-flow    │   j k choose    space pick    tab add a note    ⏎ review    esc cancel       │                  3m
-   FIX: three P2 fin│                                                                              │
+   Release: Cut the v3.2 release today, or wait for the ca…    lead unregistered and silent
+ ? ◆ auth-rotation  ╭ Answer ask 61802 · docs-refresh ─────────────────────────────────────────────╮                  2h
+   Tokens: Which sig│                                                                              │
+▌? ◆ docs-refresh   │  Translations landed for three of the four locales. Locales: Which locales   │           mini  12m
+▌  Translations land│  ship in the first docs release?                                             │
+ ? ◇ tui-frames     │                                                                              │
+   Frames follow-up │     [ ] A  English                                                           │
+ ? ◇ ios-widgets    │            The source text; always complete.                                 │
+   WIDGET BATCH: 19 │     [x] B  German                                                            │
+ CAMPAIGNS ─────────│            Reviewed by the partner team last week.                           │──────────────── 11
+ ◐ search-index     │   ❯ [x] C  Japanese                                                          │                 19s
+   Research complete│            Machine draft; 40 pages are still unreviewed.                     │
+ ◐ auth-rotation    │     [ ] D  Portuguese                                                        │                 29s
+   Implementation sl│            Half translated; the glossary is not settled yet.                 │
+ ○ billing-export   │     …  write your own answer                                                 │                 33s
+   FYI 61448 from se│                                                                              │
+ ○ docs-refresh     │  ──────────────────────────────────────────────────────────────────────────  │                  2m
+   Hub FYI: keep the│   answer  B: German; C: Japanese                                             │
+ ○ checkout-flow    │                                                                              │                  3m
+   FIX: three P2 fin│   j k choose    space pick    tab add a note    ⏎ review    esc cancel       │
  ◐ ios-widgets      │                                                                              │          laptop  7m
    Widget batch appr│                                                                              │
  ◐ tui-frames       │                                                                              │                  8m
    NOW: plan rev 3.1│                                                                              │
- · infra-layout     │                                                                              │                 12m
-   cache-audit lead ╰──────────────────────────────────────────────────────────────────────────────╯
+ · infra-layout     ╰──────────────────────────────────────────────────────────────────────────────╯                 12m
+   cache-audit lead root=4040 pane=w41:p1: campaign complete, docs PR merged
  ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁                                                                      14m
    matrix run A finished
  ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                                                                      54m
