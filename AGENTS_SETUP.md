@@ -322,9 +322,10 @@ the defaults. The GitHub settings:
 | --- | --- | --- |
 | `"repos"` | A list of `"owner/name"`, at most eight. My PRs, Shipped and Build queue read these. | Empty: those panels are hidden and make no `gh` calls. |
 | `"issues_repo"` | One `"owner/name"` for the Issues panel. | The Issues panel is hidden and makes no `gh` calls. |
-| `"health_repo"` | One `"owner/name"`. The Health panel shows the hub's latest `HEALTH repo=... env=...` note for it, read from the ledger, not from GitHub. | The Health panel is hidden. |
+| `"health_repo"` | One `"owner/name"`. The Health panel shows the hub's latest `HEALTH repo=... env=...` note for it, read from the ledger, not from GitHub. Needs `"health_root"` too. | The Health panel is hidden. |
+| `"health_root"` | A positive integer: the hub root task whose `HEALTH` notes the Health panel reads. Needs `"health_repo"` too. | The Health panel is hidden and runs no `taskr log`. |
 
-These three need a `taskr-tui` newer than v0.22.0. v0.22.0 reads only
+These need a `taskr-tui` newer than v0.22.0 (`"health_root"`: newer than v0.22.1). v0.22.0 reads only
 `"panels"` and `"repos"`, falls back to a built-in repository when `"repos"`
 is missing, and drops the other two keys when a panel toggle saves the file.
 An example:
@@ -333,7 +334,8 @@ An example:
 {
   "repos": ["example-org/app", "example-org/api"],
   "issues_repo": "example-org/app",
-  "health_repo": "example-org/app"
+  "health_repo": "example-org/app",
+  "health_root": 4242
 }
 ```
 

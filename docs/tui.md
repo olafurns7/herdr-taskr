@@ -137,8 +137,8 @@ card under its own rule:
   several assignees counts in each group, so groups overlap; the headline
   counts unique issues. Groups with blocked issues use the amber attention
   colour, never red. Rows are informational: no key acts on them.
-- **Health (H):** the hub's latest `HEALTH` note for the configured `health_repo`
-  `production`: the reported SHA, deploy state, Sentry state or issue IDs, the
+- **Health (H):** the latest `HEALTH` note on the configured hub root
+  (`health_root`) for the configured `health_repo` `production`: the reported SHA, deploy state, Sentry state or issue IDs, the
   checked time with its age, the source note ID and the rollback note ID. It is
   a hub report as of its checked time, not live production state: it never
   calls the environment healthy, does not compare the SHA with `main`, and
@@ -203,21 +203,27 @@ or `~/.config/taskr/tui.json` when XDG_CONFIG_HOME is unset:
   "panels": [true,true,true,true,true,true,false,false,false,true,true],
   "repos": ["example-org/app", "example-org/tools"],
   "issues_repo": "example-org/app",
-  "health_repo": "example-org/app"
+  "health_repo": "example-org/app",
+  "health_root": 4242
 }
 ```
 
 Existing four-, six-, nine- and ten-boolean configs keep their choices and
 repo list; the panels they predate take their defaults (Shipped and Build
 queue enabled, 7-9, Issues and Health hidden). Saves use eleven booleans.
-Fresh defaults have an empty `repos` list and unset `issues_repo` and
-`health_repo`; My PRs, Shipped and Build start hidden, as do Issues and Health.
+Fresh defaults have an empty `repos` list and unset `issues_repo`,
+`health_repo` and `health_root`; My PRs, Shipped and Build start hidden, as do
+Issues and Health. A file with a non-empty `repos` list and no `panels` key
+shows My PRs, Shipped and Build.
 Toggle an unconfigured panel on to see which setting to add. An empty scope
 starts no GitHub process (not even an identity read); Health also skips its
-ledger read when unset. No repository is inferred. `repos` scopes My PRs,
+ledger read unless both `health_repo` and `health_root` are set. No repository
+or root is inferred. `repos` scopes My PRs,
 Shipped and Build, `issues_repo` scopes Issues, and `health_repo` selects the
-repository in HEALTH notes. The optional settings accept one `owner/name`
-string each or `null`; older configs leave them unset. These scopes are independent.
+repository in HEALTH notes. The optional repository settings accept one
+`owner/name` string each or `null`; `health_root` accepts a positive integer
+task ID (the hub root whose notes Health reads) or `null`. Older configs leave
+them unset. These scopes are independent.
 Other panel-array lengths or non-boolean entries are invalid and retain the bad-config preservation guard.
 An empty list or up to eight distinct `owner/repo` names are accepted for `repos`;
 all three settings use the same repository-name validation. Toggle saves preserve
@@ -340,7 +346,7 @@ not atomic; an issue seen in both keeps its later update. Closed counts use
 `closedAt` and expire on the UI clock without a fetch. Never enabled, hidden
 or in demo it makes no calls.
 
-Health makes one `taskr --json log 2899 --limit 100` call (the `taskr` that
+Health makes one `taskr --json log <health_root> --limit 100` call (the `taskr` that
 `TASKR_BIN` names, without the lane's `TASKR_TASK` or `TASKR_LAUNCH`), at
 most once a minute while visible; `r` does not hurry it, hiding and showing
 does not reset the minute, and failures back off from one minute, doubling

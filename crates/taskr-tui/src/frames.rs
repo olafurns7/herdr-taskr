@@ -848,8 +848,9 @@ pub fn all() -> Vec<Spec> {
         spec("health", 46, 30, "-unavailable", |app| {
             // The first read failed: unknown, never a report.
             health(app);
+            let (repo, root) = (app.health.repo.take(), app.health.root);
             app.health = crate::health::Health::default();
-            app.health.repo = app.config.health_repo.clone();
+            (app.health.repo, app.health.root) = (repo, root);
             app.health.error = Some(crate::health::UNAVAILABLE);
         }),
         spec("health", 120, 40, "-overflow", |app| {

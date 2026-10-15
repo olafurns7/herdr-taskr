@@ -13,9 +13,10 @@ use std::{
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-/// Health notes remain scoped to production on the hub root.
+/// Health notes remain scoped to production on the configured hub root.
 pub const ENV: &str = "production";
-pub const ROOT: i64 = 2899;
+/// The invented hub root of `--demo`, the frames and the tests.
+const SAMPLE_ROOT: i64 = 2899;
 /// At most one read a minute while shown, manual `r`, failures and hide-show included.
 const EVERY: Duration = Duration::from_secs(60);
 const CAP: Duration = Duration::from_secs(900);
@@ -71,7 +72,9 @@ pub struct Seen {
 
 #[derive(Debug, Clone, Default)]
 pub struct Health {
+    /// Set only with `root`: tui.json's `health_repo` and `health_root` together.
     pub repo: Option<String>,
+    pub root: i64,
     pub seen: Option<Seen>,
     /// The last read failed: `seen`, if any, is stale.
     pub error: Option<&'static str>,
@@ -150,7 +153,10 @@ impl Health {
                 "checked {} · note #{} · rollback note #{}",
                 r.checked, r.note, r.rollback
             ),
-            _ => format!("hub root {ROOT} · latest 100 events · no report shown"),
+            _ => format!(
+                "hub root {} · latest 100 events · no report shown",
+                self.root
+            ),
         }
     }
     pub fn attention(&self) -> bool {
@@ -166,7 +172,7 @@ impl Health {
             Some((s, Reading::Report(r))) => {
                 format!(
                     "repo {} · env {ENV}\nsha {}\ndeploy {}\nsentry {}\nchecked {} ({} \
-                     ago)\nnote #{} on hub root {ROOT}, written {}\nrollback note #{}\nread {} \
+                     ago)\nnote #{} on hub root {}, written {}\nrollback note #{}\nread {} \
                      UTC from the latest 100 hub events",
                     self.repo.as_deref().unwrap_or_default(),
                     r.sha,
@@ -175,6 +181,7 @@ impl Health {
                     r.checked,
                     crate::ui::age((now - r.checked_at).saturating_mul(1000)),
                     r.note,
+                    self.root,
                     r.noted.map_or("at an unknown time".into(), |at| format!(
                         "{} UTC",
                         hhmm(at)
@@ -184,8 +191,9 @@ impl Health {
                 )
             }
             Some((s, Reading::Unknown(why))) => format!(
-                "{why}\nread {} UTC from the latest 100 events on hub root {ROOT}",
-                hhmm(s.read_at)
+                "{why}\nread {} UTC from the latest 100 events on hub root {}",
+                hhmm(s.read_at),
+                self.root
             ),
             None => String::new(),
         }
@@ -199,7 +207,7 @@ fn positive(o: &Map<String, Value>, key: &str) -> Option<i64> {
 /// `taskr --json log` lines: launch records and a pagination trailer may come with the
 /// events. Anything else that is not a well-formed root event, in ascending ID order,
 /// fails the whole read.
-pub fn parse(body: &[u8], read_at: i64, repo: &str) -> Result<Reading, &'static str> {
+pub fn parse(body: &[u8], read_at: i64, root: i64, repo: &str) -> Result<Reading, &'static str> {
     let text = std::str::from_utf8(body).map_err(|_| UNAVAILABLE)?;
     let mut last = 0;
     let mut latest = None;
@@ -228,7 +236,7 @@ pub fn parse(body: &[u8], read_at: i64, repo: &str) -> Result<Reading, &'static 
             return Err(UNAVAILABLE);
         };
         // Without --tree only the root's events come back, oldest first.
-        if id <= last || task != ROOT {
+        if id <= last || task != root {
             return Err(UNAVAILABLE);
         }
         last = id;
@@ -327,12 +335,12 @@ fn report(
     })
 }
 
-/// `taskr --json log 2899 --limit 100`, as the lane's own task never: no task or launch.
-pub fn command() -> Command {
+/// `taskr --json log ROOT --limit 100`, as the lane's own task never: no task or launch.
+pub fn command(root: i64) -> Command {
     let taskr = client::taskr();
     let mut c = Command::new(&taskr[0]);
     c.args(&taskr[1..])
-        .args(["--json", "log", "2899", "--limit", "100"])
+        .args(["--json", "log", &root.to_string(), "--limit", "100"])
         .env_remove("TASKR_TASK")
         .env_remove("TASKR_LAUNCH");
     c
@@ -343,12 +351,13 @@ fn fetch(
     command: Command,
     budget: Duration,
     cancel: &AtomicBool,
+    root: i64,
     repo: &str,
 ) -> Result<Seen, &'static str> {
     let deadline = Instant::now() + budget;
     let body = github::output(command, deadline, cancel).map_err(|_| UNAVAILABLE)?;
     let read_at = OffsetDateTime::now_utc().unix_timestamp();
-    let reading = parse(&body, read_at, repo)?;
+    let reading = parse(&body, read_at, root, repo)?;
     if Instant::now() >= deadline {
         return Err(UNAVAILABLE);
     }
@@ -358,11 +367,11 @@ fn fetch(
 type Worker = (Arc<AtomicBool>, JoinHandle<Result<Seen, &'static str>>);
 
 pub struct Poller {
-    command: fn() -> Command,
+    command: fn(i64) -> Command,
     worker: Option<Worker>,
 }
 impl Poller {
-    pub fn new(command: fn() -> Command) -> Self {
+    pub fn new(command: fn(i64) -> Command) -> Self {
         Self {
             command,
             worker: None,
@@ -382,7 +391,8 @@ impl Poller {
             app.health.inflight = true;
             let cancel = Arc::new(AtomicBool::new(false));
             let flag = cancel.clone();
-            let command = (self.command)();
+            let root = app.health.root;
+            let command = (self.command)(root);
             let repo = app
                 .health
                 .repo
@@ -390,7 +400,7 @@ impl Poller {
                 .expect("configured health repository");
             self.worker = Some((
                 cancel,
-                thread::spawn(move || fetch(command, BUDGET, &flag, &repo)),
+                thread::spawn(move || fetch(command, BUDGET, &flag, root, &repo)),
             ));
             dirty = true;
         }
@@ -423,17 +433,19 @@ pub fn sample(now: i64, payload: &str) -> Health {
     };
     let summary = payload.replace("{checked}", &stamp(checked));
     let body = format!(
-        "{{\"record\":\"event\",\"id\":7001,\"task_id\":{ROOT},\"kind\":\"note\",\"summary\":\"lane started\",\"created_at\":\"{}\"}}\n\
-         {{\"record\":\"event\",\"id\":7002,\"task_id\":{ROOT},\"kind\":\"note\",\"summary\":{},\"created_at\":\"{}\"}}\n",
+        "{{\"record\":\"event\",\"id\":7001,\"task_id\":{SAMPLE_ROOT},\"kind\":\"note\",\"summary\":\"lane started\",\"created_at\":\"{}\"}}\n\
+         {{\"record\":\"event\",\"id\":7002,\"task_id\":{SAMPLE_ROOT},\"kind\":\"note\",\"summary\":{},\"created_at\":\"{}\"}}\n",
         stamp(checked),
         serde_json::to_string(&summary).expect("sample JSON"),
         stamp(created)
     );
     Health {
         repo: Some("example-org/app".into()),
+        root: SAMPLE_ROOT,
         seen: Some(Seen {
             read_at: now - 30,
-            reading: parse(body.as_bytes(), now - 30, "example-org/app").expect("sample parses"),
+            reading: parse(body.as_bytes(), now - 30, SAMPLE_ROOT, "example-org/app")
+                .expect("sample parses"),
         }),
         ..Health::default()
     }
@@ -447,6 +459,7 @@ pub fn demo(now: i64) -> Health {
 #[cfg(test)]
 mod tests {
     use super::*;
+    const ROOT: i64 = SAMPLE_ROOT;
     const REPO: &str = "example-org/app";
 
     const NOW: i64 = 1_792_000_000;
@@ -479,7 +492,7 @@ mod tests {
         out
     }
     fn read(lines: &[String]) -> Result<Reading, &'static str> {
-        parse((lines.join("\n") + "\n").as_bytes(), NOW, REPO)
+        parse((lines.join("\n") + "\n").as_bytes(), NOW, ROOT, REPO)
     }
     fn unknown(lines: &[String]) -> &'static str {
         match read(lines).unwrap() {
@@ -622,7 +635,7 @@ mod tests {
             read(&[event(5, "ready", "x"), old.clone()]),
             Err(UNAVAILABLE)
         );
-        assert_eq!(parse(b"", NOW, REPO), Ok(Reading::Unknown(NO_NOTE)));
+        assert_eq!(parse(b"", NOW, ROOT, REPO), Ok(Reading::Unknown(NO_NOTE)));
         // Structural failures fail the whole read.
         for lines in [
             vec!["not json".to_string()],
@@ -644,7 +657,7 @@ mod tests {
         ] {
             assert_eq!(read(&lines), Err(UNAVAILABLE), "{lines:?}");
         }
-        assert_eq!(parse(b"\xff\n", NOW, REPO), Err(UNAVAILABLE));
+        assert_eq!(parse(b"\xff\n", NOW, ROOT, REPO), Err(UNAVAILABLE));
         // A note without text, as taskr prints it (the key omitted) or as null, is no
         // candidate: it neither fails the read nor displaces the latest HEALTH note.
         let absent = event(9, "note", "x").replace("\"summary\":\"x\",", "");
@@ -708,12 +721,12 @@ mod tests {
 
     #[test]
     fn fake_taskr_argv_env_deadline_bound_cancel_and_privacy() {
-        let args: Vec<_> = command()
+        let args: Vec<_> = command(ROOT)
             .get_args()
             .map(|a| a.to_str().unwrap().to_string())
             .collect();
         assert_eq!(args, ["--json", "log", "2899", "--limit", "100"]);
-        let envs: Vec<_> = command()
+        let envs: Vec<_> = command(ROOT)
             .get_envs()
             .map(|(k, v)| (k.to_str().unwrap().to_string(), v.is_none()))
             .collect();
@@ -722,9 +735,10 @@ mod tests {
         // The real argv and env removals behind a fake taskr, in a lane that has both set.
         let fake = |script: &str| {
             let mut c = Command::new("sh");
-            c.args(["-c", script, "taskr"]).args(command().get_args());
+            c.args(["-c", script, "taskr"])
+                .args(command(ROOT).get_args());
             c.env("TASKR_TASK", "1").env("TASKR_LAUNCH", "1");
-            for (k, v) in command().get_envs() {
+            for (k, v) in command(ROOT).get_envs() {
                 assert!(v.is_none());
                 c.env_remove(k);
             }
@@ -741,6 +755,7 @@ mod tests {
             fake(&ok),
             Duration::from_secs(5),
             &AtomicBool::new(false),
+            ROOT,
             REPO,
         )
         .unwrap();
@@ -751,6 +766,7 @@ mod tests {
                 fake("exec sleep 20"),
                 Duration::from_millis(150),
                 &AtomicBool::new(false),
+                ROOT,
                 REPO,
             ),
             Err(UNAVAILABLE)
@@ -765,6 +781,7 @@ mod tests {
                 fake(script),
                 Duration::from_secs(5),
                 &AtomicBool::new(cancel),
+                ROOT,
                 REPO,
             );
             assert_eq!(e, Err(UNAVAILABLE));
@@ -775,12 +792,12 @@ mod tests {
         assert!(!format!("{h:?}{}{}", h.state(), h.detail(NOW)).contains("secret"));
     }
 
-    fn fake_command() -> Command {
+    fn fake_command(_: i64) -> Command {
         let mut c = Command::new("sh");
         c.args(["-c", "printf ''"]);
         c
     }
-    fn slow_command() -> Command {
+    fn slow_command(_: i64) -> Command {
         let mut c = Command::new("sh");
         c.args(["-c", "exec sleep 20"]);
         c
@@ -825,17 +842,31 @@ mod tests {
     fn configured_repo_controls_health_scope_and_unset_does_not_read() {
         let body = event(5, "note", &good(&KEYS).replace(REPO, "other/health"));
         assert!(matches!(
-            parse(body.as_bytes(), NOW, "other/health"),
+            parse(body.as_bytes(), NOW, ROOT, "other/health"),
             Ok(Reading::Report(_))
         ));
         assert_eq!(
-            parse(body.as_bytes(), NOW, REPO),
+            parse(body.as_bytes(), NOW, ROOT, REPO),
             Ok(Reading::Unknown(OTHER))
         );
         let mut app = App::new(crate::model::Data::default());
-        let mut poller = Poller::new(|| panic!("unset health repo must not start a command"));
+        let mut poller = Poller::new(|_| panic!("unset health repo must not start a command"));
         assert!(!poller.tick(&mut app, Instant::now(), true));
         assert!(poller.worker.is_none());
+        // A configured root is the one read, and another root's events are refused.
+        let args: Vec<_> = command(4242).get_args().map(|a| a.to_owned()).collect();
+        assert_eq!(args, ["--json", "log", "4242", "--limit", "100"]);
+        assert_eq!(
+            parse(body.as_bytes(), NOW, 4242, "other/health"),
+            Err(UNAVAILABLE)
+        );
+        let mut app = App::new(crate::model::Data::default());
+        (app.health.repo, app.health.root) = (Some(REPO.into()), 4242);
+        let mut poller = Poller::new(|root| {
+            assert_eq!(root, 4242);
+            fake_command(root)
+        });
+        assert!(poller.tick(&mut app, Instant::now(), true));
     }
 
     #[test]

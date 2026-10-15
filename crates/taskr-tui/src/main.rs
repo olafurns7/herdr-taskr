@@ -162,7 +162,10 @@ fn main() -> ExitCode {
     if options.demo {
         app.health = health::demo(app.observed_at);
     } else {
-        app.health.repo = app.config.health_repo.clone();
+        // Hidden, and never read, unless both health_repo and health_root are set.
+        if let Some((repo, root)) = app.config.health() {
+            (app.health.repo, app.health.root) = (Some(repo), root);
+        }
     }
     let mut hub_health = health::Poller::new(health::command);
     let mut issues = github::Poller::new(github::Kind::Issues);

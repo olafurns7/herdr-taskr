@@ -1,4 +1,4 @@
-╭ Keys · dashboard · 1-26/35 · j k ────────────────────────────────────────────────────────────────╮
+╭ Keys · dashboard · 1-26/36 · j k ────────────────────────────────────────────────────────────────╮
 │                                                                                                  │
 │   Move                                           Act                                             │
 │    j k           down, up (arrows too)            a             answer this ask, else pick one   │

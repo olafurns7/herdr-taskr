@@ -161,9 +161,9 @@ pub(crate) const SCREENS_NOTE: &str = "Each screen keeps its place; switching re
 pub(crate) const LEDGER_NOTE: &str = "7, 9: the campaign last opened with l, as cached; l \
     or o reads it again, r does not. 8: listed campaigns only; / filters it, not 7 or 9. \
     0: issues_repo issues by current assignee, read at most every 5 min while shown; \
-    r does not hurry it. H: the hub's latest HEALTH note for health_repo production, \
+    r does not hurry it. H: the latest HEALTH note on hub root health_root for health_repo production, \
     as of its checked time, not live health; read at most once a minute while shown. \
-    Set repos (4-6), issues_repo (0), health_repo (H) in ~/.config/taskr/tui.json. \
+    Set repos (4-6), issues_repo (0), health_repo and health_root (H) in ~/.config/taskr/tui.json. \
     Unset scopes read nothing.";
 
 /// The answer dialog's own keys; the help says so under "Act".
