@@ -179,6 +179,11 @@ pub struct App {
     pub config: config::Config,
     pub config_warning: Option<String>,
     pub github: github::Dashboard,
+    pub shipped: github::Dashboard,
+    pub builds: github::Dashboard,
+    /// One clock observation shared by the rendered view and its input identities.
+    pub observed_at: i64,
+    pub observed_tick: Instant,
 }
 
 impl App {
@@ -216,7 +221,47 @@ impl App {
             config: config::Config::default(),
             config_warning: None,
             github: github::Dashboard::default(),
+            shipped: github::Dashboard::default(),
+            builds: github::Dashboard::default(),
+            observed_at: time::OffsetDateTime::now_utc().unix_timestamp(),
+            observed_tick: Instant::now(),
         }
+    }
+
+    pub fn advance_time(&mut self, at: i64, tick: Instant) -> bool {
+        let signature = |app: &App, at| {
+            app.shipped
+                .authors(at)
+                .into_iter()
+                .map(|(author, rows)| {
+                    (
+                        author,
+                        rows.iter()
+                            .map(|p| (p.repo.clone(), p.number))
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        if signature(self, self.observed_at) == signature(self, at) {
+            self.observed_at = at;
+            self.observed_tick = tick;
+            return false;
+        }
+        let view = self.glance_view();
+        let selected = glance::ids(&view).get(view.row).cloned();
+        self.observed_at = at;
+        self.observed_tick = tick;
+        let retained = selected
+            .as_ref()
+            .is_some_and(|id| glance::ids(&self.glance_view()).contains(id));
+        self.restore_row(selected);
+        if !retained {
+            self.detail = false;
+        }
+        self.click = None;
+        *self.seen.borrow_mut() = Seen::default();
+        true
     }
 
     /// The app with the filter applied to the list on screen. The clone shares `seen`.
@@ -239,6 +284,12 @@ impl App {
             }
             if !self.config.panels[3] {
                 v.github.sources.clear();
+            }
+            if !self.config.panels[4] {
+                v.shipped.sources.clear();
+            }
+            if !self.config.panels[5] {
+                v.builds.sources.clear();
             }
             for source in &mut v.github.sources {
                 source.prs.retain(|p| {
@@ -351,14 +402,38 @@ impl App {
         }
     }
 
+    pub(crate) fn glance_view(&self) -> App {
+        let mut app = self.clone();
+        if app.screen != Screen::Glance
+            && let Some(back) = app.back.first()
+        {
+            app.row = back.row;
+            app.filter = back.filter.clone();
+        }
+        app.screen = Screen::Glance;
+        app.view()
+    }
+
     pub(crate) fn restore_row(&mut self, before: Option<glance::RowId>) {
-        let ids = glance::ids(&self.view());
-        self.row = before
+        let view = self.glance_view();
+        let ids = glance::ids(&view);
+        let row = before
             .as_ref()
             .and_then(|id| ids.iter().position(|r| r == id))
-            .unwrap_or(self.row.min(ids.len().saturating_sub(1)));
-        if ids.get(self.row) != before.as_ref() {
-            self.scroll = 0;
+            .unwrap_or(view.row.min(ids.len().saturating_sub(1)));
+        let changed = row != view.row || ids.get(row) != before.as_ref();
+        if self.screen == Screen::Glance {
+            self.row = row;
+            if changed {
+                self.scroll = 0;
+            }
+        } else if let Some(back) = self.back.first_mut() {
+            back.row = row;
+            if changed {
+                back.scroll = 0;
+            }
+        }
+        if changed {
             self.click = None;
         }
         self.detail = self.detail && !ids.is_empty();
@@ -459,7 +534,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         if app.screen == Screen::Glance && !app.config.panels.iter().any(|p| *p) && area.height > 1
         {
             f.render_widget(
-                Paragraph::new("1-4 show hidden panels"),
+                Paragraph::new("1-6 show hidden panels"),
                 Rect {
                     y: area.y + 1,
                     height: 1,

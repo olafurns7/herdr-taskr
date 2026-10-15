@@ -167,11 +167,11 @@ pub(crate) fn lines(app: &App, width: usize, height: usize) -> Vec<Line<'static>
 fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
     let (t, g) = (&app.theme, &app.data.glance);
     let mut hits: Vec<Option<usize>> = vec![];
-    let pr_height = pr_height(app, height);
+    let pr_height = external_height(app, height);
     let offset = g.needs_you.len() + g.attention.len();
-    let prs = app.github.rows();
+    let external_count = external_count(app);
     let ledger_cursor = if app.row >= offset {
-        app.row.saturating_sub(prs.len())
+        app.row.saturating_sub(external_count)
     } else {
         app.row
     };
@@ -281,10 +281,10 @@ fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Op
     let pr_start = out.len();
     if pr_height > 0 {
         hits.resize(out.len(), None);
-        let (lines, rows) = pr_lines(app, width, pr_height, index);
+        let (lines, rows) = external_lines(app, width, pr_height, index);
         out.extend(lines);
         hits.extend(rows);
-        index += prs.len();
+        index += external_count;
     }
 
     let pr_end = out.len();
@@ -458,6 +458,31 @@ fn compact_layout(
                 ),
                 app.theme.sub,
             ),
+            Selected::Author(author) => {
+                let groups = app.shipped.authors(app.observed_at);
+                (
+                    format!(
+                        "Shipped @{} · {} observed / 24h{}",
+                        author,
+                        groups[&author].len(),
+                        if app.shipped.sources.iter().any(|s| s.error.is_some()) {
+                            " · stale/partial"
+                        } else {
+                            ""
+                        }
+                    ),
+                    app.theme.sub,
+                )
+            }
+            Selected::Run(r) => (
+                format!(
+                    "Build {} {} · {} · latest100 sample",
+                    r.label(),
+                    r.workflow,
+                    r.branch
+                ),
+                app.theme.sub,
+            ),
             Selected::Nothing => continue,
         };
         let mut line = ui::row(
@@ -468,7 +493,10 @@ fn compact_layout(
             color,
             width,
         );
-        if !matches!(ids[i], RowId::Pr(..)) && app.fetch.loaded && app.fetch.error.is_some() {
+        if !matches!(ids[i], RowId::Pr(..) | RowId::Author(_) | RowId::Run(..))
+            && app.fetch.loaded
+            && app.fetch.error.is_some()
+        {
             for span in &mut line.spans {
                 span.style.fg = Some(app.theme.dim);
             }
@@ -491,29 +519,263 @@ fn dim_ledger(app: &App, lines: &mut [Line<'_>], prs: Range<usize>) {
     }
 }
 
-fn pr_height(app: &App, height: usize) -> usize {
-    if !app.config.panels[3] || app.github.sources.is_empty() {
-        return 0;
+/// Full panel demand and the header/status/overflow minimum retained for later kinds.
+fn external_budget(app: &App, kind: crate::github::Kind) -> (usize, usize) {
+    use crate::github::Kind;
+    let sources = &kind.dashboard(app).sources;
+    if sources.is_empty() {
+        return (0, 0);
     }
+    let base = 2
+        + sources.len()
+        + usize::from(kind == Kind::Build)
+        + if kind == Kind::Build {
+            0
+        } else {
+            sources.iter().filter(|s| s.total == 100).count()
+        };
+    let count = match kind {
+        Kind::Open => app.github.rows().len(),
+        Kind::Shipped => app.shipped.authors(app.observed_at).len(),
+        Kind::Build => app.builds.runs().len(),
+    };
+    let g = &app.data.glance;
+    let cap = if kind == Kind::Open
+        && g.needs_you.is_empty()
+        && g.attention.is_empty()
+        && g.campaigns.is_empty()
+    {
+        usize::MAX
+    } else {
+        3
+    };
+    let per_row = if kind == Kind::Shipped { 1 } else { 2 };
+    let empty =
+        usize::from(count == 0 && kind != Kind::Open && sources.iter().any(|s| s.at.is_some()));
+    (
+        base + per_row * count.min(cap) + usize::from(count > cap) + empty,
+        base + usize::from(count > 0) + empty,
+    )
+}
+
+fn external_count(app: &App) -> usize {
+    app.github.rows().len() + app.shipped.authors(app.observed_at).len() + app.builds.runs().len()
+}
+fn external_height(app: &App, height: usize) -> usize {
     let g = &app.data.glance;
     let floor = usize::from(!g.needs_you.is_empty()) * 3
         + usize::from(!g.attention.is_empty()) * 3
         + usize::from(!g.campaigns.is_empty()) * 2;
-    let (cap, floor) = if floor == 0 {
-        (usize::MAX, 8)
-    } else {
-        (3, floor)
-    };
-    let rows = app.github.rows().len().min(cap);
-    (2 + app
-        .github
-        .sources
+    let floor = if floor == 0 { 8 } else { floor };
+    let wanted: usize = [
+        crate::github::Kind::Open,
+        crate::github::Kind::Shipped,
+        crate::github::Kind::Build,
+    ]
+    .into_iter()
+    .map(|kind| external_budget(app, kind).0)
+    .sum();
+    let available = wanted.min(height.saturating_sub(floor));
+    // A two-line row plus its overflow hint may leave one unusable line; return it to the ledger.
+    external_lines(app, 1, available, g.needs_you.len() + g.attention.len())
+        .0
+        .len()
+}
+fn external_lines(
+    app: &App,
+    width: usize,
+    height: usize,
+    offset: usize,
+) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
+    use crate::github::Kind;
+    let mut kinds: Vec<_> = [Kind::Open, Kind::Shipped, Kind::Build]
+        .into_iter()
+        .filter(|k| !k.dashboard(app).sources.is_empty())
+        .collect();
+    let mut minimum = 0;
+    let keep = kinds
         .iter()
-        .map(|s| 1 + usize::from(s.total == 100))
-        .sum::<usize>()
-        + 2 * rows
-        + usize::from(app.github.rows().len() > rows))
-    .min(height.saturating_sub(floor))
+        .take_while(|kind| {
+            minimum += external_budget(app, **kind).1;
+            minimum <= height
+        })
+        .count()
+        .max(1);
+    kinds.truncate(keep);
+    let mut out = vec![];
+    let mut hits = vec![];
+    let mut offset = offset;
+    let mut remaining = height;
+    for (i, kind) in kinds.iter().enumerate() {
+        let later_min: usize = kinds[i + 1..]
+            .iter()
+            .map(|kind| external_budget(app, *kind).1)
+            .sum();
+        let share = external_budget(app, *kind)
+            .0
+            .min(remaining.saturating_sub(later_min));
+        let (lines, rows) = if *kind == Kind::Open {
+            pr_lines(app, width, share, offset)
+        } else {
+            observed_lines(app, *kind, width, share, offset)
+        };
+        remaining = remaining.saturating_sub(lines.len());
+        out.extend(lines);
+        hits.extend(rows);
+        offset += match kind {
+            Kind::Open => app.github.rows().len(),
+            Kind::Shipped => app.shipped.authors(app.observed_at).len(),
+            Kind::Build => app.builds.runs().len(),
+        };
+    }
+    (out, hits)
+}
+fn observed_lines(
+    app: &App,
+    kind: crate::github::Kind,
+    width: usize,
+    height: usize,
+    offset: usize,
+) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
+    use crate::github::Kind;
+    let t = &app.theme;
+    let d = kind.dashboard(app);
+    let groups = d.authors(app.observed_at);
+    let runs = d.runs();
+    let observed = if kind == Kind::Shipped {
+        groups.values().map(Vec::len).sum()
+    } else {
+        runs.iter().filter(|r| r.known()).count()
+    };
+    let summary = if d.sources.iter().all(|s| s.at.is_none()) {
+        "Counts unavailable".into()
+    } else if kind == Kind::Shipped {
+        format!("{observed} observed merged / rolling 24h")
+    } else {
+        format!(
+            "{observed} active observed · {} unknown",
+            runs.iter().filter(|r| !r.known()).count()
+        )
+    };
+    let mut out = vec![
+        ui::rule(
+            t,
+            if kind == Kind::Shipped {
+                "SHIPPED"
+            } else {
+                "BUILD QUEUE"
+            },
+            "observed",
+            t.sub,
+            width,
+        ),
+        Line::from(sp(summary, t.sub)),
+    ];
+    let mut hits = vec![None, None];
+    for s in &d.sources {
+        out.push(Line::from(sp(
+            clip(&s.status(app.observed_tick), width),
+            if s.error.is_some() { t.check } else { t.text },
+        )));
+        hits.push(None);
+        if kind == Kind::Shipped && s.total == 100 {
+            out.push(Line::from(sp(" first 100; more may exist", t.check)));
+            hits.push(None);
+        }
+    }
+    if kind == Kind::Build {
+        out.push(Line::from(sp(
+            "latest100-run sample · older may be missing",
+            t.sub,
+        )));
+        hits.push(None);
+    }
+    let labels: Vec<_> = if kind == Kind::Shipped {
+        groups
+            .iter()
+            .map(|(a, rows)| {
+                (
+                    format!("@{a} · {} PRs observed", rows.len()),
+                    String::new(),
+                    d.sources.iter().any(|s| s.error.is_some()),
+                )
+            })
+            .collect()
+    } else {
+        runs.iter()
+            .map(|r| {
+                (
+                    format!("{} · {}", r.label(), r.workflow),
+                    format!(
+                        "  {} · {} · {}",
+                        r.branch,
+                        r.created.filter(|at| *at <= app.observed_at).map_or_else(
+                            || "age unknown".into(),
+                            |at| age((app.observed_at - at).saturating_mul(1000))
+                        ),
+                        r.repo
+                    ),
+                    d.sources
+                        .iter()
+                        .any(|s| s.repo == r.repo && s.error.is_some()),
+                )
+            })
+            .collect()
+    };
+    if labels.is_empty() && d.sources.iter().any(|s| s.at.is_some()) {
+        out.push(Line::from(sp(
+            if kind == Kind::Shipped {
+                "None observed in cached 24h sample"
+            } else {
+                "None active observed in latest100 sample"
+            },
+            t.sub,
+        )));
+        hits.push(None);
+    }
+    let per_row = if kind == Kind::Shipped { 1 } else { 2 };
+    let remaining = height.saturating_sub(out.len());
+    let mut fit = (remaining / per_row).min(labels.len());
+    if fit < labels.len() {
+        fit = remaining.saturating_sub(1) / per_row;
+    }
+    let cursor = app.row.checked_sub(offset).filter(|i| *i < labels.len());
+    let start = cursor
+        .map_or(0, |i| (i + 1).saturating_sub(fit))
+        .min(labels.len().saturating_sub(fit));
+    for (i, (label, meta, stale)) in labels.iter().enumerate().skip(start).take(fit) {
+        let label = format!("{label}{}", if *stale { " · stale/partial" } else { "" });
+        out.push(ui::row(
+            t,
+            vec![sp(clip(&label, width.saturating_sub(1)), t.sub)],
+            app.row == offset + i,
+            false,
+            t.sub,
+            width,
+        ));
+        hits.push(Some(offset + i));
+        if per_row == 2 {
+            out.push(ui::row(
+                t,
+                vec![sp(clip(meta, width.saturating_sub(1)), t.sub)],
+                app.row == offset + i,
+                false,
+                t.sub,
+                width,
+            ));
+            hits.push(Some(offset + i));
+        }
+    }
+    if fit < labels.len() {
+        out.push(Line::from(sp(
+            format!(" +{} outside view · j/k to browse", labels.len() - fit),
+            t.dim,
+        )));
+        hits.push(None);
+    }
+    out.truncate(height);
+    hits.truncate(height);
+    (out, hits)
 }
 
 fn pr_lines(
@@ -560,7 +822,7 @@ fn pr_lines(
     let mut hits = vec![None, None];
     for source in &app.github.sources {
         out.push(Line::from(sp(
-            clip(&source.status(std::time::Instant::now()), width),
+            clip(&source.status(app.observed_tick), width),
             if source.error.is_some() {
                 t.check
             } else {
@@ -608,7 +870,7 @@ fn pr_lines(
             width,
         ));
         let source = app.github.sources.iter().find(|s| s.repo == p.repo);
-        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let now = app.observed_at;
         let age = if p.created > 0 {
             age(now.saturating_sub(p.created).saturating_mul(1000))
         } else {
@@ -653,6 +915,8 @@ pub(crate) enum RowId {
     Check(i64, String),
     Campaign(i64),
     Pr(String, u64),
+    Author(String),
+    Run(String, u64),
 }
 
 /// Every row the cursor can be on, in cursor order.
@@ -681,7 +945,24 @@ pub(crate) fn ids(app: &App) -> Vec<RowId> {
         .chain(g.campaigns.iter().filter(|c| c.parked))
         .filter(|_| app.config.panels[2])
         .map(|c| RowId::Campaign(c.id));
-    asks.chain(checks).chain(prs).chain(campaigns).collect()
+    let authors = app
+        .shipped
+        .authors(app.observed_at)
+        .into_keys()
+        .filter(|_| app.config.panels[4])
+        .map(RowId::Author);
+    let runs = app
+        .builds
+        .runs()
+        .into_iter()
+        .filter(|_| app.config.panels[5])
+        .map(|r| RowId::Run(r.repo.clone(), r.id));
+    asks.chain(checks)
+        .chain(prs)
+        .chain(authors)
+        .chain(runs)
+        .chain(campaigns)
+        .collect()
 }
 
 /// The same visible identities drive Tab, keyboard, mouse and snapshot restoration.
@@ -704,6 +985,8 @@ pub(crate) enum Selected<'a> {
     Check(&'a Attention),
     Campaign(&'a CampaignRow),
     Pr(&'a crate::github::Pr),
+    Author(String),
+    Run(&'a crate::github::Run),
     Nothing,
 }
 
@@ -731,6 +1014,13 @@ pub(crate) fn selected(app: &App) -> Selected<'_> {
             .into_iter()
             .find(|p| p.repo == *repo && p.number == *number)
             .map_or(Selected::Nothing, Selected::Pr),
+        Some(RowId::Author(author)) => Selected::Author(author.clone()),
+        Some(RowId::Run(repo, id)) => app
+            .builds
+            .runs()
+            .into_iter()
+            .find(|r| r.repo == *repo && r.id == *id)
+            .map_or(Selected::Nothing, Selected::Run),
         None => Selected::Nothing,
     }
 }
@@ -760,7 +1050,7 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
             Some(hint("l", None)),
             Some(hint("p", None)),
         ],
-        Selected::Pr(_) => vec![Some(hint("r", None))],
+        Selected::Pr(_) | Selected::Author(_) | Selected::Run(_) => vec![Some(hint("r", None))],
         Selected::Nothing => vec![Some(hint("c", Some("all campaigns")))],
     }
     .into_iter()
@@ -774,7 +1064,7 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
         out.splice(0..0, [hint("j k", Some("scroll")), hint("h", Some("list"))]);
     }
     if wide {
-        out.push(hint("1-4", None));
+        out.push(hint("1-6", None));
         out.extend([
             hint("/", None),
             hint("y", None),
@@ -785,7 +1075,10 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
     } else {
         out.push(hint("?", None));
     }
-    if matches!(selected(app), Selected::Pr(_)) {
+    if matches!(
+        selected(app),
+        Selected::Pr(_) | Selected::Author(_) | Selected::Run(_)
+    ) {
         out.retain(|(key, _)| *key != "y");
     }
     out
@@ -798,7 +1091,7 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     let stale = app.fetch.error.as_deref().filter(|_| app.fetch.loaded);
     let [head, switches, warning, notes, banner, body, foot] = Layout::vertical([
         Constraint::Length(1),
-        Constraint::Length(1),
+        Constraint::Length(if wide { 1 } else { 2 }),
         Constraint::Length(u16::from(app.config_warning.is_some())),
         Constraint::Length(u16::from(g.owner_notes_pending > 0)),
         Constraint::Length(u16::from(stale.is_some())),
@@ -816,7 +1109,7 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
             vec![]
         },
     );
-    let labels = ["asks", "checks", "camps", "PRs"];
+    let labels = ["asks", "checks", "camps", "PRs", "Shipped", "Build"];
     let toggles = labels
         .iter()
         .enumerate()
@@ -830,7 +1123,16 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
         })
         .collect::<Vec<_>>()
         .join(" · ");
-    f.render_widget(Paragraph::new(Line::from(sp(toggles, t.sub))), switches);
+    let toggle_lines = if wide {
+        vec![Line::from(sp(toggles, t.sub))]
+    } else {
+        let parts: Vec<_> = toggles.split(" · ").collect();
+        vec![
+            Line::from(sp(parts[..3].join(" · "), t.sub)),
+            Line::from(sp(parts[3..].join(" · "), t.sub)),
+        ]
+    };
+    f.render_widget(Paragraph::new(toggle_lines), switches);
     if let Some(text) = &app.config_warning {
         f.render_widget(
             Paragraph::new(Line::from(sp(text.clone(), t.check))),
@@ -844,7 +1146,7 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
 
     if !app.config.panels.iter().any(|p| *p) {
         f.render_widget(
-            Paragraph::new("All panels hidden · press 1-4 to show").centered(),
+            Paragraph::new("All panels hidden · press 1-6 to show").centered(),
             body,
         );
         return;
@@ -863,7 +1165,7 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
         && g.campaigns.is_empty()
         && g.quiet.count == 0;
     let state_height = if ledger_state && (!compact || ids(app).is_empty()) {
-        (list.height as usize).saturating_sub(pr_height(app, list.height as usize))
+        (list.height as usize).saturating_sub(external_height(app, list.height as usize))
     } else {
         0
     };
@@ -882,9 +1184,13 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
         height: list.height.saturating_sub(state_height as u16),
         ..list
     };
-    let (mut lines, mut hits) = if ledger_state && !app.github.sources.is_empty() {
+    let (mut lines, mut hits) = if ledger_state
+        && [&app.github, &app.shipped, &app.builds]
+            .iter()
+            .any(|d| !d.sources.is_empty())
+    {
         // The placeholder reserve was already removed from list_rows.
-        pr_lines(app, list_rows.width as usize, list_rows.height as usize, 0)
+        external_lines(app, list_rows.width as usize, list_rows.height as usize, 0)
     } else if compact {
         compact_layout(app, list_rows.width as usize, list_rows.height as usize)
     } else {
@@ -899,9 +1205,9 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     // Folded campaigns are out of the cursor's reach; the compact list scrolls every identity.
     let p = plan(
         g,
-        (list.height as usize).saturating_sub(pr_height(app, list.height as usize)),
+        (list.height as usize).saturating_sub(external_height(app, list.height as usize)),
         if app.row >= g.needs_you.len() + g.attention.len() {
-            app.row.saturating_sub(app.github.rows().len())
+            app.row.saturating_sub(external_count(app))
         } else {
             app.row
         },
@@ -912,7 +1218,7 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     } else {
         g.needs_you.len()
             + g.attention.len()
-            + app.github.rows().len()
+            + external_count(app)
             + p.shown
             + if p.tail == Tail::Rows { parked } else { 0 }
     };
@@ -1123,6 +1429,52 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
                 }
             ),
         ),
+        Selected::Author(author) => {
+            let groups = app.shipped.authors(app.observed_at);
+            let rows = &groups[&author];
+            (
+                format!("Shipped · @{author}"),
+                vec![Line::from(sp(
+                    format!("{} observed / rolling 24h", rows.len()),
+                    t.sub,
+                ))],
+                format!(
+                    "Observed cached sample; not a full total.\n{}\n{}",
+                    app.shipped
+                        .sources
+                        .iter()
+                        .map(|s| format!(
+                            "{}{}",
+                            s.status(app.observed_tick),
+                            if s.total == 100 {
+                                "; first 100; more may exist"
+                            } else {
+                                ""
+                            }
+                        ))
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                    rows.iter()
+                        .map(|p| format!("{} #{} {}", p.repo, p.number, p.title))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                ),
+            )
+        }
+        Selected::Run(r) => (
+            format!("{} · run {}", r.repo, r.id),
+            vec![Line::from(sp(r.label(), t.sub))],
+            format!(
+                "{}\nBranch: {}\nLatest100-run sample; older active runs may be missing.\n{}",
+                r.workflow,
+                r.branch,
+                app.builds
+                    .sources
+                    .iter()
+                    .find(|s| s.repo == r.repo)
+                    .map_or_else(String::new, |s| s.status(app.observed_tick))
+            ),
+        ),
         Selected::Nothing => return,
     };
     // The pane's inside, as `ui::pane` will draw it, so the text wraps before the title
@@ -1192,7 +1544,7 @@ fn activity(f: &mut Frame, app: &App, area: Rect) {
         Selected::Ask(a) => a.root_id,
         Selected::Check(a) => a.root_id,
         Selected::Campaign(c) => c.id,
-        Selected::Pr(_) | Selected::Nothing => return,
+        Selected::Pr(_) | Selected::Author(_) | Selected::Run(_) | Selected::Nothing => return,
     };
     let Some(c) = g.campaigns.iter().find(|c| c.id == root) else {
         return;

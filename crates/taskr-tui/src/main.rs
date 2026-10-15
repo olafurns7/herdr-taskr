@@ -133,6 +133,18 @@ fn main() -> ExitCode {
     } else {
         github::Dashboard::new(&app.config.repos)
     };
+    app.shipped = if options.demo {
+        github::demo_shipped(app.observed_at)
+    } else {
+        github::Dashboard::for_kind(&app.config.repos, github::Kind::Shipped)
+    };
+    app.builds = if options.demo {
+        github::demo_builds(app.observed_at)
+    } else {
+        github::Dashboard::for_kind(&app.config.repos, github::Kind::Build)
+    };
+    let mut shipped = github::Poller::new(github::Kind::Shipped);
+    let mut builds = github::Poller::new(github::Kind::Build);
     let mut github = github::Poller::default();
     let taskr = client::taskr();
     let pace = client::Pace::default();
@@ -209,6 +221,12 @@ fn main() -> ExitCode {
             }
             let now = Instant::now();
             if !options.demo {
+                dirty |= app.advance_time(time::OffsetDateTime::now_utc().unix_timestamp(), now);
+                let glance = app.screen == Screen::Glance;
+                let ship_visible = glance && app.config.panels[4];
+                let build_visible = glance && app.config.panels[5];
+                dirty |= shipped.tick(&mut app, now, ship_visible, pr_manual);
+                dirty |= builds.tick(&mut app, now, build_visible, pr_manual);
                 let visible = app.screen == Screen::Glance && app.config.panels[3];
                 dirty |= github.tick(&mut app, now, visible, pr_manual);
             }
@@ -230,10 +248,9 @@ fn main() -> ExitCode {
             // Draw on a change only: an idle pane costs a poll, not a frame.
             let faces = app.fetch.face()
                 + &app.slotr.face()
-                + &app
-                    .github
-                    .sources
-                    .iter()
+                + &[&app.github, &app.shipped, &app.builds]
+                    .into_iter()
+                    .flat_map(|d| &d.sources)
                     .map(|s| s.status(now))
                     .collect::<String>();
             if dirty || faces != face {
@@ -283,6 +300,8 @@ fn main() -> ExitCode {
         }
     })();
     drop(github);
+    drop(shipped);
+    drop(builds);
     if let Some(events) = &events {
         events.stop();
     }

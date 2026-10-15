@@ -4,6 +4,8 @@ import fcntl, json, os, pathlib, pty, select, struct, subprocess, sys, tempfile,
 cases = [b'{bad json', json.dumps({'repos': [f'owner/repo{i}' for i in range(9)]}).encode(), b' ' * 16385]
 if os.geteuid() != 0:
     cases.append(b'{"repos":["private/kept-unreadable"]}')
+cases.extend(json.dumps({'panels': values, 'repos': ['kept/private']}).encode() for values in [
+    [], [True] * 5, [True] * 7, [True, True, True, 1], [True, True, True, True, True, 'bad']])
 for i, original in enumerate(cases):
     with tempfile.TemporaryDirectory(prefix='taskr-config-preservation-') as temp:
         root = pathlib.Path(temp)
@@ -65,4 +67,56 @@ for i, original in enumerate(cases):
         assert config.stat().st_mtime_ns == before.st_mtime_ns, f'case {i}: config rewritten'
         assert config.stat().st_ino == before.st_ino, f'case {i}: original config replaced'
         assert set(config.parent.iterdir()) == {config}, f'case {i}: unexpected saved files'
-print('PASS: real toggles preserve malformed, over-cap, oversized and unreadable config files')
+print('PASS: real toggles preserve malformed, over-cap, oversized, unreadable and invalid panel config files')
+
+# A real SaveConfig must migrate exactly four choices, then reload all six.
+for initial in [[False, True, False, True], [False, True, False, True, True, True]]:
+    with tempfile.TemporaryDirectory(prefix='taskr-config-migration-') as temp:
+        root = pathlib.Path(temp)
+        config = root / 'config/taskr/tui.json'
+        config.parent.mkdir(parents=True)
+        config.write_text(json.dumps({'panels': initial, 'repos': ['kept/private']}))
+        tools = root / 'bin'; tools.mkdir()
+        for name, body in [('taskr', "printf '{}\\n'"), ('gh', "printf '[]\\n'")]:
+            tool = tools / name; tool.write_text('#!/bin/sh\n' + body + '\n'); tool.chmod(0o700)
+        env = os.environ.copy()
+        env.update(HOME=temp, XDG_CONFIG_HOME=str(root / 'config'), PATH=str(tools), TASKR_BIN=str(tools / 'taskr'), TERM='xterm-256color')
+        env.pop('NO_COLOR', None)
+        for key, expected in [(b'5', [False, True, False, True, False, True]), (b'6', [False, True, False, True, False, False])]:
+            master, slave = pty.openpty()
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 0, 0))
+            child = subprocess.Popen([sys.argv[1], '--theme', 'dark'], stdin=slave, stdout=slave, stderr=slave, env=env, start_new_session=True)
+            os.close(slave)
+            output = bytearray(); replies = [0]
+            def until(predicate):
+                deadline = time.monotonic() + 5
+                while not predicate() and time.monotonic() < deadline:
+                    if not select.select([master], [], [], 0.1)[0]: continue
+                    try: chunk = os.read(master, 65536)
+                    except OSError:
+                        # PTY EOF can precede the child's exit; reap before checking the predicate.
+                        child.wait(timeout=5)
+                        break
+                    if not chunk:
+                        child.wait(timeout=5)
+                        break
+                    output.extend(chunk)
+                    while replies[0] < output.count(b'\x1b[6n'):
+                        os.write(master, b'\x1b[1;1R'); replies[0] += 1
+                assert predicate(), (child.poll(), repr(bytes(output[-2000:])))
+            try:
+                until(lambda: b'4 PRs+' in output and b'5 Shipped' in output)
+                assert b'using defaults' not in output
+                if key == b'6': assert b'5 Shipped-' in output, 'six booleans did not survive restart'
+                os.write(master, key + b'\x0c')
+                until(lambda: json.loads(config.read_text())['panels'] == expected)
+                os.write(master, b'q')
+                until(lambda: child.poll() is not None)
+                assert child.wait(timeout=5) == 0
+            finally:
+                if child.poll() is None: child.kill(); child.wait()
+                os.close(master)
+            assert json.loads(config.read_text()) == {'panels': expected, 'repos': ['kept/private']}
+            assert config.stat().st_mode & 0o777 == 0o600
+            assert set(config.parent.iterdir()) == {config}
+print('PASS: real old-four/new-six config saves and restarts retain choices, repos and 0600 permissions')

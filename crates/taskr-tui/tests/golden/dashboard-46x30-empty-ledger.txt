@@ -1,21 +1,12 @@
  taskr            2s ago   ✓ no owner action
-1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+
-
-
-
-
+1 asks+ · 2 checks+ · 3 camps+
+4 PRs+ · 5 Shipped+ · 6 Build+
                        ✓
 
                No open campaigns
       Nothing recorded is waiting on you.
 
                 c all campaigns
-
-
-
-
-
-
 
 
  OPEN PRS ─────────────────────── observed CI
@@ -25,6 +16,15 @@ CI: 1 fail 1 run 0 ? 1 pass 0 draft
 ▌  @alex · 1h · trip-to-japan/trip
  ■ running #41 Refresh campaign milestones
    @sam · 2h · trip-to-japan/trip
- ■ checks passing #40 Clarify owner answer co…
-   @alex · 3h · trip-to-japan/trip · approved
+ +1 outside view · j/k to browse
+ SHIPPED ─────────────────────────── observed
+4 observed merged / rolling 24h
+2 sampled; 0s ago · trip-to-japan/trip
+2 sampled; 0s ago · trip-to-japan/tools
+ +2 outside view · j/k to browse
+ BUILD QUEUE ─────────────────────── observed
+2 active observed · 0 unknown
+6 sampled; 0s ago · trip-to-japan/trip
+latest100-run sample · older may be missing
+ +2 outside view · j/k to browse
  r refresh   ? help
