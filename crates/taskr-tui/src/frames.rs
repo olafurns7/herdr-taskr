@@ -98,8 +98,24 @@ fn dashboard(app: &mut App) {
 /// Panels 7-9 on, after `l` read the fixture's campaign three minutes ago.
 fn ledger(app: &mut App) {
     dashboard(app);
-    app.config.panels[6..].fill(true);
+    app.config.panels[6..9].fill(true);
     app.scope.read_at = Some(app.observed_at - 180);
+}
+
+/// Issues (key 0) on with the demo pair, the cursor on its first group.
+fn issues(app: &mut App) {
+    dashboard(app);
+    app.config.panels[9] = true;
+    app.issues = crate::github::demo_issues(app.observed_at);
+    first_group(app);
+}
+
+/// The cursor on the first Issues group, after any toggle that moves the rows.
+fn first_group(app: &mut App) {
+    app.row = crate::glance::ids(&app.view())
+        .iter()
+        .position(|r| matches!(r, crate::glance::RowId::Assignee(..)))
+        .unwrap();
 }
 
 /// The same with GitHub's panels off: what a narrow pane shows of the ledger's.
@@ -236,7 +252,7 @@ pub fn all() -> Vec<Spec> {
             app.config.panels[0] = false;
         }),
         spec("dashboard", 46, 30, "-off", |app| {
-            app.config.panels = [false; 9];
+            app.config.panels = [false; 10];
             app.config_warning = Some("TUI config not saved; choices kept for this session".into());
         }),
         spec("dashboard", 46, 30, "-empty-ledger", |app| {
@@ -285,6 +301,47 @@ pub fn all() -> Vec<Spec> {
                 .iter()
                 .position(|r| matches!(r, crate::glance::RowId::Run(..)))
                 .unwrap();
+        }),
+        spec("issues", 120, 40, "", issues),
+        spec("issues", 120, 40, "-light", issues),
+        spec("issues", 46, 30, "", issues),
+        spec("issues", 46, 30, "-light", issues),
+        spec("issues", 46, 20, "", issues),
+        spec("issues", 46, 30, "-empty", |app| {
+            issues(app);
+            let s = &mut app.issues.sources[0];
+            (s.issues, s.total, s.closed_total) = (vec![], 0, 0);
+            app.row = 0;
+        }),
+        spec("issues", 46, 30, "-unavailable", |app| {
+            issues(app);
+            app.issues = crate::github::Dashboard::for_kind(
+                &[crate::github::ISSUES_REPO.into()],
+                crate::github::Kind::Issues,
+            );
+            app.issues.sources[0].error = Some("GitHub unavailable");
+            app.row = 0;
+        }),
+        spec("issues", 46, 30, "-stale", |app| {
+            issues(app);
+            app.issues.sources[0].error = Some("GitHub rate limited");
+        }),
+        spec("issues", 120, 40, "-overflow", |app| {
+            // Every ledger panel on: Issues keeps its minimum below them, then scrolls.
+            issues(app);
+            app.config.panels[6..].fill(true);
+            app.scope.read_at = Some(app.observed_at - 180);
+            app.issues.sources[0].total = 100;
+            app.issues.sources[0].closed_total = 100;
+            first_group(app);
+        }),
+        spec("issues", 46, 30, "-cap", |app| {
+            // Issues alone, both reads at their 100-row cap: the list says so for each.
+            issues(app);
+            app.config.panels[..9].fill(false);
+            app.issues.sources[0].total = 100;
+            app.issues.sources[0].closed_total = 100;
+            first_group(app);
         }),
         spec("ledger", 120, 40, "", |app| {
             ledger(app);

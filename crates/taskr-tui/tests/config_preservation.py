@@ -5,8 +5,8 @@ cases = [b'{bad json', json.dumps({'repos': [f'owner/repo{i}' for i in range(9)]
 if os.geteuid() != 0:
     cases.append(b'{"repos":["private/kept-unreadable"]}')
 cases.extend(json.dumps({'panels': values, 'repos': ['kept/private']}).encode() for values in [
-    [], [True] * 5, [True] * 7, [True] * 8, [True] * 10, [True, True, True, 1], [True, True, True, True, True, 'bad'],
-    [True] * 8 + ['bad']])
+    [], [True] * 5, [True] * 7, [True] * 8, [True] * 11, [True, True, True, 1], [True, True, True, True, True, 'bad'],
+    [True] * 8 + ['bad'], [True] * 9 + ['bad']])
 for i, original in enumerate(cases):
     with tempfile.TemporaryDirectory(prefix='taskr-config-preservation-') as temp:
         root = pathlib.Path(temp)
@@ -70,9 +70,9 @@ for i, original in enumerate(cases):
         assert set(config.parent.iterdir()) == {config}, f'case {i}: unexpected saved files'
 print('PASS: real toggles preserve malformed, over-cap, oversized, unreadable and invalid panel config files')
 
-# A real SaveConfig must migrate four or six choices (7-9 start hidden), then reload all nine.
+# A real SaveConfig must migrate four, six or nine choices (7-9 and 0 start hidden), then reload all ten.
 F, T = False, True
-for initial in [[F, T, F, T], [F, T, F, T, T, T], [F, T, F, T, T, T, F, F, F]]:
+for initial in [[F, T, F, T], [F, T, F, T, T, T], [F, T, F, T, T, T, F, F, F], [F, T, F, T, T, T, F, F, F, F]]:
     with tempfile.TemporaryDirectory(prefix='taskr-config-migration-') as temp:
         root = pathlib.Path(temp)
         config = root / 'config/taskr/tui.json'
@@ -84,7 +84,7 @@ for initial in [[F, T, F, T], [F, T, F, T, T, T], [F, T, F, T, T, T, F, F, F]]:
         env = os.environ.copy()
         env.update(HOME=temp, XDG_CONFIG_HOME=str(root / 'config'), PATH=str(tools), TASKR_BIN=str(tools / 'taskr'), TERM='xterm-256color')
         env.pop('NO_COLOR', None)
-        for key, expected in [(b'5', [F, T, F, T, F, T, F, F, F]), (b'6', [F, T, F, T, F, F, F, F, F]), (b'8', [F, T, F, T, F, F, F, T, F])]:
+        for key, expected in [(b'5', [F, T, F, T, F, T, F, F, F, F]), (b'6', [F, T, F, T, F, F, F, F, F, F]), (b'8', [F, T, F, T, F, F, F, T, F, F]), (b'0', [F, T, F, T, F, F, F, T, F, T])]:
             master, slave = pty.openpty()
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 0, 0))
             child = subprocess.Popen([sys.argv[1], '--theme', 'dark'], stdin=slave, stdout=slave, stderr=slave, env=env, start_new_session=True)
@@ -111,6 +111,7 @@ for initial in [[F, T, F, T], [F, T, F, T, T, T], [F, T, F, T, T, T, F, F, F]]:
                 assert b'using defaults' not in output
                 if key == b'6': assert b'5 Shipped-' in output, 'six booleans did not survive restart'
                 if key == b'8': assert b'6 Build-' in output and b'8 Fleet-' in output, 'nine booleans did not survive restart'
+                if key == b'0': assert b'8 Fleet+' in output and b'0 Issues-' in output, 'ten booleans did not survive restart'
                 os.write(master, key + b'\x0c')
                 until(lambda: json.loads(config.read_text())['panels'] == expected)
                 os.write(master, b'q')
@@ -122,4 +123,4 @@ for initial in [[F, T, F, T], [F, T, F, T, T, T], [F, T, F, T, T, T, F, F, F]]:
             assert json.loads(config.read_text()) == {'panels': expected, 'repos': ['kept/private']}
             assert config.stat().st_mode & 0o777 == 0o600
             assert set(config.parent.iterdir()) == {config}
-print('PASS: real four/six/nine config saves and restarts retain choices, repos and 0600 permissions')
+print('PASS: real four/six/nine/ten config saves and restarts retain choices, repos and 0600 permissions')

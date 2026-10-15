@@ -205,6 +205,8 @@ pub struct App {
     pub github: github::Dashboard,
     pub shipped: github::Dashboard,
     pub builds: github::Dashboard,
+    /// Issues by assignee (panel 0): the fixed repository only, never `config.repos`.
+    pub issues: github::Dashboard,
     /// One clock observation shared by the rendered view and its input identities.
     pub observed_at: i64,
     pub observed_tick: Instant,
@@ -251,6 +253,7 @@ impl App {
             github: github::Dashboard::default(),
             shipped: github::Dashboard::default(),
             builds: github::Dashboard::default(),
+            issues: github::Dashboard::default(),
             observed_at: time::OffsetDateTime::now_utc().unix_timestamp(),
             observed_tick: Instant::now(),
             scope: Scope::default(),
@@ -259,8 +262,10 @@ impl App {
     }
 
     pub fn advance_time(&mut self, at: i64, tick: Instant) -> bool {
+        // Issues groups and their counts too: a surviving group can lose a closure.
         let signature = |app: &App, at| {
-            app.shipped
+            let shipped = app
+                .shipped
                 .authors(at)
                 .into_iter()
                 .map(|(author, rows)| {
@@ -271,7 +276,8 @@ impl App {
                             .collect::<Vec<_>>(),
                     )
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            (shipped, app.issues.assignees(at))
         };
         // A cached panel's age is on screen: a new minute is a new frame.
         let aged = (self.config.panels[6] || self.config.panels[8])
@@ -335,6 +341,9 @@ impl App {
             }
             if !self.config.panels[5] {
                 v.builds.sources.clear();
+            }
+            if !self.config.panels[9] {
+                v.issues.sources.clear();
             }
             for source in &mut v.github.sources {
                 source.prs.retain(|p| {
@@ -600,7 +609,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         if app.screen == Screen::Glance && !app.config.panels.iter().any(|p| *p) && area.height > 1
         {
             f.render_widget(
-                Paragraph::new("1-9 show hidden panels"),
+                Paragraph::new("1-9, 0 show hidden panels"),
                 Rect {
                     y: area.y + 1,
                     height: 1,

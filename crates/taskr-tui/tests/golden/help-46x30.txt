@@ -1,5 +1,5 @@
  taskr ❯ help          2s ago   ● 2 need you
- KEYS · glance ────────────────────── 1-27/53
+ KEYS · glance ────────────────────── 1-27/55
  Move
   j k           down, up (arrows too)
   g G           first, last row
@@ -24,7 +24,7 @@
   7, 9: the campaign last opened with l, as
   cached; l or o reads it again, r does not.
   8: listed campaigns only; / filters it, not
-  7 or 9.
-
- Act
+  7 or 9. 0: trip-to-japan/trip issues by
+  current assignee, read at most every 5 min
+  while shown; r does not hurry it.
  j k scroll   h close

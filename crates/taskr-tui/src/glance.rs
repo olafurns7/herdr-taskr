@@ -22,7 +22,7 @@ use crate::{
 };
 
 /// The panels between the checks and the campaigns, in priority order: GitHub's three,
-/// then the ledger's Decisions (7), Fleet (8) and Decision log (9).
+/// then the ledger's Decisions (7), Fleet (8) and Decision log (9), then Issues (0).
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Panel {
     Gh(Kind),
@@ -31,13 +31,14 @@ enum Panel {
     Log,
 }
 
-const PANELS: [Panel; 6] = [
+const PANELS: [Panel; 7] = [
     Panel::Gh(Kind::Open),
     Panel::Gh(Kind::Shipped),
     Panel::Gh(Kind::Build),
     Panel::Decisions,
     Panel::Fleet,
     Panel::Log,
+    Panel::Gh(Kind::Issues),
 ];
 
 /// The panels on screen. A hidden GitHub panel's sources are cleared by `App::view`.
@@ -59,6 +60,7 @@ fn row_count(app: &App, panel: Panel) -> usize {
         Panel::Gh(Kind::Open) => app.github.rows().len(),
         Panel::Gh(Kind::Shipped) => app.shipped.authors(app.observed_at).len(),
         Panel::Gh(Kind::Build) => app.builds.runs().len(),
+        Panel::Gh(Kind::Issues) => app.issues.assignees(app.observed_at).len(),
         Panel::Decisions => decisions(app).len(),
         Panel::Fleet => app.fleet.len(),
         Panel::Log => logged(app).len(),
@@ -576,6 +578,24 @@ fn compact_layout(
                     app.theme.text,
                 )
             }
+            Selected::Assignee(g) => (
+                // The stale cue comes first: a narrow row clips its end.
+                format!(
+                    "Issues{} {} · {}",
+                    if app.issues.sources.iter().any(|s| s.error.is_some()) {
+                        " stale"
+                    } else {
+                        ""
+                    },
+                    g.name(),
+                    g.counts()
+                ),
+                if g.blocked > 0 {
+                    app.theme.check
+                } else {
+                    app.theme.sub
+                },
+            ),
             Selected::Nothing => continue,
         };
         let mut line = ui::row(
@@ -594,6 +614,7 @@ fn compact_layout(
                 | RowId::Run(..)
                 | RowId::Decision(..)
                 | RowId::Logged(..)
+                | RowId::Assignee(..)
         ) && app.fetch.loaded
             && app.fetch.error.is_some()
         {
@@ -639,23 +660,27 @@ fn external_budget(app: &App, panel: Panel) -> (usize, usize) {
     }
     let base = 2
         + sources.len()
-        + usize::from(kind == Kind::Build)
-        + if kind == Kind::Build {
-            0
-        } else {
-            sources.iter().filter(|s| s.total == 100).count()
+        + match kind {
+            Kind::Build => 1,
+            Kind::Issues => {
+                1 + sources
+                    .iter()
+                    .map(|s| usize::from(s.total == 100) + usize::from(s.closed_total == 100))
+                    .sum::<usize>()
+            }
+            _ => sources.iter().filter(|s| s.total == 100).count(),
         };
-    let count = match kind {
-        Kind::Open => app.github.rows().len(),
-        Kind::Shipped => app.shipped.authors(app.observed_at).len(),
-        Kind::Build => app.builds.runs().len(),
-    };
+    let count = row_count(app, panel);
     let cap = if kind == Kind::Open && !ledger_rows(app) {
         usize::MAX
     } else {
         3
     };
-    let per_row = if kind == Kind::Shipped { 1 } else { 2 };
+    let per_row = if matches!(kind, Kind::Shipped | Kind::Issues) {
+        1
+    } else {
+        2
+    };
     let empty =
         usize::from(count == 0 && kind != Kind::Open && sources.iter().any(|s| s.at.is_some()));
     (
@@ -952,33 +977,33 @@ fn observed_lines(
     let d = kind.dashboard(app);
     let groups = d.authors(app.observed_at);
     let runs = d.runs();
-    let observed = if kind == Kind::Shipped {
-        groups.values().map(Vec::len).sum()
-    } else {
-        runs.iter().filter(|r| r.known()).count()
-    };
-    let summary = if d.sources.iter().all(|s| s.at.is_none()) {
+    let unavailable = d.sources.iter().all(|s| s.at.is_none());
+    let summary = if unavailable {
         "Counts unavailable".into()
-    } else if kind == Kind::Shipped {
-        format!("{observed} observed merged / rolling 24h")
     } else {
-        format!(
-            "{observed} active observed · {} unknown",
-            runs.iter().filter(|r| !r.known()).count()
-        )
+        match kind {
+            Kind::Shipped => format!(
+                "{} observed merged / rolling 24h",
+                groups.values().map(Vec::len).sum::<usize>()
+            ),
+            Kind::Issues => {
+                let [open, blocked, closed] = d.issue_totals(app.observed_at);
+                format!("{open} open · {blocked} blocked · {closed} closed/24h · unique")
+            }
+            _ => format!(
+                "{} active observed · {} unknown",
+                runs.iter().filter(|r| r.known()).count(),
+                runs.iter().filter(|r| !r.known()).count()
+            ),
+        }
+    };
+    let (title, right) = match kind {
+        Kind::Shipped => ("SHIPPED", "observed"),
+        Kind::Issues => ("ISSUES", crate::github::ISSUES_REPO),
+        _ => ("BUILD QUEUE", "observed"),
     };
     let mut out = vec![
-        ui::rule(
-            t,
-            if kind == Kind::Shipped {
-                "SHIPPED"
-            } else {
-                "BUILD QUEUE"
-            },
-            "observed",
-            t.sub,
-            width,
-        ),
+        ui::rule(t, title, right, t.sub, width),
         Line::from(sp(summary, t.sub)),
     ];
     let mut hits = vec![None, None];
@@ -988,31 +1013,60 @@ fn observed_lines(
             if s.error.is_some() { t.check } else { t.text },
         )));
         hits.push(None);
-        if kind == Kind::Shipped && s.total == 100 {
-            out.push(Line::from(sp(" first 100; more may exist", t.check)));
+        let capped = match kind {
+            Kind::Shipped => vec![(s.total == 100).then_some(" first 100; more may exist")],
+            Kind::Issues => vec![
+                (s.total == 100).then_some(" open: first 100; more may exist"),
+                (s.closed_total == 100).then_some(" closed: first 100; more may exist"),
+            ],
+            _ => vec![],
+        };
+        for text in capped.into_iter().flatten() {
+            out.push(Line::from(sp(text, t.check)));
             hits.push(None);
         }
     }
-    if kind == Kind::Build {
-        out.push(Line::from(sp(
-            "latest100-run sample · older may be missing",
-            t.sub,
-        )));
+    let note = match kind {
+        Kind::Build => Some("latest100-run sample · older may be missing"),
+        Kind::Issues => Some("current assignees · overlap · non-atomic"),
+        _ => None,
+    };
+    if let Some(note) = note {
+        out.push(Line::from(sp(clip(note, width), t.sub)));
         hits.push(None);
     }
-    let labels: Vec<_> = if kind == Kind::Shipped {
-        groups
+    let stale = |repo: Option<&str>| {
+        d.sources
+            .iter()
+            .any(|s| repo.is_none_or(|r| s.repo == r) && s.error.is_some())
+    };
+    // Label, second line, stale, colour. Blocked issues take the attention colour, never red.
+    let labels: Vec<(String, String, bool, Color)> = match kind {
+        Kind::Shipped => groups
             .iter()
             .map(|(a, rows)| {
                 (
                     format!("@{a} · {} PRs observed", rows.len()),
                     String::new(),
-                    d.sources.iter().any(|s| s.error.is_some()),
+                    stale(None),
+                    t.sub,
                 )
             })
-            .collect()
-    } else {
-        runs.iter()
+            .collect(),
+        Kind::Issues => d
+            .assignees(app.observed_at)
+            .iter()
+            .map(|g| {
+                (
+                    format!("{} · {}", g.name(), g.counts()),
+                    String::new(),
+                    stale(Some(g.repo.as_str())),
+                    if g.blocked > 0 { t.check } else { t.sub },
+                )
+            })
+            .collect(),
+        _ => runs
+            .iter()
             .map(|r| {
                 (
                     format!("{} · {}", r.label(), r.workflow),
@@ -1025,25 +1079,24 @@ fn observed_lines(
                         ),
                         r.repo
                     ),
-                    d.sources
-                        .iter()
-                        .any(|s| s.repo == r.repo && s.error.is_some()),
+                    stale(Some(r.repo.as_str())),
+                    t.sub,
                 )
             })
-            .collect()
+            .collect(),
     };
-    if labels.is_empty() && d.sources.iter().any(|s| s.at.is_some()) {
+    if labels.is_empty() && !unavailable {
         out.push(Line::from(sp(
-            if kind == Kind::Shipped {
-                "None observed in cached 24h sample"
-            } else {
-                "None active observed in latest100 sample"
+            match kind {
+                Kind::Shipped => "None observed in cached 24h sample",
+                Kind::Issues => "No open or 24h-closed issues observed",
+                _ => "None active observed in latest100 sample",
             },
             t.sub,
         )));
         hits.push(None);
     }
-    let per_row = if kind == Kind::Shipped { 1 } else { 2 };
+    let per_row = if kind == Kind::Build { 2 } else { 1 };
     let remaining = height.saturating_sub(out.len());
     let mut fit = (remaining / per_row).min(labels.len());
     if fit < labels.len() {
@@ -1053,14 +1106,14 @@ fn observed_lines(
     let start = cursor
         .map_or(0, |i| (i + 1).saturating_sub(fit))
         .min(labels.len().saturating_sub(fit));
-    for (i, (label, meta, stale)) in labels.iter().enumerate().skip(start).take(fit) {
+    for (i, (label, meta, stale, color)) in labels.iter().enumerate().skip(start).take(fit) {
         let label = format!("{label}{}", if *stale { " · stale/partial" } else { "" });
         out.push(ui::row(
             t,
-            vec![sp(clip(&label, width.saturating_sub(1)), t.sub)],
+            vec![sp(clip(&label, width.saturating_sub(1)), *color)],
             app.row == offset + i,
             false,
-            t.sub,
+            *color,
             width,
         ));
         hits.push(Some(offset + i));
@@ -1233,6 +1286,8 @@ pub(crate) enum RowId {
     Fleet(i64),
     /// A decision event in that read's log sample: apart from the same event in force.
     Logged(i64, i64),
+    /// An Issues group: repository and raw login; None is Unassigned, apart from any login.
+    Assignee(String, Option<String>),
 }
 
 /// Every row the cursor can be on, in cursor order.
@@ -1277,6 +1332,12 @@ pub(crate) fn ids(app: &App) -> Vec<RowId> {
     let decisions = decisions(app).iter().map(|e| RowId::Decision(root, e.id));
     let fleet = app.fleet.iter().map(|c| RowId::Fleet(c.id));
     let logged = logged(app).into_iter().map(|e| RowId::Logged(root, e.id));
+    let assignees = app
+        .issues
+        .assignees(app.observed_at)
+        .into_iter()
+        .filter(|_| app.config.panels[9])
+        .map(|g| RowId::Assignee(g.repo, g.login));
     asks.chain(checks)
         .chain(prs)
         .chain(authors)
@@ -1284,6 +1345,7 @@ pub(crate) fn ids(app: &App) -> Vec<RowId> {
         .chain(decisions)
         .chain(fleet)
         .chain(logged)
+        .chain(assignees)
         .chain(campaigns)
         .collect()
 }
@@ -1313,6 +1375,7 @@ pub(crate) enum Selected<'a> {
     Decision(&'a Event),
     Logged(&'a Event),
     Fleet(&'a CampaignRow),
+    Assignee(crate::github::Group),
     Nothing,
 }
 
@@ -1360,6 +1423,12 @@ pub(crate) fn selected(app: &App) -> Selected<'_> {
             .iter()
             .find(|c| c.id == *id)
             .map_or(Selected::Nothing, Selected::Fleet),
+        Some(RowId::Assignee(repo, login)) => app
+            .issues
+            .assignees(app.observed_at)
+            .into_iter()
+            .find(|g| g.repo == *repo && g.login == *login)
+            .map_or(Selected::Nothing, Selected::Assignee),
         None => Selected::Nothing,
     }
 }
@@ -1393,6 +1462,8 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
         Selected::Decision(_) | Selected::Logged(_) | Selected::Fleet(_) => {
             vec![Some(hint("o", Some("open campaign")))]
         }
+        // Informational: traversal and help only.
+        Selected::Assignee(_) => vec![],
         Selected::Nothing => vec![Some(hint("c", Some("all campaigns")))],
     }
     .into_iter()
@@ -1406,7 +1477,7 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
         out.splice(0..0, [hint("j k", Some("scroll")), hint("h", Some("list"))]);
     }
     if wide {
-        out.push(hint("1-9", None));
+        out.push(hint("0-9", None));
         out.extend([
             hint("/", None),
             hint("y", None),
@@ -1425,6 +1496,7 @@ pub(crate) fn hints(app: &App, wide: bool) -> Vec<(&'static str, &'static str)> 
             | Selected::Decision(_)
             | Selected::Logged(_)
             | Selected::Fleet(_)
+            | Selected::Assignee(_)
     ) {
         out.retain(|(key, _)| *key != "y");
     }
@@ -1471,7 +1543,7 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
 
     if !app.config.panels.iter().any(|p| *p) {
         f.render_widget(
-            Paragraph::new("All panels hidden · press 1-9 to show").centered(),
+            Paragraph::new("All panels hidden · press 1-9 or 0 to show").centered(),
             body,
         );
         return;
@@ -1585,10 +1657,10 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     }
 }
 
-/// The panel switches: one line when wide, else 1-3, 4-6 and 7-9 on lines of their own
-/// (7-9 folded into the second while all hidden), each wrapped to the width.
+/// The panel switches: one line when wide, else 1-3, 4-6 and 7-9,0 on lines of their own
+/// (7-9 and 0 folded into the second while all hidden), each wrapped to the width.
 fn toggles(app: &App, width: usize, wide: bool) -> Vec<Line<'static>> {
-    const LABELS: [&str; 9] = [
+    const LABELS: [&str; 10] = [
         "asks",
         "checks",
         "camps",
@@ -1598,21 +1670,22 @@ fn toggles(app: &App, width: usize, wide: bool) -> Vec<Line<'static>> {
         "Decisions",
         "Fleet",
         "Log",
+        "Issues",
     ];
     let mut parts: Vec<String> = LABELS
         .iter()
         .enumerate()
         .map(|(i, name)| {
             let on = if app.config.panels[i] { "+" } else { "-" };
-            format!("{} {name}{on}", i + 1)
+            format!("{} {name}{on}", (i + 1) % 10)
         })
         .collect();
-    // Narrow, 7-9 all hidden (the default) cost no extra line: the six-panel layout keeps
-    // its rows. The help names them.
+    // Narrow, 7-9 and 0 all hidden (the default) cost no extra line: the six-panel layout
+    // keeps its rows. The help names them.
     let folded = !wide && !app.config.panels[6..].iter().any(|p| *p);
     if folded {
         parts.truncate(6);
-        parts.push("7-9 off".into());
+        parts.push("7-9,0 off".into());
     }
     let groups: Vec<&[String]> = if wide {
         vec![&parts[..]]
@@ -1929,6 +2002,32 @@ fn detail(f: &mut Frame, app: &App, area: Rect) {
                 ),
             )
         }
+        Selected::Assignee(g) => (
+            format!("Issues · {}", g.name()),
+            vec![Line::from(sp(g.counts(), t.sub))],
+            format!(
+                "Current assignees on observed, non-atomic samples of {}. Groups overlap: an \
+                 issue with several assignees counts in each, so groups do not sum to the \
+                 headline. Blocked: open issues labelled blocked or needs-info. Closed: \
+                 closedAt in the rolling 24 hours. Not a global total.\n{}",
+                g.repo,
+                app.issues
+                    .sources
+                    .iter()
+                    .filter(|s| s.repo == g.repo)
+                    .map(|s| {
+                        let mut line = s.status(app.observed_tick);
+                        for (n, which) in [(s.total, "open"), (s.closed_total, "closed")] {
+                            if n == 100 {
+                                line += &format!("; {which}: first 100, more may exist");
+                            }
+                        }
+                        line
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ),
+        ),
         Selected::Nothing => return,
     };
     // The pane's inside, as `ui::pane` will draw it, so the text wraps before the title
@@ -1999,7 +2098,11 @@ fn activity(f: &mut Frame, app: &App, area: Rect) {
         Selected::Check(a) => a.root_id,
         Selected::Campaign(c) | Selected::Fleet(c) => c.id,
         Selected::Decision(_) | Selected::Logged(_) => app.data.campaign.root.id,
-        Selected::Pr(_) | Selected::Author(_) | Selected::Run(_) | Selected::Nothing => return,
+        Selected::Pr(_)
+        | Selected::Author(_)
+        | Selected::Run(_)
+        | Selected::Assignee(_)
+        | Selected::Nothing => return,
     };
     let Some(c) = g.campaigns.iter().find(|c| c.id == root) else {
         return;
@@ -2136,5 +2239,28 @@ mod tests {
             .map(|s| s.content.as_ref())
             .collect();
         assert!(text.contains("7/9"), "{text}");
+    }
+
+    #[test]
+    fn issues_stale_compact_cue_and_both_first_100_disclosures_are_drawn() {
+        let text = |name: &str| {
+            let spec = crate::frames::all()
+                .into_iter()
+                .find(|s| s.name == name)
+                .unwrap();
+            crate::frames::text(&crate::frames::render(&spec))
+        };
+        // Default narrow, 0 on, cursor on an Issues row: the compact row says stale.
+        let stale = text("issues-46x30-stale");
+        assert!(stale.contains("Issues stale @alex"), "{stale}");
+        for name in ["issues-46x30-cap", "issues-120x40-overflow"] {
+            let t = text(name);
+            assert!(
+                t.contains("open: first 100") && t.contains("closed: first 100"),
+                "{name}:\n{t}"
+            );
+        }
+        // The overflow spec's cursor is on an Issues group, not a stale index.
+        assert!(text("issues-120x40-overflow").contains("Issues · @alex"));
     }
 }
