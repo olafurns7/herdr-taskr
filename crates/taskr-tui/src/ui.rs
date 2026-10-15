@@ -336,7 +336,12 @@ fn verdict(app: &App) -> (Span<'static>, Option<Span<'static>>) {
     let t = &app.theme;
     let g = &app.data.glance;
     let (need, check) = app.counts.unwrap_or((g.needs_you.len(), g.attention.len()));
-    let needs = || bold(format!(" {need} need you"), t.need);
+    let need_text = if app.screen == crate::Screen::Glance && !app.config.panels[0] {
+        format!("{need} hidden asks")
+    } else {
+        format!("{need} need you")
+    };
+    let needs = || bold(format!(" {need_text}"), t.need);
     if !app.fetch.loaded {
         // No snapshot yet: nothing to claim, least of all "no owner action".
         return match app.fetch.error {
@@ -351,7 +356,7 @@ fn verdict(app: &App) -> (Span<'static>, Option<Span<'static>>) {
     }
     if need > 0 {
         let extra = (check > 0).then(|| sp(format!(" {check} to check"), t.check));
-        return (pill(t, format!(" ● {need} need you "), t.need), extra);
+        return (pill(t, format!(" ● {need_text} "), t.need), extra);
     }
     if check > 0 {
         return (pill(t, format!(" ! {check} to check "), t.check), None);
@@ -506,7 +511,7 @@ pub(crate) fn ascii(buf: &mut ratatui::buffer::Buffer) {
             "╭" | "╮" | "╰" | "╯" => "+",
             "▁" => "_",
             "▆" | "▇" => "=",
-            "█" => "#",
+            "█" | "■" => "#",
             _ => "?",
         };
         cell.set_symbol(plain);

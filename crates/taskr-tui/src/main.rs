@@ -22,7 +22,7 @@ use ratatui::crossterm::{
     execute, terminal,
 };
 use taskr_tui::{
-    App, Screen, actions, client, frames,
+    App, Screen, actions, client, config, frames, github,
     input::{self, Effect},
     model::Data,
     theme,
@@ -120,6 +120,20 @@ fn main() -> ExitCode {
     let pick = |name| theme::choose(Some(name), var, true, None);
     app.themes = [pick("dark"), pick("light"), pick("terminal")];
     app.ascii = options.ascii;
+    // Demo never resolves, reads or writes a user config path.
+    let config_path = if options.demo { None } else { config::path() };
+    if let Some(path) = &config_path {
+        (app.config, app.config_warning) = config::Config::load(path);
+    } else if !options.demo {
+        app.config_warning = Some("TUI config path unavailable; choices not saved".into());
+    }
+    let config_ok = app.config_warning.is_none();
+    app.github = if options.demo {
+        github::demo()
+    } else {
+        github::Dashboard::new(&app.config.repos)
+    };
+    let mut github = github::Poller::default();
     let taskr = client::taskr();
     let pace = client::Pace::default();
     let (updates, wake, events) = if options.demo {
@@ -166,6 +180,7 @@ fn main() -> ExitCode {
         let mut face = String::new();
         let mut dirty = true;
         let mut shown = None;
+        let mut pr_manual = false;
         // The slotr view's read: due at once when it opens (None), then every 3 s.
         let (mut slotr_due, mut slotr_started, mut slotr_at) =
             (None::<Instant>, None::<Instant>, None::<Instant>);
@@ -193,6 +208,11 @@ fn main() -> ExitCode {
                 dirty = true;
             }
             let now = Instant::now();
+            if !options.demo {
+                let visible = app.screen == Screen::Glance && app.config.panels[3];
+                dirty |= github.tick(&mut app, now, visible, pr_manual);
+            }
+            pr_manual = false;
             if app.screen != Screen::Slotr {
                 slotr_due = None;
             } else if slotr_started.is_none() && slotr_due.is_none_or(|d| now >= d) {
@@ -208,7 +228,14 @@ fn main() -> ExitCode {
             app.slotr.age_ms = slotr_at.map_or(0, |at| now.duration_since(at).as_millis() as i64);
             (app.slotr.in_flight, app.slotr.tick) = client::spinner(slotr_started, now);
             // Draw on a change only: an idle pane costs a poll, not a frame.
-            let faces = app.fetch.face() + &app.slotr.face();
+            let faces = app.fetch.face()
+                + &app.slotr.face()
+                + &app
+                    .github
+                    .sources
+                    .iter()
+                    .map(|s| s.status(now))
+                    .collect::<String>();
             if dirty || faces != face {
                 taskr_tui::frame(&mut terminal, &app, &mut shown)?;
                 (face, dirty) = (faces, false);
@@ -232,6 +259,15 @@ fn main() -> ExitCode {
                 Effect::Refresh => {
                     let _ = wake.send(());
                     slotr_due = None;
+                    pr_manual = true;
+                }
+                Effect::SaveConfig => {
+                    if config_ok && let Some(path) = &config_path {
+                        app.config_warning =
+                            app.config.save(path).err().map(|_| {
+                                "TUI config not saved; choices kept for this session".into()
+                            });
+                    }
                 }
                 Effect::Redraw => shown = None,
                 Effect::Copy(text) => {
@@ -246,6 +282,7 @@ fn main() -> ExitCode {
             }
         }
     })();
+    drop(github);
     if let Some(events) = &events {
         events.stop();
     }

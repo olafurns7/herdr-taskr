@@ -36,6 +36,7 @@ pub enum Effect {
     Refresh,
     /// Clear the screen and paint it whole (Ctrl-L).
     Redraw,
+    SaveConfig,
 }
 
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
@@ -384,19 +385,42 @@ fn park(app: &mut App, root: i64, name: &str, parked: bool) -> Effect {
 }
 
 fn glance_key(app: &mut App, code: KeyCode) -> Effect {
+    if let KeyCode::Char(n @ '1'..='4') = code {
+        let before = glance::ids(&app.view()).get(app.row).cloned();
+        let index = n as usize - '1' as usize;
+        app.config.panels[index] = !app.config.panels[index];
+        app.restore_row(before);
+        return Effect::SaveConfig;
+    }
+    if matches!(
+        code,
+        KeyCode::Enter | KeyCode::Right | KeyCode::Char('a' | 'p' | 'l' | 'o' | 'y')
+    ) && !app
+        .seen
+        .borrow()
+        .hits
+        .iter()
+        .any(|(_, hit)| *hit == Hit::Row(app.row))
+    {
+        return Effect::None;
+    }
     let view = app.view();
     let g = &view.data.glance;
     let (host, pane, root, name) = match glance::selected(&view) {
         Selected::Ask(a) => (&a.host, &a.pane_id, a.root_id, &a.campaign),
         Selected::Check(a) => (&a.host, &a.pane_id, a.root_id, &a.campaign),
         Selected::Campaign(c) => (&c.host, &c.pane_id, c.id, &c.name),
+        Selected::Pr(_) if matches!(code, KeyCode::Tab | KeyCode::BackTab | KeyCode::Char('c')) => {
+            (&g.now, &g.now, 0, &g.now)
+        }
+        Selected::Pr(_) => return Effect::None,
         Selected::Nothing if code == KeyCode::Char('c') => (&g.now, &g.now, 0, &g.now),
         Selected::Nothing => return Effect::None,
     };
     match code {
         KeyCode::Tab | KeyCode::BackTab => {
             // Sections, then the detail pane when it is drawn, then round again.
-            let starts = glance::sections(g);
+            let starts = glance::sections(&view);
             let (tab, detail) = (code == KeyCode::Tab, on_detail(app));
             let next = match (detail, tab) {
                 (true, true) => starts.first(),
@@ -1117,7 +1141,7 @@ mod tests {
             p.status()
         );
         let root = p.app.data.campaign.root.id;
-        let ids = glance::ids(&p.app.data.glance);
+        let ids = glance::ids(&p.app.view());
         p.app.row = ids
             .iter()
             .position(|r| *r == glance::RowId::Campaign(root))
@@ -1223,7 +1247,7 @@ mod tests {
 
         // Campaign view: tabs when narrow; panes, lanes and the wheel when wide.
         let root = p.app.data.campaign.root.id;
-        let ids = glance::ids(&p.app.data.glance);
+        let ids = glance::ids(&p.app.view());
         p.app.row = ids
             .iter()
             .position(|r| *r == glance::RowId::Campaign(root))
@@ -1269,11 +1293,25 @@ mod tests {
     fn enter_is_offered_only_where_it_can_go() {
         let mut p = Pane::new(46, 30);
         let before = p.text();
-        assert!(before.lines().nth(3).unwrap().contains('⏎') && before.contains("⏎ go"));
+        assert!(
+            before
+                .lines()
+                .find(|l| l.starts_with('▌'))
+                .unwrap()
+                .contains('⏎')
+                && before.contains("⏎ go")
+        );
         old_taskr(&mut p);
         let screen = p.text();
         // The ask has no pane: no mark on its row, no hint, and Enter says why.
-        assert!(!screen.lines().nth(3).unwrap().contains('⏎'), "{screen}");
+        assert!(
+            !screen
+                .lines()
+                .find(|l| l.starts_with('▌'))
+                .unwrap()
+                .contains('⏎'),
+            "{screen}"
+        );
         assert!(!screen.lines().last().unwrap().contains('⏎') && screen.contains("a answer"));
         assert_eq!(p.keys("\n"), Effect::None);
         assert_eq!(p.status(), "no live pane for this row");
@@ -1285,7 +1323,7 @@ mod tests {
         assert!(screen.contains("search-index "));
         // A hub row with a pane, when the snapshot does not name its server: whose Herdr
         // the pane is on is unknown, so nothing is focused.
-        let lead = glance::ids(&p.app.data.glance)
+        let lead = glance::ids(&p.app.view())
             .iter()
             .position(|r| matches!(r, glance::RowId::Campaign(_)))
             .unwrap();
@@ -1542,13 +1580,82 @@ mod tests {
         assert_eq!(p.keys("o"), Effect::None);
         assert!(p.status().contains("l opens the campaign"));
         let root = p.app.data.campaign.root.id;
-        p.app.row = glance::ids(&p.app.data.glance)
+        p.app.row = glance::ids(&p.app.view())
             .iter()
             .position(|r| *r == glance::RowId::Campaign(root))
             .unwrap();
         p.keys("lo");
         assert_eq!(p.app.screen, Screen::Pager);
         assert!(!foot(&mut p).contains("search") && foot(&mut p).contains("space"));
+    }
+
+    #[test]
+    fn panel_recovery_hidden_actions_and_pr_identity() {
+        for height in [7, 8, 9, 20, 30] {
+            let mut p = Pane::new(46, height);
+            p.app.github = crate::github::demo();
+            p.app.config_warning = Some("TUI config invalid; using defaults".into());
+            for n in '1'..='4' {
+                assert_eq!(p.code(KeyCode::Char(n)), Effect::SaveConfig);
+            }
+            let text = p.text();
+            assert!(text.contains("hidden asks"), "{height}: {text}");
+            assert!(text.contains("1-4"), "recovery hint at {height}: {text}");
+            if height >= 8 {
+                assert!(
+                    text.contains("4 PRs-"),
+                    "all four switches at {height}: {text}"
+                );
+            }
+            assert!(glance::ids(&p.app.view()).is_empty());
+            for code in [KeyCode::Enter, KeyCode::Char('a'), KeyCode::Char('p')] {
+                assert_eq!(p.code(code), Effect::None);
+            }
+            assert!(p.app.pending.is_none());
+            assert!(p.app.ask.is_none());
+            assert_eq!(p.code(KeyCode::Char('4')), Effect::SaveConfig);
+            assert!(matches!(glance::selected(&p.app.view()), Selected::Pr(_)));
+            for code in [
+                KeyCode::Enter,
+                KeyCode::Char('a'),
+                KeyCode::Char('p'),
+                KeyCode::Char('l'),
+                KeyCode::Char('y'),
+            ] {
+                assert_eq!(p.code(code), Effect::None);
+            }
+            assert_eq!(p.code(KeyCode::Char('1')), Effect::SaveConfig);
+            // Showing asks preserves the PR by repository and number instead of retargeting an ask.
+            assert!(matches!(glance::selected(&p.app.view()), Selected::Pr(_)));
+            p.keys("g");
+            assert!(matches!(glance::selected(&p.app.view()), Selected::Ask(_)));
+            if height >= 8 {
+                assert!(p.text().lines().any(|l| l.starts_with('▌')));
+            }
+        }
+        let mut p = Pane::new(46, 30);
+        p.app.github = crate::github::demo();
+        p.app.row = glance::ids(&p.app.view())
+            .iter()
+            .position(|id| matches!(id, glance::RowId::Pr(_, 41)))
+            .unwrap();
+        let before = glance::ids(&p.app.view())[p.app.row].clone();
+        p.app.github.sources[0]
+            .prs
+            .iter_mut()
+            .find(|p| p.number == 41)
+            .unwrap()
+            .ci = crate::github::Ci::Failing;
+        p.app.restore_row(Some(before.clone()));
+        assert_eq!(glance::ids(&p.app.view())[p.app.row], before);
+        let mut snapshot = p.app.data.glance.clone();
+        snapshot.needs_you.reverse();
+        p.app.snapshot(snapshot);
+        assert_eq!(glance::ids(&p.app.view())[p.app.row], before);
+        p.keys("/no-matches");
+        p.code(KeyCode::Enter);
+        assert!(glance::ids(&p.app.view()).is_empty());
+        assert_eq!(p.keys("a"), Effect::None);
     }
 
     #[test]
@@ -1567,6 +1674,26 @@ mod tests {
         // Under 8 rows there is the pill and nothing to move on.
         let mut p = Pane::new(46, 7);
         assert_eq!(p.text().lines().filter(|l| !l.is_empty()).count(), 1);
+        assert_eq!(p.keys("a"), Effect::None);
+        assert_eq!(p.keys("\n"), Effect::None);
+        assert!(p.app.ask.is_none());
+    }
+
+    #[test]
+    fn dashboard_cursor_stays_drawn_with_prs_and_a_warning() {
+        for height in 8..=40 {
+            let mut p = Pane::new(46, height);
+            p.app.github = crate::github::demo();
+            p.app.config_warning = Some("TUI config invalid; using defaults".into());
+            for keys in ["", "G", "\t\t", "Gk", "ggjjjjj"] {
+                p.keys(keys);
+                let screen = p.text();
+                assert!(
+                    screen.lines().any(|l| l.starts_with('▌')),
+                    "{height} after {keys:?}:\n{screen}"
+                );
+            }
+        }
     }
 
     #[test]

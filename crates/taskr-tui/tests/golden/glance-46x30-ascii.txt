@@ -1,4 +1,5 @@
  taskr      2s ago   * 2 need you  3 to check
+1 asks+ . 2 checks+ . 3 camps+ . 4 PRs+
  3 notes still carry OWNER items
  NEEDS YOU -------------------------------- 2
 |? o tui-frames           BLOCKING      >  41s
@@ -16,7 +17,6 @@
  * search-index      *       _____#.       19s
    Research complete: reports/ranking-option.
  * auth-rotation     *       ___--_#       29s
-   Implementation slice: key rollover job, f.
  o billing-export    *       _.__-#_       33s
 .o docs-refresh      *       _____#.        2m
  o checkout-flow     **      _._.#-#        3m

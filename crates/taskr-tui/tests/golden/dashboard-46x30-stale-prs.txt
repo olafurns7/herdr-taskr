@@ -1,0 +1,30 @@
+ taskr      2s ago   ● 2 need you  3 to check
+1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+
+ 3 notes still carry OWNER items
+ NEEDS YOU ──────────────────────────────── 2
+▌? ◇ tui-frames           BLOCKING      ⏎  41s
+▌  Frames follow-up is ready: PR #212 (orpha…
+ ? ◇ ios-widgets                 laptop ↗   6m
+   WIDGET BATCH: 19 of 23 merged (14:02-14:0…
+ TO CHECK ───────────────────────────────── 3
+ ! map-tiles-polish                laptop   2h
+   lead unregistered and silent
+ ! infra-layout                             2h
+   lead idle with 3 results
+ ! host build-mini                   mini  12m
+   host stale: no heartbeat for 12 m
+ OPEN PRS ─────────────────────── observed CI
+cached/partial: 1 fail 1 run 0 ? 1 pass 0 draf
+stale 0s; unavailable · trip-to-japan/trip
+ ■ failing #42 Keep pending action labels rea…
+   @alex · 1h · trip-to-japan/trip · stale
+ ■ running #41 Refresh campaign milestones
+   @sam · 2h · trip-to-japan/trip · stale
+ ■ checks passing #40 Clarify owner answer co…
+   @alex · 3h · trip-to-japan/trip · approved…
+ CAMPAIGNS ─────────────────────────────── 10
+ ◐ search-index      ●       ▁▁▁▁▁█▃       19s
+ ◐ auth-rotation     ●       ▁▁▁▄▄▁█       29s
+ ○ billing-export    ●       ▁▂▁▁▄█▁       33s
+ +10 more · c shows all
+ ⏎ go   a answer   l open   ? help
