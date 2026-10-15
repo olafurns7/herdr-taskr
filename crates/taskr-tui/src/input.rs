@@ -2057,7 +2057,7 @@ mod tests {
         let mut p = Pane::new(120, 200);
         let now = 1_792_000_000;
         p.app.observed_at = now;
-        p.app.github = crate::github::demo();
+        p.app.mine = crate::prs::demo(p.app.observed_at);
         p.app.shipped = crate::github::demo_shipped(now);
         p.app.builds = crate::github::demo_builds(now);
         p.app.issues = crate::github::demo_issues(now);
@@ -2075,7 +2075,7 @@ mod tests {
                 glance::RowId::Ask(n) => ("NEEDS YOU", format!("ask {n}")),
                 glance::RowId::Check(..) => ("TO CHECK", "check · ".into()),
                 glance::RowId::Campaign(n) => ("CAMPAIGNS", format!("#{n}")),
-                glance::RowId::Pr(..) => ("OPEN PRS", "Observed checks only".into()),
+                glance::RowId::Pr(..) => ("MY PRS", "source: ".into()),
                 glance::RowId::Author(_) => ("SHIPPED", "Observed cached sample".into()),
                 glance::RowId::Run(..) => ("BUILD QUEUE", "Latest100-run sample".into()),
                 glance::RowId::Decision(..) => ("DECISIONS", "cached read".into()),
@@ -2113,26 +2113,26 @@ mod tests {
             }
             // A PR says the read it came from, as Shipped and Build do.
             if matches!(id, glance::RowId::Pr(..)) {
-                assert!(text.contains("open; 0s ago · trip-to-japan/trip"), "{text}");
+                assert!(
+                    text.contains("source: 6 observed · demo-org/demo · 0s ago"),
+                    "{text}"
+                );
             }
             kinds.push(card);
             p.keys("h");
             assert_eq!((p.app.screen, p.app.row), (Screen::Glance, i));
         }
         // A failed read: the PR's Detail says stale, not current.
-        p.app.github.sources[0].error = Some("GitHub unavailable");
+        p.app.mine.error = Some("GitHub unavailable");
         p.app.row = ids
             .iter()
             .position(|r| matches!(r, glance::RowId::Pr(..)))
             .unwrap();
         p.keys("I");
         let text = p.text();
-        assert!(
-            text.contains("stale 0s; unavailable · trip-to-japan/trip"),
-            "{text}"
-        );
+        assert!(text.contains("source: stale 0s; unavailable"), "{text}");
         p.keys("h");
-        p.app.github.sources[0].error = None;
+        p.app.mine.error = None;
         kinds.dedup();
         assert_eq!(kinds.len(), 11, "{kinds:?}");
         // On Detail the row keys act on its item as on its row: a to-check row opens its
@@ -2366,7 +2366,7 @@ mod tests {
     fn panel_recovery_hidden_actions_and_pr_identity() {
         for height in [7, 8, 9, 20, 30] {
             let mut p = Pane::new(46, height);
-            p.app.github = crate::github::demo();
+            p.app.mine = crate::prs::demo(p.app.observed_at);
             p.app.config_warning = Some("TUI config invalid; using defaults".into());
             for n in '1'..='6' {
                 assert_eq!(p.code(KeyCode::Char(n)), Effect::SaveConfig);
@@ -2411,18 +2411,23 @@ mod tests {
             }
         }
         let mut p = Pane::new(46, 30);
-        p.app.github = crate::github::demo();
+        p.app.mine = crate::prs::demo(p.app.observed_at);
         p.app.row = glance::ids(&p.app.view())
             .iter()
-            .position(|id| matches!(id, glance::RowId::Pr(_, 41)))
+            .position(|id| matches!(id, glance::RowId::Pr(_, 40)))
             .unwrap();
         let before = glance::ids(&p.app.view())[p.app.row].clone();
-        p.app.github.sources[0]
-            .prs
-            .iter_mut()
-            .find(|p| p.number == 41)
-            .unwrap()
-            .ci = crate::github::Ci::Failing;
+        let at40 = |m: &crate::prs::Mine| m.prs.iter().position(|p| p.number == 40);
+        assert_eq!(at40(&p.app.mine), Some(4));
+        // Passing #40 starts failing: the next cycle sorts it among the failing, after newer #42.
+        let mut sample = p.app.mine.sample.clone();
+        let f = sample.prs.iter_mut().find(|p| p.number == 40).unwrap();
+        if let Some(Ok(c)) = f.read.as_mut().map(|f| &mut f.checks) {
+            c.fail = 1;
+        }
+        let (tick, at) = (p.app.observed_tick, p.app.observed_at);
+        p.app.mine.land(Ok(sample), tick, at);
+        assert_eq!(at40(&p.app.mine), Some(1));
         p.app.restore_row(Some(before.clone()));
         assert_eq!(glance::ids(&p.app.view())[p.app.row], before);
         let mut snapshot = p.app.data.glance.clone();
@@ -2458,7 +2463,7 @@ mod tests {
     fn source_index_shift_clears_click_before_it_can_focus_another_campaign() {
         let mut p = Pane::new(120, 40);
         // The PRs come before the campaigns (band B over band C): one leaving shifts them.
-        p.app.github = crate::github::demo();
+        p.app.mine = crate::prs::demo(p.app.observed_at);
         let ids = glance::ids(&p.app.view());
         let i = ids
             .iter()
@@ -2478,7 +2483,7 @@ mod tests {
         assert_eq!(p.click(area.x, area.y), Effect::None);
         assert!(p.app.click.is_some());
         p.app.scroll = 4;
-        p.app.github.sources[0].prs.pop();
+        p.app.mine.prs.pop();
         p.app.restore_row(Some(ids[i].clone()));
         assert_eq!(p.app.row, i - 1);
         assert_eq!(glance::ids(&p.app.view())[p.app.row], ids[i]);
@@ -2598,7 +2603,7 @@ mod tests {
     fn six_panel_rows_are_reachable_and_external_rows_never_act_on_ledger() {
         for height in [7, 8, 9, 12, 20, 30, 40] {
             let mut p = Pane::new(46, height);
-            p.app.github = crate::github::demo();
+            p.app.mine = crate::prs::demo(p.app.observed_at);
             p.app.shipped = crate::github::demo_shipped(p.app.observed_at);
             p.app.builds = crate::github::demo_builds(p.app.observed_at);
             let ids = glance::ids(&p.app.view());
@@ -2670,7 +2675,7 @@ mod tests {
     fn dashboard_cursor_stays_drawn_with_prs_and_a_warning() {
         for height in 8..=40 {
             let mut p = Pane::new(46, height);
-            p.app.github = crate::github::demo();
+            p.app.mine = crate::prs::demo(p.app.observed_at);
             p.app.config_warning = Some("TUI config invalid; using defaults".into());
             for keys in ["", "G", "\t\t", "Gk", "ggjjjjj"] {
                 p.keys(keys);
@@ -3777,7 +3782,7 @@ mod tests {
         for width in [46, 120] {
             for height in 7..=40 {
                 let mut p = Pane::new(width, height);
-                p.app.github = crate::github::demo();
+                p.app.mine = crate::prs::demo(p.app.observed_at);
                 p.app.shipped = crate::github::demo_shipped(p.app.observed_at);
                 p.app.builds = crate::github::demo_builds(p.app.observed_at);
                 p.app.config.panels[6..10].fill(true);
@@ -3801,7 +3806,7 @@ mod tests {
                     let order = [
                         "NEEDS YOU",
                         "TO CHECK",
-                        "OPEN PRS",
+                        "MY PRS",
                         "CAMPAIGNS",
                         "SHIPPED",
                         "BUILD QUEUE",
@@ -3833,7 +3838,7 @@ mod tests {
     #[test]
     fn issues_rows_are_informational_reachable_last_and_expire_without_fetch() {
         let issues = |p: &mut Pane| {
-            p.app.github = crate::github::demo();
+            p.app.mine = crate::prs::demo(p.app.observed_at);
             p.app.shipped = crate::github::demo_shipped(p.app.observed_at);
             p.app.builds = crate::github::demo_builds(p.app.observed_at);
             p.app.issues = crate::github::demo_issues(p.app.observed_at);
@@ -3924,7 +3929,7 @@ mod tests {
         let mut p = Pane::new(120, 40);
         issues(&mut p);
         // Only Issues can expire here, and it is the only external panel.
-        p.app.github = crate::github::Dashboard::default();
+        p.app.mine = crate::prs::Mine::default();
         p.app.shipped = crate::github::Dashboard::default();
         p.app.builds = crate::github::Dashboard::default();
         p.app.config.panels[9] = true;
@@ -3950,7 +3955,7 @@ mod tests {
         let mut p = Pane::new(120, 40);
         issues(&mut p);
         // Only Issues can expire here, and it is the only external panel.
-        p.app.github = crate::github::Dashboard::default();
+        p.app.mine = crate::prs::Mine::default();
         p.app.shipped = crate::github::Dashboard::default();
         p.app.builds = crate::github::Dashboard::default();
         p.app.config.panels[9] = true;
@@ -3968,7 +3973,7 @@ mod tests {
     #[test]
     fn health_is_uppercase_h_informational_last_and_says_stale_first() {
         let health = |p: &mut Pane| {
-            p.app.github = crate::github::demo();
+            p.app.mine = crate::prs::demo(p.app.observed_at);
             p.app.shipped = crate::github::demo_shipped(p.app.observed_at);
             p.app.builds = crate::github::demo_builds(p.app.observed_at);
             p.app.issues = crate::github::demo_issues(p.app.observed_at);
@@ -4150,7 +4155,7 @@ mod tests {
     fn all_on(p: &mut Pane) {
         let app = &mut p.app;
         app.observed_at = 1_792_000_000;
-        app.github = crate::github::demo();
+        app.mine = crate::prs::demo(app.observed_at);
         app.shipped = crate::github::demo_shipped(app.observed_at);
         app.builds = crate::github::demo_builds(app.observed_at);
         app.issues = crate::github::demo_issues(app.observed_at);
@@ -4277,8 +4282,7 @@ mod tests {
             app.data.glance.attention.clear();
             app.data.glance.campaigns.clear();
             app.data.glance.quiet.count = 0;
-            let s = &mut app.github.sources[0];
-            (s.prs, s.total) = (vec![], 0);
+            (app.mine.prs, app.mine.sample) = (vec![], crate::prs::Sample::default());
             let repos = app.config.repos.clone();
             app.shipped = Dashboard::for_kind(&repos, Kind::Shipped);
             app.shipped.sources[0].error = Some("GitHub unavailable");
@@ -4355,8 +4359,7 @@ mod tests {
                 .unwrap();
             assert_reachable(&mut p, false);
             let before = glance::ids(&p.app.view()).get(p.app.row).cloned();
-            let s = &mut p.app.github.sources[0];
-            (s.prs, s.total) = (vec![], 0);
+            (p.app.mine.prs, p.app.mine.sample) = (vec![], crate::prs::Sample::default());
             p.app.restore_row(before);
             let ids = glance::ids(&p.app.view());
             assert!(!ids.iter().any(|r| matches!(r, glance::RowId::Pr(..))));
@@ -4365,7 +4368,7 @@ mod tests {
                 glance::RowId::Card(2) | glance::RowId::Campaign(_)
             ));
             assert_reachable(&mut p, false);
-            assert!(w < 120 || p.text().contains("No open PRs observed"));
+            assert!(w < 120 || p.text().contains("0 observed in search sample"));
         }
     }
 
@@ -4430,9 +4433,9 @@ mod tests {
             Some(40),
             "{a}"
         );
-        let pr = screen.lines().find(|l| l.contains(" OPEN PRS ─")).unwrap();
+        let pr = screen.lines().find(|l| l.contains(" MY PRS ─")).unwrap();
         assert!(
-            pr.starts_with(" OPEN PRS ─") && pr.ends_with("observed CI"),
+            pr.starts_with(" MY PRS ─") && pr.ends_with("@demo-owner"),
             "{pr}"
         );
         assert_eq!(pr.chars().count(), 79, "{pr}");
@@ -4962,7 +4965,7 @@ mod tests {
         let glance = p.app.data.glance.clone();
         p.app.data = crate::model::Data::default();
         p.app.fetch.loaded = false;
-        p.app.github = crate::github::demo();
+        p.app.mine = crate::prs::demo(p.app.observed_at);
         // The owner moved onto the PR card and opened the help, then the ledger answered.
         p.keys("jj?");
         assert_eq!(p.app.screen, Screen::Help);

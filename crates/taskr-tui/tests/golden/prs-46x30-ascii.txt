@@ -1,0 +1,30 @@
+ taskr      2s ago   * 2 need you  3 to check
+ [D Dash]  A Asks 2   F Fleet 11   I Detail
+panels 1+ 2- 3- 4+ 5- 6- 7- 8- 9- 0- H-
+ 3 notes still carry OWNER items
+ NEEDS YOU -------------------------------- 2
+ ? o tui-frames           BLOCKING      >  41s
+   Frames follow-up is ready: PR #212 (orpha.
+ ? o ios-widgets                 laptop >   6m
+   WIDGET BATCH: 19 of 23 merged (14:02-14:0.
+ MY PRS ------------------------- @demo-owner
+ 6 observed . demo-org/demo . 0s ago . search.
+ 1 not readable
+ ? not known . N+? at least N, more unread
+ req x only from an observed required failure
+ I every field
+|x #42 Keep pending action labels readable 12m
+|  v2 x2 ~0 . req x . changes . behind . unre.
+ ~ #41 Refresh campaign milestones         24m
+   v1 x0 ~1 . req ? . review . blocked . unre.
+ ~ #39 Split the answer editor state        2h
+   v88+? x0+? ~12+? . req ? . approved . unst.
+ ? #37 not readable                          ?
+   not readable . every field ?
+ v #40 Clarify owner answer copy           37m
+   v2 x0 ~0 . req ? . approved . clean . unre.
+ - #38 DRAFT Sketch the fleet totals line   2h
+   checks ? head moved . req ? . none . draft.
+
+
+ r refresh   D A F I screens   ? help

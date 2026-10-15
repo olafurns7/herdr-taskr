@@ -3,11 +3,11 @@
 panels 1+ 2+ 3+ 4+ 5+ 6+ 7- 8- 9- 0- H+
  3 notes still carry OWNER items
  ↑ 2 above: NEEDS YOU 2 · TO CHECK 3
- OPEN PRS ─────────────────────── observed CI
- 3 open; 0s ago · trip-to-japan/trip
- ■ failing #42 Keep pending action labels rea…
-   @alex · 1h · trip-to-japan/trip
- +2 more PRs · tab here
+ MY PRS ───────────────────────── @demo-owner
+ 6 observed · demo-org/demo · 0s ago · search…
+ ✗ #42 Keep pending action labels readable 12m
+   ✓2 ✗2 ◷0 · req ✗ · changes · behind · unre…
+ +5 more PRs · tab here
  CAMPAIGNS ─────────────────────────────── 11
  ◐ search-index      ●       ▁▁▁▁▁█▃       19s
  +10 more listed · F · 2 quiet unlisted · c

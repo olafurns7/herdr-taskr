@@ -822,8 +822,8 @@ pub(crate) fn picker(f: &mut Frame, app: &App) {
     f.render_widget(Paragraph::new(lines), inner);
 }
 
-/// The marks, as the views draw them.
-fn legend(t: &Theme) -> Vec<Line<'static>> {
+/// The marks, as the views draw them; prose wraps to `width`.
+fn legend(t: &Theme, width: usize) -> Vec<Line<'static>> {
     let row = |items: &[(&str, ratatui::style::Color, &str)]| {
         let mut out = vec![Span::raw(" ")];
         for (mark, color, label) in items {
@@ -834,7 +834,7 @@ fn legend(t: &Theme) -> Vec<Line<'static>> {
         }
         Line::from(out)
     };
-    vec![
+    let mut out = vec![
         row(&[
             ("?", t.need, "ask"),
             ("!", t.check, "to check"),
@@ -866,7 +866,26 @@ fn legend(t: &Theme) -> Vec<Line<'static>> {
             ("★", t.ok, "recommended"),
             ("HUB", t.remote, "the hub's dialog"),
         ]),
-    ]
+        Line::from(bold("  My PRs", t.sub)),
+        row(&[
+            ("✗", t.need, "failing"),
+            ("◷", t.check, "pending"),
+            ("?", t.sub, "not known"),
+        ]),
+        row(&[("✓", t.ok, "checks passing"), ("□", t.sub, "draft")]),
+    ];
+    // Each rule starts its own lines, so `req ✗` never wraps apart.
+    for rule in [
+        "N+? at least N, more unread.",
+        "req ✗ only when a check GitHub marks required failed on the head; a required ✓ is never shown.",
+    ] {
+        out.extend(
+            wrap(rule, width.saturating_sub(3))
+                .into_iter()
+                .map(|l| Line::from(sp(format!("  {l}"), t.text))),
+        );
+    }
+    out
 }
 
 /// The slotr view's marks.
@@ -938,7 +957,7 @@ pub(crate) fn help(f: &mut Frame, app: &App) {
         if view == keys::SLOTR {
             lines.extend(slotr_legend(t, width as usize));
         } else {
-            lines.extend(legend(t));
+            lines.extend(legend(t, width as usize));
         }
         lines
     };
@@ -955,8 +974,20 @@ pub(crate) fn help(f: &mut Frame, app: &App) {
                 .flat_map(|n| group(t, n, view, a.width as usize))
                 .collect::<Vec<_>>()
         };
-        f.render_widget(Paragraph::new(column(&GROUPS[..2])), a);
-        f.render_widget(Paragraph::new(marks(column(&GROUPS[2..]), b.width)), b);
+        let (left, right) = (column(&GROUPS[..2]), marks(column(&GROUPS[2..]), b.width));
+        // Both columns scroll together, so every key and mark is reachable in the modal.
+        let (total, h) = (left.len().max(right.len()), inner.height as usize);
+        app.seen.borrow_mut().page = (h, total);
+        let first = app.scroll.min(total.saturating_sub(h));
+        if total > h {
+            let at = format!("Keys · {name} · {}-{}/{total} · j k", first + 1, first + h);
+            modal(f, t, 100, 30, &at);
+        }
+        let shown = |lines: Vec<Line<'static>>| {
+            Paragraph::new(lines.into_iter().skip(first).take(h).collect::<Vec<_>>())
+        };
+        f.render_widget(shown(left), a);
+        f.render_widget(shown(right), b);
         return;
     }
     // One scrolling column.

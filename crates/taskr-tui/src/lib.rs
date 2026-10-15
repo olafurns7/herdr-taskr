@@ -12,6 +12,7 @@ pub mod github;
 pub mod health;
 pub mod input;
 pub mod model;
+pub mod prs;
 pub mod theme;
 
 mod ask;
@@ -306,7 +307,8 @@ pub struct App {
     pub slotr: Fetch,
     pub config: config::Config,
     pub config_warning: Option<String>,
-    pub github: github::Dashboard,
+    /// My PRs (panel 4): the authenticated viewer's open PRs across `config.repos`.
+    pub mine: prs::Mine,
     pub shipped: github::Dashboard,
     pub builds: github::Dashboard,
     /// Issues by assignee (panel 0): the fixed repository only, never `config.repos`.
@@ -361,7 +363,7 @@ impl App {
             slotr: Fetch::default(),
             config: config::Config::default(),
             config_warning: None,
-            github: github::Dashboard::default(),
+            mine: prs::Mine::default(),
             shipped: github::Dashboard::default(),
             builds: github::Dashboard::default(),
             issues: github::Dashboard::default(),
@@ -461,7 +463,7 @@ impl App {
                 g.quiet.count = 0;
             }
             if !panels[3] {
-                v.github.sources.clear();
+                v.mine.repos.clear();
             }
             if !panels[4] {
                 v.shipped.sources.clear();
@@ -472,13 +474,12 @@ impl App {
             if !panels[9] {
                 v.issues.sources.clear();
             }
-            for source in &mut v.github.sources {
-                source.prs.retain(|p| {
-                    format!("{} {} {} #{}", p.repo, p.title, p.author, p.number)
-                        .to_lowercase()
-                        .contains(&q)
-                });
-            }
+            v.mine.prs.retain(|p| {
+                let title = p.read.as_ref().map_or("", |f| f.title.as_str());
+                format!("{} {title} #{}", p.repo, p.number)
+                    .to_lowercase()
+                    .contains(&q)
+            });
         }
         if !q.is_empty() {
             v.filtered(list, &q);

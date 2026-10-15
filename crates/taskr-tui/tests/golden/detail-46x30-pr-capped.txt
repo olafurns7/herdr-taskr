@@ -1,0 +1,30 @@
+ taskr      2s ago   ● 2 need you  3 to check
+  D Dash   A Asks 2   F Fleet 11  [I Detail]
+╭ PR #39 · demo-org/demo · 1-25/28 ──────────╮
+│ from Dashboard · MY PRS · row 3            │
+│ ✓88+? ✗0+? ◷12+? · req ? · approved ·      │
+│ unstable · unres 0 · ?                     │
+│                                            │
+│ Split the answer editor state              │
+│ demo-org/demo #39 · not draft · head       │
+│ 0b0b0b0b                                   │
+│ updated 2h ago · 2026-10-14T15:46:40Z      │
+│                                            │
+│ CHECKS · 100 of 140 read · on head         │
+│ 0b0b0b0b                                   │
+│ ✓ 88+? ✗ 0+? ◷ 12+? · 0+? skipped or       │
+│ neutral · 0+? other                        │
+│ 40 contexts not read: a failing check may  │
+│ be among them (failing names ?).           │
+│ observed required: 0 passed, 0 failed      │
+│ complete required set: unknown             │
+│                                            │
+│ merge state: UNSTABLE                      │
+│ mergeable: MERGEABLE                       │
+│ review: APPROVED                           │
+│ threads: 0 unresolved of 0 (all read)      │
+│                                            │
+│ source: 6 observed · demo-org/demo · 0s    │
+│ ago · search sample, first 30              │
+╰────────────────────────────────────────────╯
+ j k scroll   h back   ? help

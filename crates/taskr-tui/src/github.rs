@@ -1,10 +1,11 @@
-//! Informational repository PRs, independent of the ledger and its tracked-PR watcher.
+//! Informational GitHub reads (Shipped, Build queue, Issues) and the bounded process runner
+//! they share with My PRs and Health, independent of the ledger and its tracked-PR watcher.
 use crate::{App, glance};
 use serde_json::Value;
 use std::{
     io::{ErrorKind, Read},
     os::{fd::OwnedFd, unix::net::UnixStream},
-    process::{Command, Stdio},
+    process::{Command, ExitStatus, Stdio},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -14,9 +15,9 @@ use std::{
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-const MINUTE: Duration = Duration::from_secs(60);
-const CAP: Duration = Duration::from_secs(900);
-const LIMIT: usize = 8 * 1024 * 1024;
+pub(crate) const MINUTE: Duration = Duration::from_secs(60);
+pub(crate) const CAP: Duration = Duration::from_secs(900);
+pub(crate) const LIMIT: usize = 8 * 1024 * 1024;
 /// The owner-authorized Issues scope; `repos` settings never widen it.
 pub const ISSUES_REPO: &str = "trip-to-japan/trip";
 const ISSUES_EVERY: Duration = Duration::from_secs(300);
@@ -24,63 +25,6 @@ const ISSUES_EVERY: Duration = Duration::from_secs(300);
 const PAIR_BUDGET: Duration = Duration::from_secs(10);
 /// Labels the owner counts as blocked, compared with the raw validated name.
 const BLOCKED: [&str; 2] = ["blocked", "needs-info"];
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Ci {
-    Failing,
-    Running,
-    Unknown,
-    Passing,
-    Draft,
-}
-impl Ci {
-    pub fn word(self) -> &'static str {
-        match self {
-            Self::Failing => "failing",
-            Self::Running => "running",
-            Self::Unknown => "unknown",
-            Self::Passing => "checks passing",
-            Self::Draft => "draft",
-        }
-    }
-}
-pub fn classify(checks: &Value, draft: bool) -> Ci {
-    if draft {
-        return Ci::Draft;
-    }
-    let Some(checks) = checks.as_array().filter(|c| !c.is_empty()) else {
-        return Ci::Unknown;
-    };
-    let (mut failed, mut running, mut success, mut unknown) =
-        (false, false, false, checks.len() >= 100);
-    for c in checks {
-        let state = if c.get("state").is_some() {
-            c["state"].as_str().unwrap_or("")
-        } else if c["status"].as_str() == Some("COMPLETED") {
-            c["conclusion"].as_str().unwrap_or("")
-        } else {
-            c["status"].as_str().unwrap_or("")
-        };
-        match state {
-            "FAILURE" | "ERROR" | "CANCELLED" | "TIMED_OUT" | "ACTION_REQUIRED"
-            | "STARTUP_FAILURE" => failed = true,
-            "PENDING" | "QUEUED" | "IN_PROGRESS" | "WAITING" | "REQUESTED" | "EXPECTED" => {
-                running = true
-            }
-            "SUCCESS" => success = true,
-            "NEUTRAL" | "SKIPPED" => {}
-            _ => unknown = true,
-        }
-    }
-    if failed {
-        Ci::Failing
-    } else if running {
-        Ci::Running
-    } else if success && !unknown {
-        Ci::Passing
-    } else {
-        Ci::Unknown
-    }
-}
 pub fn clean(text: &str) -> String {
     text.chars()
         .filter(|c| {
@@ -89,66 +33,8 @@ pub fn clean(text: &str) -> String {
         .take(1024)
         .collect()
 }
-#[derive(Debug, Clone)]
-pub struct Pr {
-    pub repo: String,
-    pub number: u64,
-    pub title: String,
-    pub author: String,
-    pub created: i64,
-    pub updated: i64,
-    pub ci: Ci,
-    pub review: String,
-    pub truncated: bool,
-}
-fn timestamp(v: &Value) -> i64 {
-    v.as_str()
-        .and_then(|s| OffsetDateTime::parse(s, &Rfc3339).ok())
-        .map_or(0, |t| t.unix_timestamp())
-}
-fn parse(repo: &str, bytes: &[u8]) -> Result<Vec<Pr>, Failure> {
-    let value: Value = serde_json::from_slice(bytes).map_err(|_| Failure::unavailable())?;
-    let rows = value
-        .as_array()
-        .filter(|r| r.len() <= 100)
-        .ok_or_else(Failure::unavailable)?;
-    let mut prs = vec![];
-    for v in rows {
-        let number = v["number"]
-            .as_u64()
-            .filter(|n| *n > 0)
-            .ok_or_else(Failure::unavailable)?;
-        let text = |key: &str| v[key].as_str().map(clean).ok_or_else(Failure::unavailable);
-        prs.push(Pr {
-            repo: repo.into(),
-            number,
-            title: text("title")?,
-            author: clean(v["author"]["login"].as_str().unwrap_or("unknown")),
-            created: timestamp(&v["createdAt"]),
-            updated: timestamp(&v["updatedAt"]),
-            ci: classify(
-                &v["statusCheckRollup"],
-                v["isDraft"].as_bool().unwrap_or(false),
-            ),
-            review: clean(v["reviewDecision"].as_str().unwrap_or(""))
-                .replace('_', " ")
-                .to_lowercase(),
-            truncated: v["statusCheckRollup"]
-                .as_array()
-                .is_some_and(|c| c.len() >= 100),
-        });
-    }
-    prs.sort_by(|a, b| {
-        a.ci.cmp(&b.ci)
-            .then(b.updated.cmp(&a.updated))
-            .then(b.number.cmp(&a.number))
-    });
-    Ok(prs)
-}
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
-    #[default]
-    Open,
     Shipped,
     Build,
     /// Issues by assignee (key 0): one fixed repository, one pair of reads per five minutes.
@@ -159,7 +45,7 @@ impl Kind {
         match self {
             Self::Shipped => MINUTE * 2,
             Self::Issues => ISSUES_EVERY,
-            _ => MINUTE,
+            Self::Build => MINUTE,
         }
     }
     /// The shortest gap between two starts, manual `r` included, and the first retry delay.
@@ -172,7 +58,6 @@ impl Kind {
     }
     pub fn dashboard(self, app: &App) -> &Dashboard {
         match self {
-            Self::Open => &app.github,
             Self::Shipped => &app.shipped,
             Self::Build => &app.builds,
             Self::Issues => &app.issues,
@@ -180,7 +65,6 @@ impl Kind {
     }
     fn dashboard_mut(self, app: &mut App) -> &mut Dashboard {
         match self {
-            Self::Open => &mut app.github,
             Self::Shipped => &mut app.shipped,
             Self::Build => &mut app.builds,
             Self::Issues => &mut app.issues,
@@ -259,7 +143,6 @@ impl Group {
 }
 #[derive(Debug, Default)]
 struct Sample {
-    prs: Vec<Pr>,
     merged: Vec<Merged>,
     runs: Vec<Run>,
     issues: Vec<Issue>,
@@ -267,24 +150,12 @@ struct Sample {
     /// Issues: the closed read's raw row count; `total` is the open read's.
     closed_total: usize,
 }
-impl From<Vec<Pr>> for Sample {
-    fn from(prs: Vec<Pr>) -> Self {
-        Self {
-            total: prs.len(),
-            prs,
-            ..Self::default()
-        }
-    }
-}
 fn valid_timestamp(v: &Value) -> Option<i64> {
     v.as_str()
         .and_then(|s| OffsetDateTime::parse(s, &Rfc3339).ok())
         .map(|t| t.unix_timestamp())
 }
 fn parse_sample(kind: Kind, repo: &str, bytes: &[u8]) -> Result<Sample, Failure> {
-    if kind == Kind::Open {
-        return parse(repo, bytes).map(Sample::from);
-    }
     let value: Value = serde_json::from_slice(bytes).map_err(|_| Failure::unavailable())?;
     let rows = value
         .as_array()
@@ -433,7 +304,7 @@ fn parse_issues(open: &[u8], closed: &[u8], completed: i64) -> Result<Sample, Fa
         ..Sample::default()
     })
 }
-fn utc_stamp(at: i64) -> String {
+pub(crate) fn utc_stamp(at: i64) -> String {
     let t = OffsetDateTime::from_unix_timestamp(at).expect("current UTC time");
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
@@ -448,10 +319,6 @@ fn utc_stamp(at: i64) -> String {
 fn command(kind: Kind, repo: &str, now: i64) -> Command {
     let mut cmd = Command::new("gh");
     match kind {
-        Kind::Open => {
-            cmd.args(["pr", "list", "--repo", repo, "--state", "open", "--limit", "100", "--json",
-            "number,title,author,createdAt,updatedAt,isDraft,statusCheckRollup,reviewDecision,url"]);
-        }
         Kind::Shipped => {
             let cutoff = utc_stamp(now - 86400);
             cmd.args([
@@ -507,14 +374,14 @@ pub struct Failure {
     pub retry: Duration,
 }
 impl Failure {
-    fn unavailable() -> Self {
+    pub(crate) fn unavailable() -> Self {
         Self {
             message: "GitHub unavailable",
             retry: Duration::ZERO,
         }
     }
 }
-fn failure(code: Option<i32>, stderr: &[u8], now: i64) -> Failure {
+pub(crate) fn failure(code: Option<i32>, stderr: &[u8], now: i64) -> Failure {
     let text = String::from_utf8_lossy(stderr).to_ascii_lowercase();
     let rate = text.contains("rate limit")
         || text.contains("retry-after:")
@@ -552,11 +419,30 @@ fn failure(code: Option<i32>, stderr: &[u8], now: i64) -> Failure {
 /// a process that closes stdout without exiting. No pipe-reader threads can outlive it.
 /// The deadline is absolute, so the two Issues reads share one through child exit.
 pub(crate) fn output(
-    mut command: Command,
+    command: Command,
     deadline: Instant,
     cancel: &AtomicBool,
 ) -> Result<Vec<u8>, Failure> {
-    let mut run = || -> Result<Vec<u8>, Failure> {
+    let (status, out, err) = run(command, deadline, cancel, LIMIT)?;
+    if status.success() {
+        Ok(out)
+    } else {
+        Err(failure(
+            status.code(),
+            &err,
+            OffsetDateTime::now_utc().unix_timestamp(),
+        ))
+    }
+}
+/// [`output`]'s runner: the exit status with both bodies, each within `limit` bytes, so a
+/// caller can read a body gh printed before a non-zero exit (a GraphQL `errors` reply).
+pub(crate) fn run(
+    mut command: Command,
+    deadline: Instant,
+    cancel: &AtomicBool,
+    limit: usize,
+) -> Result<(ExitStatus, Vec<u8>, Vec<u8>), Failure> {
+    let mut run = || -> Result<(ExitStatus, Vec<u8>, Vec<u8>), Failure> {
         let (mut stdout, out) = UnixStream::pair().map_err(|_| Failure::unavailable())?;
         let (mut stderr, err) = UnixStream::pair().map_err(|_| Failure::unavailable())?;
         stdout
@@ -578,7 +464,7 @@ pub(crate) fn output(
             loop {
                 match pipe.read(&mut buf) {
                     Ok(0) => return true,
-                    Ok(n) if bytes.len() + n <= LIMIT => bytes.extend_from_slice(&buf[..n]),
+                    Ok(n) if bytes.len() + n <= limit => bytes.extend_from_slice(&buf[..n]),
                     Ok(_) => return false,
                     Err(e) if e.kind() == ErrorKind::WouldBlock => return true,
                     Err(e) if e.kind() == ErrorKind::Interrupted => continue,
@@ -605,15 +491,7 @@ pub(crate) fn output(
                     if !drain(&mut stdout, &mut out) || !drain(&mut stderr, &mut err) {
                         return Err(Failure::unavailable());
                     }
-                    return if status.success() {
-                        Ok(out)
-                    } else {
-                        Err(failure(
-                            status.code(),
-                            &err,
-                            OffsetDateTime::now_utc().unix_timestamp(),
-                        ))
-                    };
+                    return Ok((status, out, err));
                 }
                 Ok(None) => thread::sleep(Duration::from_millis(10)),
                 Err(_) => {
@@ -680,7 +558,6 @@ fn fetch(kind: Kind, repo: &str, now: i64, cancel: &AtomicBool) -> Result<Sample
 #[derive(Debug, Clone)]
 pub struct Source {
     pub repo: String,
-    pub prs: Vec<Pr>,
     pub merged: Vec<Merged>,
     pub runs: Vec<Run>,
     pub issues: Vec<Issue>,
@@ -696,14 +573,13 @@ pub struct Source {
     pub failures: u32,
 }
 impl Source {
-    fn new(repo: String, now: Instant) -> Self {
+    fn new(repo: String, kind: Kind, now: Instant) -> Self {
         Self {
             repo,
-            prs: vec![],
             merged: vec![],
             runs: vec![],
             issues: vec![],
-            kind: Kind::Open,
+            kind,
             at: None,
             error: None,
             total: 0,
@@ -724,16 +600,12 @@ impl Source {
                 .last_start
                 .is_none_or(|at| now.saturating_duration_since(at) >= self.kind.gap())
     }
-    fn complete(&mut self, result: Result<Vec<Pr>, Failure>, now: Instant) {
-        self.observe(result.map(Sample::from), now);
-    }
     fn observe(&mut self, result: Result<Sample, Failure>, now: Instant) {
         self.inflight = false;
         match result {
             Ok(sample) => {
                 self.total = sample.total;
                 self.closed_total = sample.closed_total;
-                self.prs = sample.prs;
                 self.merged = sample.merged;
                 self.runs = sample.runs;
                 self.issues = sample.issues;
@@ -767,9 +639,7 @@ impl Source {
             (Some(e), Some(age)) => format!("stale {age}; {}", e.trim_start_matches("GitHub ")),
             (Some(e), None) => format!("unavailable; {}", e.trim_start_matches("GitHub ")),
             (None, Some(age)) => match self.kind {
-                Kind::Open => format!("{} open; {age} ago", self.total),
-                Kind::Shipped => format!("{} sampled; {age} ago", self.total),
-                Kind::Build => format!("{} sampled; {age} ago", self.total),
+                Kind::Shipped | Kind::Build => format!("{} sampled; {age} ago", self.total),
                 Kind::Issues => format!(
                     "{} open + {} closed sampled; {age} ago",
                     self.total, self.closed_total
@@ -785,20 +655,13 @@ pub struct Dashboard {
     pub sources: Vec<Source>,
 }
 impl Dashboard {
-    pub fn new(repos: &[String]) -> Self {
+    pub fn for_kind(repos: &[String], kind: Kind) -> Self {
         Self {
             sources: repos
                 .iter()
-                .map(|r| Source::new(r.clone(), Instant::now()))
+                .map(|r| Source::new(r.clone(), kind, Instant::now()))
                 .collect(),
         }
-    }
-    pub fn for_kind(repos: &[String], kind: Kind) -> Self {
-        let mut d = Self::new(repos);
-        for s in &mut d.sources {
-            s.kind = kind;
-        }
-        d
     }
     pub fn authors(&self, now: i64) -> std::collections::BTreeMap<String, Vec<&Merged>> {
         let mut groups = std::collections::BTreeMap::<String, Vec<&Merged>>::new();
@@ -884,23 +747,12 @@ impl Dashboard {
         });
         rows
     }
-    pub fn rows(&self) -> Vec<&Pr> {
-        let mut rows: Vec<_> = self.sources.iter().flat_map(|s| &s.prs).collect();
-        rows.sort_by(|a, b| {
-            a.ci.cmp(&b.ci)
-                .then(b.updated.cmp(&a.updated))
-                .then(b.number.cmp(&a.number))
-                .then(a.repo.cmp(&b.repo))
-        });
-        rows
-    }
 }
 struct Worker {
     index: usize,
     cancel: Arc<AtomicBool>,
     handle: JoinHandle<Result<Sample, Failure>>,
 }
-#[derive(Default)]
 pub struct Poller {
     kind: Kind,
     workers: Vec<Worker>,
@@ -969,23 +821,6 @@ impl Drop for Poller {
         }
     }
 }
-pub fn demo() -> Dashboard {
-    let repo = "trip-to-japan/trip";
-    let now = OffsetDateTime::now_utc().unix_timestamp();
-    let bytes = serde_json::to_vec(&serde_json::json!([
-        {"number":42,"title":"Keep pending action labels readable","author":{"login":"alex"},"createdAt":"2026-10-14T08:00:00Z","updatedAt":"2026-10-14T10:00:00Z","statusCheckRollup":[{"state":"FAILURE"}]},
-        {"number":41,"title":"Refresh campaign milestones","author":{"login":"sam"},"createdAt":"2026-10-14T07:00:00Z","updatedAt":"2026-10-14T09:00:00Z","statusCheckRollup":[{"status":"IN_PROGRESS"}]},
-        {"number":40,"title":"Clarify owner answer copy","author":{"login":"alex"},"createdAt":"2026-10-13T08:00:00Z","updatedAt":"2026-10-14T08:00:00Z","statusCheckRollup":[{"state":"SUCCESS"}],"reviewDecision":"APPROVED"}
-    ])).expect("demo JSON");
-    let mut dashboard = Dashboard::new(&[repo.into()]);
-    let mut prs = parse(repo, &bytes).expect("demo PRs");
-    for (i, p) in prs.iter_mut().enumerate() {
-        p.created = now - (i as i64 + 1) * 3600;
-    }
-    dashboard.sources[0].complete(Ok(prs), Instant::now());
-    dashboard
-}
-
 pub fn demo_shipped(now: i64) -> Dashboard {
     let mut d = Dashboard::for_kind(
         &["trip-to-japan/trip".into(), "trip-to-japan/tools".into()],
@@ -1136,7 +971,7 @@ mod tests {
     #[test]
     fn argv_intervals_throttle_and_backoff_are_per_source() {
         let now = Instant::now();
-        for kind in [Kind::Open, Kind::Shipped, Kind::Build] {
+        for kind in [Kind::Shipped, Kind::Build] {
             let mut d = Dashboard::for_kind(&["a/b".into()], kind);
             let s = &mut d.sources[0];
             s.last_start = Some(now);
@@ -1204,7 +1039,7 @@ mod tests {
     #[test]
     fn new_pollers_complete_hidden_reads_independently_without_starting_more() {
         let mut app = App::new(crate::model::Data::default());
-        app.github = demo();
+        app.mine = crate::prs::demo(app.observed_at);
         app.shipped = demo_shipped(app.observed_at);
         app.builds = demo_builds(app.observed_at);
         for kind in [Kind::Shipped, Kind::Build] {
@@ -1223,96 +1058,35 @@ mod tests {
             assert!(poller.tick(&mut app, Instant::now(), false, true));
             assert!(poller.workers.is_empty());
             assert_eq!(kind.dashboard(&app).sources[0].total, 0);
-            assert_eq!(app.github.sources[0].total, 3);
+            assert_eq!(app.mine.prs.len(), 6);
         }
-    }
-    #[test]
-    fn classifier_covers_legacy_mixed_and_truncation() {
-        let success = json!({"status":"COMPLETED","conclusion":"SUCCESS"});
-        assert_eq!(classify(&json!([]), false), Ci::Unknown);
-        assert_eq!(classify(&json!([{"state":"SUCCESS"}]), false), Ci::Passing);
-        assert_eq!(classify(&json!([{"state":"PENDING"}]), false), Ci::Running);
-        for state in [
-            "FAILURE",
-            "ERROR",
-            "CANCELLED",
-            "TIMED_OUT",
-            "ACTION_REQUIRED",
-        ] {
-            assert_eq!(
-                classify(&json!([{"state":state},{"state":"PENDING"}]), false),
-                Ci::Failing
-            );
-        }
-        assert_eq!(
-            classify(&json!([success,{"conclusion":"SUCCESS"}]), false),
-            Ci::Unknown
-        );
-        assert_eq!(
-            classify(
-                &json!([{"status":"COMPLETED","conclusion":"SKIPPED"}]),
-                false
-            ),
-            Ci::Unknown
-        );
-        assert_eq!(
-            classify(&json!([success,{"state":"NEW_STATE"}]), false),
-            Ci::Unknown
-        );
-        assert_eq!(
-            classify(&json!(vec![success.clone(); 99]), false),
-            Ci::Passing
-        );
-        assert_eq!(classify(&json!(vec![success; 100]), false), Ci::Unknown);
-        assert_eq!(classify(&json!([{"state":"FAILURE"}]), true), Ci::Draft);
-    }
-    #[test]
-    fn review_decisions_are_sanitized_readable_words() {
-        for (raw, expected) in [
-            ("APPROVED", "approved"),
-            ("CHANGES_REQUESTED", "changes requested"),
-            ("REVIEW_REQUIRED", "review required"),
-            ("", ""),
-        ] {
-            let bytes =
-                serde_json::to_vec(&json!([{"number":1,"title":"example","reviewDecision":raw}]))
-                    .unwrap();
-            assert_eq!(parse("owner/repo", &bytes).unwrap()[0].review, expected);
-        }
-    }
-
-    #[test]
-    fn sort_and_sanitization_are_deterministic() {
-        let mut d = demo();
-        let mut p = d.sources[0].prs[0].clone();
-        p.number = 100;
-        p.updated += 10;
-        d.sources[0].prs.push(p);
-        assert_eq!(
-            d.rows().iter().map(|p| p.number).collect::<Vec<_>>(),
-            [100, 42, 41, 40]
-        );
-        assert_eq!(clean("x\x1b[31m\r\n\x07\u{202e}y"), "x[31my");
     }
     #[test]
     fn scheduling_retains_last_good_and_deadlines() {
         let now = Instant::now();
-        let mut source = Source::new("a/b".into(), now);
+        let mut source = Source::new("a/b".into(), Kind::Build, now);
         assert!(source.ready(now, false));
         source.last_start = Some(now);
         source.inflight = true;
         assert!(!source.ready(now + MINUTE, true));
-        source.complete(Ok(demo().sources.remove(0).prs), now);
+        let runs = demo_builds(0).sources.remove(0).runs;
+        source.observe(
+            Ok(Sample {
+                runs,
+                ..Sample::default()
+            }),
+            now,
+        );
         assert!(!source.ready(now + Duration::from_secs(4), true));
         assert!(source.ready(now + Duration::from_secs(5), true));
-        source.complete(
+        source.observe(
             Err(Failure {
                 message: "GitHub rate limited",
                 retry: Duration::from_secs(7200),
             }),
             now,
         );
-        assert_eq!(source.prs.len(), 3);
+        assert_eq!(source.runs.len(), 2);
         assert!(source.at.is_some());
         assert!(!source.ready(now + CAP, true));
         assert!(source.ready(now + Duration::from_secs(7200), false));
@@ -1328,6 +1102,7 @@ mod tests {
                 .as_secs(),
             7000
         );
+        assert_eq!(clean("x\x1b[31m\r\n\x07\u{202e}y"), "x[31my");
     }
     #[test]
     fn process_deadline_includes_exit_and_errors_are_generic() {
@@ -1356,16 +1131,15 @@ mod tests {
     #[test]
     fn bad_responses_and_unknown_data_never_become_empty_or_green() {
         for bytes in [b"not JSON".as_slice(), b"{}", b"[{\"number\":0}]"] {
-            assert!(parse("a/b", bytes).is_err());
+            assert!(parse_sample(Kind::Shipped, "a/b", bytes).is_err());
         }
         let rows = serde_json::to_vec(&json!(vec![json!({"number":1,"title":"ok"}); 101])).unwrap();
-        assert!(parse("a/b", &rows).is_err());
-        assert_eq!(classify(&Value::Null, false), Ci::Unknown);
+        assert!(parse_sample(Kind::Shipped, "a/b", &rows).is_err());
         let now = Instant::now();
-        let mut s = Source::new("a/b".into(), now);
-        s.complete(Err(failure(Some(1), b"retry-after: 1000000", 0)), now);
+        let mut s = Source::new("a/b".into(), Kind::Build, now);
+        s.observe(Err(failure(Some(1), b"retry-after: 1000000", 0)), now);
         assert!(!s.ready(now + Duration::from_secs(999999), true));
-        s.complete(
+        s.observe(
             Err(Failure {
                 message: "GitHub rate limited",
                 retry: Duration::MAX,
@@ -1377,11 +1151,11 @@ mod tests {
     }
 
     #[test]
-    fn pr_completion_preserves_unchanged_selection_scroll_and_resets_changed_identity() {
+    fn completion_preserves_unchanged_selection_scroll_and_resets_changed_identity() {
         let mut app = App::new(crate::frames::fixture());
-        app.github = demo();
+        app.builds = demo_builds(app.observed_at);
         app.scroll = 7;
-        let mut poller = Poller::default();
+        let mut poller = Poller::new(Kind::Build);
         let handle = thread::spawn(|| Ok(Sample::default()));
         let deadline = Instant::now() + Duration::from_secs(2);
         while !handle.is_finished() {
@@ -1406,8 +1180,8 @@ mod tests {
     #[test]
     fn hidden_panel_does_not_start_workers_and_drop_joins() {
         let mut app = App::new(crate::model::Data::default());
-        app.github = demo();
-        let mut poller = Poller::default();
+        app.builds = demo_builds(app.observed_at);
+        let mut poller = Poller::new(Kind::Build);
         assert!(!poller.tick(&mut app, Instant::now() + MINUTE * 2, false, true));
         assert!(poller.workers.is_empty());
         let cancel = Arc::new(AtomicBool::new(false));

@@ -11,15 +11,16 @@ H Health-
    WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…    lead idle with 3 results
                                                              ! host build-mini                                 mini  12m
                                                                host stale: no heartbeat for 12 m
- OPEN PRS ───────────────────────────────────────────────────────────────────────────────────────────────── observed CI
- CI: 1 fail 1 run 0 ? 1 pass 0 draft
- 3 open; 0s ago · trip-to-japan/trip
- ■ failing #42 Keep pending action labels readable
-   @alex · 1h · trip-to-japan/trip
- ■ running #41 Refresh campaign milestones
-   @sam · 2h · trip-to-japan/trip
- ■ checks passing #40 Clarify owner answer copy
-   @alex · 3h · trip-to-japan/trip · approved
+ MY PRS ─────────────────────────────────────────────────────────────────────────────────────────────────── @demo-owner
+ 6 observed · demo-org/demo · 0s ago · search sample, first 30
+ 1 not readable
+ ? not known · N+? at least N, more unread · req ✗ only from an observed required failure · I every field
+ ✗ #42 Keep pending action labels readable            ✓2 ✗2 ◷0 · req ✗ · changes · behind · unres 3 · e2e-web, lint  12m
+ ◷ #41 Refresh campaign milestones                                    ✓1 ✗0 ◷1 · req ? · review · blocked · unres 0  24m
+ ◷ #39 Split the answer editor state                    ✓88+? ✗0+? ◷12+? · req ? · approved · unstable · unres 0 · ?  2h
+ ? #37 not readable                                                                      not readable · every field ?  ?
+ ✓ #40 Clarify owner answer copy                                      ✓2 ✗0 ◷0 · req ? · approved · clean · unres 0  37m
+ □ #38 DRAFT Sketch the fleet totals line                       checks ? head moved · req ? · none · draft · unres 0  2h
  CAMPAIGNS ───────────────────────────────────────────── 11  SHIPPED ───────────────────────────────────────── observed
  ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃          19s 4 observed merged / rolling 24h
    Research complete: reports/ranking-options.md compares …  2 sampled; 0s ago · trip-to-japan/trip
@@ -28,13 +29,12 @@ H Health-
  ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁          33s @sam · 2 PRs observed
    FYI 61448 from search-index (root 4310): the tokenizer …  BUILD QUEUE ───────────────────────────────────── observed
 •○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂           2m 2 active observed · 0 unknown
-   Hub FYI: keep the page map machine-readable for the fut…  6 sampled; 0s ago · trip-to-japan/trip
- ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█           3m latest100-run sample · older may be missing
- ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁    laptop  7m running (in_progress) · Build and test
- ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆           8m   dashboard · 5m · trip-to-japan/trip
- · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃          12m queued (queued) · Release checks
- ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁          14m   main · 1m · trip-to-japan/trip
- ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁          54m
+ ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█           3m 6 sampled; 0s ago · trip-to-japan/trip
+ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁    laptop  7m latest100-run sample · older may be missing
+ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆           8m running (in_progress) · Build and test
+ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃          12m   dashboard · 5m · trip-to-japan/trip
+ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁          14m queued (queued) · Release checks
+ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁          54m   main · 1m · trip-to-japan/trip
  ‖ legacy-importer                                parked  3h
  · 2 quiet
  r retry   ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   D A F I screens   y copy   ? help

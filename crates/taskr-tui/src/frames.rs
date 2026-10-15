@@ -243,13 +243,23 @@ fn answer_gone(app: &mut App) {
 
 fn dashboard(app: &mut App) {
     app.observed_at = 1_792_000_000;
-    app.github = crate::github::demo();
-    for (i, pr) in app.github.sources[0].prs.iter_mut().enumerate() {
-        pr.created = app.observed_at - (i as i64 + 1) * 3600;
-    }
+    app.mine = crate::prs::demo(app.observed_at);
     app.shipped = crate::github::demo_shipped(app.observed_at);
     app.builds = crate::github::demo_builds(app.observed_at);
     glance(app);
+}
+
+/// My PRs alone with the asks: the demo's invented login and rows through the real parsers,
+/// the cursor on the first PR.
+fn my_prs(app: &mut App) {
+    dashboard(app);
+    app.config.panels = [
+        true, false, false, true, false, false, false, false, false, false, false,
+    ];
+    app.row = crate::glance::ids(&app.view())
+        .iter()
+        .position(|r| matches!(r, crate::glance::RowId::Pr(..)))
+        .unwrap();
 }
 
 /// Panels 7-9 on, after `l` read the fixture's campaign three minutes ago.
@@ -285,8 +295,7 @@ fn all_on_empty(app: &mut App) {
     g.attention.clear();
     g.campaigns.clear();
     g.quiet.count = 0;
-    let s = &mut app.github.sources[0];
-    (s.prs, s.total) = (vec![], 0);
+    (app.mine.prs, app.mine.sample) = (vec![], crate::prs::Sample::default());
     app.shipped =
         crate::github::Dashboard::for_kind(&app.config.repos, crate::github::Kind::Shipped);
     app.shipped.sources[0].error = Some("GitHub unavailable");
@@ -489,7 +498,7 @@ pub fn all() -> Vec<Spec> {
         }),
         spec("dashboard", 46, 30, "-stale-prs", |app| {
             dashboard(app);
-            app.github.sources[0].error = Some("GitHub unavailable");
+            app.mine.error = Some("GitHub unavailable");
         }),
         spec("dashboard", 46, 30, "-stale-shipped", |app| {
             dashboard(app);
@@ -536,6 +545,61 @@ pub fn all() -> Vec<Spec> {
         spec("detail", 46, 30, "-pr", |app| {
             dashboard(app);
             inspect(app, |r| matches!(r, crate::glance::RowId::Pr(..)));
+        }),
+        spec("detail", 120, 40, "-pr", |app| {
+            dashboard(app);
+            inspect(app, |r| matches!(r, crate::glance::RowId::Pr(..)));
+        }),
+        spec("detail", 46, 30, "-pr-capped", |app| {
+            dashboard(app);
+            inspect(app, |r| matches!(r, crate::glance::RowId::Pr(_, 39)));
+        }),
+        spec("detail", 46, 30, "-pr-head-moved", |app| {
+            dashboard(app);
+            inspect(app, |r| matches!(r, crate::glance::RowId::Pr(_, 38)));
+        }),
+        spec("detail", 46, 30, "-pr-unreadable", |app| {
+            dashboard(app);
+            inspect(app, |r| matches!(r, crate::glance::RowId::Pr(_, 37)));
+        }),
+        spec("prs", 120, 40, "", my_prs),
+        spec("prs", 120, 40, "-light", my_prs),
+        spec("prs", 100, 40, "", my_prs),
+        spec("prs", 80, 30, "", my_prs),
+        spec("prs", 46, 30, "", my_prs),
+        spec("prs", 46, 30, "-light", my_prs),
+        spec("prs", 46, 30, "-ascii", |app| {
+            my_prs(app);
+            app.ascii = true;
+            app.theme = theme::PLAIN;
+        }),
+        spec("prs", 46, 20, "", my_prs),
+        spec("prs", 120, 40, "-notes", |app| {
+            my_prs(app);
+            let s = &mut app.mine.sample;
+            (s.found, s.closed, s.outside, s.partial) = (45, 1, 1, true);
+        }),
+        spec("prs", 120, 40, "-stale", |app| {
+            my_prs(app);
+            app.mine.error = Some("GitHub rate limited");
+        }),
+        spec("prs", 80, 30, "-zero", |app| {
+            my_prs(app);
+            (app.mine.prs, app.mine.sample) = (vec![], crate::prs::Sample::default());
+        }),
+        spec("prs", 80, 30, "-login-failed", |app| {
+            my_prs(app);
+            app.mine = crate::prs::Mine::new(&app.config.repos);
+            app.mine.error = Some("GitHub authentication required");
+        }),
+        spec("prs", 80, 30, "-login-reading", |app| {
+            my_prs(app);
+            app.mine = crate::prs::Mine::new(&app.config.repos);
+        }),
+        spec("prs", 120, 40, "-repos", |app| {
+            my_prs(app);
+            app.mine.repos.push("demo-org/tools".into());
+            app.mine.prs[1].repo = "demo-org/tools".into();
         }),
         spec("detail", 46, 30, "-campaign", |app| {
             glance(app);
@@ -899,6 +963,7 @@ pub fn all() -> Vec<Spec> {
         spec("confirm", 120, 40, "", confirm),
         spec("help", 46, 30, "", |app| app.screen = Screen::Help),
         spec("help", 120, 40, "", |app| app.screen = Screen::Help),
+        spec("help", 100, 30, "", |app| app.screen = Screen::Help),
         spec("all", 46, 30, "", |app| app.screen = Screen::AllCampaigns),
         spec("all", 120, 40, "", |app| app.screen = Screen::AllCampaigns),
         spec("pager", 46, 30, "", |app| app.screen = Screen::Pager),

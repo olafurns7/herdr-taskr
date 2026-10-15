@@ -1,0 +1,30 @@
+╭ Keys · dashboard · 1-26/35 · j k ────────────────────────────────────────────────────────────────╮
+│                                                                                                  │
+│   Move                                           Act                                             │
+│    j k           down, up (arrows too)            a             answer this ask, else pick one   │
+│    g G           first, last row                  p             park or unpark (confirms)        │
+│    ctrl-d ctrl-u half page                        o             Decisions, Fleet or log row: op  │
+│    tab           next card; shift-tab back        y             copy the jump command            │
+│    wheel         scroll                           r             refresh now                      │
+│                                                   Answering: j k choose, tab types (a note       │
+│   Go                                              after a structured ask's option), ⏎ reviews,   │
+│    D A F I       Dashboard, Asks, Fleet; I: the   y sends. A multi-select ask: space picks, ⏎    │
+│    [ ]           previous, next screen            reviews the set.                               │
+│    ⏎             go to the row's agent pane; on                                                  │
+│    l             open the campaign               View                                            │
+│    h             back, close (esc too)            0-9           toggle asks, checks, campaigns,  │
+│    /             filter rows by name              H             toggle Health, the hub's produc  │
+│    c             all campaigns, closed too        ?             this help                        │
+│    s             slotr holders and queue          m             mouse on or off                  │
+│    click         select; double-click is ⏎        t             theme: dark, light, terminal     │
+│    ⏎ moves every client attached to that Herdr    ctrl-l        clear and redraw the screen      │
+│    server.                                        q             close; quits on a top-level scr  │
+│    Each screen keeps its place; switching reads                                                  │
+│    nothing. 0-9 and H shape the Dashboard only.  Marks                                           │
+│    Detail scrolls; esc or h returns to its row.   ? ask   ! to check   ◐ working   ○ waiting     │
+│    7, 9: the campaign last opened with l, as      ● lane   ● ready   · idle   × gone   ‖ parked  │
+│    cached; l or o reads it again, r does not. 8:  ✓ done   ⊘ abandoned   ✗ rejected              │
+│    listed campaigns only; / filters it, not 7 or  ⏎ pane on this machine   ↗ another             │
+│    9. 0: trip-to-japan/trip issues by current     • changed since you looked                     │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

@@ -581,6 +581,9 @@ pub(crate) fn ascii(buf: &mut ratatui::buffer::Buffer) {
             "↓" => "v",
             "•" | "·" | "░" | "…" | "▂" | "▃" => ".",
             "×" | "✗" | "⊘" => "x",
+            // My PRs' pending and draft marks; `?` stays the unknown mark only.
+            "◷" => "~",
+            "□" => "-",
             "✓" => "v",
             "❯" | "↗" | "⏎" | "↳" => ">",
             "‹" => "<",

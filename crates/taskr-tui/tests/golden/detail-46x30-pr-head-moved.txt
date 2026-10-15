@@ -1,0 +1,30 @@
+ taskr      2s ago   ● 2 need you  3 to check
+  D Dash   A Asks 2   F Fleet 11  [I Detail]
+╭ PR #38 · demo-org/demo ────────────────────╮
+│ from Dashboard · MY PRS · row 6            │
+│ checks ? head moved · req ? · none · draft │
+│ · unres 0                                  │
+│                                            │
+│ Sketch the fleet totals line               │
+│ demo-org/demo #38 · DRAFT · head 1c1c1c1c  │
+│ updated 2h ago · 2026-10-14T15:16:40Z      │
+│                                            │
+│ CHECKS · ? head moved                      │
+│ The checks read belong to another commit   │
+│ than the head; every check fact is ? until │
+│ the next admitted cycle.                   │
+│ complete required set: unknown             │
+│                                            │
+│ merge state: DRAFT                         │
+│ mergeable: MERGEABLE                       │
+│ review: NONE                               │
+│ threads: 0 unresolved of 0 (all read)      │
+│                                            │
+│ source: 6 observed · demo-org/demo · 0s    │
+│ ago · search sample, first 30              │
+│ 1 not readable                             │
+│ GraphQL last cycle: cost 1 · 4989          │
+│ remaining · resets in 30m                  │
+│                                            │
+╰────────────────────────────────────────────╯
+ h back   D A F I screens   ? help
