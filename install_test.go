@@ -27,7 +27,7 @@ while [ "$#" -gt 1 ]; do
 done
 printf '%s\n' "$1" >> "$d/curl.log"
 case $1 in
-*/releases/latest) cp "$d/release.json" "$out" ;;
+*/releases/latest|*/releases/tags/*) cp "$d/release.json" "$out" ;;
 */releases/assets/*) cp "$d/asset.${1##*/}" "$out" 2>/dev/null || exit 22 ;;
 */releases/latest/download/*|*/releases/download/*/*) cp "$d/public.${1##*/}" "$out" 2>/dev/null || exit 22 ;;
 *) exit 22 ;;
@@ -274,6 +274,131 @@ func TestInstallAnonymousTransport(t *testing.T) {
 				t.Fatalf("anonymous curl calls include authenticated transport: %q", log)
 			}
 		})
+	}
+}
+
+// TestInstallTUI exercises each transport without contacting GitHub.
+func TestInstallTUI(t *testing.T) {
+	contractGuard(t)
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("unsupported install host")
+	}
+	host := "taskr-" + runtime.GOOS + "-" + runtime.GOARCH
+	tui := "taskr-tui-" + runtime.GOOS + "-" + runtime.GOARCH
+	for _, transport := range []string{"gh", "api", "public"} {
+		for _, scenario := range []string{"install", "opt-out", "old-release", "bad-checksum", "download-failure"} {
+			t.Run(transport+"/"+scenario, func(t *testing.T) {
+				dir := t.TempDir()
+				bin, dest := filepath.Join(dir, "bin"), filepath.Join(dir, "installed")
+				for _, path := range []string{bin, dest} {
+					if err := os.MkdirAll(path, 0o755); err != nil {
+						t.Fatal(err)
+					}
+				}
+				write := func(path string, body []byte, mode os.FileMode) {
+					t.Helper()
+					if err := os.WriteFile(path, body, mode); err != nil {
+						t.Fatal(err)
+					}
+				}
+				write(filepath.Join(bin, "curl"), []byte(fakeCurl), 0o755)
+				gh := "#!/bin/sh\nexit 1\n"
+				if transport == "gh" {
+					gh = `#!/bin/sh
+ d=$(dirname "$0")
+ [ "$1 $2" = "auth status" ] && exit 0
+ [ "$1 $2" = "release download" ] || exit 1
+ while [ "$#" -gt 0 ]; do
+   case $1 in
+     --pattern) assets="$assets $2"; shift ;;
+     --dir) dest=$2; shift ;;
+   esac
+   shift
+ done
+ for asset in $assets; do
+   printf '%s\n' "$asset" >> "$d/gh.log"
+   cp "$d/public.$asset" "$dest/$asset" || exit 1
+ done
+ `
+				}
+				write(filepath.Join(bin, "gh"), []byte(gh), 0o755)
+				body, tuiBody := []byte("#!/bin/sh\necho v9.9.9\n"), []byte("#!/bin/sh\necho dashboard\n")
+				names := []string{host, "SHA256SUMS"}
+				assets := map[string][]byte{host: body}
+				if scenario != "old-release" {
+					names = append(names, tui)
+					assets[tui] = tuiBody
+				}
+				var sums strings.Builder
+				for name, content := range assets {
+					fmt.Fprintf(&sums, "%x  %s\n", sha256.Sum256(content), name)
+				}
+				assets["SHA256SUMS"] = []byte(sums.String())
+				write(filepath.Join(bin, "release.json"), []byte(releaseJSON(names, false, "olafurns7")), 0o644)
+				for i, name := range names {
+					content := assets[name]
+					if name == tui && scenario == "download-failure" {
+						continue
+					}
+					if name == tui && scenario == "bad-checksum" {
+						content = []byte("corrupt")
+					}
+					write(filepath.Join(bin, "public."+name), content, 0o644)
+					write(filepath.Join(bin, fmt.Sprintf("asset.%d", 101+i)), content, 0o644)
+				}
+				// Existing binaries stay usable on opt-out, absence or failed validation.
+				write(filepath.Join(dest, "taskr"), []byte("old cli"), 0o755)
+				write(filepath.Join(dest, "taskr-tui"), []byte("old tui"), 0o755)
+				cmd := exec.Command("sh", "install.sh")
+				cmd.Env = []string{"HOME=" + dir, "PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"),
+					"TASKR_INSTALL_DIR=" + dest, "TASKR_NO_SKILL=1", "TASKR_NO_PLUGIN=1", "TASKR_VERSION=v0.20.0"}
+				if transport == "api" {
+					cmd.Env = append(cmd.Env, "GH_TOKEN=test-token")
+				}
+				if scenario == "opt-out" {
+					cmd.Env = append(cmd.Env, "TASKR_NO_TUI=1")
+				}
+				out, err := cmd.CombinedOutput()
+				failed := scenario == "bad-checksum" || scenario == "download-failure"
+				if (err != nil) != failed {
+					t.Fatalf("install: %v\n%s", err, out)
+				}
+				if scenario == "bad-checksum" && !strings.Contains(string(out), "checksum verification failed: "+tui) {
+					t.Fatalf("wrong checksum refusal: %s", out)
+				}
+				wantCLI, wantTUI := body, []byte("old tui")
+				if failed {
+					wantCLI = []byte("old cli")
+				} else if scenario == "install" {
+					wantTUI = tuiBody
+				}
+				for name, want := range map[string][]byte{"taskr": wantCLI, "taskr-tui": wantTUI} {
+					got, err := os.ReadFile(filepath.Join(dest, name))
+					if err != nil || !bytes.Equal(got, want) {
+						t.Fatalf("%s = %q (%v), want %q", name, got, err, want)
+					}
+					info, err := os.Stat(filepath.Join(dest, name))
+					if err != nil || info.Mode().Perm() != 0o755 {
+						t.Fatalf("%s permissions: %v (%v)", name, info, err)
+					}
+				}
+				if scenario == "old-release" && strings.Count(string(out), "taskr-tui is not in that release") != 1 {
+					t.Fatalf("missing old-release notice: %s", out)
+				}
+				if scenario == "opt-out" || scenario == "old-release" {
+					for _, log := range []string{"gh.log", "curl.log"} {
+						calls, _ := os.ReadFile(filepath.Join(bin, log))
+						if strings.Contains(string(calls), tui) || strings.Contains(string(calls), "/assets/103") {
+							t.Fatalf("unexpected TUI download: %s", calls)
+						}
+					}
+				}
+				entries, _ := os.ReadDir(dest)
+				if len(entries) != 2 {
+					t.Fatalf("temporary install files left behind: %v", entries)
+				}
+			})
+		}
 	}
 }
 

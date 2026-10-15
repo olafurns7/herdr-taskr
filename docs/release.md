@@ -14,8 +14,8 @@ serve as a test oracle in the release gate (see the contract tests in
 ./release.sh v1.2.3 --dry-run              # build and check everything; publish nothing
 ./release.sh v1.2.3                        # build, tag, push the tag, create a prerelease
 ./release.sh v1.2.3 --promote              # after the 24 h watch: make it the latest release
-./release.sh v1.2.3 --darwin-only          # only build the darwin pair on the Mac, into dist-darwin/
-./release.sh v1.2.3 --darwin-from DIR      # release with a darwin pair built by hand
+./release.sh v1.2.3 --darwin-only          # only build the darwin binaries on the Mac, into dist-darwin/
+./release.sh v1.2.3 --darwin-from DIR      # release with darwin binaries built by hand
 ```
 
 The tag must look like `vMAJOR.MINOR.PATCH`; a `dev` or other build version
@@ -34,31 +34,40 @@ is refused. The script runs on Linux and:
    `.scratch/release/`, without task identity or any inherited `TASKR_CONTRACT_*`
    filter.
 3. **Linux half.** `tools/release-rust.sh` with `TASKR_VERSION=<tag>`: static
-   musl binaries for x86_64 and aarch64 through `cargo zigbuild`, a refusal of
-   any test-only hook, and a version smoke of the native binary.
+   `taskr` and `taskr-tui` musl binaries for x86_64 and aarch64 through
+   `cargo zigbuild`, a refusal of any test-only hook, and a version smoke of
+   the native `taskr` binary.
 4. **Darwin half**, on the Mac over ssh (there is no CI): `mktemp -d` there,
    `git archive HEAD` into it, then `tools/release-rust.sh` with the same
-   version, which smokes the native arm64 binary. Both binaries are copied back,
-   checked against the Mac's `SHA256SUMS`, and the Mac directory is removed.
+   version, which smokes the native arm64 `taskr`. All four binaries are
+   copied back, checked against the Mac's `SHA256SUMS`, and the Mac directory
+   is removed.
    darwin/amd64 gets a static check only (`file` reports an x86_64 Mach-O),
    because the Mac is arm64 without Rosetta. `TASKR_RELEASE_SSH` replaces the
    whole remote command (default `ssh -o BatchMode=yes -o ConnectTimeout=10
    olafurns@olafurns-mbp`); tests set it to a local fake, so they never reach
    the Mac.
-5. **Assets.** The binaries are renamed `taskr-{linux,darwin}-{amd64,arm64}`.
-   Just before the checksums, each of the four must have the expected `file`
-   type, contain the tag, and contain no test-only hook (`TASKR_FROZEN_NOW`,
+5. **Assets.** The binaries are renamed `taskr-{linux,darwin}-{amd64,arm64}`
+   and `taskr-tui-{linux,darwin}-{amd64,arm64}`. Just before the checksums,
+   all eight must have the expected `file` type (Linux ELF must be statically
+   linked) and contain no test-only hook (`TASKR_FROZEN_NOW`,
    `TASKR_CONTRACT_`, `--contract-`), whether it was built here or imported.
-   linux/amd64 must print the tag from `--json version` (linux/arm64 too when
-   `qemu-aarch64` is installed).
+   Only `taskr` embeds the tag; the TUI package version remains `0.0.0`.
+   `taskr` linux/amd64 must print the tag from `--json version` (linux/arm64
+   too when `qemu-aarch64` is installed).
 6. **Packaging.** `SKILL.md`, `install.sh`, `skill.tar.gz` (the skill and
    `references/`) and `plugin.tar.gz` (the Herdr plugin, stamped with the
-   version), plus one `SHA256SUMS` over all eight, in `dist/`.
+   version), plus one `SHA256SUMS` over all twelve, in `dist/`.
 7. **Publish**, without `--dry-run`: tag, push the tag, and
    `gh release create --prerelease`.
 
-The nine asset names are the ones `install.sh` and the Herdr plugin fetch, so
-neither changes between releases.
+The thirteen assets are the eight platform binaries, `SKILL.md`, `install.sh`,
+`skill.tar.gz`, `plugin.tar.gz` and `SHA256SUMS`. The installer installs both
+binaries beside each other; `TASKR_NO_TUI=1` skips the TUI. Releases without a
+TUI checksum entry (v0.20.0 and older) print a notice and preserve any installed
+`taskr-tui`. All downloaded binaries must pass checksum verification before
+either installed binary is replaced; each replacement uses a temporary file
+in the install directory and a rename.
 
 ### Prerelease, watch, promote
 
@@ -76,12 +85,14 @@ with `TASKR_VERSION=<tag>`. After the watch:
 refuses a tag older than it, so `latest` never moves back. `TASKR_RELEASE_GH`
 replaces the `gh` command; tests set it to a fake.
 
-`sh tools/release-test.sh` runs the refusal tests (test-only hooks in an imported
-darwin pair, the adapter summary, an older `--promote`) with both fakes.
+`sh tools/release-test.sh` runs the refusal tests (imported Darwin checksums,
+architectures and test-only hooks, Linux static linkage, the adapter summary,
+an older `--promote`) and checks complete packaging in all three Darwin modes
+with fakes.
 
 ### Without the Mac
 
-If the Mac is unreachable, build the pair there by hand later, or on any
+If the Mac is unreachable, build the binaries there by hand later, or on any
 Apple-silicon Mac with the Rust toolchain:
 
 ```sh
@@ -89,7 +100,9 @@ TASKR_VERSION=v1.2.3 tools/release-rust.sh    # on the Mac, from a checkout of t
 ```
 
 Copy `dist-rust/taskr-rust-aarch64-apple-darwin`,
-`dist-rust/taskr-rust-x86_64-apple-darwin` and `dist-rust/SHA256SUMS` into a
+`dist-rust/taskr-rust-x86_64-apple-darwin`,
+`dist-rust/taskr-tui-rust-aarch64-apple-darwin`,
+`dist-rust/taskr-tui-rust-x86_64-apple-darwin` and `dist-rust/SHA256SUMS` into a
 directory and pass it with `--darwin-from DIR`. It is checked (checksums,
 Mach-O type, tag, no test-only hook) before the gate.
 `./release.sh <tag> --darwin-only` does the same build over ssh into
@@ -159,18 +172,20 @@ TASKR_VERSION=v1.2.3 tools/release-rust.sh
 ```
 
 It takes no arguments; the `TASKR_VERSION` default is
-`git describe --always --dirty`. It builds `taskr` for the host's platform
-family (Linux: static musl x86_64 and aarch64; macOS: arm64 and x86_64),
-refuses a binary that contains a test-only hook, runs the native binary once
+`git describe --always --dirty`. It builds `taskr` and `taskr-tui` for the
+host's platform family (Linux: static musl x86_64 and aarch64; macOS: arm64
+and x86_64), refuses a binary that contains a test-only hook, runs the native `taskr` once
 (`version`, `help`, `status`) in an empty scratch home, and writes
-`dist-rust/taskr-rust-<target>` and `dist-rust/SHA256SUMS`. It creates no tag,
-uploads nothing and does not touch the installed binary. `release.sh` runs it
-for both halves.
+`dist-rust/taskr-rust-<target>`, `dist-rust/taskr-tui-rust-<target>` and
+`dist-rust/SHA256SUMS`. It creates no tag, uploads nothing and does not touch
+the installed binary. `release.sh` runs it for both halves.
 
 ## taskr-tui
 
-`taskr-tui` is not part of the release yet. Build it with
-`cargo install --path crates/taskr-tui`; a prebuilt release asset is planned.
+`taskr-tui` ships for the same four platforms as `taskr` and is installed by
+`install.sh` by default. It needs no runtime flags; `TASKR_BIN` optionally
+overrides the taskr CLI path. To build from source instead, use
+`cargo install --path crates/taskr-tui`.
 
 Its screenshots under `docs/images/` come from the synthetic fixture:
 

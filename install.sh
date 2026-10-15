@@ -23,6 +23,7 @@ case $machine in
 esac
 
 ASSET="taskr-$OS-$ARCH"
+TUI_ASSET="taskr-tui-$OS-$ARCH"
 TAG=${TASKR_VERSION:-}
 taskr_home=${HOME:-}
 [ -n "$taskr_home" ] || fail 'HOME is not set'
@@ -34,11 +35,14 @@ with_skill=1
 [ "${TASKR_NO_SKILL:-}" != 1 ] || with_skill=0
 with_plugin=1
 [ "${TASKR_NO_PLUGIN:-}" != 1 ] || with_plugin=0
+with_tui=1
+[ "${TASKR_NO_TUI:-}" != 1 ] || with_tui=0
 token=${GH_TOKEN:-${GITHUB_TOKEN:-}}
 
 umask 077
 tmp=$(mktemp -d) || fail 'could not create temporary directory'
-trap 'rm -rf "$tmp"' 0
+install_tmp=
+trap 'if [ -n "$install_tmp" ]; then rm -f -- "$install_tmp"; fi; rm -rf "$tmp"' 0
 trap 'exit 1' HUP INT TERM
 
 download_with_gh() {
@@ -91,10 +95,12 @@ asset_id() {
 }
 
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+	transport=gh
 	if ! download_with_gh; then
 		fail 'could not download release assets with gh'
 	fi
 elif [ -n "$token" ]; then
+	transport=api
 	command -v curl >/dev/null 2>&1 || fail 'curl is required when using GH_TOKEN or GITHUB_TOKEN'
 	if [ -n "$TAG" ]; then
 		api_url="https://api.github.com/repos/$REPO/releases/tags/$TAG"
@@ -114,6 +120,7 @@ elif [ -n "$token" ]; then
 		fi
 	done
 else
+	transport=public
 	command -v curl >/dev/null 2>&1 || fail 'curl or gh is required'
 	names="$ASSET SHA256SUMS"
 	[ "$with_skill" -eq 0 ] || names="$names skill.tar.gz"
@@ -128,6 +135,34 @@ else
 			fail "could not download release asset: $name"
 		fi
 	done
+fi
+
+# Older releases have no TUI checksum entry; leave an installed TUI alone.
+if [ "$with_tui" -eq 1 ]; then
+	if awk -v n="$TUI_ASSET" '$2 == n { found = 1 } END { exit !found }' "$tmp/SHA256SUMS"; then
+		case $transport in
+		gh)
+			set -- --repo "$REPO" --pattern "$TUI_ASSET" --dir "$tmp" --clobber
+			[ -z "$TAG" ] || set -- "$TAG" "$@"
+			gh release download "$@" || fail "could not download release asset: $TUI_ASSET"
+			;;
+		api)
+			id=$(asset_id "$TUI_ASSET")
+			curl_api application/octet-stream "https://api.github.com/repos/$REPO/releases/assets/$id" "$tmp/$TUI_ASSET" || fail "could not download release asset: $TUI_ASSET"
+			;;
+		public)
+			if [ -n "$TAG" ]; then
+				url="https://github.com/$REPO/releases/download/$TAG/$TUI_ASSET"
+			else
+				url="https://github.com/$REPO/releases/latest/download/$TUI_ASSET"
+			fi
+			curl -q -f -L -sS --output "$tmp/$TUI_ASSET" "$url" || fail "could not download release asset: $TUI_ASSET"
+			;;
+		esac
+	else
+		with_tui=0
+		printf '%s\n' 'taskr-tui is not in that release; leaving any existing taskr-tui unchanged'
+	fi
 fi
 
 verify() {
@@ -145,6 +180,7 @@ verify() {
 	fi
 }
 verify "$ASSET"
+[ "$with_tui" -eq 0 ] || verify "$TUI_ASSET"
 if [ "$with_skill" -eq 1 ]; then
 	verify skill.tar.gz
 	mkdir "$tmp/skill"
@@ -154,8 +190,18 @@ fi
 [ "$with_plugin" -eq 0 ] || verify plugin.tar.gz
 
 mkdir -p "$DIR"
-chmod +x "$tmp/$ASSET"
-mv -f "$tmp/$ASSET" "$DIR/taskr"
+install_binary() {
+	install_tmp=$(mktemp "$DIR/.$2.XXXXXX") || fail "could not stage $2"
+	cp "$tmp/$1" "$install_tmp"
+	chmod 755 "$install_tmp"
+	mv -f "$install_tmp" "$DIR/$2"
+	install_tmp=
+}
+install_binary "$ASSET" taskr
+if [ "$with_tui" -eq 1 ]; then
+	install_binary "$TUI_ASSET" taskr-tui
+	printf 'installed %s/taskr-tui\n' "$DIR"
+fi
 # The skill is readable like its neighbours (755/644), whatever the umask
 # above. Agent links are opt-in and only touch existing config directories.
 if [ "${TASKR_NO_SKILL:-}" != 1 ]; then

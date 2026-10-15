@@ -114,7 +114,11 @@ mkdir -p .scratch/release/home
 # (the same strings tools/release-rust.sh refuses).
 static_check() {
 	file -b "$1" | grep -E -q "$2" || die "$1 is not $2: $(file -b "$1")"
-	strings -a "$1" | grep -F -q "$tag" || die "$1 does not contain $tag"
+	# taskr-tui has no embedded release version (its package version is 0.0.0).
+	case ${1##*/} in
+	taskr-tui-*) ;;
+	*) strings -a "$1" | grep -F -q "$tag" || die "$1 does not contain $tag" ;;
+	esac
 	! strings -a "$1" | grep -E -q 'TASKR_FROZEN_NOW|TASKR_CONTRACT_|--contract-' || die "$1 contains a test-only hook"
 }
 
@@ -138,21 +142,23 @@ darwin_build() {
 	git archive --format=tar HEAD | on_mac "tar -xf - -C $macdir"
 	# release-rust.sh smokes the native arm64 binary there (version, help, status).
 	on_mac "cd $macdir && TASKR_VERSION=$tag sh tools/release-rust.sh"
-	for name in SHA256SUMS taskr-rust-aarch64-apple-darwin taskr-rust-x86_64-apple-darwin; do
+	for name in SHA256SUMS taskr-rust-aarch64-apple-darwin taskr-rust-x86_64-apple-darwin taskr-tui-rust-aarch64-apple-darwin taskr-tui-rust-x86_64-apple-darwin; do
 		on_mac "cat $macdir/dist-rust/$name" > "dist-darwin/$name"
 	done
 	on_mac "rm -rf -- $macdir"
 	trap - 0
 }
 
-# Both darwin files must match the Mac's SHA256SUMS and be the right Mach-O.
+# All darwin files must match the Mac's SHA256SUMS and be the right Mach-O.
 darwin_check() {
 	for pair in aarch64:arm64 x86_64:x86_64; do
-		name=taskr-rust-${pair%:*}-apple-darwin
-		want=$(awk -v n="$name" '$2 == n || $2 == "*" n { print $1 }' "$1/SHA256SUMS")
-		got=$(sha256sum < "$1/$name")
-		[ -n "$want" ] && [ "$want" = "${got%% *}" ] || die "$1/$name does not match $1/SHA256SUMS"
-		static_check "$1/$name" "^Mach-O 64-bit .*${pair#*:}"
+		for binary in taskr taskr-tui; do
+			name=$binary-rust-${pair%:*}-apple-darwin
+			want=$(awk -v n="$name" '$2 == n || $2 == "*" n { print $1 }' "$1/SHA256SUMS")
+			got=$(sha256sum < "$1/$name")
+			[ -n "$want" ] && [ "$want" = "${got%% *}" ] || die "$1/$name does not match $1/SHA256SUMS"
+			static_check "$1/$name" "^Mach-O 64-bit .*${pair#*:}"
+		done
 	done
 }
 
@@ -220,10 +226,12 @@ if [ -z "$darwin_from" ]; then
 fi
 
 rm -rf dist && mkdir dist
-cp dist-rust/taskr-rust-x86_64-unknown-linux-musl dist/taskr-linux-amd64
-cp dist-rust/taskr-rust-aarch64-unknown-linux-musl dist/taskr-linux-arm64
-cp "$darwin_from/taskr-rust-aarch64-apple-darwin" dist/taskr-darwin-arm64
-cp "$darwin_from/taskr-rust-x86_64-apple-darwin" dist/taskr-darwin-amd64
+for binary in taskr taskr-tui; do
+	cp "dist-rust/$binary-rust-x86_64-unknown-linux-musl" "dist/$binary-linux-amd64"
+	cp "dist-rust/$binary-rust-aarch64-unknown-linux-musl" "dist/$binary-linux-arm64"
+	cp "$darwin_from/$binary-rust-aarch64-apple-darwin" "dist/$binary-darwin-arm64"
+	cp "$darwin_from/$binary-rust-x86_64-apple-darwin" "dist/$binary-darwin-amd64"
+done
 chmod 755 dist/taskr-*
 
 run_version dist/taskr-linux-amd64
@@ -243,13 +251,15 @@ sed "s/^version = \".*\"$/version = \"${tag#v}\"/" plugin/herdr-plugin.toml > "$
 grep -q "^version = \"${tag#v}\"$" "$work/plugin/herdr-plugin.toml" || die 'could not set the plugin version'
 tar -czf dist/plugin.tar.gz -C "$work/plugin" run.sh herdr-plugin.toml
 # Every shipped binary, imported or built here, gets the same final check.
-static_check dist/taskr-linux-amd64 '^ELF 64-bit LSB .*x86-64.*statically linked'
-static_check dist/taskr-linux-arm64 '^ELF 64-bit LSB .*ARM aarch64.*statically linked'
-static_check dist/taskr-darwin-arm64 '^Mach-O 64-bit .*arm64'
-static_check dist/taskr-darwin-amd64 '^Mach-O 64-bit .*x86_64'
+for binary in taskr taskr-tui; do
+	static_check "dist/$binary-linux-amd64" '^ELF 64-bit LSB .*x86-64.*statically linked'
+	static_check "dist/$binary-linux-arm64" '^ELF 64-bit LSB .*ARM aarch64.*statically linked'
+	static_check "dist/$binary-darwin-arm64" '^Mach-O 64-bit .*arm64'
+	static_check "dist/$binary-darwin-amd64" '^Mach-O 64-bit .*x86_64'
+done
 (
 	cd dist
-	sha256sum taskr-darwin-arm64 taskr-darwin-amd64 taskr-linux-amd64 taskr-linux-arm64 SKILL.md install.sh skill.tar.gz plugin.tar.gz > SHA256SUMS
+	sha256sum taskr-darwin-arm64 taskr-darwin-amd64 taskr-linux-amd64 taskr-linux-arm64 taskr-tui-darwin-arm64 taskr-tui-darwin-amd64 taskr-tui-linux-amd64 taskr-tui-linux-arm64 SKILL.md install.sh skill.tar.gz plugin.tar.gz > SHA256SUMS
 	cat SHA256SUMS
 )
 
