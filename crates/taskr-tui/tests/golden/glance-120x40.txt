@@ -3,18 +3,13 @@
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
 H Health-
  3 notes still carry OWNER items
- NEEDS YOU ────────────────────────────────────────────────────────────────────────────────────────────────────────── 2
-▌? ◇ tui-frames           BLOCKING                                                                                ⏎  41s
-▌  Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns). (A) merge #212 and release v2.4.1 now [reco…
- ? ◇ ios-widgets                                                                                           laptop ↗   6m
-   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). STOPPED, per your rule (conflict on the way): #641 and the th…
- TO CHECK ─────────────────────────────────────────────────────────────────────────────────────────────────────────── 3
- ! map-tiles-polish                                                                                          laptop   2h
-   lead unregistered and silent
- ! infra-layout                                                                                                       2h
-   lead idle with 3 results
- ! host build-mini                                                                                             mini  12m
-   host stale: no heartbeat for 12 m
+ NEEDS YOU ────────────────────────────────────────────── 2  TO CHECK ─────────────────────────────────────────────── 3
+▌? ◇ tui-frames           BLOCKING                    ⏎  41s ! map-tiles-polish                              laptop   2h
+▌  Frames follow-up is ready: PR #212 (orphaned asks hidde…    lead unregistered and silent
+ ? ◇ ios-widgets                               laptop ↗   6m ! infra-layout                                           2h
+   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…    lead idle with 3 results
+                                                             ! host build-mini                                 mini  12m
+                                                               host stale: no heartbeat for 12 m
  CAMPAIGNS ───────────────────────────────────────────────────────────────────────────────────────────────────────── 11
  ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃                                                                      19s
    Research complete: reports/ranking-options.md compares three scorers on the saved queries
@@ -35,6 +30,11 @@ H Health-
  ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁                                                                      14m
    matrix run A finished
  ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                                                                      54m
+   S4 cursor split merged; contract tests green on both hosts
  ‖ legacy-importer                                                                                            parked  3h
  · 2 quiet
+
+
+
+
  ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   D A F I screens   y copy   s slotr   ? help

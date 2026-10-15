@@ -3,38 +3,38 @@
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions+ · 8 Fleet+ · 9 Log+ · 0 Issues-
 H Health-
  3 notes still carry OWNER items
- NEEDS YOU ──────────────────────────────────────────────────────────────────────────────────────────────────────── 1/2
-▌? ◇ tui-frames           BLOCKING                                                                                ⏎  41s
-▌  Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns). (A) merge #212 and release v2.4.1 now [reco…
- TO CHECK ───────────────────────────────────────────────────────────────────────────────────────────────────────── 1/3
- ! map-tiles-polish                                                                                          laptop   2h
-   lead unregistered and silent
+ NEEDS YOU ────────────────────────────────────────────── 2  TO CHECK ─────────────────────────────────────────────── 3
+▌? ◇ tui-frames           BLOCKING                    ⏎  41s ! map-tiles-polish                              laptop   2h
+▌  Frames follow-up is ready: PR #212 (orphaned asks hidde…    lead unregistered and silent
+ ? ◇ ios-widgets                               laptop ↗   6m ! infra-layout                                           2h
+   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…    lead idle with 3 results
+                                                             ! host build-mini                                 mini  12m
+                                                               host stale: no heartbeat for 12 m
  OPEN PRS ───────────────────────────────────────────────────────────────────────────────────────────────── observed CI
-CI: 1 fail 1 run 0 ? 1 pass 0 draft
-3 open; 0s ago · trip-to-japan/trip
+ CI: 1 fail 1 run 0 ? 1 pass 0 draft
+ 3 open; 0s ago · trip-to-japan/trip
  ■ failing #42 Keep pending action labels readable
    @alex · 1h · trip-to-japan/trip
- +2 outside view · j/k to browse
- SHIPPED ───────────────────────────────────────────────────────────────────────────────────────────────────── observed
-4 observed merged / rolling 24h
-2 sampled; 0s ago · trip-to-japan/trip
-2 sampled; 0s ago · trip-to-japan/tools
- @alex · 2 PRs observed
- @sam · 2 PRs observed
- BUILD QUEUE ───────────────────────────────────────────────────────────────────────────────────────────────── observed
-2 active observed · 0 unknown
-6 sampled; 0s ago · trip-to-japan/trip
-latest100-run sample · older may be missing
- +2 outside view · j/k to browse
- DECISIONS · PLAN ───────────────────────────────────────────────────────────────────────────────────────── cached read
-tui-frames #4120 · read 3m ago
-goal: tui-frames: a small terminal view of every campaign and open question
-plan v11 · 1 decisions, 2 closed lanes since · plan doc v11 captured
- +2 outside view · j/k to browse
- FLEET ─────────────────────────────────────────────────────────────────────────────────────────────── listed campaigns
-11 listed · 13 working 5 ready 22 open
-2 quiet not listed; no counts
- +11 outside view · j/k to browse
- CAMPAIGNS ───────────────────────────────────────────────────────────────────────────────────────────────────────── 11
- +13 more · c shows all
+ ■ running #41 Refresh campaign milestones
+   @sam · 2h · trip-to-japan/trip
+ ■ checks passing #40 Clarify owner answer copy
+   @alex · 3h · trip-to-japan/trip · approved
+ CAMPAIGNS ───────────────────────────────────────────── 11  SHIPPED ───────────────────────────────────────── observed
+ ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃          19s 2 sampled; 0s ago · trip-to-japan/trip
+ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█          29s 2 sampled; 0s ago · trip-to-japan/tools
+ ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁          33s @alex · 2 PRs observed
+•○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂           2m @sam · 2 PRs observed
+ ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█           3m BUILD QUEUE ───────────────────────────────────── observed
+ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁    laptop  7m 6 sampled; 0s ago · trip-to-japan/trip
+ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆           8m latest100-run sample · older may be missing
+ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃          12m running (in_progress) · Build and test
+ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁          14m   dashboard · 5m · trip-to-japan/trip
+ +2 more listed · F · 2 quiet unlisted · c                   +1 more run · tab here
+ DECISIONS · PLAN ───────────────────────────── cached read  FLEET ─────────────────────────────────── listed campaigns
+ tui-frames #4120 · read 3m ago                              2 quiet not listed; no counts
+ ◆ #61301 D4: one binary for the view and the hub; the old … search-index · 1 working 0 ready 1 open · lead working
+ ◆ #60790 Trust rule 1: red is an open owner ask and nothin… auth-rotation · 0 working 1 ready 1 open · lead working
+ DECISION LOG ─────────────────────────────── recent sample  billing-export · 1 working 0 ready 1 open · lead idle
+ tui-frames #4120 · read 3m ago                              docs-refresh · 1 working 0 ready 1 open · lead idle
+ #61301 13:58 D4: one binary for the view and the hub; the … +7 more campaigns · F lists all
  ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   D A F I screens   y copy   s slotr   ? help

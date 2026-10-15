@@ -3,38 +3,38 @@
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
 H Health-
  3 notes still carry OWNER items
- NEEDS YOU╭ Keys · dashboard ────────────────────────────────────────────────────────────────────────────────╮─────── 2
-▌? ◇ tui-f│                                                                                                  │    ⏎  41s
-▌  Frames │   Move                                           Act                                             │ow [reco…
- ? ◇ ios-w│    j k           down, up (arrows too)            a             answer the selected ask          │top ↗   6m
-   WIDGET │    g G           first, last row                  p             park or unpark (confirms)        │d the th…
- TO CHECK │    ctrl-d ctrl-u half page                        o             Decisions, Fleet or log row: op  │─────── 3
- ! map-til│    tab           next card; shift-tab back        y             copy the jump command            │aptop   2h
-   lead un│    wheel         scroll                           r             refresh now                      │
- ! infra-l│                                                   Answering: j k choose, tab types (a note       │        2h
-   lead id│   Go                                              after a structured ask's option), ⏎ reviews,   │
- ! host bu│    D A F I       Dashboard, Asks, Fleet; I: the   y sends. A multi-select ask: space picks, ⏎    │ mini  12m
-   host st│    [ ]           previous, next screen            reviews the set.                               │
- CAMPAIGNS│    ⏎             go to the row's agent pane                                                      │────── 11
- ◐ search-│    l             open the campaign               View                                            │       19s
-   Researc│    h             back, close (esc too)            0-9           toggle asks, checks, campaigns,  │
- ◐ auth-ro│    /             filter rows by name              H             toggle Health, the hub's produc  │       29s
-   Impleme│    c             all campaigns, closed too        ?             this help                        │
- ○ billing│    s             slotr holders and queue          m             mouse on or off                  │       33s
-   FYI 614│    click         select; double-click is ⏎        t             theme: dark, light, terminal     │
- ○ docs-re│    ⏎ moves every client attached to that Herdr    ctrl-l        clear and redraw the screen      │        2m
-   Hub FYI│    server.                                        q             close; quits on a top-level scr  │
- ○ checkou│    Each screen keeps its place; switching reads                                                  │        3m
-   FIX: th│    nothing. 0-9 and H shape the Dashboard only.  Marks                                           │
- ◐ ios-wid│    Detail scrolls; esc or h returns to its row.   ? ask   ! to check   ◐ working   ○ waiting     │laptop  7m
-   Widget │    7, 9: the campaign last opened with l, as      ● lane   ● ready   · idle   × gone   ‖ parked  │
- ◐ tui-fra│    cached; l or o reads it again, r does not. 8:  ✓ done   ⊘ abandoned   ✗ rejected              │        8m
-   NOW: pl│    listed campaigns only; / filters it, not 7 or  ⏎ pane on this machine   ↗ another             │
- · infra-l│    9. 0: trip-to-japan/trip issues by current     • changed since you looked                     │       12m
-   cache-a│                                                                                                  │
- ◐ model-e╰──────────────────────────────────────────────────────────────────────────────────────────────────╯       14m
-   matrix run A finished
- ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                                                                      54m
- ‖ legacy-importer                                                                                            parked  3h
- · 2 quiet
+ NEEDS YOU╭ Keys · dashboard ────────────────────────────────────────────────────────────────────────────────╮─────── 3
+▌? ◇ tui-f│                                                                                                  │aptop   2h
+▌  Frames │   Move                                           Act                                             │
+ ? ◇ ios-w│    j k           down, up (arrows too)            a             answer the selected ask          │        2h
+   WIDGET │    g G           first, last row                  p             park or unpark (confirms)        │
+          │    ctrl-d ctrl-u half page                        o             Decisions, Fleet or log row: op  │ mini  12m
+          │    tab           next card; shift-tab back        y             copy the jump command            │
+ CAMPAIGNS│    wheel         scroll                           r             refresh now                      │────── 11
+ ◐ search-│                                                   Answering: j k choose, tab types (a note       │       19s
+   Researc│   Go                                              after a structured ask's option), ⏎ reviews,   │
+ ◐ auth-ro│    D A F I       Dashboard, Asks, Fleet; I: the   y sends. A multi-select ask: space picks, ⏎    │       29s
+   Impleme│    [ ]           previous, next screen            reviews the set.                               │
+ ○ billing│    ⏎             go to the row's agent pane                                                      │       33s
+   FYI 614│    l             open the campaign               View                                            │
+ ○ docs-re│    h             back, close (esc too)            0-9           toggle asks, checks, campaigns,  │        2m
+   Hub FYI│    /             filter rows by name              H             toggle Health, the hub's produc  │
+ ○ checkou│    c             all campaigns, closed too        ?             this help                        │        3m
+   FIX: th│    s             slotr holders and queue          m             mouse on or off                  │
+ ◐ ios-wid│    click         select; double-click is ⏎        t             theme: dark, light, terminal     │laptop  7m
+   Widget │    ⏎ moves every client attached to that Herdr    ctrl-l        clear and redraw the screen      │
+ ◐ tui-fra│    server.                                        q             close; quits on a top-level scr  │        8m
+   NOW: pl│    Each screen keeps its place; switching reads                                                  │
+ · infra-l│    nothing. 0-9 and H shape the Dashboard only.  Marks                                           │       12m
+   cache-a│    Detail scrolls; esc or h returns to its row.   ? ask   ! to check   ◐ working   ○ waiting     │
+ ◐ model-e│    7, 9: the campaign last opened with l, as      ● lane   ● ready   · idle   × gone   ‖ parked  │       14m
+   matrix │    cached; l or o reads it again, r does not. 8:  ✓ done   ⊘ abandoned   ✗ rejected              │
+ ○ api-pag│    listed campaigns only; / filters it, not 7 or  ⏎ pane on this machine   ↗ another             │       54m
+   S4 curs│    9. 0: trip-to-japan/trip issues by current     • changed since you looked                     │
+ ‖ legacy-│                                                                                                  │parked  3h
+ · 2 quiet╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
  ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   D A F I screens   y copy   s slotr   ? help

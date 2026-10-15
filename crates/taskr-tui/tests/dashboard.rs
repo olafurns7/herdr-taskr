@@ -1,6 +1,11 @@
 //! Source freshness is independent even when the ledger has no usable snapshot.
-use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
-use taskr_tui::{App, Fetch, draw, frames, github, model::Data};
+use ratatui::{
+    Terminal,
+    backend::TestBackend,
+    buffer::Buffer,
+    crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
+};
+use taskr_tui::{App, Fetch, draw, frames, github, input, model::Data};
 
 fn render(app: &App, width: u16, height: u16) -> (String, Buffer) {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
@@ -283,7 +288,8 @@ fn build_height_includes_the_sample_line_and_both_observed_rows() {
             && text.contains("queued (queued)"),
         "{text}"
     );
-    assert!(!text.contains("outside view"), "{text}");
+    // Nothing cut: no overflow line (slice 2's "+N more …", before it "outside view").
+    assert!(!text.contains(" more "), "{text}");
 }
 
 #[test]
@@ -302,64 +308,194 @@ fn spare_panel_space_shows_priority_prs_and_keeps_later_source_status() {
                 app.builds.sources[0].error = Some("GitHub authentication required");
             }
             let (text, _) = render(&app, width, height);
+            // Priority first: asks, checks and the first PR are on the first screen.
+            assert!(
+                text.contains("OPEN PRS")
+                    && text.contains("3 open")
+                    && text.contains("failing #42"),
+                "{width}x{height}/{failed}: {text}"
+            );
             if height == 20 {
-                assert!(
-                    text.contains("OPEN PRS") && text.contains("3 open"),
-                    "{failed}: {text}"
-                );
-                if !failed || text.contains("BUILD QUEUE") {
-                    assert!(text.contains("failing #42"), "{failed}: {text}");
-                }
                 assert!(
                     !text.contains("BUILD QUEUE"),
                     "later kind displaced priority panel: {text}"
                 );
-                continue;
             }
-            let start = text
-                .lines()
-                .position(|line| line.contains("OPEN PRS"))
-                .unwrap();
-            let end = text
-                .lines()
-                .position(|line| line.contains("CAMPAIGNS"))
-                .unwrap();
-            let external: Vec<_> = text.lines().skip(start).take(end - start).collect();
+            // No PR silently dropped: each is drawn or counted on the card's more line.
+            let missing = ["failing #42", "running #41", "checks passing #40"]
+                .iter()
+                .filter(|pr| !text.contains(**pr))
+                .count();
+            let more = format!("+{missing} more PR");
             assert!(
-                external
-                    .iter()
-                    .all(|line| !line.trim_matches([' ', '│']).is_empty()),
-                "{width}/{failed}: {text}"
+                (missing == 0 && !text.contains("more PRs")) || text.contains(&more),
+                "{width}x{height}/{failed}: {text}"
             );
-            assert!(text.contains("failing #42"), "{width}/{failed}: {text}");
-            if width == 120 || failed {
+            if width == 120 {
+                assert_eq!(missing, 0, "{text}");
+            }
+            // The PR card is not padded with blank lines.
+            let lines: Vec<&str> = text.lines().collect();
+            let start = lines.iter().position(|l| l.contains("OPEN PRS")).unwrap();
+            let blank = |l: &str| l.trim_matches([' ', '│']).is_empty();
+            let mut end = lines[start + 1..]
+                .iter()
+                .position(|l| l.contains(" ──") || l.starts_with(" ↓"))
+                .map_or(lines.len() - 1, |i| start + 1 + i);
+            // The viewport may end early above the ↓ line; that row is not the card's.
+            while blank(lines[end - 1]) {
+                end -= 1;
+            }
+            assert!(
+                lines[start..end].iter().all(|l| !blank(l)),
+                "{width}x{height}/{failed}: {text}"
+            );
+            // Later cards: in view, or disclosed below and reached by Tab, with the same
+            // source truth either way.
+            let (shipped, build) = if text.lines().any(|l| l.starts_with(" ↓")) {
+                // "↓ 1 card below: BUILD QUEUE 2 · tab" or "↓ 8 cards below: … · …": it
+                // names BUILD QUEUE unless the list is clipped.
                 assert!(
-                    text.contains("running #41") && text.contains("checks passing #40"),
-                    "{width}/{failed}: {text}"
-                );
-                assert!(
-                    !external.iter().any(|line| line.contains("outside view")),
+                    text.lines().any(|l| l.starts_with(" ↓")
+                        && (l.contains(" card below: ") || l.contains(" cards below: "))
+                        && (l.contains("BUILD QUEUE") || l.trim_end().ends_with('…'))),
                     "{text}"
                 );
-            }
-            assert!(
-                text.contains("SHIPPED")
-                    && text.contains("BUILD QUEUE")
-                    && text.contains("latest100-run sample"),
-                "{text}"
-            );
+                // The selected card as drawn: its rule down to the next rule or the ↓ line.
+                let selected = |frame: &str| {
+                    let lines: Vec<&str> = frame.lines().collect();
+                    let rule = |l: &&str| l.contains(" ──");
+                    let c = lines.iter().position(|l| l.starts_with('▌'))?;
+                    let start = lines[..c].iter().rposition(rule)?;
+                    let end = lines[c..]
+                        .iter()
+                        .position(|l| rule(l) || l.starts_with(" ↓"))
+                        .map_or(lines.len() - 1, |i| c + i);
+                    Some(lines[start..end].join("\n"))
+                };
+                let mut cards = vec![];
+                for _ in 0..6 {
+                    input::key(&mut app, KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+                    cards.extend(selected(&render(&app, width, height).0));
+                }
+                let card = |title: &str| {
+                    cards
+                        .iter()
+                        .find(|c| c.starts_with(&format!(" {title} ─")))
+                        .unwrap_or_else(|| {
+                            panic!("{width}x{height}/{failed}: {title} never selected: {cards:#?}")
+                        })
+                        .clone()
+                };
+                (card("SHIPPED"), card("BUILD QUEUE"))
+            } else {
+                if !failed {
+                    assert!(
+                        text.contains("4 observed merged") && text.contains("2 active observed"),
+                        "{text}"
+                    );
+                } else {
+                    assert_eq!(text.matches("Counts unavailable").count(), 2, "{text}");
+                }
+                (text.clone(), text.clone())
+            };
+            // Each card keeps its whole floor: status, sample cap, rows.
+            assert!(build.contains("latest100-run sample"), "{build}");
             if failed {
                 assert!(
-                    text.matches("Counts unavailable").count() == 2
-                        && text.contains("authentication required"),
-                    "{text}"
+                    shipped.contains("Counts unavailable")
+                        && shipped.contains("unavailable; unavailable"),
+                    "{shipped}"
+                );
+                assert!(
+                    build.contains("Counts unavailable")
+                        && build.contains("authentication required"),
+                    "{build}"
                 );
             } else {
                 assert!(
-                    text.contains("4 observed merged") && text.contains("2 active observed"),
-                    "{text}"
+                    shipped.contains("sampled; ") && shipped.contains("@alex · 2 PRs observed"),
+                    "{shipped}"
+                );
+                assert!(
+                    build.contains("sampled; ")
+                        && build.contains("running (in_progress)")
+                        && (build.contains("queued (queued)") || build.contains("+1 more run")),
+                    "{build}"
                 );
             }
+            // A stale PR read and its cap stay in the card too.
+            app.github.sources[0].error = Some("GitHub unavailable");
+            app.github.sources[0].total = 100;
+            // Row 5 is #42 (two asks, three checks before it): the PR card in view.
+            app.row = 5;
+            let (text, _) = render(&app, width, height);
+            assert!(
+                text.contains("stale") && text.contains("first 100; more may exist"),
+                "{width}x{height}/{failed}: {text}"
+            );
+        }
+    }
+}
+
+/// The line the cursor is on, as drawn.
+fn selected_line(text: &str) -> &str {
+    text.lines().find(|l| l.starts_with('▌')).unwrap_or("")
+}
+
+/// Startup: before the ledger only the seeded PR source is listed (its stop, or its PRs).
+/// The first ledger snapshot opens on the first ask in either arrival order; later
+/// snapshots keep the cursor's identity, a stop's included, through a reorder.
+#[test]
+fn the_first_ledger_snapshot_opens_on_the_first_ask_and_later_ones_keep_the_row() {
+    let repos = vec!["trip-to-japan/trip".to_string()];
+    for (prs_first, w, h) in [
+        (false, 120, 40),
+        (true, 120, 40),
+        (false, 46, 30),
+        (true, 46, 30),
+    ] {
+        let mut app = App::new(Data::default());
+        app.github = github::Dashboard::new(&repos);
+        render(&app, w, h);
+        if prs_first {
+            app.github = github::demo();
+            render(&app, w, h);
+        }
+        // As client.rs does: the snapshot, then loaded.
+        app.snapshot(frames::fixture().glance);
+        app.fetch.loaded = true;
+        let (text, _) = render(&app, w, h);
+        let line = selected_line(&text);
+        assert!(
+            app.row == 0 && line.contains("tui-frames") && line.contains("BLOCKING"),
+            "{prs_first} {w}x{h}: row {} {line:?}\n{text}",
+            app.row
+        );
+        // Loaded: a reorder keeps the cursor on its ask.
+        let mut next = app.data.glance.clone();
+        next.needs_you.reverse();
+        app.snapshot(next);
+        let (text, _) = render(&app, w, h);
+        assert!(selected_line(&text).contains("tui-frames"), "{text}");
+        assert_eq!(app.row, 1, "{text}");
+        if !prs_first {
+            // The unread PR card's stop, once chosen, is kept like any row.
+            app.row = 5;
+            let (text, _) = render(&app, w, h);
+            assert!(
+                selected_line(&text).contains("CI counts unavailable"),
+                "{text}"
+            );
+            let mut next = app.data.glance.clone();
+            next.needs_you.reverse();
+            app.snapshot(next);
+            let (text, _) = render(&app, w, h);
+            assert_eq!(app.row, 5, "{text}");
+            assert!(
+                selected_line(&text).contains("CI counts unavailable"),
+                "{text}"
+            );
         }
     }
 }

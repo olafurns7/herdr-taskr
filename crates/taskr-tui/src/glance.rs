@@ -64,21 +64,6 @@ fn ledger_panel(panel: &Panel) -> bool {
     matches!(panel, Panel::Decisions | Panel::Fleet | Panel::Log)
 }
 
-/// Cursor rows a panel adds.
-fn row_count(app: &App, panel: Panel) -> usize {
-    match panel {
-        Panel::Gh(Kind::Open) => app.github.rows().len(),
-        Panel::Gh(Kind::Shipped) => app.shipped.authors(app.observed_at).len(),
-        Panel::Gh(Kind::Build) => app.builds.runs().len(),
-        Panel::Gh(Kind::Issues) => app.issues.assignees(app.observed_at).len(),
-        Panel::Decisions => decisions(app).len(),
-        Panel::Fleet => app.fleet.len(),
-        Panel::Log => logged(app).len(),
-        // One row, the fixed repository and environment, whatever the reads found.
-        Panel::Health => usize::from(app.config.panels[10]),
-    }
-}
-
 /// The campaign panels 7 and 9 read: the last one opened on purpose, once it arrived.
 /// Never the cursor's campaign, and never a total over campaigns.
 fn scoped(app: &App) -> Option<&Campaign> {
@@ -102,110 +87,318 @@ fn logged(app: &App) -> Vec<&Event> {
         })
 }
 
-/// What fits in the list, decided before anything is drawn.
-///
-/// Asks and "to check" rows never fold: they keep two lines and scroll. Campaign rows
-/// fold progressively: second lines go to the most recently active campaigns until the
-/// rows run out, then the parked and quiet rows fold into one line, then campaigns fold
-/// into "+N more". So a frame never has more than one blank row while a second line is
-/// folded.
-pub(crate) struct Plan {
-    asks: Range<usize>,
-    checks: Range<usize>,
-    /// Active campaigns shown, in order.
-    shown: usize,
-    /// Which of them keep their second line.
-    two: Vec<bool>,
-    tail: Tail,
+/// One row of a card: its lines, drawn whole or not at all, and a second line a campaign
+/// gets when the card has room, the most recently active first.
+struct Row {
+    lines: Vec<Line<'static>>,
+    extra: Option<(i64, Line<'static>)>,
+    /// Only the first line is the cursor's (Health's wrapped values).
+    once: bool,
 }
 
-#[derive(Debug, PartialEq)]
-enum Tail {
-    None,
-    /// One row per parked campaign, then the quiet row.
-    Rows,
-    /// Parked and quiet campaigns in one line.
-    Folded,
-    /// Campaigns that do not fit, parked and quiet ones included.
-    More(usize),
+/// A Dashboard card before it is fitted to its height: the rule, the lines under it, its
+/// rows and how its overflow line names what is cut. A `true` head is an honest notice
+/// (stale, unavailable, capped, empty, the read's age) and stays at every height.
+struct Card {
+    title: &'static str,
+    right: String,
+    color: Color,
+    heads: Vec<(Line<'static>, bool)>,
+    rows: Vec<Row>,
+    /// Lines after the rows, given only spare room (Health's source).
+    foot: Vec<Line<'static>>,
+    /// Drawn under the rows while none is cut (the quiet count).
+    tail: Option<Line<'static>>,
+    /// The cursor index of the first row.
+    offset: usize,
+    /// Rows the floor keeps: two asks ("asks never fold"), one of anything else.
+    keep: usize,
+    /// Singular and plural, as the overflow line counts rows.
+    unit: (&'static str, &'static str),
+    /// Where every row is listed, for the overflow line; empty: tab to the card.
+    route: &'static str,
+    /// After the route: what the snapshot folded without listing.
+    note: String,
+    /// The rule shows the window's position, `1/3`.
+    counted: bool,
+    /// Drawn from a stale ledger snapshot: dimmed.
+    dim: bool,
 }
 
-/// The rows of `n` two-line items that fit in `avail` lines under a rule, around `cursor`.
-fn window(n: usize, avail: usize, cursor: Option<usize>) -> Range<usize> {
-    let fit = (avail.saturating_sub(1) / 2).min(n);
-    let start = cursor
-        .map_or(0, |i| (i + 1).saturating_sub(fit))
-        .min(n - fit);
-    start..start + fit
+/// The text of a line, for the overflow cues.
+fn plain(line: &Line) -> String {
+    line.spans.iter().map(|s| s.content.as_ref()).collect()
 }
 
-pub(crate) fn plan(g: &Glance, height: usize, cursor: usize) -> Plan {
-    let (asks, checks) = (g.needs_you.len(), g.attention.len());
-    let active: Vec<&CampaignRow> = g.campaigns.iter().filter(|c| !c.parked).collect();
-    let parked = g.campaigns.len() - active.len();
-    let quiet = usize::from(g.quiet.count > 0);
-    // The campaigns keep their rule and one row, whatever the asks need.
-    let floor = if g.campaigns.is_empty() && quiet == 0 {
-        0
-    } else {
-        2
-    };
-
-    // A section with rows keeps its rule even when its window is empty.
-    let used = |total: usize, shown: usize| if total == 0 { 0 } else { 1 + 2 * shown };
-    // The row under the cursor is drawn first: when a pane is too short for every
-    // section's share, the other sections shrink to their rules.
-    let rule = floor.min(1);
-    let (in_asks, in_checks) = (cursor < asks, cursor >= asks && cursor < asks + checks);
-    let room = height.saturating_sub(floor + if checks > 0 { 3 } else { 0 });
-    let room = if in_asks && room < 3 {
-        height.saturating_sub(rule + checks.min(1))
-    } else {
-        room
-    };
-    let ask_rows = window(asks, room, in_asks.then_some(cursor));
-    let room = height.saturating_sub(floor + used(asks, ask_rows.len()));
-    let room = if in_checks && room < 3 {
-        room + floor - rule
-    } else {
-        room
-    };
-    let check_rows = window(
-        checks,
-        room,
-        cursor.checked_sub(asks).filter(|&i| i < checks),
-    );
-
-    let rows =
-        height.saturating_sub(used(asks, ask_rows.len()) + used(checks, check_rows.len()) + 1);
-    let full = active.len() + parked + quiet;
-    let (shown, tail, spare) = if floor == 0 {
-        (0, Tail::None, 0)
-    } else if full <= rows {
-        (active.len(), Tail::Rows, rows - full)
-    } else if parked + quiet > 0 && active.len() < rows {
-        // ponytail: spare rows here go to second lines, not back to parked rows.
-        (active.len(), Tail::Folded, rows - active.len() - 1)
-    } else {
-        let shown = rows.saturating_sub(1).min(active.len());
-        (
-            shown,
-            Tail::More(active.len() - shown + parked + g.quiet.count as usize),
-            0,
-        )
-    };
-    let mut by_activity: Vec<usize> = (0..shown).collect();
-    by_activity.sort_by_key(|&i| active[i].activity_age_ms);
-    let mut two = vec![false; shown];
-    for &i in by_activity.iter().take(spare) {
-        two[i] = true;
+impl Card {
+    fn new(app: &App, title: &'static str, right: String, color: Color, offset: usize) -> Self {
+        Card {
+            title,
+            right,
+            color,
+            heads: vec![],
+            rows: vec![],
+            foot: vec![],
+            tail: None,
+            offset,
+            keep: 1,
+            unit: ("row", "rows"),
+            route: "",
+            note: String::new(),
+            counted: false,
+            dim: false,
+        }
+        .dim_if(false, app)
     }
-    Plan {
-        asks: ask_rows,
-        checks: check_rows,
-        shown,
-        two,
-        tail,
+
+    fn dim_if(mut self, ledger: bool, app: &App) -> Self {
+        self.dim = ledger && app.fetch.loaded && app.fetch.error.is_some();
+        self
+    }
+
+    /// A notice line, in the rows' one-cell gutter, so a right column never joins the left.
+    fn head(&mut self, text: impl Into<String>, color: Color, keep: bool, width: usize) {
+        let text = clip(&text.into(), width.saturating_sub(1));
+        self.heads
+            .push((Line::from(vec![Span::raw(" "), sp(text, color)]), keep));
+    }
+
+    fn cursor(&self, row: usize) -> Option<usize> {
+        row.checked_sub(self.offset)
+            .filter(|i| *i < self.rows.len())
+    }
+
+    fn lines(&self, rows: &Range<usize>) -> usize {
+        self.rows[rows.clone()].iter().map(|r| r.lines.len()).sum()
+    }
+
+    /// Every row, notice and foot line; a campaign's second lines only from spare rows.
+    fn want(&self) -> usize {
+        1 + self.heads.len()
+            + self.lines(&(0..self.rows.len()))
+            + self.foot.len()
+            + usize::from(self.tail.is_some())
+    }
+
+    fn full(&self) -> usize {
+        self.want() + self.rows.iter().filter(|r| r.extra.is_some()).count()
+    }
+
+    /// The rows around the cursor that fit `room` lines, the cursor's last where it can be;
+    /// the cursor's row, or the first, even when it does not fit.
+    fn window(&self, room: usize, cursor: Option<usize>) -> Range<usize> {
+        let n = self.rows.len();
+        if n == 0 {
+            return 0..0;
+        }
+        let at = cursor.unwrap_or(0);
+        let mut w = at..at + 1;
+        loop {
+            let back = w.start > 0 && self.lines(&(w.start - 1..w.end)) <= room;
+            let on = w.end < n && self.lines(&(w.start..w.end + 1)) <= room;
+            match (back, on) {
+                (true, _) if cursor.is_some() => w.start -= 1,
+                (_, true) => w.end += 1,
+                (true, _) => w.start -= 1,
+                _ => return w,
+            }
+        }
+    }
+
+    /// The rule, the honest notices, the cursor's window of `keep` rows and the overflow
+    /// line (or the tail).
+    fn floor(&self, row: usize) -> usize {
+        let n = self.rows.len();
+        let keep = self.keep.min(n);
+        let start = self
+            .cursor(row)
+            .map_or(0, |i| (i + 1).saturating_sub(keep))
+            .min(n - keep);
+        1 + self.heads.iter().filter(|h| h.1).count()
+            + self.lines(&(start..start + keep))
+            + usize::from(n > keep || self.tail.is_some())
+    }
+
+    /// The card in `height` lines, each with the cursor row it belongs to.
+    fn fit(&self, t: &Theme, height: usize, row: usize, width: usize) -> Drawn {
+        let cursor = self.cursor(row);
+        let n = self.rows.len();
+        let all = height >= self.full();
+        let kept = self.heads.iter().filter(|h| h.1).count();
+        let room = height.saturating_sub(1 + kept);
+        // Every row when they fit with the tail: the more line is spent only on a cut.
+        let rows = if all || self.lines(&(0..n)) + usize::from(self.tail.is_some()) <= room {
+            0..n
+        } else {
+            self.window(room.saturating_sub(1), cursor)
+        };
+        let more = n - rows.len();
+        let mut spare =
+            room.saturating_sub(self.lines(&rows) + usize::from(more > 0 || self.tail.is_some()));
+        let mut heads = vec![];
+        for (line, keep) in &self.heads {
+            if *keep || all || spare > 0 {
+                if !*keep && !all {
+                    spare -= 1;
+                }
+                heads.push(line.clone());
+            }
+        }
+        let mut seconds: Vec<usize> = rows
+            .clone()
+            .filter(|i| self.rows[*i].extra.is_some())
+            .collect();
+        seconds.sort_by_key(|i| self.rows[*i].extra.as_ref().map(|e| e.0));
+        if !all {
+            seconds.truncate(spare);
+            spare -= seconds.len();
+        }
+        let right = if self.counted {
+            count(&rows, n, cursor)
+        } else {
+            self.right.clone()
+        };
+        let mut out = Drawn::default();
+        out.push(ui::rule(t, self.title, &right, self.color, width), None);
+        // An empty card's state is its one inert stop: the cursor reaches it, nothing acts.
+        let mut stop = self.rows.is_empty();
+        for line in heads {
+            if stop {
+                stop = false;
+                let on = row == self.offset;
+                // ui::row brings its own gutter (or the cursor bar) in place of the head's.
+                out.push(
+                    ui::row(t, line.spans[1..].to_vec(), on, false, self.color, width),
+                    Some(self.offset),
+                );
+            } else {
+                out.push(line, None);
+            }
+        }
+        for i in rows {
+            for (n, line) in self.rows[i].lines.iter().enumerate() {
+                let hit = (n == 0 || !self.rows[i].once).then_some(self.offset + i);
+                out.push(line.clone(), hit);
+            }
+            if seconds.contains(&i)
+                && let Some((_, line)) = &self.rows[i].extra
+            {
+                out.push(line.clone(), Some(self.offset + i));
+            }
+        }
+        if more > 0 {
+            let unit = if more == 1 { self.unit.0 } else { self.unit.1 };
+            let route = match (cursor, self.route) {
+                (Some(_), _) => "j k",
+                (None, "") => "tab here",
+                (None, route) => route,
+            };
+            out.push(
+                Line::from(sp(
+                    clip(
+                        &format!(" +{more} more {unit} · {route}{}", self.note),
+                        width,
+                    ),
+                    t.dim,
+                )),
+                None,
+            );
+        } else if let Some(tail) = &self.tail {
+            out.push(tail.clone(), None);
+        }
+        for line in self.foot.iter().take(if all { usize::MAX } else { spare }) {
+            out.push(line.clone(), None);
+        }
+        out.lines.truncate(height);
+        out.hits.truncate(height);
+        if self.dim {
+            out.dim(t);
+        }
+        out
+    }
+
+    /// Tiny: one line, the cursor's row (or the first) with its position; every row on its
+    /// own line when `each` (the asks, a screen of one card).
+    fn tiny(&self, app: &App, width: usize, each: bool) -> Drawn {
+        let mut out = Drawn::default();
+        let n = self.rows.len();
+        let line = |i: usize, prefix: String| {
+            let (text, color) = label(app, self.offset + i).unwrap_or_default();
+            ui::row(
+                &app.theme,
+                vec![sp(
+                    clip(&format!("{prefix}{text}"), width.saturating_sub(1)),
+                    color,
+                )],
+                app.row == self.offset + i,
+                false,
+                color,
+                width,
+            )
+        };
+        if n == 0 {
+            let state = self.heads.iter().find(|h| h.1).map(|h| plain(&h.0));
+            let text = format!("{} · {}", self.title, state.unwrap_or_default().trim());
+            let on = app.row == self.offset;
+            let t = &app.theme;
+            let line = ui::row(
+                t,
+                vec![sp(clip(&text, width.saturating_sub(1)), t.sub)],
+                on,
+                false,
+                t.sub,
+                width,
+            );
+            out.push(line, Some(self.offset));
+        } else if each {
+            for i in 0..n {
+                out.push(line(i, String::new()), Some(self.offset + i));
+            }
+        } else {
+            let i = self.cursor(app.row).unwrap_or(0);
+            let at = if n > 1 {
+                format!("{}/{n} ", i + 1)
+            } else {
+                String::new()
+            };
+            out.push(line(i, at), Some(self.offset + i));
+        }
+        if self.dim {
+            out.dim(&app.theme);
+        }
+        out
+    }
+
+    /// What the overflow cues say of a card out of view: its rows, or its state.
+    fn brief(&self) -> String {
+        if self.rows.is_empty() {
+            let state = self.heads.iter().find(|h| h.1).map(|h| plain(&h.0));
+            format!("{} {}", self.title, state.unwrap_or_default().trim())
+        } else {
+            format!("{} {}", self.title, self.rows.len())
+        }
+    }
+}
+
+/// Lines and, for each, the cursor row it draws.
+#[derive(Default)]
+struct Drawn {
+    lines: Vec<Line<'static>>,
+    hits: Vec<Option<usize>>,
+}
+
+impl Drawn {
+    fn push(&mut self, line: Line<'static>, hit: Option<usize>) {
+        self.lines.push(line);
+        self.hits.push(hit);
+    }
+
+    fn dim(&mut self, t: &Theme) {
+        for line in &mut self.lines {
+            for span in &mut line.spans {
+                span.style.fg = Some(t.dim);
+            }
+        }
     }
 }
 
@@ -242,150 +435,131 @@ pub(crate) fn check_name(g: &Glance, a: &Attention) -> String {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn lines(app: &App, width: usize, height: usize) -> Vec<Line<'static>> {
-    layout(app, width, height).0
+/// A two-line row's second line.
+fn second(text: &str, color: Color, width: usize) -> Vec<Span<'static>> {
+    vec![
+        Span::raw("  "),
+        sp(clip(&one_line(text), width.saturating_sub(4)), color),
+    ]
 }
 
-/// The list's lines, and for each line the cursor row it belongs to.
-fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
+fn ask_card(app: &App, width: usize, offset: usize) -> Card {
     let (t, g) = (&app.theme, &app.data.glance);
-    let mut hits: Vec<Option<usize>> = vec![];
-    let pr_height = external_height(app, width, height);
-    let offset = g.needs_you.len() + g.attention.len();
-    let external_count = external_count(app);
-    let ledger_cursor = if app.row >= offset {
-        app.row.saturating_sub(external_count)
-    } else {
-        app.row
-    };
-    let plan = plan(g, height.saturating_sub(pr_height), ledger_cursor);
     let body = width.saturating_sub(1);
-    let second = |text: &str, color| {
-        vec![
-            Span::raw("  "),
-            sp(clip(&one_line(text), body.saturating_sub(3)), color),
-        ]
-    };
-    let mut out = vec![];
-    let mut index = 0;
-
-    let asks = g.needs_you.len();
-    if asks > 0 {
-        let at = (app.row < asks).then_some(app.row);
-        out.push(ui::rule(
-            t,
-            "NEEDS YOU",
-            &count(&plan.asks, asks, at),
-            t.need,
-            width,
-        ));
-    }
+    let mut card = Card::new(
+        app,
+        "NEEDS YOU",
+        g.needs_you.len().to_string(),
+        t.need,
+        offset,
+    )
+    .dim_if(true, app);
+    (card.keep, card.unit, card.counted) = (2, ("ask", "asks"), true);
+    card.route = "A lists all";
     for (i, a) in g.needs_you.iter().enumerate() {
-        hits.resize(out.len(), None);
-        if plan.asks.contains(&i) {
-            let on = app.row == index;
-            // ◆ a structured ask, ◇ options found in its text; HUB: the hub's own dialog.
-            let mut left = vec![
-                bold("? ", t.need),
-                bold(format!("{} ", ask::mark(a)), t.accent),
-                bold(pad(&a.campaign, 20.min(body.saturating_sub(24))), t.text),
-            ];
-            if a.blocking {
-                left.push(bold(" BLOCKING", t.need));
-            }
-            if a.dialog {
-                left.push(bold(" HUB", t.remote));
-            }
-            let right = vec![
-                Span::raw(" "),
-                place(t, g, &a.host, &a.pane_id),
-                sp(format!("{:>4}", age(a.age_ms)), t.sub),
-            ];
-            out.push(ui::row(
-                t,
-                ui::spread(left, right, body),
-                on,
-                false,
-                t.need,
-                width,
-            ));
-            out.push(ui::row(t, second(&a.text, t.sub), on, false, t.need, width));
+        let on = app.row == offset + i;
+        // ◆ a structured ask, ◇ options found in its text; HUB: the hub's own dialog.
+        let mut left = vec![
+            bold("? ", t.need),
+            bold(format!("{} ", ask::mark(a)), t.accent),
+            bold(pad(&a.campaign, 20.min(body.saturating_sub(24))), t.text),
+        ];
+        if a.blocking {
+            left.push(bold(" BLOCKING", t.need));
         }
-        hits.resize(out.len(), Some(index));
-        index += 1;
+        if a.dialog {
+            left.push(bold(" HUB", t.remote));
+        }
+        let right = vec![
+            Span::raw(" "),
+            place(t, g, &a.host, &a.pane_id),
+            sp(format!("{:>4}", age(a.age_ms)), t.sub),
+        ];
+        card.rows.push(Row {
+            lines: vec![
+                ui::row(t, ui::spread(left, right, body), on, false, t.need, width),
+                ui::row(t, second(&a.text, t.sub, width), on, false, t.need, width),
+            ],
+            extra: None,
+            once: false,
+        });
     }
+    if card.rows.is_empty() {
+        let none = if app.filter.is_empty() {
+            "Nothing needs you in this snapshot"
+        } else {
+            "No ask matches the filter"
+        };
+        card.head(none, t.sub, true, width);
+    }
+    card
+}
 
-    let checks = g.attention.len();
-    if checks > 0 {
-        let at = app.row.checked_sub(asks).filter(|&i| i < checks);
-        out.push(ui::rule(
-            t,
-            "TO CHECK",
-            &count(&plan.checks, checks, at),
-            t.check,
-            width,
-        ));
-    }
+fn check_card(app: &App, width: usize, offset: usize) -> Card {
+    let (t, g) = (&app.theme, &app.data.glance);
+    let body = width.saturating_sub(1);
+    let mut card = Card::new(
+        app,
+        "TO CHECK",
+        g.attention.len().to_string(),
+        t.check,
+        offset,
+    )
+    .dim_if(true, app);
+    (card.unit, card.counted) = (("check", "checks"), true);
     for (i, a) in g.attention.iter().enumerate() {
-        hits.resize(out.len(), None);
-        if plan.checks.contains(&i) {
-            let on = app.row == index;
-            let left = vec![bold("! ", t.check), sp(check_name(g, a), t.text)];
-            let host = if g.local(&a.host) {
-                String::new()
-            } else {
-                ui::host_name(g, &a.host)
-            };
-            let right = vec![
-                sp(format!(" {host}"), t.remote),
-                sp(format!("{:>5}", age(a.age_ms)), t.sub),
-            ];
-            out.push(ui::row(
-                t,
-                ui::spread(left, right, body),
-                on,
-                false,
-                t.check,
-                width,
-            ));
-            out.push(ui::row(
-                t,
-                second(&a.text, t.check),
-                on,
-                false,
-                t.check,
-                width,
-            ));
-        }
-        hits.resize(out.len(), Some(index));
-        index += 1;
+        let on = app.row == offset + i;
+        let left = vec![bold("! ", t.check), sp(check_name(g, a), t.text)];
+        let host = if g.local(&a.host) {
+            String::new()
+        } else {
+            ui::host_name(g, &a.host)
+        };
+        let right = vec![
+            sp(format!(" {host}"), t.remote),
+            sp(format!("{:>5}", age(a.age_ms)), t.sub),
+        ];
+        card.rows.push(Row {
+            lines: vec![
+                ui::row(t, ui::spread(left, right, body), on, false, t.check, width),
+                ui::row(
+                    t,
+                    second(&a.text, t.check, width),
+                    on,
+                    false,
+                    t.check,
+                    width,
+                ),
+            ],
+            extra: None,
+            once: false,
+        });
     }
+    if card.rows.is_empty() {
+        let none = if app.filter.is_empty() {
+            "Nothing to check in this snapshot"
+        } else {
+            "No check matches the filter"
+        };
+        card.head(none, t.sub, true, width);
+    }
+    card
+}
 
-    let pr_start = out.len();
-    if pr_height > 0 {
-        hits.resize(out.len(), None);
-        let (lines, rows) = external_lines(app, width, pr_height, index);
-        out.extend(lines);
-        hits.extend(rows);
-        index += external_count;
-    }
-
-    let pr_end = out.len();
-    if plan.tail == Tail::None {
-        dim_ledger(app, &mut out, pr_start..pr_end);
-        hits.resize(out.len(), None);
-        return (out, hits);
-    }
-    let active: Vec<&CampaignRow> = g.campaigns.iter().filter(|c| !c.parked).collect();
-    out.push(ui::rule(
-        t,
+fn campaign_card(app: &App, width: usize, offset: usize) -> Card {
+    let (t, g) = (&app.theme, &app.data.glance);
+    let body = width.saturating_sub(1);
+    // Every listed campaign, parked ones too: the Fleet tab counts the same.
+    let mut card = Card::new(
+        app,
         "CAMPAIGNS",
-        // Every listed campaign, parked ones too: the Fleet tab counts the same.
-        &g.campaigns.len().to_string(),
+        g.campaigns.len().to_string(),
         t.sub,
-        width,
-    ));
+        offset,
+    )
+    .dim_if(true, app);
+    (card.unit, card.route) = (("listed", "listed"), "F");
+    let active: Vec<&CampaignRow> = g.campaigns.iter().filter(|c| !c.parked).collect();
     // mark, name, seven pips, the sparkline, then ten columns for the host and the age.
     // Under 40 columns the sparkline goes first (V2).
     let name_w = if body >= 53 {
@@ -399,391 +573,92 @@ fn layout(app: &App, width: usize, height: usize) -> (Vec<Line<'static>>, Vec<Op
     } else {
         body.saturating_sub(name_w + 20).clamp(6, 16)
     };
-    for (i, c) in active.iter().enumerate() {
-        hits.resize(out.len(), None);
-        if i < plan.shown {
-            let on = app.row == index;
-            let mut left = vec![
-                ui::lead_mark(t, &c.lead, c.lead_waiting),
-                Span::raw(" "),
-                sp(pad(&c.name, name_w), t.text),
-            ];
-            left.extend(ui::pips(t, &c.lanes, 7));
-            let host = if g.local(&c.host) {
-                String::new()
-            } else {
-                ui::host_name(g, &c.host)
-            };
-            let mut right = vec![
-                sp(format!(" {host} "), t.remote),
-                sp(format!("{:>3}", age(c.activity_age_ms)), t.sub),
-            ];
-            if let Some(label) = c.tmp_label()
-                && ui::width(&right) + label.len() < spark_w + 10
-                && ui::width(&left) + 1 + ui::width(&right) + label.len() < body
-            {
-                right.insert(0, sp(format!(" {label}"), t.dim));
-            }
-            // A long machine name takes its room from the sparkline.
-            let bars = spark_w.saturating_sub(ui::width(&right).saturating_sub(10));
-            left.push(sp(format!(" {}", ui::spark(&c.spark, bars)), t.accent));
-            let changed = app.changed.contains(&c.id);
-            out.push(ui::row(
+    for c in &active {
+        let on = app.row == offset + card.rows.len();
+        let mut left = vec![
+            ui::lead_mark(t, &c.lead, c.lead_waiting),
+            Span::raw(" "),
+            sp(pad(&c.name, name_w), t.text),
+        ];
+        left.extend(ui::pips(t, &c.lanes, 7));
+        let host = if g.local(&c.host) {
+            String::new()
+        } else {
+            ui::host_name(g, &c.host)
+        };
+        let mut right = vec![
+            sp(format!(" {host} "), t.remote),
+            sp(format!("{:>3}", age(c.activity_age_ms)), t.sub),
+        ];
+        if let Some(label) = c.tmp_label()
+            && ui::width(&right) + label.len() < spark_w + 10
+            && ui::width(&left) + 1 + ui::width(&right) + label.len() < body
+        {
+            right.insert(0, sp(format!(" {label}"), t.dim));
+        }
+        // A long machine name takes its room from the sparkline.
+        let bars = spark_w.saturating_sub(ui::width(&right).saturating_sub(10));
+        left.push(sp(format!(" {}", ui::spark(&c.spark, bars)), t.accent));
+        let changed = app.changed.contains(&c.id);
+        card.rows.push(Row {
+            lines: vec![ui::row(
                 t,
                 ui::spread(left, right, body),
                 on,
                 changed,
                 t.accent,
                 width,
-            ));
-            if plan.two[i] {
-                out.push(ui::row(
+            )],
+            extra: Some((
+                c.activity_age_ms,
+                ui::row(
                     t,
-                    second(c.status_text(), t.dim),
+                    second(c.status_text(), t.dim, width),
                     on,
                     false,
                     t.accent,
                     width,
-                ));
-            }
-        }
-        hits.resize(out.len(), Some(index));
-        index += 1;
+                ),
+            )),
+            once: false,
+        });
     }
-    let parked: Vec<&CampaignRow> = g.campaigns.iter().filter(|c| c.parked).collect();
-    match plan.tail {
-        Tail::Rows => {
-            for c in &parked {
-                hits.resize(out.len(), None);
-                let left = vec![sp("‖ ", t.dim), sp(c.name.clone(), t.dim)];
-                let mut right = vec![sp(format!(" parked {:>3}", age(c.park_age_ms)), t.dim)];
-                if let Some(label) = c.tmp_label()
-                    && ui::width(&left) + ui::width(&right) + label.len() < body
-                {
-                    right.insert(0, sp(format!(" {label}"), t.dim));
-                }
-                out.push(ui::row(
-                    t,
-                    ui::spread(left, right, body),
-                    app.row == index,
-                    false,
-                    t.accent,
-                    width,
-                ));
-                hits.resize(out.len(), Some(index));
-                index += 1;
-            }
-            if g.quiet.count > 0 {
-                out.push(Line::from(sp(format!(" · {} quiet", g.quiet.count), t.dim)));
-            }
-        }
-        Tail::Folded => {
-            let mut parts = vec![];
-            if !parked.is_empty() {
-                parts.push(format!("{} parked", parked.len()));
-            }
-            if g.quiet.count > 0 {
-                parts.push(format!("{} quiet", g.quiet.count));
-            }
-            out.push(Line::from(sp(format!(" · {}", parts.join(" · ")), t.dim)));
-        }
-        Tail::More(n) => out.push(Line::from(vec![
-            sp(format!(" +{n} more · "), t.dim),
-            bold("c", t.accent),
-            sp(" shows all", t.dim),
-        ])),
-        Tail::None => {}
-    }
-    hits.resize(out.len(), None);
-    dim_ledger(app, &mut out, pr_start..pr_end);
-    (out, hits)
-}
-
-/// When section rules no longer fit, keep the selected identity visible in a scrolling
-/// one-line list. Its full action target is unchanged.
-fn compact_layout(
-    app: &App,
-    width: usize,
-    height: usize,
-) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
-    let ids = ids(app);
-    let start = (app.row + 1)
-        .saturating_sub(height)
-        .min(ids.len().saturating_sub(height));
-    let mut out = vec![];
-    let mut hits = vec![];
-    for i in (start..ids.len()).take(height) {
-        let mut at = app.clone();
-        at.row = i;
-        let (label, color) = match selected(&at) {
-            Selected::Ask(a) => (
-                format!("ask {} {}", a.campaign, one_line(&a.text)),
-                app.theme.need,
-            ),
-            Selected::Check(a) => (
-                format!(
-                    "check {} {}",
-                    check_name(&app.data.glance, a),
-                    one_line(&a.text)
-                ),
-                app.theme.check,
-            ),
-            Selected::Campaign(c) => (
-                format!("campaign {} {}", c.name, c.status_text()),
-                app.theme.text,
-            ),
-            Selected::Pr(p) => (
-                format!(
-                    "PR {}{} #{} {} @{}",
-                    p.ci.word(),
-                    if p.truncated { " truncated" } else { "" },
-                    p.number,
-                    p.title,
-                    p.author
-                ),
-                app.theme.sub,
-            ),
-            Selected::Author(author) => {
-                let groups = app.shipped.authors(app.observed_at);
-                (
-                    format!(
-                        "Shipped @{} · {} observed / 24h{}",
-                        author,
-                        groups[&author].len(),
-                        if app.shipped.sources.iter().any(|s| s.error.is_some()) {
-                            " · stale/partial"
-                        } else {
-                            ""
-                        }
-                    ),
-                    app.theme.sub,
-                )
-            }
-            Selected::Run(r) => (
-                format!(
-                    "Build {} {} · {} · latest100 sample",
-                    r.label(),
-                    r.workflow,
-                    r.branch
-                ),
-                app.theme.sub,
-            ),
-            Selected::Decision(e) => (
-                format!("decision #{} {}", e.id, one_line(&e.text)),
-                app.theme.text,
-            ),
-            Selected::Logged(e) => (
-                format!(
-                    "logged decision #{} {} {}",
-                    e.id,
-                    ui::hhmm(&e.at),
-                    one_line(&e.text)
-                ),
-                app.theme.sub,
-            ),
-            Selected::Fleet(c) => {
-                let [w, r, o] = c
-                    .lanes
-                    .observed()
-                    .map(|n| n.map_or("?".into(), |n| n.to_string()));
-                (
-                    format!("fleet {} · {w} working {r} ready {o} open", c.name),
-                    app.theme.text,
-                )
-            }
-            Selected::Health => (
-                // Stale, unknown or "as of" comes first: a narrow row clips its end.
-                format!("Health · {}", app.health.label(app.observed_at)),
-                health_color(app),
-            ),
-            Selected::Assignee(g) => (
-                // The stale cue comes first: a narrow row clips its end.
-                format!(
-                    "Issues{} {} · {}",
-                    if app.issues.sources.iter().any(|s| s.error.is_some()) {
-                        " stale"
-                    } else {
-                        ""
-                    },
-                    g.name(),
-                    g.counts()
-                ),
-                if g.blocked > 0 {
-                    app.theme.check
-                } else {
-                    app.theme.sub
-                },
-            ),
-            Selected::Nothing => continue,
-        };
-        let mut line = ui::row(
-            &app.theme,
-            vec![sp(clip(&label, width.saturating_sub(1)), color)],
-            i == app.row,
-            false,
-            color,
-            width,
-        );
-        // Cached campaign reads are not the glance's; a stale glance does not dim them.
-        if !matches!(
-            ids[i],
-            RowId::Pr(..)
-                | RowId::Author(_)
-                | RowId::Run(..)
-                | RowId::Decision(..)
-                | RowId::Logged(..)
-                | RowId::Assignee(..)
-                | RowId::Health(..)
-        ) && app.fetch.loaded
-            && app.fetch.error.is_some()
+    for c in g.campaigns.iter().filter(|c| c.parked) {
+        let left = vec![sp("‖ ", t.dim), sp(c.name.clone(), t.dim)];
+        let mut right = vec![sp(format!(" parked {:>3}", age(c.park_age_ms)), t.dim)];
+        if let Some(label) = c.tmp_label()
+            && ui::width(&left) + ui::width(&right) + label.len() < body
         {
-            for span in &mut line.spans {
-                span.style.fg = Some(app.theme.dim);
-            }
+            right.insert(0, sp(format!(" {label}"), t.dim));
         }
-        out.push(line);
-        hits.push(Some(i));
+        let on = app.row == offset + card.rows.len();
+        card.rows.push(Row {
+            lines: vec![ui::row(
+                t,
+                ui::spread(left, right, body),
+                on,
+                false,
+                t.accent,
+                width,
+            )],
+            extra: None,
+            once: false,
+        });
     }
-    (out, hits)
-}
-
-fn dim_ledger(app: &App, lines: &mut [Line<'_>], prs: Range<usize>) {
-    if app.fetch.loaded && app.fetch.error.is_some() {
-        for (i, line) in lines.iter_mut().enumerate() {
-            if !prs.contains(&i) {
-                for span in &mut line.spans {
-                    span.style.fg = Some(app.theme.dim);
-                }
-            }
-        }
+    // Quiet roots are counted by the snapshot, never listed: only `c` lists them.
+    if g.quiet.count > 0 {
+        card.tail = Some(Line::from(sp(format!(" · {} quiet", g.quiet.count), t.dim)));
+        card.note = format!(" · {} quiet unlisted · c", g.quiet.count);
     }
-}
-
-/// Full panel demand and the header/status/overflow minimum retained for later kinds, at
-/// the list's width (only Health wraps).
-fn external_budget(app: &App, panel: Panel, width: usize) -> (usize, usize) {
-    if panel == Panel::Health {
-        // Every wrapped line; the minimum is the rule, the source line and the row's first.
-        return if app.config.panels[10] {
-            (health_lines(app, width, usize::MAX, 0).0.len(), 3)
+    if card.rows.is_empty() {
+        let none = if app.filter.is_empty() {
+            "No listed campaigns; not a fleet-wide idle claim"
         } else {
-            (0, 0)
+            "No campaign matches the filter"
         };
+        card.head(none, t.sub, true, width);
     }
-    let Panel::Gh(kind) = panel else {
-        if !shown(app).contains(&panel) {
-            return (0, 0);
-        }
-        // As the GitHub panels: three rows and an overflow line while ledger rows are listed.
-        let (head, rows) = cached_parts(app, panel);
-        let cap = if ledger_rows(app) { 3 } else { usize::MAX };
-        return (
-            1 + head.len() + rows.len().min(cap) + usize::from(rows.len() > cap),
-            1 + head.len() + usize::from(!rows.is_empty()),
-        );
-    };
-    let sources = &kind.dashboard(app).sources;
-    if sources.is_empty() {
-        return (0, 0);
-    }
-    let base = 2
-        + sources.len()
-        + match kind {
-            Kind::Build => 1,
-            Kind::Issues => {
-                1 + sources
-                    .iter()
-                    .map(|s| usize::from(s.total == 100) + usize::from(s.closed_total == 100))
-                    .sum::<usize>()
-            }
-            _ => sources.iter().filter(|s| s.total == 100).count(),
-        };
-    let count = row_count(app, panel);
-    let cap = if kind == Kind::Open && !ledger_rows(app) {
-        usize::MAX
-    } else {
-        3
-    };
-    let per_row = if matches!(kind, Kind::Shipped | Kind::Issues) {
-        1
-    } else {
-        2
-    };
-    let empty =
-        usize::from(count == 0 && kind != Kind::Open && sources.iter().any(|s| s.at.is_some()));
-    (
-        base + per_row * count.min(cap) + usize::from(count > cap) + empty,
-        base + usize::from(count > 0) + empty,
-    )
-}
-
-/// The glance lists asks, checks or campaigns: panels below them preview, not fill.
-fn ledger_rows(app: &App) -> bool {
-    let g = &app.data.glance;
-    !(g.needs_you.is_empty() && g.attention.is_empty() && g.campaigns.is_empty())
-}
-
-fn external_count(app: &App) -> usize {
-    PANELS.into_iter().map(|p| row_count(app, p)).sum()
-}
-fn external_height(app: &App, width: usize, height: usize) -> usize {
-    let g = &app.data.glance;
-    let floor = usize::from(!g.needs_you.is_empty()) * 3
-        + usize::from(!g.attention.is_empty()) * 3
-        + usize::from(!g.campaigns.is_empty()) * 2;
-    let floor = if floor == 0 { 8 } else { floor };
-    let wanted: usize = PANELS
-        .into_iter()
-        .map(|panel| external_budget(app, panel, width).0)
-        .sum();
-    let available = wanted.min(height.saturating_sub(floor));
-    // A two-line row plus its overflow hint may leave one unusable line; return it to the ledger.
-    external_lines(app, width, available, g.needs_you.len() + g.attention.len())
-        .0
-        .len()
-}
-fn external_lines(
-    app: &App,
-    width: usize,
-    height: usize,
-    offset: usize,
-) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
-    // Ordered prefix: a later panel keeps its minimum only once every earlier one has its.
-    let mut kinds = shown(app);
-    let mut minimum = 0;
-    let keep = kinds
-        .iter()
-        .take_while(|kind| {
-            minimum += external_budget(app, **kind, width).1;
-            minimum <= height
-        })
-        .count()
-        .max(1);
-    kinds.truncate(keep);
-    let mut out = vec![];
-    let mut hits = vec![];
-    let mut offset = offset;
-    let mut remaining = height;
-    for (i, kind) in kinds.iter().enumerate() {
-        let later_min: usize = kinds[i + 1..]
-            .iter()
-            .map(|kind| external_budget(app, *kind, width).1)
-            .sum();
-        let share = external_budget(app, *kind, width)
-            .0
-            .min(remaining.saturating_sub(later_min));
-        let (lines, rows) = match kind {
-            Panel::Gh(Kind::Open) => pr_lines(app, width, share, offset),
-            Panel::Gh(kind) => observed_lines(app, *kind, width, share, offset),
-            Panel::Health => health_lines(app, width, share, offset),
-            _ => cached_lines(app, *kind, width, share, offset),
-        };
-        remaining = remaining.saturating_sub(lines.len());
-        out.extend(lines);
-        hits.extend(rows);
-        offset += row_count(app, *kind);
-    }
-    (out, hits)
+    card
 }
 
 /// Failed deploys, new Sentry issues and a stale read take the attention colour, never red;
@@ -797,61 +672,44 @@ fn health_color(app: &App) -> Color {
 }
 
 /// Health: which read it is, the one informational row, then the report's own clocks. Each
-/// wraps rather than clips, so a narrow pane still reaches every value; the cursor's hit is
-/// the row's first line only.
-fn health_lines(
-    app: &App,
-    width: usize,
-    height: usize,
-    offset: usize,
-) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
+/// wraps rather than clips, so a narrow pane still reaches every value.
+fn health_card(app: &App, width: usize, offset: usize) -> Card {
     let (t, h) = (&app.theme, &app.health);
     let color = health_color(app);
-    // The rule, the source line and the row's first line are the panel's minimum.
-    let mut out = vec![
-        ui::rule(t, "HEALTH", "hub report · production", t.sub, width),
-        Line::from(sp(
-            clip(&h.state(), width),
-            if h.error.is_some() { t.check } else { t.sub },
-        )),
-    ];
-    let mut hits = vec![None, None];
-    // A height-cut block ends in `…` rather than on a bare key; full demand uses usize::MAX.
-    let label = ui::wrap_max(
-        &h.label(app.observed_at),
-        width.saturating_sub(1),
-        height.saturating_sub(2).max(1),
+    let mut card = Card::new(
+        app,
+        "HEALTH",
+        "hub report · production".into(),
+        t.sub,
+        offset,
     );
-    for (i, line) in label.into_iter().enumerate() {
-        let row = ui::row(
-            t,
-            vec![sp(line, color)],
-            app.row == offset,
-            false,
-            color,
-            width,
-        );
-        out.push(row);
-        hits.push((i == 0).then_some(offset));
-    }
-    for line in ui::wrap_max(&h.source(), width, height.saturating_sub(out.len())) {
-        out.push(Line::from(sp(line, t.dim)));
-        hits.push(None);
-    }
-    out.truncate(height);
-    hits.truncate(height);
-    (out, hits)
+    let state = if h.error.is_some() { t.check } else { t.sub };
+    card.head(h.state(), state, true, width);
+    let on = app.row == offset;
+    card.rows.push(Row {
+        lines: wrap(&h.label(app.observed_at), width.saturating_sub(1))
+            .into_iter()
+            .map(|line| ui::row(t, vec![sp(line, color)], on, false, color, width))
+            .collect(),
+        extra: None,
+        once: true,
+    });
+    card.foot = wrap(&h.source(), width)
+        .into_iter()
+        .map(|line| Line::from(sp(line, t.dim)))
+        .collect();
+    card
 }
 
 const SELECT: &str = "Select a campaign and press l; Esc returns here";
 
+/// A line of text, its colour, and whether it stays at every height.
+type Text = (String, Color, bool);
+
 /// A ledger panel's lines under its rule, then its rows, each with its colour. Every line
 /// says what it is drawn from: the campaign read on hand and its age, or the glance's
 /// listed campaigns; unknown stays unknown.
-/// A line of text and its colour, before it is clipped to the pane.
-type Text = (String, Color);
-
-fn cached_parts(app: &App, panel: Panel) -> (Vec<Text>, Vec<Text>) {
+fn cached_parts(app: &App, panel: Panel) -> (Vec<Text>, Vec<(String, Color)>) {
     let (t, g) = (&app.theme, &app.data.glance);
     let mut head = vec![];
     if panel == Panel::Fleet {
@@ -862,7 +720,7 @@ fn cached_parts(app: &App, panel: Panel) -> (Vec<Text>, Vec<Text>) {
             } else {
                 "Ledger not read yet; counts unknown"
             };
-            return (vec![(why.into(), t.sub)], vec![]);
+            return (vec![(why.into(), t.sub, true)], vec![]);
         }
         // Totals of what was reported; `+?` where some campaign did not say.
         let total = |i: usize| {
@@ -888,17 +746,20 @@ fn cached_parts(app: &App, panel: Panel) -> (Vec<Text>, Vec<Text>) {
                 total(2)
             ),
             t.sub,
+            false,
         ));
         if g.quiet.count > 0 {
             head.push((
                 format!("{} quiet not listed; no counts", g.quiet.count),
                 t.dim,
+                true,
             ));
         }
         if app.fetch.error.is_some() {
             head.push((
                 format!("! ledger stale · as of {}", ui::hhmm(&g.now)),
                 t.check,
+                true,
             ));
         }
         if fleet.is_empty() {
@@ -907,7 +768,7 @@ fn cached_parts(app: &App, panel: Panel) -> (Vec<Text>, Vec<Text>) {
             } else {
                 "No listed campaign matches the filter"
             };
-            head.push((none.into(), t.sub));
+            head.push((none.into(), t.sub, true));
         }
         let rows = fleet
             .iter()
@@ -934,9 +795,9 @@ fn cached_parts(app: &App, panel: Panel) -> (Vec<Text>, Vec<Text>) {
         return (head, rows);
     }
     let Some(c) = scoped(app) else {
-        head.push((SELECT.into(), t.sub));
+        head.push((SELECT.into(), t.sub, true));
         if let Some(error) = &app.scope.error {
-            head.push((format!("! {error}"), t.check));
+            head.push((format!("! {error}"), t.check, true));
         }
         return (head, vec![]);
     };
@@ -944,9 +805,14 @@ fn cached_parts(app: &App, panel: Panel) -> (Vec<Text>, Vec<Text>) {
     head.push((
         format!("{} #{} · read {age} ago", c.root.name, c.root.id),
         t.text,
+        true,
     ));
     if let Some(error) = &app.scope.error {
-        head.push((format!("! {error} · showing the last good read"), t.check));
+        head.push((
+            format!("! {error} · showing the last good read"),
+            t.check,
+            true,
+        ));
     }
     if panel == Panel::Decisions {
         head.push((
@@ -955,6 +821,7 @@ fn cached_parts(app: &App, panel: Panel) -> (Vec<Text>, Vec<Text>) {
                 |goal| format!("goal: {}", one_line(goal)),
             ),
             t.sub,
+            false,
         ));
         let doc = match c.docs.iter().find(|d| d.kind == "plan") {
             Some(d) if d.captured => format!(" · plan doc v{} captured", d.version),
@@ -971,9 +838,10 @@ fn cached_parts(app: &App, panel: Panel) -> (Vec<Text>, Vec<Text>) {
                 )
             },
             t.sub,
+            false,
         ));
         if c.decisions.is_empty() {
-            head.push(("No decisions in force in this read".into(), t.sub));
+            head.push(("No decisions in force in this read".into(), t.sub, true));
         }
         let rows = c
             .decisions
@@ -985,6 +853,7 @@ fn cached_parts(app: &App, panel: Panel) -> (Vec<Text>, Vec<Text>) {
     head.push((
         "recent log sample (up to 100 events): decisions only".into(),
         t.sub,
+        false,
     ));
     let rows: Vec<_> = logged(app)
         .into_iter()
@@ -996,74 +865,58 @@ fn cached_parts(app: &App, panel: Panel) -> (Vec<Text>, Vec<Text>) {
         })
         .collect();
     if rows.is_empty() {
-        head.push(("No decision events in this log sample".into(), t.sub));
+        head.push(("No decision events in this log sample".into(), t.sub, true));
     }
     (head, rows)
 }
 
-fn cached_lines(
-    app: &App,
-    panel: Panel,
-    width: usize,
-    height: usize,
-    offset: usize,
-) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
+fn cached_card(app: &App, panel: Panel, width: usize, offset: usize) -> Card {
     let t = &app.theme;
-    let (title, right) = match panel {
-        Panel::Decisions => ("DECISIONS · PLAN", "cached read"),
-        Panel::Fleet => ("FLEET", "listed campaigns"),
-        _ => ("DECISION LOG", "recent sample"),
+    let (title, right, unit) = match panel {
+        Panel::Decisions => ("DECISIONS · PLAN", "cached read", ("decision", "decisions")),
+        Panel::Fleet => ("FLEET", "listed campaigns", ("campaign", "campaigns")),
+        _ => ("DECISION LOG", "recent sample", ("decision", "decisions")),
     };
+    let mut card =
+        Card::new(app, title, right.into(), t.sub, offset).dim_if(panel == Panel::Fleet, app);
+    card.unit = unit;
+    if panel == Panel::Fleet {
+        card.route = "F lists all";
+    }
     let (head, rows) = cached_parts(app, panel);
-    let mut out = vec![ui::rule(t, title, right, t.sub, width)];
-    let mut hits = vec![None];
-    for (text, color) in head {
-        out.push(Line::from(sp(clip(&text, width), color)));
-        hits.push(None);
+    for (text, color, keep) in head {
+        card.head(text, color, keep, width);
     }
-    let remaining = height.saturating_sub(out.len());
-    let mut fit = remaining.min(rows.len());
-    if fit < rows.len() {
-        fit = remaining.saturating_sub(1);
+    for (i, (label, color)) in rows.into_iter().enumerate() {
+        card.rows.push(Row {
+            lines: vec![ui::row(
+                t,
+                vec![sp(clip(&label, width.saturating_sub(1)), color)],
+                app.row == offset + i,
+                false,
+                color,
+                width,
+            )],
+            extra: None,
+            once: false,
+        });
     }
-    let cursor = app.row.checked_sub(offset).filter(|i| *i < rows.len());
-    let start = cursor
-        .map_or(0, |i| (i + 1).saturating_sub(fit))
-        .min(rows.len().saturating_sub(fit));
-    for (i, (label, color)) in rows.iter().enumerate().skip(start).take(fit) {
-        out.push(ui::row(
-            t,
-            vec![sp(clip(label, width.saturating_sub(1)), *color)],
-            app.row == offset + i,
-            false,
-            *color,
-            width,
-        ));
-        hits.push(Some(offset + i));
-    }
-    if fit < rows.len() {
-        out.push(Line::from(sp(
-            format!(" +{} outside view · j/k to browse", rows.len() - fit),
-            t.dim,
-        )));
-        hits.push(None);
-    }
-    out.truncate(height);
-    hits.truncate(height);
-    (out, hits)
+    card
 }
-fn observed_lines(
-    app: &App,
-    kind: Kind,
-    width: usize,
-    height: usize,
-    offset: usize,
-) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
+
+fn observed_card(app: &App, kind: Kind, width: usize, offset: usize) -> Card {
     let t = &app.theme;
     let d = kind.dashboard(app);
     let groups = d.authors(app.observed_at);
     let runs = d.runs();
     let unavailable = d.sources.iter().all(|s| s.at.is_none());
+    let (title, right, unit) = match kind {
+        Kind::Shipped => ("SHIPPED", "observed", ("author", "authors")),
+        Kind::Issues => ("ISSUES", crate::github::ISSUES_REPO, ("group", "groups")),
+        _ => ("BUILD QUEUE", "observed", ("run", "runs")),
+    };
+    let mut card = Card::new(app, title, right.into(), t.sub, offset);
+    card.unit = unit;
     let summary = if unavailable {
         "Counts unavailable".into()
     } else {
@@ -1083,33 +936,21 @@ fn observed_lines(
             ),
         }
     };
-    let (title, right) = match kind {
-        Kind::Shipped => ("SHIPPED", "observed"),
-        Kind::Issues => ("ISSUES", crate::github::ISSUES_REPO),
-        _ => ("BUILD QUEUE", "observed"),
-    };
-    let mut out = vec![
-        ui::rule(t, title, right, t.sub, width),
-        Line::from(sp(summary, t.sub)),
-    ];
-    let mut hits = vec![None, None];
+    card.head(summary, t.sub, unavailable, width);
     for s in &d.sources {
-        out.push(Line::from(sp(
-            clip(&s.status(app.observed_tick), width),
-            if s.error.is_some() { t.check } else { t.text },
-        )));
-        hits.push(None);
+        // Each source's status (its read's age, or stale/unavailable) is kept at the floor.
+        let color = if s.error.is_some() { t.check } else { t.text };
+        card.head(s.status(app.observed_tick), color, true, width);
         let capped = match kind {
-            Kind::Shipped => vec![(s.total == 100).then_some(" first 100; more may exist")],
+            Kind::Shipped => vec![(s.total == 100).then_some("first 100; more may exist")],
             Kind::Issues => vec![
-                (s.total == 100).then_some(" open: first 100; more may exist"),
-                (s.closed_total == 100).then_some(" closed: first 100; more may exist"),
+                (s.total == 100).then_some("open: first 100; more may exist"),
+                (s.closed_total == 100).then_some("closed: first 100; more may exist"),
             ],
             _ => vec![],
         };
         for text in capped.into_iter().flatten() {
-            out.push(Line::from(sp(text, t.check)));
-            hits.push(None);
+            card.head(text, t.check, true, width);
         }
     }
     let note = match kind {
@@ -1117,9 +958,9 @@ fn observed_lines(
         Kind::Issues => Some("current assignees · overlap · non-atomic"),
         _ => None,
     };
+    // The Build sample limit is a cap, kept like "first 100"; the Issues note only explains.
     if let Some(note) = note {
-        out.push(Line::from(sp(clip(note, width), t.sub)));
-        hits.push(None);
+        card.head(note, t.sub, kind == Kind::Build, width);
     }
     let stale = |repo: Option<&str>| {
         d.sources
@@ -1127,13 +968,13 @@ fn observed_lines(
             .any(|s| repo.is_none_or(|r| s.repo == r) && s.error.is_some())
     };
     // Label, second line, stale, colour. Blocked issues take the attention colour, never red.
-    let labels: Vec<(String, String, bool, Color)> = match kind {
+    let labels: Vec<(String, Option<String>, bool, Color)> = match kind {
         Kind::Shipped => groups
             .iter()
             .map(|(a, rows)| {
                 (
                     format!("@{a} · {} PRs observed", rows.len()),
-                    String::new(),
+                    None,
                     stale(None),
                     t.sub,
                 )
@@ -1145,7 +986,7 @@ fn observed_lines(
             .map(|g| {
                 (
                     format!("{} · {}", g.name(), g.counts()),
-                    String::new(),
+                    None,
                     stale(Some(g.repo.as_str())),
                     if g.blocked > 0 { t.check } else { t.sub },
                 )
@@ -1156,7 +997,7 @@ fn observed_lines(
             .map(|r| {
                 (
                     format!("{} · {}", r.label(), r.workflow),
-                    format!(
+                    Some(format!(
                         "  {} · {} · {}",
                         r.branch,
                         r.created.filter(|at| *at <= app.observed_at).map_or_else(
@@ -1164,7 +1005,7 @@ fn observed_lines(
                             |at| age((app.observed_at - at).saturating_mul(1000))
                         ),
                         r.repo
-                    ),
+                    )),
                     stale(Some(r.repo.as_str())),
                     t.sub,
                 )
@@ -1172,70 +1013,50 @@ fn observed_lines(
             .collect(),
     };
     if labels.is_empty() && !unavailable {
-        out.push(Line::from(sp(
-            match kind {
-                Kind::Shipped => "None observed in cached 24h sample",
-                Kind::Issues => "No open or 24h-closed issues observed",
-                _ => "None active observed in latest100 sample",
-            },
-            t.sub,
-        )));
-        hits.push(None);
+        let none = match kind {
+            Kind::Shipped => "None observed in cached 24h sample",
+            Kind::Issues => "No open or 24h-closed issues observed",
+            _ => "None active observed in latest100 sample",
+        };
+        card.head(none, t.sub, true, width);
     }
-    let per_row = if kind == Kind::Build { 2 } else { 1 };
-    let remaining = height.saturating_sub(out.len());
-    let mut fit = (remaining / per_row).min(labels.len());
-    if fit < labels.len() {
-        fit = remaining.saturating_sub(1) / per_row;
-    }
-    let cursor = app.row.checked_sub(offset).filter(|i| *i < labels.len());
-    let start = cursor
-        .map_or(0, |i| (i + 1).saturating_sub(fit))
-        .min(labels.len().saturating_sub(fit));
-    for (i, (label, meta, stale, color)) in labels.iter().enumerate().skip(start).take(fit) {
-        let label = format!("{label}{}", if *stale { " · stale/partial" } else { "" });
-        out.push(ui::row(
+    for (i, (label, meta, stale, color)) in labels.into_iter().enumerate() {
+        let on = app.row == offset + i;
+        // The stale cue first: a narrow row clips its end.
+        let label = format!("{}{label}", if stale { "stale/partial · " } else { "" });
+        let mut lines = vec![ui::row(
             t,
-            vec![sp(clip(&label, width.saturating_sub(1)), *color)],
-            app.row == offset + i,
+            vec![sp(clip(&label, width.saturating_sub(1)), color)],
+            on,
             false,
-            *color,
+            color,
             width,
-        ));
-        hits.push(Some(offset + i));
-        if per_row == 2 {
-            out.push(ui::row(
+        )];
+        if let Some(meta) = meta {
+            lines.push(ui::row(
                 t,
-                vec![sp(clip(meta, width.saturating_sub(1)), t.sub)],
-                app.row == offset + i,
+                vec![sp(clip(&meta, width.saturating_sub(1)), t.sub)],
+                on,
                 false,
                 t.sub,
                 width,
             ));
-            hits.push(Some(offset + i));
         }
+        card.rows.push(Row {
+            lines,
+            extra: None,
+            once: false,
+        });
     }
-    if fit < labels.len() {
-        out.push(Line::from(sp(
-            format!(" +{} outside view · j/k to browse", labels.len() - fit),
-            t.dim,
-        )));
-        hits.push(None);
-    }
-    out.truncate(height);
-    hits.truncate(height);
-    (out, hits)
+    card
 }
 
-fn pr_lines(
-    app: &App,
-    width: usize,
-    height: usize,
-    offset: usize,
-) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
+fn pr_card(app: &App, width: usize, offset: usize) -> Card {
     use crate::github::Ci;
     let t = &app.theme;
     let prs = app.github.rows();
+    let mut card = Card::new(app, "OPEN PRS", "observed CI".into(), t.sub, offset);
+    card.unit = ("PR", "PRs");
     let counts = [
         Ci::Failing,
         Ci::Running,
@@ -1244,7 +1065,8 @@ fn pr_lines(
         Ci::Draft,
     ]
     .map(|ci| prs.iter().filter(|p| p.ci == ci).count());
-    let summary = if app.github.sources.iter().all(|s| s.at.is_none()) {
+    let unavailable = app.github.sources.iter().all(|s| s.at.is_none());
+    let summary = if unavailable {
         "CI counts unavailable".into()
     } else {
         let prefix = if !app.filter.is_empty() {
@@ -1264,38 +1086,28 @@ fn pr_lines(
             counts[0], counts[1], counts[2], counts[3], counts[4]
         )
     };
-    let mut out = vec![
-        ui::rule(t, "OPEN PRS", "observed CI", t.sub, width),
-        Line::from(sp(summary, t.sub)),
-    ];
-    let mut hits = vec![None, None];
+    card.head(summary, t.sub, unavailable, width);
     for source in &app.github.sources {
-        out.push(Line::from(sp(
-            clip(&source.status(app.observed_tick), width),
-            if source.error.is_some() {
-                t.check
-            } else {
-                t.text
-            },
-        )));
-        hits.push(None);
+        let color = if source.error.is_some() {
+            t.check
+        } else {
+            t.text
+        };
+        card.head(source.status(app.observed_tick), color, true, width);
         if source.total == 100 {
-            out.push(Line::from(sp(" first 100; more may exist", t.check)));
-            hits.push(None);
+            card.head("first 100; more may exist", t.check, true, width);
         }
     }
-    let remaining = height.saturating_sub(out.len());
-    let fit = (remaining / 2).min(prs.len());
-    let fit = if fit < prs.len() && remaining % 2 == 0 {
-        fit.saturating_sub(1)
-    } else {
-        fit
-    };
-    let cursor = app.row.checked_sub(offset).filter(|&i| i < prs.len());
-    let start = cursor
-        .map_or(0, |i| (i + 1).saturating_sub(fit))
-        .min(prs.len().saturating_sub(fit));
-    for (i, p) in prs.iter().enumerate().skip(start).take(fit) {
+    if prs.is_empty() && !unavailable {
+        let none = if app.filter.is_empty() {
+            "No open PRs observed"
+        } else {
+            "No PR matches the filter"
+        };
+        card.head(none, t.sub, true, width);
+    }
+    for (i, p) in prs.iter().enumerate() {
+        let on = app.row == offset + i;
         let color = match p.ci {
             Ci::Failing => t.need,
             Ci::Running => t.check,
@@ -1310,14 +1122,6 @@ fn pr_lines(
             p.number,
             p.title
         );
-        out.push(ui::row(
-            t,
-            vec![sp(clip(&title, width.saturating_sub(1)), color)],
-            app.row == offset + i,
-            false,
-            color,
-            width,
-        ));
         let source = app.github.sources.iter().find(|s| s.repo == p.repo);
         let now = app.observed_at;
         let age = if p.created > 0 {
@@ -1335,26 +1139,450 @@ fn pr_lines(
         if p.truncated {
             metadata += " · checks truncated";
         }
-        out.push(ui::row(
-            t,
-            vec![sp(clip(&metadata, width.saturating_sub(1)), t.sub)],
-            app.row == offset + i,
-            false,
-            color,
-            width,
-        ));
-        hits.extend([Some(offset + i), Some(offset + i)]);
+        card.rows.push(Row {
+            lines: vec![
+                ui::row(
+                    t,
+                    vec![sp(clip(&title, width.saturating_sub(1)), color)],
+                    on,
+                    false,
+                    color,
+                    width,
+                ),
+                ui::row(
+                    t,
+                    vec![sp(clip(&metadata, width.saturating_sub(1)), t.sub)],
+                    on,
+                    false,
+                    color,
+                    width,
+                ),
+            ],
+            extra: None,
+            once: false,
+        });
     }
-    if fit < prs.len() {
-        out.push(Line::from(sp(
-            format!(" +{} outside view · j/k to browse", prs.len() - fit),
-            t.dim,
-        )));
-        hits.push(None);
+    card
+}
+
+/// The cards in band order (proposal §4.2), each with its band and side (`true`: right).
+/// A: needs you │ to check. B: PRs, full width. C: campaigns │ Shipped, Build. D: Decisions,
+/// Decision log │ Fleet, Issues, Health. A band with one side shown gives it the full width.
+/// Slot, band, right side, shown: the Dashboard's eleven cards in band order. The asks,
+/// checks and campaigns give way to the ledger's state while it has none of them.
+fn slots(app: &App) -> [(usize, usize, bool, bool); 11] {
+    let p = &app.config.panels;
+    let has = |kind: Kind| !kind.dashboard(app).sources.is_empty();
+    let ledger = !ledger_state(app);
+    [
+        (0, 0, false, ledger && p[0]),
+        (1, 0, true, ledger && p[1]),
+        (2, 1, false, has(Kind::Open)),
+        (3, 2, false, ledger && p[2]),
+        (4, 2, true, has(Kind::Shipped)),
+        (5, 2, true, has(Kind::Build)),
+        (6, 3, false, p[6]),
+        (7, 3, false, p[8]),
+        (8, 3, true, p[7]),
+        (9, 3, true, has(Kind::Issues)),
+        (10, 3, true, p[10]),
+    ]
+}
+
+/// No asks, checks or campaigns, listed or quiet: the state (loading, unreachable, empty)
+/// stands in their place.
+fn ledger_state(app: &App) -> bool {
+    let g = &app.data.glance;
+    g.needs_you.is_empty() && g.attention.is_empty() && g.campaigns.is_empty() && g.quiet.count == 0
+}
+
+fn board(app: &App, width: usize, two: bool) -> Vec<(usize, bool, Card)> {
+    let slots = slots(app);
+    let split = |band: usize| {
+        let side = |right: bool| slots.iter().any(|s| s.1 == band && s.2 == right && s.3);
+        two && side(false) && side(true)
+    };
+    let mut offset = 0;
+    let mut out = vec![];
+    for (slot, band, right, shown) in slots {
+        if !shown {
+            continue;
+        }
+        let w = match (split(band), right) {
+            (false, _) => width,
+            (true, false) => width.div_ceil(2),
+            (true, true) => width / 2,
+        };
+        let card = match slot {
+            0 => ask_card(app, w, offset),
+            1 => check_card(app, w, offset),
+            2 => pr_card(app, w, offset),
+            3 => campaign_card(app, w, offset),
+            4 => observed_card(app, Kind::Shipped, w, offset),
+            5 => observed_card(app, Kind::Build, w, offset),
+            6 => cached_card(app, Panel::Decisions, w, offset),
+            7 => cached_card(app, Panel::Log, w, offset),
+            8 => cached_card(app, Panel::Fleet, w, offset),
+            9 => observed_card(app, Kind::Issues, w, offset),
+            _ => health_card(app, w, offset),
+        };
+        offset += card.rows.len().max(1);
+        out.push((band, right && split(band), card));
     }
-    out.truncate(height);
-    hits.truncate(height);
-    (out, hits)
+    out
+}
+
+/// Card heights for `body` rows (proposal §4.3): every card's want; else, while the floors
+/// fit, cards give rows back from Health up to the asks and spare rows return in band order;
+/// else every floor, for the viewport. A band is as tall as its taller side.
+fn heights(cards: &[(usize, bool, Card)], body: usize, row: usize) -> Vec<usize> {
+    let total = |h: &[usize]| {
+        let mut bands = [[0usize; 2]; 4];
+        for ((band, right, _), h) in cards.iter().zip(h) {
+            bands[*band][usize::from(*right)] += h;
+        }
+        bands.iter().map(|[l, r]| *l.max(r)).sum::<usize>()
+    };
+    let want: Vec<usize> = cards.iter().map(|c| c.2.want()).collect();
+    let full: Vec<usize> = cards.iter().map(|c| c.2.full()).collect();
+    let floor: Vec<usize> = cards
+        .iter()
+        .map(|c| c.2.floor(row).min(c.2.want()))
+        .collect();
+    // Floors that overflow make a viewport; a split band's shorter side still fills the
+    // rows its taller side already takes.
+    let body = body.max(total(&floor));
+    let mut h = want.clone();
+    for i in (0..h.len()).rev() {
+        while total(&h) > body && h[i] > floor[i] {
+            h[i] -= 1;
+        }
+    }
+    // Back in band order: first to the cut cards' wants, then to second lines.
+    for goal in [&want, &full] {
+        for i in 0..h.len() {
+            while h[i] < goal[i] {
+                h[i] += 1;
+                if total(&h) > body {
+                    h[i] -= 1;
+                    break;
+                }
+            }
+        }
+    }
+    h
+}
+
+/// A card placed in the body: its column, first line and lines.
+struct Block {
+    x: u16,
+    width: u16,
+    y: usize,
+    drawn: Drawn,
+    brief: String,
+}
+
+/// The cards laid out at `width`: tiny one-line cards, else fitted cards band by band.
+fn blocks(app: &App, width: usize, height: usize, tiny: bool) -> Vec<Block> {
+    let two = width >= 80 && !tiny;
+    let cards = board(app, width, two);
+    let h = if tiny {
+        vec![1; cards.len()]
+    } else {
+        heights(&cards, height, app.row)
+    };
+    let each = app.screen != Screen::Glance;
+    let mut out = vec![];
+    let mut y = 0;
+    let mut band = (usize::MAX, [0usize; 2]);
+    for ((b, right, card), h) in cards.iter().zip(h) {
+        if *b != band.0 {
+            y += band.1[0].max(band.1[1]);
+            band = (*b, [0, 0]);
+        }
+        let w = match (*right, cards.iter().any(|c| c.0 == *b && c.1)) {
+            (true, _) => width / 2,
+            (false, true) => width.div_ceil(2),
+            (false, false) => width,
+        };
+        let drawn = if tiny {
+            card.tiny(app, w, each || card.title == "NEEDS YOU")
+        } else {
+            card.fit(&app.theme, h, app.row, w)
+        };
+        let side = usize::from(*right);
+        let x = if *right { width.div_ceil(2) } else { 0 };
+        let len = drawn.lines.len();
+        out.push(Block {
+            x: x as u16,
+            width: w as u16,
+            y: y + band.1[side],
+            drawn,
+            brief: card.brief(),
+        });
+        band.1[side] += len;
+    }
+    out
+}
+
+/// The first content line the viewport shows (proposal §4.4): the smallest whole-card
+/// offset that keeps the cursor's whole card in view, else its rule and row, else the
+/// cursor row itself.
+/// The disclosure lines are reserved first.
+fn viewport(blocks: &[Block], total: usize, body: usize, row: usize) -> usize {
+    if total <= body {
+        return 0;
+    }
+    let avail = |s: usize| {
+        let h = body.saturating_sub(usize::from(s > 0));
+        if s + h < total {
+            h.saturating_sub(1)
+        } else {
+            h
+        }
+    };
+    let Some(at) = blocks
+        .iter()
+        .position(|b| b.drawn.hits.contains(&Some(row)))
+    else {
+        return 0;
+    };
+    let b = &blocks[at];
+    let first = b.y;
+    let last = b.y
+        + b.drawn
+            .hits
+            .iter()
+            .rposition(|h| *h == Some(row))
+            .unwrap_or(0);
+    // The cursor's whole card where it fits (its floor and notices), else down to its row.
+    let end = b.y + b.drawn.lines.len().max(1) - 1;
+    let starts = |last: usize| {
+        blocks
+            .iter()
+            .map(|b| b.y)
+            .filter(|s| *s <= first && last < s + avail(*s))
+            .min()
+    };
+    starts(end)
+        .or_else(|| starts(last))
+        .or_else(|| (0..=last).find(|s| last < s + avail(*s)))
+        .unwrap_or(last)
+}
+
+/// The Dashboard body: its cards, as many as fit, scrolled to keep the cursor row and its
+/// card's rule drawn. Only drawn rows are hit targets; the disclosure lines are tab and
+/// shift-tab.
+fn body(f: &mut Frame, app: &App, area: Rect, tiny: bool) {
+    let t = &app.theme;
+    let width = area.width as usize;
+    let height = area.height as usize;
+    let blocks = blocks(app, width, height, tiny);
+    let total = blocks
+        .iter()
+        .map(|b| b.y + b.drawn.lines.len())
+        .max()
+        .unwrap_or(0);
+    let top = viewport(&blocks, total, height, app.row);
+    let up = usize::from(top > 0);
+    let view = if total <= height {
+        height
+    } else {
+        let h = height.saturating_sub(up);
+        if top + h < total {
+            h.saturating_sub(1)
+        } else {
+            h
+        }
+    };
+    let dashboard = app.screen == Screen::Glance;
+    let mut cue = |y: usize, text: String, key: &str| {
+        let line = Rect {
+            y: area.y + y as u16,
+            height: 1,
+            ..area
+        };
+        f.render_widget(
+            Paragraph::new(Line::from(sp(clip(&text, width), t.dim))),
+            line,
+        );
+        if dashboard {
+            app.hit(line, Hit::Key(key.into()));
+        }
+    };
+    if up > 0 {
+        let above: Vec<String> = blocks
+            .iter()
+            .filter(|b| b.y < top)
+            .map(|b| b.brief.clone())
+            .collect();
+        cue(
+            0,
+            format!(" ↑ {} above: {}", above.len(), above.join(" · ")),
+            "shift-tab",
+        );
+    }
+    let end = top + view;
+    let below: Vec<String> = blocks
+        .iter()
+        .filter(|b| b.y + b.drawn.lines.len() > end)
+        .map(|b| b.brief.clone())
+        .collect();
+    if !below.is_empty() {
+        let n = below.len();
+        let cards = if n == 1 { "card" } else { "cards" };
+        cue(
+            up + view,
+            format!(" ↓ {n} {cards} below: {} · tab", below.join(" · ")),
+            "tab",
+        );
+    }
+    for b in &blocks {
+        let from = top.max(b.y);
+        let to = end.min(b.y + b.drawn.lines.len());
+        // A card is drawn whole or, named by a disclosure line, not at all: never a bare
+        // rule over rows out of view. Only the cursor's own card may be cut, around the row.
+        let whole = from == b.y && to == b.y + b.drawn.lines.len();
+        if from >= to || !(whole || b.drawn.hits.contains(&Some(app.row))) {
+            continue;
+        }
+        let rect = Rect {
+            x: area.x + b.x,
+            y: area.y + (up + from - top) as u16,
+            width: b.width,
+            height: (to - from) as u16,
+        };
+        let lines = b.drawn.lines[from - b.y..to - b.y].to_vec();
+        for (i, hit) in b.drawn.hits[from - b.y..to - b.y].iter().enumerate() {
+            if let Some(row) = hit {
+                app.hit(
+                    Rect {
+                        y: rect.y + i as u16,
+                        height: 1,
+                        ..rect
+                    },
+                    Hit::Row(*row),
+                );
+            }
+        }
+        f.render_widget(Paragraph::new(lines), rect);
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn lines(app: &App, width: usize, height: usize) -> Vec<Line<'static>> {
+    let mut out = vec![];
+    for b in blocks(app, width, height, false) {
+        out.extend(b.drawn.lines);
+    }
+    out
+}
+
+/// One line for row `i`, as the tiny frame lists it: what it is, then its text.
+fn label(app: &App, i: usize) -> Option<(String, Color)> {
+    let mut at = app.clone();
+    at.row = i;
+    let stale = |d: &crate::github::Dashboard| d.sources.iter().any(|s| s.error.is_some());
+    let (text, color) = match selected(&at) {
+        Selected::Ask(a) => (
+            format!("ask {} {}", a.campaign, one_line(&a.text)),
+            app.theme.need,
+        ),
+        Selected::Check(a) => (
+            format!(
+                "check {} {}",
+                check_name(&app.data.glance, a),
+                one_line(&a.text)
+            ),
+            app.theme.check,
+        ),
+        Selected::Campaign(c) => (
+            format!("campaign {} {}", c.name, c.status_text()),
+            app.theme.text,
+        ),
+        Selected::Pr(p) => (
+            format!(
+                "PR{} {}{} #{} {} @{}",
+                if stale(&app.github) { " stale" } else { "" },
+                p.ci.word(),
+                if p.truncated { " truncated" } else { "" },
+                p.number,
+                p.title,
+                p.author
+            ),
+            app.theme.sub,
+        ),
+        Selected::Author(author) => {
+            let groups = app.shipped.authors(app.observed_at);
+            (
+                format!(
+                    "Shipped @{} · {} observed / 24h{}",
+                    author,
+                    groups[&author].len(),
+                    if stale(&app.shipped) {
+                        " · stale/partial"
+                    } else {
+                        ""
+                    }
+                ),
+                app.theme.sub,
+            )
+        }
+        Selected::Run(r) => (
+            format!(
+                "Build{} {} {} · {} · latest100 sample",
+                if stale(&app.builds) { " stale" } else { "" },
+                r.label(),
+                r.workflow,
+                r.branch
+            ),
+            app.theme.sub,
+        ),
+        Selected::Decision(e) => (
+            format!("decision #{} {}", e.id, one_line(&e.text)),
+            app.theme.text,
+        ),
+        Selected::Logged(e) => (
+            format!(
+                "logged decision #{} {} {}",
+                e.id,
+                ui::hhmm(&e.at),
+                one_line(&e.text)
+            ),
+            app.theme.sub,
+        ),
+        Selected::Fleet(c) => {
+            let [w, r, o] = c
+                .lanes
+                .observed()
+                .map(|n| n.map_or("?".into(), |n| n.to_string()));
+            (
+                format!("fleet {} · {w} working {r} ready {o} open", c.name),
+                app.theme.text,
+            )
+        }
+        Selected::Health => (
+            // Stale, unknown or "as of" comes first: a narrow row clips its end.
+            format!("Health · {}", app.health.label(app.observed_at)),
+            health_color(app),
+        ),
+        Selected::Assignee(g) => (
+            // The stale cue comes first: a narrow row clips its end.
+            format!(
+                "Issues{} {} · {}",
+                if stale(&app.issues) { " stale" } else { "" },
+                g.name(),
+                g.counts()
+            ),
+            if g.blocked > 0 {
+                app.theme.check
+            } else {
+                app.theme.sub
+            },
+        ),
+        Selected::Nothing => return None,
+    };
+    Some((text, color))
 }
 
 /// A row's identity, so the cursor stays on it when a snapshot moves it.
@@ -1376,78 +1604,85 @@ pub(crate) enum RowId {
     Assignee(String, Option<String>),
     /// Health's row: its fixed repository and environment, never the note it shows.
     Health(&'static str, &'static str),
+    /// An empty or unavailable card's state, by its slot: a place to look, never a target.
+    Card(usize),
 }
 
-/// Every row the cursor can be on, in cursor order.
+/// Every row the cursor can be on, in cursor order: the cards' rows in band order, and an
+/// empty card's one inert stop.
 pub(crate) fn ids(app: &App) -> Vec<RowId> {
     let g = &app.data.glance;
-    let asks = g
-        .needs_you
-        .iter()
-        .filter(|_| app.config.panels[0])
-        .map(|a| RowId::Ask(a.ask_id));
-    let checks = g
-        .attention
-        .iter()
-        .filter(|_| app.config.panels[1])
-        .map(|a| RowId::Check(a.root_id, a.kind.clone()));
-    let prs = app
-        .github
-        .rows()
-        .into_iter()
-        .filter(|_| app.config.panels[3])
-        .map(|p| RowId::Pr(p.repo.clone(), p.number));
-    let campaigns = g
-        .campaigns
-        .iter()
-        .filter(|c| !c.parked)
-        .chain(g.campaigns.iter().filter(|c| c.parked))
-        .filter(|_| app.config.panels[2])
-        .map(|c| RowId::Campaign(c.id));
-    let authors = app
-        .shipped
-        .authors(app.observed_at)
-        .into_keys()
-        .filter(|_| app.config.panels[4])
-        .map(RowId::Author);
-    let runs = app
-        .builds
-        .runs()
-        .into_iter()
-        .filter(|_| app.config.panels[5])
-        .map(|r| RowId::Run(r.repo.clone(), r.id));
     let root = app.data.campaign.root.id;
-    let decisions = decisions(app).iter().map(|e| RowId::Decision(root, e.id));
-    let fleet = app.fleet.iter().map(|c| RowId::Fleet(c.id));
-    let logged = logged(app).into_iter().map(|e| RowId::Logged(root, e.id));
-    let assignees = app
-        .issues
-        .assignees(app.observed_at)
-        .into_iter()
-        .filter(|_| app.config.panels[9])
-        .map(|g| RowId::Assignee(g.repo, g.login));
-    let health =
-        app.config.panels[10].then_some(RowId::Health(crate::health::REPO, crate::health::ENV));
-    asks.chain(checks)
-        .chain(prs)
-        .chain(authors)
-        .chain(runs)
-        .chain(decisions)
-        .chain(fleet)
-        .chain(logged)
-        .chain(assignees)
-        .chain(health)
-        .chain(campaigns)
-        .collect()
+    let mut out = vec![];
+    for (slot, .., shown) in slots(app) {
+        if !shown {
+            continue;
+        }
+        let rows: Vec<RowId> = match slot {
+            0 => g.needs_you.iter().map(|a| RowId::Ask(a.ask_id)).collect(),
+            1 => g
+                .attention
+                .iter()
+                .map(|a| RowId::Check(a.root_id, a.kind.clone()))
+                .collect(),
+            2 => app
+                .github
+                .rows()
+                .into_iter()
+                .map(|p| RowId::Pr(p.repo.clone(), p.number))
+                .collect(),
+            3 => g
+                .campaigns
+                .iter()
+                .filter(|c| !c.parked)
+                .chain(g.campaigns.iter().filter(|c| c.parked))
+                .map(|c| RowId::Campaign(c.id))
+                .collect(),
+            4 => app
+                .shipped
+                .authors(app.observed_at)
+                .into_keys()
+                .map(RowId::Author)
+                .collect(),
+            5 => app
+                .builds
+                .runs()
+                .into_iter()
+                .map(|r| RowId::Run(r.repo.clone(), r.id))
+                .collect(),
+            6 => decisions(app)
+                .iter()
+                .map(|e| RowId::Decision(root, e.id))
+                .collect(),
+            7 => logged(app)
+                .into_iter()
+                .map(|e| RowId::Logged(root, e.id))
+                .collect(),
+            8 => app.fleet.iter().map(|c| RowId::Fleet(c.id)).collect(),
+            9 => app
+                .issues
+                .assignees(app.observed_at)
+                .into_iter()
+                .map(|g| RowId::Assignee(g.repo, g.login))
+                .collect(),
+            _ => vec![RowId::Health(crate::health::REPO, crate::health::ENV)],
+        };
+        if rows.is_empty() {
+            out.push(RowId::Card(slot));
+        }
+        out.extend(rows);
+    }
+    out
 }
 
-/// The same visible identities drive Tab, keyboard, mouse and snapshot restoration.
+/// The same visible identities drive Tab, keyboard, mouse and snapshot restoration. Each
+/// empty card is a section of its own.
 pub(crate) fn sections(app: &App) -> Vec<usize> {
     let mut out = vec![];
     let mut previous = None;
     for (i, row) in ids(app).iter().enumerate() {
         let kind = std::mem::discriminant(row);
-        if previous != Some(kind) {
+        if previous != Some(kind) || matches!(row, RowId::Card(_)) {
             out.push(i);
         }
         previous = Some(kind);
@@ -1522,7 +1757,7 @@ pub(crate) fn selected(app: &App) -> Selected<'_> {
             .find(|g| g.repo == *repo && g.login == *login)
             .map_or(Selected::Nothing, Selected::Assignee),
         Some(RowId::Health(..)) => Selected::Health,
-        None => Selected::Nothing,
+        Some(RowId::Card(_)) | None => Selected::Nothing,
     }
 }
 
@@ -1616,7 +1851,9 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
     let stale = app.fetch.error.as_deref().filter(|_| app.fetch.loaded);
     // The panel switches are the Dashboard's: Asks and Fleet list theirs whatever they say.
     let dashboard = !matches!(app.screen, Screen::Asks | Screen::Fleet);
-    let toggle_lines = if dashboard {
+    // Tiny (proposal §4.1): one-line cards, no panel strip or notes line.
+    let tiny = area.width < 46 || area.height < 20;
+    let toggle_lines = if dashboard && !tiny {
         // Short of rows, the switches take one compact line so the tab line costs no row.
         toggles(app, area.width as usize, wide, area.height < 32)
     } else {
@@ -1627,7 +1864,7 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
         Constraint::Length(1),
         Constraint::Length(toggle_lines.len() as u16),
         Constraint::Length(u16::from(app.config_warning.is_some())),
-        Constraint::Length(u16::from(g.owner_notes_pending > 0)),
+        Constraint::Length(u16::from(g.owner_notes_pending > 0 && !tiny)),
         Constraint::Length(u16::from(stale.is_some())),
         Constraint::Min(0),
         Constraint::Length(1),
@@ -1663,92 +1900,37 @@ pub(crate) fn draw(f: &mut Frame, app: &App) {
         );
         return;
     }
-    // The list spans the width: no pane is reserved beside it.
-    let list = body;
-    let mut compact = list.height < 8;
-    let ledger_state = g.needs_you.is_empty()
-        && g.attention.is_empty()
-        && g.campaigns.is_empty()
-        && g.quiet.count == 0;
-    let state_height = if ledger_state && (!compact || ids(app).is_empty()) {
-        let reserve = (list.height as usize).saturating_sub(external_height(
-            app,
-            list.width as usize,
-            list.height as usize,
-        ));
-        // Under panels 7-9 the state keeps only the lines it draws; they take the rest.
-        if shown(app).iter().any(ledger_panel) {
-            reserve.min(state_lines(app, list.width as usize).map_or(0, |(l, _)| l.len()))
+    // The asks, checks and campaigns give way to the ledger's state while it has none;
+    // under other cards the state keeps only the lines it draws.
+    let others = !ids(app).is_empty();
+    let state_height = if ledger_state(app) {
+        let lines = state_lines(app, body.width as usize).map_or(0, |(l, _)| l.len());
+        if others {
+            lines.min(body.height as usize / 2)
         } else {
-            reserve
+            body.height as usize
         }
     } else {
         0
     };
-    if ledger_state && state_height > 0 {
+    if state_height > 0 {
         state(
             f,
             app,
             Rect {
                 height: state_height as u16,
-                ..list
+                ..body
             },
         );
     }
-    let list_rows = Rect {
-        y: list.y + state_height as u16,
-        height: list.height.saturating_sub(state_height as u16),
-        ..list
+    let cards = Rect {
+        y: body.y + state_height as u16,
+        height: body.height.saturating_sub(state_height as u16),
+        ..body
     };
-    let (mut lines, mut hits) = if ledger_state && !shown(app).is_empty() {
-        // The placeholder reserve was already removed from list_rows.
-        external_lines(app, list_rows.width as usize, list_rows.height as usize, 0)
-    } else if compact {
-        compact_layout(app, list_rows.width as usize, list_rows.height as usize)
-    } else {
-        layout(app, list_rows.width as usize, list_rows.height as usize)
-    };
-    // Rules, warnings and independent source rows can exhaust a section's share.
-    // Fall back using the same identity when the expanded layout cannot draw it.
-    if !ids(app).is_empty() && !hits.contains(&Some(app.row)) {
-        compact = true;
-        (lines, hits) = compact_layout(app, list_rows.width as usize, list_rows.height as usize);
-    }
-    // Folded campaigns are out of the cursor's reach; the compact list scrolls every identity.
-    let p = plan(
-        g,
-        (list.height as usize).saturating_sub(external_height(
-            app,
-            list.width as usize,
-            list.height as usize,
-        )),
-        if app.row >= g.needs_you.len() + g.attention.len() {
-            app.row.saturating_sub(external_count(app))
-        } else {
-            app.row
-        },
-    );
-    let parked = g.campaigns.iter().filter(|c| c.parked).count();
-    app.seen.borrow_mut().rows = if compact {
-        ids(app).len()
-    } else {
-        g.needs_you.len()
-            + g.attention.len()
-            + external_count(app)
-            + p.shown
-            + if p.tail == Tail::Rows { parked } else { 0 }
-    };
-    for (y, row) in hits.iter().enumerate().take(list_rows.height as usize) {
-        if let Some(row) = row {
-            let line = Rect {
-                y: list_rows.y + y as u16,
-                height: 1,
-                ..list
-            };
-            app.hit(line, Hit::Row(*row));
-        }
-    }
-    f.render_widget(Paragraph::new(lines), list_rows);
+    // Every row is reachable: a card windows around the cursor, the body scrolls.
+    app.seen.borrow_mut().rows = ids(app).len();
+    self::body(f, app, cards, tiny);
     if let Some(error) = stale {
         // The last frame stays, dimmed, and says so.
         f.render_widget(Paragraph::new(stale_line(app, error)), banner);
@@ -1960,7 +2142,7 @@ fn state_lines(app: &App, w: usize) -> Option<(Vec<Line<'static>>, bool)> {
 }
 
 /// Which card a row is listed under, as its rule names it.
-fn card(id: &RowId) -> &'static str {
+pub(crate) fn card(id: &RowId) -> &'static str {
     match id {
         RowId::Ask(_) => "NEEDS YOU",
         RowId::Check(..) => "TO CHECK",
@@ -1973,6 +2155,19 @@ fn card(id: &RowId) -> &'static str {
         RowId::Logged(..) => "DECISION LOG",
         RowId::Assignee(..) => "ISSUES",
         RowId::Health(..) => "HEALTH",
+        RowId::Card(slot) => [
+            "NEEDS YOU",
+            "TO CHECK",
+            "OPEN PRS",
+            "CAMPAIGNS",
+            "SHIPPED",
+            "BUILD QUEUE",
+            "DECISIONS",
+            "DECISION LOG",
+            "FLEET",
+            "ISSUES",
+            "HEALTH",
+        ][*slot],
     }
 }
 
@@ -2498,34 +2693,12 @@ mod tests {
         assert!(text(&app).iter().any(|r| r.contains("tmp 0")));
     }
 
-    /// The owner's rule for the split pane: no wasted rows while text is folded.
-    #[test]
-    fn folding_leaves_at_most_one_blank_row() {
-        let mut app = App::new(fixture());
-        for cursor in [0, 3, 9] {
-            app.row = cursor;
-            for height in 12..70 {
-                let p = plan(&app.data.glance, height, cursor);
-                let drawn = lines(&app, 46, height).len();
-                assert!(drawn <= height, "height {height}: {drawn} lines");
-                let folded = p.two.contains(&false) || p.tail != Tail::Rows;
-                assert!(
-                    !folded || height - drawn <= 1,
-                    "height {height}: {} blank rows while folded",
-                    height - drawn
-                );
-            }
-        }
-    }
-
     #[test]
     fn asks_scroll_and_show_their_position() {
         let mut app = App::new(fixture());
         let ask = app.data.glance.needs_you[0].clone();
         app.data.glance.needs_you = vec![ask; 9];
         app.row = 6;
-        let p = plan(&app.data.glance, 14, app.row);
-        assert_eq!(p.asks, 3..7);
         let text: String = lines(&app, 46, 14)[0]
             .spans
             .iter()
@@ -2543,9 +2716,9 @@ mod tests {
                 .unwrap();
             crate::frames::text(&crate::frames::render(&spec))
         };
-        // Default narrow, 0 on, cursor on an Issues row: the compact row says stale.
+        // Default narrow, 0 on, cursor on an Issues row: the row says stale.
         let stale = text("issues-46x30-stale");
-        assert!(stale.contains("Issues stale @alex"), "{stale}");
+        assert!(stale.contains("▌stale/partial · @alex"), "{stale}");
         for name in ["issues-46x30-cap", "issues-120x40-overflow-detail"] {
             let t = text(name);
             assert!(
@@ -2555,7 +2728,7 @@ mod tests {
         }
         // The overflow spec's cursor is on an Issues group, not a stale index; Detail shows
         // that group.
-        assert!(text("issues-120x40-overflow").contains("▌Issues @alex"));
+        assert!(text("issues-120x40-overflow").contains("▌@alex"));
         assert!(text("issues-120x40-overflow-detail").contains("Issues · @alex"));
     }
 }

@@ -2,29 +2,29 @@
  [D Dash]  A Asks 2   F Fleet 11   I Detail
 panels 1- 2- 3- 4- 5- 6- 7- 8- 9- 0+ H-
  3 notes still carry OWNER items
-
-
-
-
             No visible ledger rows
           1-3 show panels · / filters
-
-
-
-
-
-
-
-
-
  ISSUES ────────────────── trip-to-japan/trip
-4 open · 2 blocked · 1 closed/24h · unique
-100 open + 100 closed sampled; 0s ago · trip-…
+ 4 open · 2 blocked · 1 closed/24h · unique
+ 100 open + 100 closed sampled; 0s ago · trip…
  open: first 100; more may exist
  closed: first 100; more may exist
-current assignees · overlap · non-atomic
+ current assignees · overlap · non-atomic
 ▌@alex · 2 open · 2 blocked · 0 closed/24h
  @sam · 2 open · 1 blocked · 0 closed/24h
  Unassigned · 1 open · 0 blocked · 0 closed/2…
  @kim · 0 open · 0 blocked · 1 closed/24h
+
+
+
+
+
+
+
+
+
+
+
+
+
  D A F I screens   ? help

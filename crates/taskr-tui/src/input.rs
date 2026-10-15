@@ -476,7 +476,12 @@ fn glance_key(app: &mut App, code: KeyCode) -> Effect {
             return info_key(app, code, c.id, &c.name);
         }
         Selected::Fleet(c) => return info_key(app, code, c.id, &c.name),
-        Selected::Nothing if code == KeyCode::Char('c') => (&g.now, &g.now, 0, &g.now),
+        // An empty card's stop: tab moves on, `c` lists every campaign, nothing else acts.
+        Selected::Nothing
+            if matches!(code, KeyCode::Tab | KeyCode::BackTab | KeyCode::Char('c')) =>
+        {
+            (&g.now, &g.now, 0, &g.now)
+        }
         Selected::Nothing => return Effect::None,
     };
     match code {
@@ -858,6 +863,7 @@ fn hint_key(keys: &str) -> Option<KeyCode> {
     Some(match keys {
         "⏎" => KeyCode::Enter,
         "tab" => KeyCode::Tab,
+        "shift-tab" => KeyCode::BackTab,
         "space" => KeyCode::Char(' '),
         "esc" => KeyCode::Esc,
         // `j k`, `g G`: the first of the pair. `1-5` is not one key.
@@ -1071,10 +1077,13 @@ mod tests {
         assert_eq!(p.app.row, 0);
         p.code(KeyCode::BackTab);
         assert_eq!(p.app.row, 5);
-        // At 20 rows the folded campaigns are out of reach.
+        // At 20 rows the card windows and the body scrolls: G reaches the last campaign,
+        // drawn (until slice 2 the folded campaigns were out of reach).
         let mut short = Pane::new(46, 20);
         short.keys("G");
-        assert!(short.app.row < last);
+        assert_eq!(short.app.row, last);
+        short.text();
+        assert!(drawn(&short, last));
         assert!(matches!(
             glance::selected(&short.app),
             Selected::Campaign(_)
@@ -1819,6 +1828,8 @@ mod tests {
                 glance::RowId::Logged(..) => ("DECISION LOG", "recent log sample".into()),
                 glance::RowId::Assignee(..) => ("ISSUES", "Current assignees".into()),
                 glance::RowId::Health(..) => ("HEALTH", "Health · ".into()),
+                // Every source here is full: no card is empty, so no inert stop is listed.
+                glance::RowId::Card(slot) => panic!("inert stop for card {slot} with full sources"),
             };
             assert!(
                 text.contains(&format!("from Dashboard · {card} · row"))
@@ -2096,7 +2107,8 @@ mod tests {
             let text = p.text();
             assert!(text.contains("hidden asks"), "{height}: {text}");
             assert!(text.contains("1-9"), "recovery hint at {height}: {text}");
-            if height >= 8 {
+            // Tiny (under 20 rows) has no switch strip; the recovery line names the keys.
+            if height >= 20 {
                 assert!(
                     text.contains("panels 1- 2- 3- 4- 5- 6-"),
                     "all four switches at {height}: {text}"
@@ -2149,14 +2161,30 @@ mod tests {
         assert_eq!(glance::ids(&p.app.view())[p.app.row], before);
         p.keys("/no-matches");
         p.code(KeyCode::Enter);
-        assert!(glance::ids(&p.app.view()).is_empty());
-        assert_eq!(p.keys("a"), Effect::None);
+        // Nothing matches: every enabled card is empty, so each is an inert stop that is drawn
+        // and reached, and none answers, mutates or reads anything.
+        let stops: Vec<_> = (0..4).map(glance::RowId::Card).collect();
+        assert_eq!(glance::ids(&p.app.view()), stops);
+        for row in 0..stops.len() {
+            p.app.row = row;
+            assert!(matches!(glance::selected(&p.app.view()), Selected::Nothing));
+            assert_reachable(&mut p, false);
+            for key in ['\n', 'a', 'p', 'l', 'y', 'o'] {
+                assert_eq!(p.keys(&key.to_string()), Effect::None, "{row} {key:?}");
+                assert!(
+                    p.app.ask.is_none() && p.app.pending.is_none(),
+                    "{row} {key:?}"
+                );
+                assert_eq!(p.app.row, row, "{row} {key:?}");
+            }
+        }
     }
 
     #[test]
     fn source_index_shift_clears_click_before_it_can_focus_another_campaign() {
         let mut p = Pane::new(120, 40);
-        p.app.builds = crate::github::demo_builds(p.app.observed_at);
+        // The PRs come before the campaigns (band B over band C): one leaving shifts them.
+        p.app.github = crate::github::demo();
         let ids = glance::ids(&p.app.view());
         let i = ids
             .iter()
@@ -2176,7 +2204,7 @@ mod tests {
         assert_eq!(p.click(area.x, area.y), Effect::None);
         assert!(p.app.click.is_some());
         p.app.scroll = 4;
-        p.app.builds.sources[0].runs.pop();
+        p.app.github.sources[0].prs.pop();
         p.app.restore_row(Some(ids[i].clone()));
         assert_eq!(p.app.row, i - 1);
         assert_eq!(glance::ids(&p.app.view())[p.app.row], ids[i]);
@@ -2387,7 +2415,20 @@ mod tests {
         let sample: crate::model::Data =
             serde_json::from_str(include_str!("../tests/p1b-sample.json")).unwrap();
         p.app.data = sample.clone();
+        // Under the ask, the empty checks card is an inert stop: `l` there reads nothing;
+        // the next `j` is the campaign.
         p.keys("j");
+        assert_eq!(
+            glance::ids(&p.app.view())[p.app.row],
+            glance::RowId::Card(1)
+        );
+        p.text();
+        assert_eq!(press(&mut p.app, KeyCode::Char('l')), Effect::None);
+        p.keys("j");
+        assert_eq!(
+            glance::ids(&p.app.view())[p.app.row],
+            glance::RowId::Campaign(1)
+        );
         // `l` asks for the read and shows nothing yet.
         let job = Job::Campaign {
             root: 1,
@@ -3046,10 +3087,8 @@ mod tests {
         for rule in ["DECISIONS · PLAN", "FLEET", "DECISION LOG"] {
             assert!(text.contains(rule), "{rule} missing:\n{text}");
         }
-        assert!(
-            text.contains("+11 outside view") && text.contains("+8 outside view"),
-            "{text}"
-        );
+        // Cut by the band below the asks, each says what it leaves out.
+        assert!(text.contains("more decisions · tab here"), "{text}");
         // With asks, checks and campaigns hidden Fleet fills the pane; the state keeps
         // only its own two lines and says what is hidden, not that no ledger rows show.
         let mut p = Pane::new(46, 30);
@@ -3063,7 +3102,7 @@ mod tests {
             "{text}"
         );
         assert!(
-            text.contains("legacy-importer") && !text.contains("outside view"),
+            text.contains("legacy-importer") && !text.contains(" more "),
             "{text}"
         );
         // A filter that empties asks, checks and campaigns says so, not that they are hidden.
@@ -3152,21 +3191,30 @@ mod tests {
                     if height >= 8 {
                         assert!(drawn(&p, i), "{width}x{height}/{id:?}:\n{text}");
                     }
-                    // A lower panel never shows while a higher one is gone.
+                    // A lower card never shows while a higher one is gone unless the ↑ line
+                    // says what is above (band order; tiny frames have no rules).
                     let order = [
                         "NEEDS YOU",
+                        "TO CHECK",
                         "OPEN PRS",
+                        "CAMPAIGNS",
                         "SHIPPED",
                         "BUILD QUEUE",
                         "DECISIONS · PLAN",
-                        "FLEET",
                         "DECISION LOG",
+                        "FLEET",
                     ];
+                    let rule = |name: &str| text.contains(&format!(" {name} ─"));
+                    // In two columns a later right-hand card can sit beside an earlier one
+                    // cut below: then the ↓ line names it.
+                    let cue = text
+                        .lines()
+                        .any(|l| l.starts_with(" ↑ ") || l.starts_with(" ↓ "));
                     for (later, name) in order.iter().enumerate().skip(1) {
-                        if text.contains(name) {
+                        if rule(name) {
                             for earlier in &order[..later] {
                                 assert!(
-                                    text.contains(earlier),
+                                    rule(earlier) || cue,
                                     "{width}x{height} row {i}: {name} without {earlier}:\n{text}"
                                 );
                             }
@@ -3218,29 +3266,29 @@ mod tests {
                 let ids = glance::ids(&p.app.view());
                 let unassigned = glance::RowId::Assignee(crate::github::ISSUES_REPO.into(), None);
                 assert!(ids.contains(&unassigned));
-                // Issues come after every other panel's rows and before the campaigns.
+                // Issues come after every other card's rows (band D, after Fleet); Health
+                // is off here, so they are last.
                 let first = ids
                     .iter()
                     .position(|r| matches!(r, glance::RowId::Assignee(..)))
                     .unwrap();
+                assert!(matches!(ids[first - 1], glance::RowId::Fleet(_)));
                 assert!(
-                    ids[..first]
+                    ids[first..]
                         .iter()
-                        .all(|r| !matches!(r, glance::RowId::Campaign(_)))
+                        .all(|r| matches!(r, glance::RowId::Assignee(..)))
                 );
-                assert!(ids[first..].iter().all(|r| matches!(
-                    r,
-                    glance::RowId::Assignee(..) | glance::RowId::Campaign(_)
-                )));
                 for (i, id) in ids.iter().enumerate() {
                     p.app.row = i;
                     let text = p.text();
                     if height >= 8 {
                         assert!(drawn(&p, i), "{width}x{height}/{id:?}:\n{text}");
                     }
-                    if text.contains(" ISSUES ") {
+                    // Shown below the cards before it, or with the ↑ line naming them.
+                    if text.contains(" ISSUES ─") {
+                        let above = text.lines().any(|l| l.starts_with(" ↑ "));
                         assert!(
-                            text.contains("NEEDS YOU") && text.contains("DECISION LOG"),
+                            above || (text.contains("NEEDS YOU") && text.contains("DECISION LOG")),
                             "{text}"
                         );
                     }
@@ -3347,21 +3395,12 @@ mod tests {
         );
         let text = p.text();
         assert!(text.contains("0- H+"), "{text}");
-        // Its row comes after Issues' and before the campaigns.
+        // Its row comes after Issues' and last of all (band D, last card).
         p.app.config.panels[9] = true;
         let ids = glance::ids(&p.app.view());
         let at = ids.iter().position(|r| *r == row).unwrap();
-        assert!(
-            ids[..at]
-                .iter()
-                .all(|r| !matches!(r, glance::RowId::Campaign(_)))
-        );
         assert!(matches!(ids[at - 1], glance::RowId::Assignee(..)));
-        assert!(
-            ids[at + 1..]
-                .iter()
-                .all(|r| matches!(r, glance::RowId::Campaign(_)))
-        );
+        assert_eq!(at, ids.len() - 1);
         // Every height: the row is drawn, informational, and stale or unknown comes first.
         for width in [46, 120] {
             for height in 7..=40 {
@@ -3403,14 +3442,20 @@ mod tests {
                 }
             }
         }
-        // Narrow and short: the compact row puts the stale cue before what it clips.
-        let mut p = Pane::new(46, 20);
-        health(&mut p);
-        p.app.config.panels[10] = true;
-        p.app.health.error = Some(crate::health::UNAVAILABLE);
-        p.app.row = row_of(&p, &row);
-        let text = p.text();
-        assert!(text.contains("Health · Stale · as of"), "{text}");
+        // Narrow and short: the row puts the stale cue before what it clips, on the card's
+        // row at 46x20 and on the tiny one-line card at 40x12.
+        for (w, h, cue) in [
+            (46, 20, "▌Stale · as of"),
+            (40, 12, "▌Health · Stale · as of"),
+        ] {
+            let mut p = Pane::new(w, h);
+            health(&mut p);
+            p.app.config.panels[10] = true;
+            p.app.health.error = Some(crate::health::UNAVAILABLE);
+            p.app.row = row_of(&p, &row);
+            let text = p.text();
+            assert!(text.lines().any(|l| l.starts_with(cue)), "{w}x{h}:\n{text}");
+        }
         // A double click selects and goes nowhere; a new report keeps the selection.
         let mut p = Pane::new(120, 40);
         health(&mut p);
@@ -3492,6 +3537,599 @@ mod tests {
                 end.ends_with('…') || end.ends_with("sha 0a1b2c3d4e"),
                 "{name}:\n{text}"
             );
+        }
+    }
+
+    /// Every card on with every source full: the demo PRs, Shipped, Build, Issues and a
+    /// Health report, panels 7 and 9 from a campaign read three minutes old.
+    fn all_on(p: &mut Pane) {
+        let app = &mut p.app;
+        app.observed_at = 1_792_000_000;
+        app.github = crate::github::demo();
+        app.shipped = crate::github::demo_shipped(app.observed_at);
+        app.builds = crate::github::demo_builds(app.observed_at);
+        app.issues = crate::github::demo_issues(app.observed_at);
+        app.health = crate::health::sample(app.observed_at, crate::health::CLEAN);
+        app.config.panels = [true; 11];
+        app.scope.read_at = Some(app.observed_at - 180);
+    }
+
+    /// The rect the last frame drew for row `i`, if any.
+    fn hit_rect(p: &Pane, i: usize) -> Option<ratatui::layout::Rect> {
+        p.app
+            .seen
+            .borrow()
+            .hits
+            .iter()
+            .find(|(_, hit)| *hit == Hit::Row(i))
+            .map(|(r, _)| *r)
+    }
+
+    /// The selected row is drawn, inside the body, and its card's rule is on screen
+    /// unless the frame is tiny; a click on it selects it.
+    fn assert_reachable(p: &mut Pane, tiny: bool) {
+        let screen = p.text();
+        let (w, h) = (
+            p.terminal.backend().buffer().area.width,
+            p.terminal.backend().buffer().area.height,
+        );
+        let row = p.app.row;
+        let rect =
+            hit_rect(p, row).unwrap_or_else(|| panic!("{w}x{h}: row {row} not drawn:\n{screen}"));
+        assert!(
+            rect.y >= 2 && rect.y < h - 1,
+            "{w}x{h}: row {row} at {rect:?}"
+        );
+        let line = screen.lines().nth(rect.y as usize).unwrap();
+        assert!(!line.trim_start().starts_with(['↑', '↓']), "{line}");
+        if !tiny {
+            let id = &glance::ids(&p.app.view())[row];
+            let title = glance::card(id);
+            assert!(
+                screen.lines().any(|l| l.contains(&format!(" {title} ─"))
+                    || l.contains(&format!(" {title} · PLAN ─"))),
+                "{w}x{h}: {title} rule not drawn for row {row}:\n{screen}"
+            );
+        }
+        // No card is drawn as a bare rule: the line under a rule is the card's own.
+        let lines: Vec<&str> = screen.lines().collect();
+        for (y, l) in lines.iter().enumerate().take(h as usize - 1) {
+            if l.contains(" ─") && (l.starts_with(' ') && !l.starts_with("  ")) {
+                let next = lines.get(y + 1).copied().unwrap_or("");
+                assert!(
+                    y + 1 < h as usize - 1 && !next.starts_with(" ↓"),
+                    "{w}x{h}: orphan rule at {y}:\n{screen}"
+                );
+            }
+        }
+        p.click(rect.x, rect.y);
+        p.app.click = None;
+        assert_eq!(p.app.row, row);
+        // No hit target outside the body: the header, tab line and footer hold keys only.
+        for (r, hit) in p.app.seen.borrow().hits.iter() {
+            if matches!(hit, Hit::Row(_)) {
+                assert!(r.y >= 2 && r.y < h - 1 && r.right() <= w, "{r:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn every_row_of_every_card_is_drawn_when_selected() {
+        for (w, h) in [(46, 20), (46, 30), (80, 30), (120, 40), (40, 12)] {
+            let tiny = w < 46 || h < 20;
+            let mut p = Pane::new(w, h);
+            all_on(&mut p);
+            let n = glance::ids(&p.app.view()).len();
+            assert!(n > 30, "{n}");
+            for i in 0..n {
+                assert_eq!(p.app.row, i, "{w}x{h}");
+                assert_reachable(&mut p, tiny);
+                p.code(KeyCode::Down);
+            }
+            assert_eq!(p.app.row, n - 1, "j stops at the end");
+            for i in (0..n).rev() {
+                assert_eq!(p.app.row, i, "{w}x{h}");
+                assert_reachable(&mut p, tiny);
+                p.code(KeyCode::Up);
+            }
+            // Tab lands on every card in band order, and back; g G and the wheel reveal too.
+            let starts = glance::sections(&p.app.view());
+            assert_eq!(starts.len(), 11, "{w}x{h}");
+            for &start in starts.iter().skip(1).chain(&starts[..1]) {
+                p.code(KeyCode::Tab);
+                assert_eq!(p.app.row, start, "{w}x{h}");
+                assert_reachable(&mut p, tiny);
+            }
+            for &start in starts.iter().rev() {
+                p.code(KeyCode::BackTab);
+                assert_eq!(p.app.row, start, "{w}x{h}");
+                assert_reachable(&mut p, tiny);
+            }
+            p.keys("G");
+            assert_eq!(p.app.row, n - 1);
+            assert_reachable(&mut p, tiny);
+            p.mouse(MouseEventKind::ScrollUp, 1, 5);
+            assert_eq!(p.app.row, n - 2);
+            assert_reachable(&mut p, tiny);
+            p.keys("g");
+            assert_eq!(p.app.row, 0);
+            assert_reachable(&mut p, tiny);
+        }
+    }
+
+    /// Only the first ask and Health have rows; every card between them is empty or
+    /// unavailable. Each is an inert stop: Tab, j k and the disclosures show its state, and
+    /// no key acts on it.
+    #[test]
+    fn empty_and_unavailable_cards_are_reached_and_never_act() {
+        use crate::github::{Dashboard, Kind};
+        for (w, h) in [(46, 20), (120, 40), (40, 12)] {
+            let tiny = w < 46 || h < 20;
+            let mut p = Pane::new(w, h);
+            all_on(&mut p);
+            let app = &mut p.app;
+            app.data.glance.needs_you.truncate(1);
+            app.data.glance.attention.clear();
+            app.data.glance.campaigns.clear();
+            app.data.glance.quiet.count = 0;
+            let s = &mut app.github.sources[0];
+            (s.prs, s.total) = (vec![], 0);
+            let repos = app.config.repos.clone();
+            app.shipped = Dashboard::for_kind(&repos, Kind::Shipped);
+            app.shipped.sources[0].error = Some("GitHub unavailable");
+            app.builds.sources.iter_mut().for_each(|s| s.runs.clear());
+            app.issues = Dashboard::for_kind(&[crate::github::ISSUES_REPO.into()], Kind::Issues);
+            app.issues.sources[0].error = Some("GitHub unavailable");
+            app.scope.read_at = None;
+            let ids = glance::ids(&p.app.view());
+            assert_eq!(ids.len(), 11, "{ids:?}");
+            assert!(matches!(ids[0], glance::RowId::Ask(_)));
+            assert!(matches!(ids[10], glance::RowId::Health(..)));
+            assert!(
+                ids[1..10]
+                    .iter()
+                    .enumerate()
+                    .all(|(i, r)| *r == glance::RowId::Card(i + 1))
+            );
+            let mut seen = vec![];
+            for (i, id) in ids.iter().enumerate().skip(1) {
+                p.code(KeyCode::Tab);
+                assert_eq!(p.app.row, i, "{w}x{h}");
+                assert_reachable(&mut p, tiny);
+                let screen = p.text();
+                let title = glance::card(id);
+                // A stop shows its card and state; Health's row says what it reports.
+                let line = screen
+                    .lines()
+                    .nth(hit_rect(&p, i).unwrap().y as usize)
+                    .unwrap();
+                let want = if i < 10 { title } else { "Health · as of" };
+                assert!(
+                    line.contains(want) || (!tiny && screen.contains(title)),
+                    "{title}:\n{screen}"
+                );
+                seen.push(title);
+                if i < 10 {
+                    // An inert stop: nothing answers, opens, parks, copies or goes.
+                    for key in ['\n', 'a', 'l', 'p', 'y', 'o'] {
+                        let effect = p.keys(&key.to_string());
+                        assert!(matches!(effect, Effect::None), "{title} {key:?}");
+                        assert_eq!(p.app.screen, Screen::Glance, "{title} {key:?}");
+                        assert!(p.app.ask.is_none() && p.app.pending.is_none());
+                    }
+                    p.app.status = None;
+                    assert!(matches!(glance::selected(&p.app.view()), Selected::Nothing));
+                }
+            }
+            assert_eq!(seen.len(), 10);
+            for i in (0..10).rev() {
+                p.code(KeyCode::BackTab);
+                assert_eq!(p.app.row, i, "{w}x{h}");
+                assert_reachable(&mut p, tiny);
+            }
+            for i in 1..ids.len() {
+                p.code(KeyCode::Down);
+                assert_eq!(p.app.row, i);
+                assert_reachable(&mut p, tiny);
+            }
+        }
+    }
+
+    /// A source that empties under the cursor leaves it on that card's stop, drawn.
+    #[test]
+    fn a_source_emptying_under_the_cursor_leaves_a_drawn_stop() {
+        for (w, h) in [(46, 20), (120, 40)] {
+            let mut p = Pane::new(w, h);
+            all_on(&mut p);
+            let view = p.app.view();
+            p.app.row = glance::ids(&view)
+                .iter()
+                .rposition(|r| matches!(r, glance::RowId::Pr(..)))
+                .unwrap();
+            assert_reachable(&mut p, false);
+            let before = glance::ids(&p.app.view()).get(p.app.row).cloned();
+            let s = &mut p.app.github.sources[0];
+            (s.prs, s.total) = (vec![], 0);
+            p.app.restore_row(before);
+            let ids = glance::ids(&p.app.view());
+            assert!(!ids.iter().any(|r| matches!(r, glance::RowId::Pr(..))));
+            assert!(matches!(
+                ids[p.app.row],
+                glance::RowId::Card(2) | glance::RowId::Campaign(_)
+            ));
+            assert_reachable(&mut p, false);
+            assert!(w < 120 || p.text().contains("No open PRs observed"));
+        }
+    }
+
+    /// The ↑ and ↓ lines name what is out of view and are shift-tab and tab.
+    #[test]
+    fn disclosures_name_hidden_cards_and_click_as_tab() {
+        let mut p = Pane::new(46, 20);
+        all_on(&mut p);
+        let screen = p.text();
+        let down = screen
+            .lines()
+            .find(|l| l.contains("↓"))
+            .unwrap_or_else(|| panic!("{screen}"));
+        assert!(
+            down.contains("cards below") && down.contains("HEALTH") || down.ends_with('…'),
+            "{down}"
+        );
+        let starts = glance::sections(&p.app.view());
+        p.click_on("↓");
+        assert_eq!(p.app.row, starts[1]);
+        p.keys("G");
+        let screen = p.text();
+        let up = screen
+            .lines()
+            .find(|l| l.contains("↑"))
+            .unwrap_or_else(|| panic!("{screen}"));
+        assert!(up.contains("above: NEEDS YOU 2"), "{up}");
+        assert!(!screen.contains("↓"), "{screen}");
+        let last = p.app.row;
+        p.click_on("↑");
+        assert_eq!(
+            p.app.row,
+            *starts.iter().rev().find(|&&s| s < last).unwrap()
+        );
+        // Off the Dashboard a disclosure is not a key: Tab does nothing there.
+        let mut asks = Pane::new(40, 12);
+        frames::with_structured(&mut asks.app);
+        asks.keys("A");
+        asks.text();
+        assert!(
+            !asks
+                .app
+                .seen
+                .borrow()
+                .hits
+                .iter()
+                .any(|(_, h)| *h == Hit::Key("tab".into()))
+        );
+    }
+
+    /// 80 columns and 20 rows are two columns: asks beside checks; PRs span the width; a band
+    /// with one side shown takes the width; nothing pads a short card.
+    #[test]
+    fn bands_split_at_80_columns_and_a_lone_side_takes_the_width() {
+        let mut p = Pane::new(80, 30);
+        all_on(&mut p);
+        let screen = p.text();
+        let a = screen.lines().find(|l| l.contains(" NEEDS YOU ─")).unwrap();
+        assert!(a.contains(" TO CHECK ─"), "{a}");
+        assert_eq!(
+            a.find(" TO CHECK").map(|i| a[..i].chars().count()),
+            Some(40),
+            "{a}"
+        );
+        let pr = screen.lines().find(|l| l.contains(" OPEN PRS ─")).unwrap();
+        assert!(
+            pr.starts_with(" OPEN PRS ─") && pr.ends_with("observed CI"),
+            "{pr}"
+        );
+        assert_eq!(pr.chars().count(), 79, "{pr}");
+        let rect = hit_rect(
+            &p,
+            glance::ids(&p.app.view())
+                .iter()
+                .position(|r| matches!(r, glance::RowId::Pr(..)))
+                .unwrap(),
+        );
+        assert_eq!(rect.map(|r| (r.x, r.width)), Some((0, 80)));
+        // Checks hidden: the asks take the whole width.
+        p.keys("2");
+        let screen = p.text();
+        let a = screen.lines().find(|l| l.contains(" NEEDS YOU ─")).unwrap();
+        assert!(
+            !screen.contains(" TO CHECK ─") && a.chars().count() == 79,
+            "{a}"
+        );
+        // Panels 1-3 and 5-0 off, PRs and Health only: the body ends early, no filler.
+        let mut p = Pane::new(120, 40);
+        all_on(&mut p);
+        p.app.config.panels = [
+            false, false, false, true, false, false, false, false, false, false, true,
+        ];
+        let screen = p.text();
+        let blank = screen.lines().filter(|l| l.trim().is_empty()).count();
+        assert!(blank > 10, "{screen}");
+        assert!(screen.lines().last().unwrap().contains("help"), "{screen}");
+    }
+
+    /// Campaigns cut by the card: listed ones are counted apart from quiet ones, which
+    /// only `c` lists.
+    #[test]
+    fn the_campaign_overflow_counts_listed_apart_from_quiet() {
+        let mut p = Pane::new(46, 20);
+        all_on(&mut p);
+        p.app.config.panels = [
+            true, true, true, false, false, false, false, false, false, false, false,
+        ];
+        let quiet = p.app.data.glance.quiet.count;
+        assert!(quiet > 0);
+        let screen = p.text();
+        let listed = p.app.data.glance.campaigns.len();
+        let rule = screen.lines().find(|l| l.contains(" CAMPAIGNS ─")).unwrap();
+        assert!(rule.ends_with(&format!("─ {listed}")), "{rule}");
+        let more = screen
+            .lines()
+            .find(|l| l.contains("more listed"))
+            .unwrap_or_else(|| panic!("{screen}"));
+        let n: usize = more.trim_start()[1..]
+            .split(' ')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(n < listed, "{more}");
+        assert!(
+            more.contains(&format!("{quiet} quiet unlisted · c")),
+            "{more}"
+        );
+    }
+
+    /// `I` on an inert stop opens no item: Detail says nothing is selected, no row key acts,
+    /// and `h` returns to the same stop. With an item inspected before, Detail keeps that
+    /// item, never the stop.
+    #[test]
+    fn an_inert_stop_is_never_a_detail_item_or_an_action_target() {
+        let mut p = Pane::new(46, 20);
+        all_on(&mut p);
+        p.app.scope.read_at = None;
+        let ids = glance::ids(&p.app.view());
+        let stop = ids
+            .iter()
+            .position(|r| *r == glance::RowId::Card(6))
+            .expect("Decisions unscoped is a stop");
+        p.app.row = stop;
+        assert_reachable(&mut p, false);
+        p.keys("I");
+        assert_eq!(p.app.screen, Screen::Detail);
+        assert!(p.app.target.is_none());
+        assert!(p.text().contains("Nothing selected yet"), "{}", p.text());
+        for key in ['\n', 'a', 'l', 'p', 'y', 'o'] {
+            let effect = p.keys(&key.to_string());
+            assert!(matches!(effect, Effect::None), "{key:?}");
+            assert_eq!(p.app.screen, Screen::Detail, "{key:?}");
+            assert!(p.app.ask.is_none() && p.app.pending.is_none(), "{key:?}");
+        }
+        p.keys("h");
+        assert_eq!((p.app.screen, p.app.row), (Screen::Glance, stop));
+        assert_eq!(
+            glance::ids(&p.app.view())[p.app.row],
+            glance::RowId::Card(6)
+        );
+        // Health inspected first: from the stop, `I` shows Health again, not the stop.
+        p.keys("G");
+        p.keys("I");
+        p.keys("h");
+        p.app.row = stop;
+        p.keys("I");
+        let target = p.app.target.as_ref().map(|t| t.id.clone());
+        assert!(
+            matches!(target, Some(glance::RowId::Health(..))),
+            "{target:?}"
+        );
+        p.keys("h");
+        assert_eq!(p.app.row, stop);
+    }
+
+    /// A card given its want height (campaigns' second lines cut, nothing else) draws every
+    /// row: the line a "+1 more" would take is the row's own.
+    #[test]
+    fn a_card_at_its_want_height_draws_every_row() {
+        for h in 24..=40 {
+            let mut p = Pane::new(46, h);
+            p.app.config.panels = [
+                true, true, true, false, false, false, false, false, false, false, false,
+            ];
+            p.app.data.glance.quiet.count = 0;
+            let names: Vec<String> = p
+                .app
+                .data
+                .glance
+                .campaigns
+                .iter()
+                .map(|c| c.name.clone())
+                .collect();
+            let text = p.text();
+            let drawn = names.iter().filter(|n| text.contains(n.as_str())).count();
+            assert!(
+                !(drawn + 1 == names.len() && text.contains("+1 more listed")),
+                "46x{h}: a +1 line where the row fits:\n{text}"
+            );
+            if h == 29 {
+                // 5 + 7 + 12 lines = the body: all eleven campaigns, no overflow line.
+                assert_eq!(drawn, 11, "{text}");
+                assert!(!text.contains("more listed"), "{text}");
+            }
+        }
+    }
+
+    /// Notices sit in the rows' gutter: a right column's first cell is blank on every head
+    /// line, so it never joins the left card's text, and the notice itself is whole.
+    #[test]
+    fn right_column_heads_keep_a_blank_gutter() {
+        for (w, h) in [(80, 30), (120, 40)] {
+            let mut p = Pane::new(w, h);
+            all_on(&mut p);
+            p.app.shipped.sources[0].total = 100;
+            let text = p.text();
+            let split = (w as usize).div_ceil(2);
+            let mut heads = 0;
+            for line in text.lines() {
+                let cells: Vec<char> = line.chars().collect();
+                let right: String = cells.iter().skip(split).collect();
+                if [
+                    "sampled; ",
+                    "latest100-run sample",
+                    "first 100",
+                    "Hub report",
+                ]
+                .iter()
+                .any(|m| right.contains(m))
+                    && !line.contains(" ─")
+                {
+                    heads += 1;
+                    assert_eq!(cells[split], ' ', "{w}x{h}: {line:?}\n{text}");
+                    assert_ne!(cells[split + 1], ' ', "one gutter only: {line:?}");
+                }
+            }
+            assert!(heads >= 3, "{w}x{h}: right-column heads drawn:\n{text}");
+            // The capped source (100 sampled, clipped at 80 columns) and the other one whole.
+            let capped = if w == 120 {
+                "100 sampled; 0s ago · trip-to-japan/trip"
+            } else {
+                "100 sampled; 0s ago · "
+            };
+            for whole in [
+                capped,
+                "2 sampled; 0s ago · trip-to-japan/tools",
+                "latest100-run sample",
+                "first 100; more may exist",
+            ] {
+                assert!(text.contains(whole), "{w}x{h}: {whole}\n{text}");
+            }
+            // An empty card's stop keeps one gutter, now the cursor bar's.
+            p.app.builds.sources.iter_mut().for_each(|s| s.runs.clear());
+            let stop = glance::ids(&p.app.view())
+                .iter()
+                .position(|r| *r == glance::RowId::Card(5))
+                .expect("an empty Build card is a stop");
+            p.app.row = stop;
+            let text = p.text();
+            let rect = hit_rect(&p, stop).unwrap();
+            let line: Vec<char> = text.lines().nth(rect.y as usize).unwrap().chars().collect();
+            assert_eq!(line[rect.x as usize], '▌', "{text}");
+            assert_ne!(line[rect.x as usize + 1], ' ', "no second gutter: {text}");
+        }
+    }
+
+    /// Floors that overflow still fill a split band: at 80x30 the campaigns use the lines
+    /// beside Shipped and Build instead of leaving them blank, without growing the band.
+    #[test]
+    fn a_split_band_fills_its_shorter_side_at_the_floors() {
+        let mut p = Pane::new(80, 30);
+        all_on(&mut p);
+        let text = p.text();
+        let lines: Vec<Vec<char>> = text.lines().map(|l| l.chars().collect()).collect();
+        let split = 40;
+        let side = |l: &Vec<char>, right: bool| -> String {
+            if right {
+                l.iter().skip(split).collect()
+            } else {
+                l.iter().take(split).collect()
+            }
+        };
+        let start = lines
+            .iter()
+            .position(|l| {
+                side(l, false).starts_with(" CAMPAIGNS ") && side(l, true).starts_with(" SHIPPED ")
+            })
+            .expect("band C split at 80 columns");
+        let run = |right: bool| {
+            lines[start..]
+                .iter()
+                .take_while(|l| !side(l, right).trim().is_empty())
+                .count()
+        };
+        // Shipped (5 lines) and Build (6) stay at their floors; the campaigns take as many.
+        assert_eq!((run(false), run(true)), (11, 11), "{text}");
+        let campaigns = lines[start + 1..start + 11]
+            .iter()
+            .filter(|l| {
+                side(l, false)
+                    .trim_start()
+                    .starts_with(['◐', '○', '·', '‖', '•'])
+            })
+            .count();
+        assert!(campaigns >= 8, "{campaigns} campaigns:\n{text}");
+        assert!(
+            text.contains("more listed"),
+            "the rest still counted: {text}"
+        );
+        // The viewport below is unchanged: the same cards are disclosed.
+        assert!(text.contains("↓ 5 cards below: DECISIONS"), "{text}");
+        // Every campaign drawn there is reachable and only drawn rows take clicks.
+        let ids = glance::ids(&p.app.view());
+        for (i, id) in ids.iter().enumerate() {
+            if matches!(id, glance::RowId::Campaign(_)) && hit_rect(&p, i).is_some() {
+                p.app.row = i;
+                assert_reachable(&mut p, false);
+            }
+        }
+    }
+
+    /// Twelve asks walked down and back with j and k at the narrow heights: each selected
+    /// ask is drawn in the window, the rule counts it, the overflow line counts the rest.
+    #[test]
+    fn twelve_asks_walk_down_and_back_in_the_window() {
+        for h in [20, 30] {
+            let mut p = Pane::new(46, h);
+            let mut next = p.app.data.glance.clone();
+            let base = next.needs_you[0].clone();
+            next.needs_you = (0..12)
+                .map(|i| crate::model::Need {
+                    ask_id: 80_000 + i,
+                    campaign: format!("ask-lane-{i:02}"),
+                    ..base.clone()
+                })
+                .collect();
+            // As a read brings them: the cursor stays at the top, on the first new ask.
+            p.app.snapshot(next);
+            let mut order: Vec<i64> = (0..12).collect();
+            order.extend((0..11).rev());
+            let mut last = None;
+            for (step, i) in order.into_iter().enumerate() {
+                if let Some(prev) = last {
+                    p.keys(if i > prev { "j" } else { "k" });
+                }
+                last = Some(i);
+                let id = match glance::selected(&p.app.view()) {
+                    Selected::Ask(a) => a.ask_id,
+                    _ => panic!("46x{h} step {step}: not an ask"),
+                };
+                assert_eq!(id, 80_000 + i, "46x{h} step {step}");
+                assert_reachable(&mut p, false);
+                let text = p.text();
+                let name = format!("ask-lane-{i:02}");
+                assert!(
+                    text.lines()
+                        .any(|l| l.starts_with('▌') && l.contains(&name)),
+                    "46x{h} step {step}: {name} not drawn selected\n{text}"
+                );
+                let drawn = text.lines().filter(|l| l.contains("? ◇ ask-lane-")).count();
+                assert!((1..12).contains(&drawn), "46x{h}: {drawn}\n{text}");
+                let rule = text.lines().find(|l| l.contains(" NEEDS YOU ")).unwrap();
+                assert!(rule.ends_with(&format!(" {}/12", i + 1)), "{rule}");
+                assert!(
+                    text.contains(&format!("+{} more asks · j k", 12 - drawn)),
+                    "46x{h} step {step}:\n{text}"
+                );
+                assert!(text.lines().next().unwrap().contains("12 need you"));
+                assert!(text.contains("A Asks 12"), "{text}");
+            }
         }
     }
 }

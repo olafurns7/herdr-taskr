@@ -3,38 +3,38 @@
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
 H Health-
  3 notes still carry OWNER items
- NEEDS YOU ────────────────────────────────────────────────────────────────────────────────────────────────────────── 5
- ? ◆ fleet-hub            BLOCKING HUB                                                                            ⏎  25s
-   Release: Cut the ╭ Answer ask 61802 · docs-refresh ─────────────────────────────────────────────╮ix
- ? ◆ auth-rotation  │                                                                              │              ⏎   2m
-   Tokens: Which sig│  Translations landed for three of the four locales. Locales: Which locales   │) HMAC-SHA256
-▌? ◆ docs-refresh   │  ship in the first docs release?                                             │              ⏎   4m
-▌  Translations land│                                                                              │release? (A) Engli…
- ? ◇ tui-frames     │     [ ] A  English                                                           │              ⏎  41s
-   Frames follow-up │            The source text; always complete.                                 │e v2.4.1 now [reco…
- ? ◇ ios-widgets    │     [x] B  German                                                            │       laptop ↗   6m
-   WIDGET BATCH: 19 │            Reviewed by the partner team last week.                           │): #641 and the th…
- TO CHECK ──────────│   ❯ [x] C  Japanese                                                          │───────────────── 3
- ! map-tiles-polish │            Machine draft; 40 pages are still unreviewed.                     │         laptop   2h
-   lead unregistered│     [ ] D  Portuguese                                                        │
- ! infra-layout     │            Half translated; the glossary is not settled yet.                 │                  2h
-   lead idle with 3 │     …  write your own answer                                                 │
- ! host build-mini  │                                                                              │           mini  12m
-   host stale: no he│  ──────────────────────────────────────────────────────────────────────────  │
- CAMPAIGNS ─────────│   answer  B: German; C: Japanese                                             │──────────────── 11
- ◐ search-index     │                                                                              │                 19s
-   Research complete│   j k choose    space pick    tab add a note    ⏎ review    esc cancel       │
- ◐ auth-rotation    │                                                                              │                 29s
-   Implementation sl│                                                                              │
+ NEEDS YOU ────────────────────────────────────────────── 5  TO CHECK ─────────────────────────────────────────────── 3
+ ? ◆ fleet-hub            BLOCKING HUB                ⏎  25s ! map-tiles-polish                              laptop   2h
+   Release: Cut the ╭ Answer ask 61802 · docs-refresh ─────────────────────────────────────────────╮
+ ? ◆ auth-rotation  │                                                                              │                  2h
+   Tokens: Which sig│  Translations landed for three of the four locales. Locales: Which locales   │
+▌? ◆ docs-refresh   │  ship in the first docs release?                                             │           mini  12m
+▌  Translations land│                                                                              │
+ ? ◇ tui-frames     │     [ ] A  English                                                           │
+   Frames follow-up │            The source text; always complete.                                 │
+ ? ◇ ios-widgets    │     [x] B  German                                                            │
+   WIDGET BATCH: 19 │            Reviewed by the partner team last week.                           │
+ CAMPAIGNS ─────────│   ❯ [x] C  Japanese                                                          │──────────────── 11
+ ◐ search-index     │            Machine draft; 40 pages are still unreviewed.                     │                 19s
+   Research complete│     [ ] D  Portuguese                                                        │
+ ◐ auth-rotation    │            Half translated; the glossary is not settled yet.                 │                 29s
+   Implementation sl│     …  write your own answer                                                 │
  ○ billing-export   │                                                                              │                 33s
-   FYI 61448 from se│                                                                              │
- ○ docs-refresh     │                                                                              │                  2m
- ○ checkout-flow    │                                                                              │                  3m
- ◐ ios-widgets      ╰──────────────────────────────────────────────────────────────────────────────╯          laptop  7m
- ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆                                                                       8m
- · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃                                                                      12m
+   FYI 61448 from se│  ──────────────────────────────────────────────────────────────────────────  │
+ ○ docs-refresh     │   answer  B: German; C: Japanese                                             │                  2m
+   Hub FYI: keep the│                                                                              │
+ ○ checkout-flow    │   j k choose    space pick    tab add a note    ⏎ review    esc cancel       │                  3m
+   FIX: three P2 fin│                                                                              │
+ ◐ ios-widgets      │                                                                              │          laptop  7m
+   Widget batch appr│                                                                              │
+ ◐ tui-frames       │                                                                              │                  8m
+   NOW: plan rev 3.1│                                                                              │
+ · infra-layout     │                                                                              │                 12m
+   cache-audit lead ╰──────────────────────────────────────────────────────────────────────────────╯
  ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁                                                                      14m
+   matrix run A finished
  ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                                                                      54m
+   S4 cursor split merged; contract tests green on both hosts
  ‖ legacy-importer                                                                                            parked  3h
  · 2 quiet
  ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   D A F I screens   y copy   s slotr   ? help

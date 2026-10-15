@@ -3,38 +3,38 @@
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions- · 8 Fleet- · 9 Log- · 0 Issues-
 H Health-
  3 notes still carry OWNER items
- NEEDS YOU ────────────────────────────────────────────────────────────────────────────────────────────────────────── 2
-▌? ◇ tui-frames           BLOCKING                                                                                ⏎  41s
-▌  Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns). (A) merge #212 and release v2.4.1 now [reco…
- ? ◇ ios-widgets                                                                                           laptop ↗   6m
-   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). STOPPED, per your rule (conflict on the way): #641 and the th…
- TO CHECK ───────────────────────────────────────────────────────────────────────────────────────────────────────── 1/3
- ! map-tiles-polish                                                                                          laptop   2h
-   lead unregistered and silent
+ NEEDS YOU ────────────────────────────────────────────── 2  TO CHECK ─────────────────────────────────────────────── 3
+▌? ◇ tui-frames           BLOCKING                    ⏎  41s ! map-tiles-polish                              laptop   2h
+▌  Frames follow-up is ready: PR #212 (orphaned asks hidde…    lead unregistered and silent
+ ? ◇ ios-widgets                               laptop ↗   6m ! infra-layout                                           2h
+   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…    lead idle with 3 results
+                                                             ! host build-mini                                 mini  12m
+                                                               host stale: no heartbeat for 12 m
  OPEN PRS ───────────────────────────────────────────────────────────────────────────────────────────────── observed CI
-CI: 1 fail 1 run 0 ? 1 pass 0 draft
-3 open; 0s ago · trip-to-japan/trip
+ CI: 1 fail 1 run 0 ? 1 pass 0 draft
+ 3 open; 0s ago · trip-to-japan/trip
  ■ failing #42 Keep pending action labels readable
    @alex · 1h · trip-to-japan/trip
  ■ running #41 Refresh campaign milestones
    @sam · 2h · trip-to-japan/trip
  ■ checks passing #40 Clarify owner answer copy
    @alex · 3h · trip-to-japan/trip · approved
- SHIPPED ───────────────────────────────────────────────────────────────────────────────────────────────────── observed
-4 observed merged / rolling 24h
-2 sampled; 0s ago · trip-to-japan/trip
-2 sampled; 0s ago · trip-to-japan/tools
- @alex · 2 PRs observed
- @sam · 2 PRs observed
- BUILD QUEUE ───────────────────────────────────────────────────────────────────────────────────────────────── observed
-2 active observed · 0 unknown
-6 sampled; 0s ago · trip-to-japan/trip
-latest100-run sample · older may be missing
- running (in_progress) · Build and test
-   dashboard · 5m · trip-to-japan/trip
- queued (queued) · Release checks
-   main · 1m · trip-to-japan/trip
- CAMPAIGNS ───────────────────────────────────────────────────────────────────────────────────────────────────────── 11
- ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃                                                                      19s
- +12 more · c shows all
+ CAMPAIGNS ───────────────────────────────────────────── 11  SHIPPED ───────────────────────────────────────── observed
+ ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃          19s 4 observed merged / rolling 24h
+   Research complete: reports/ranking-options.md compares …  2 sampled; 0s ago · trip-to-japan/trip
+ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█          29s 2 sampled; 0s ago · trip-to-japan/tools
+   Implementation slice: key rollover job, fake-clock test…  @alex · 2 PRs observed
+ ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁          33s @sam · 2 PRs observed
+   FYI 61448 from search-index (root 4310): the tokenizer …  BUILD QUEUE ───────────────────────────────────── observed
+•○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂           2m 2 active observed · 0 unknown
+   Hub FYI: keep the page map machine-readable for the fut…  6 sampled; 0s ago · trip-to-japan/trip
+ ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█           3m latest100-run sample · older may be missing
+   FIX: three P2 findings in the review of the address ste…  running (in_progress) · Build and test
+ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁    laptop  7m   dashboard · 5m · trip-to-japan/trip
+ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆           8m queued (queued) · Release checks
+ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃          12m   main · 1m · trip-to-japan/trip
+ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁          14m
+ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁          54m
+ ‖ legacy-importer                                parked  3h
+ · 2 quiet
  ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   D A F I screens   y copy   s slotr   ? help

@@ -26,5 +26,5 @@ panels 1+ 2+ 3+ 4+ 5+ 6+ 7- 8- 9- 0- H-
  ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁                    33s
  ○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂                     2m
  ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█                     3m
- +8 more · c shows all
+ +6 more listed · F · 2 quiet unlisted · c
  ⏎ go   a answer   l open   D A F I screens   ? help

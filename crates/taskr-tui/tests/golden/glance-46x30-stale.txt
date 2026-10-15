@@ -26,5 +26,5 @@ panels 1+ 2+ 3+ 4+ 5+ 6+ 7- 8- 9- 0- H-
  · infra-layout      —       ▂▂▁█▁▃▃       12m
  ◐ model-evals       ●●●●●●+ ███▁██▁       14m
  ○ api-pagination    ●       ▁▁▁█▄▁▁       54m
- · 1 parked · 2 quiet
+ +1 more listed · F · 2 quiet unlisted · c
  r retry   ⏎ go   a answer   l open   ? help
