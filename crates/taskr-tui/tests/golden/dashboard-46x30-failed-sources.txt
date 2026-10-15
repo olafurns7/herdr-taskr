@@ -21,10 +21,10 @@ panels 1+ 2+ 3+ 4+ 5+ 6+ 7- 8- 9- 0- H-
  +10 more listed · F · 2 quiet unlisted · c
  SHIPPED ─────────────────────────── observed
  Counts unavailable
- unavailable; unavailable · trip-to-japan/trip
+ unavailable; unavailable · example-org/app
  BUILD QUEUE ─────────────────────── observed
  Counts unavailable
- unavailable; authentication required · trip-…
+ unavailable; authentication required · examp…
  latest100-run sample · older may be missing
 
  ⏎ go   a answer   l open   ? help

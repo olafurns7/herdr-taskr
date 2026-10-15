@@ -23,18 +23,18 @@ H Health-
  □ #38 DRAFT Sketch the fleet totals line                       checks ? head moved · req ? · none · draft · unres 0  2h
  CAMPAIGNS ───────────────────────────────────────────── 11  SHIPPED ───────────────────────────────────────── observed
  ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃          19s 4 observed merged / rolling 24h
-   Research complete: reports/ranking-options.md compares …  2 sampled; 0s ago · trip-to-japan/trip
- ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█          29s 2 sampled; 0s ago · trip-to-japan/tools
+   Research complete: reports/ranking-options.md compares …  2 sampled; 0s ago · example-org/app
+ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█          29s 2 sampled; 0s ago · example-org/tools
    Implementation slice: key rollover job, fake-clock test…  @alex · 2 PRs observed
  ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁          33s @sam · 2 PRs observed
    FYI 61448 from search-index (root 4310): the tokenizer …  BUILD QUEUE ───────────────────────────────────── observed
 •○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂           2m 2 active observed · 0 unknown
- ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█           3m 6 sampled; 0s ago · trip-to-japan/trip
+ ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█           3m 6 sampled; 0s ago · example-org/app
  ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁    laptop  7m latest100-run sample · older may be missing
  ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆           8m running (in_progress) · Build and test
- · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃          12m   dashboard · 5m · trip-to-japan/trip
+ · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃          12m   dashboard · 5m · example-org/app
  ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁          14m queued (queued) · Release checks
- ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁          54m   main · 1m · trip-to-japan/trip
+ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁          54m   main · 1m · example-org/app
  ‖ legacy-importer                                parked  3h
  · 2 quiet
  r retry   ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   D A F I screens   y copy   ? help

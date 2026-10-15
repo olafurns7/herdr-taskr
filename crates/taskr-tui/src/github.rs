@@ -18,8 +18,6 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 pub(crate) const MINUTE: Duration = Duration::from_secs(60);
 pub(crate) const CAP: Duration = Duration::from_secs(900);
 pub(crate) const LIMIT: usize = 8 * 1024 * 1024;
-/// The owner-authorized Issues scope; `repos` settings never widen it.
-pub const ISSUES_REPO: &str = "trip-to-japan/trip";
 const ISSUES_EVERY: Duration = Duration::from_secs(300);
 /// One absolute budget for both Issues reads, parsing included.
 const PAIR_BUDGET: Duration = Duration::from_secs(10);
@@ -37,7 +35,7 @@ pub fn clean(text: &str) -> String {
 pub enum Kind {
     Shipped,
     Build,
-    /// Issues by assignee (key 0): one fixed repository, one pair of reads per five minutes.
+    /// Issues by assignee (key 0): one configured repository, one pair of reads per five minutes.
     Issues,
 }
 impl Kind {
@@ -823,7 +821,7 @@ impl Drop for Poller {
 }
 pub fn demo_shipped(now: i64) -> Dashboard {
     let mut d = Dashboard::for_kind(
-        &["trip-to-japan/trip".into(), "trip-to-japan/tools".into()],
+        &["example-org/app".into(), "example-org/tools".into()],
         Kind::Shipped,
     );
     for (i, s) in d.sources.iter_mut().enumerate() {
@@ -854,7 +852,7 @@ pub fn demo_shipped(now: i64) -> Dashboard {
     d
 }
 pub fn demo_builds(now: i64) -> Dashboard {
-    let mut d = Dashboard::for_kind(&["trip-to-japan/trip".into()], Kind::Build);
+    let mut d = Dashboard::for_kind(&["example-org/app".into()], Kind::Build);
     let repo = d.sources[0].repo.clone();
     d.sources[0].observe(
         Ok(Sample {
@@ -887,7 +885,7 @@ pub fn demo_builds(now: i64) -> Dashboard {
 pub fn demo_issues(now: i64) -> Dashboard {
     let at = |ago: i64| utc_stamp(now - ago);
     let (open, closed) = issue_fixture(&at);
-    let mut d = Dashboard::for_kind(&[ISSUES_REPO.into()], Kind::Issues);
+    let mut d = Dashboard::for_kind(&["example-org/app".into()], Kind::Issues);
     d.sources[0].observe(parse_issues(&open, &closed, now), Instant::now());
     d
 }
@@ -1271,7 +1269,7 @@ mod tests {
             (sample.total, sample.closed_total, sample.issues.len()),
             (6, 4, 7)
         );
-        let mut d = Dashboard::for_kind(&[ISSUES_REPO.into()], Kind::Issues);
+        let mut d = Dashboard::for_kind(&["example-org/app".into()], Kind::Issues);
         d.sources[0].observe(Ok(sample), Instant::now());
         assert_eq!(d.issue_totals(now), [4, 2, 2]);
         let groups = d.assignees(now);
@@ -1292,7 +1290,7 @@ mod tests {
         let odd = issues_json(vec![issue(9, "OPEN", &["x\u{1b}[31m"], &[], None, now)]);
         let s = parse_issues(&odd, b"[]", now).unwrap();
         assert_eq!(s.issues[0].assignees, ["x\u{1b}[31m"]);
-        let mut d = Dashboard::for_kind(&[ISSUES_REPO.into()], Kind::Issues);
+        let mut d = Dashboard::for_kind(&["example-org/app".into()], Kind::Issues);
         d.sources[0].observe(Ok(s), Instant::now());
         assert_eq!(d.assignees(now)[0].name(), "@x[31m");
     }
@@ -1492,11 +1490,11 @@ mod tests {
     #[test]
     fn issues_admission_is_five_minutes_manual_included_and_keeps_the_last_good_pair() {
         // A new source is due from its creation instant on.
-        let mut d = Dashboard::for_kind(&[ISSUES_REPO.into()], Kind::Issues);
+        let mut d = Dashboard::for_kind(&["example-org/app".into()], Kind::Issues);
         let now = Instant::now();
         let s = &mut d.sources[0];
         assert!(s.ready(now, false));
-        assert_eq!(s.status(now), format!("reading GitHub · {ISSUES_REPO}"));
+        assert_eq!(s.status(now), "reading GitHub · example-org/app");
         s.last_start = Some(now);
         s.observe(Err(Failure::unavailable()), now);
         // First failure: unavailable, never zero.
@@ -1522,18 +1520,18 @@ mod tests {
         assert!(!s.ready(now + Duration::from_secs(7199), true));
         // Hidden: no admission, even manual and due.
         let mut app = App::new(crate::model::Data::default());
-        app.issues = Dashboard::for_kind(&[ISSUES_REPO.into()], Kind::Issues);
+        app.issues = Dashboard::for_kind(&["example-org/app".into()], Kind::Issues);
         let mut poller = Poller::new(Kind::Issues);
         assert!(!poller.tick(&mut app, Instant::now() + MINUTE * 10, false, true));
         assert!(poller.workers.is_empty());
         assert!(app.issues.sources[0].last_start.is_none());
     }
     #[test]
-    fn issues_scope_is_fixed_apart_from_configured_repos() {
+    fn issues_scope_is_separate_from_pr_repos() {
         let app = App::new(crate::model::Data::default());
         assert!(app.issues.sources.is_empty());
-        let d = Dashboard::for_kind(&[ISSUES_REPO.into()], Kind::Issues);
-        assert_eq!(d.sources[0].repo, "trip-to-japan/trip");
+        let d = Dashboard::for_kind(&["example-org/app".into()], Kind::Issues);
+        assert_eq!(d.sources[0].repo, "example-org/app");
         assert_eq!(demo_issues(1_792_000_000).assignees(1_792_000_000).len(), 4);
     }
 }

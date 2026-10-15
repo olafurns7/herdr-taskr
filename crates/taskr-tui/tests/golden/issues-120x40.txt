@@ -22,19 +22,19 @@ H Health-
  □ #38 DRAFT Sketch the fleet totals line                       checks ? head moved · req ? · none · draft · unres 0  2h
  CAMPAIGNS ───────────────────────────────────────────── 11  SHIPPED ───────────────────────────────────────── observed
  ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃          19s 4 observed merged / rolling 24h
- ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█          29s 2 sampled; 0s ago · trip-to-japan/trip
- ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁          33s 2 sampled; 0s ago · trip-to-japan/tools
+ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█          29s 2 sampled; 0s ago · example-org/app
+ ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁          33s 2 sampled; 0s ago · example-org/tools
 •○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂           2m @alex · 2 PRs observed
  ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█           3m @sam · 2 PRs observed
  ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁    laptop  7m BUILD QUEUE ───────────────────────────────────── observed
- ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆           8m 6 sampled; 0s ago · trip-to-japan/trip
+ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆           8m 6 sampled; 0s ago · example-org/app
  · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃          12m latest100-run sample · older may be missing
  ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁          14m running (in_progress) · Build and test
- ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁          54m   dashboard · 5m · trip-to-japan/trip
+ ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁          54m   dashboard · 5m · example-org/app
  ‖ legacy-importer                                parked  3h queued (queued) · Release checks
- · 2 quiet                                                     main · 1m · trip-to-japan/trip
- ISSUES ──────────────────────────────────────────────────────────────────────────────────────────── trip-to-japan/trip
- 4 open + 1 closed sampled; 0s ago · trip-to-japan/trip
+ · 2 quiet                                                     main · 1m · example-org/app
+ ISSUES ─────────────────────────────────────────────────────────────────────────────────────────────── example-org/app
+ 4 open + 1 closed sampled; 0s ago · example-org/app
 ▌@alex · 2 open · 2 blocked · 0 closed/24h
  +3 more groups · j k
  a asks   0-9 panels   H health   / filter   D A F I screens   s slotr   q quit   ? help

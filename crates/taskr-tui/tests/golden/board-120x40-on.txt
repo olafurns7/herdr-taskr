@@ -15,26 +15,26 @@ H Health+
  ✗ #42 Keep pending action labels readable            ✓2 ✗2 ◷0 · req ✗ · changes · behind · unres 3 · e2e-web, lint  12m
  +5 more PRs · tab here
  CAMPAIGNS ───────────────────────────────────────────── 11  SHIPPED ───────────────────────────────────────── observed
- ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃          19s 2 sampled; 0s ago · trip-to-japan/trip
- ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█          29s 2 sampled; 0s ago · trip-to-japan/tools
+ ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃          19s 2 sampled; 0s ago · example-org/app
+ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█          29s 2 sampled; 0s ago · example-org/tools
  ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁          33s @alex · 2 PRs observed
 •○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂           2m @sam · 2 PRs observed
  ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█           3m BUILD QUEUE ───────────────────────────────────── observed
- ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁    laptop  7m 6 sampled; 0s ago · trip-to-japan/trip
+ ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁    laptop  7m 6 sampled; 0s ago · example-org/app
  ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆           8m latest100-run sample · older may be missing
  · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃          12m running (in_progress) · Build and test
- ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁          14m   dashboard · 5m · trip-to-japan/trip
+ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁          14m   dashboard · 5m · example-org/app
  +2 more listed · F · 2 quiet unlisted · c                   +1 more run · tab here
  DECISIONS · PLAN ───────────────────────────── cached read  FLEET ─────────────────────────────────── listed campaigns
  tui-frames #4120 · read 3m ago                              2 quiet not listed; no counts
  goal: tui-frames: a small terminal view of every campaign … search-index · 1 working 0 ready 1 open · lead working
  plan v11 · 1 decisions, 2 closed lanes since · plan doc v1… +10 more campaigns · F lists all
- ◆ #61301 D4: one binary for the view and the hub; the old … ISSUES ──────────────────────────────── trip-to-japan/trip
- ◆ #60790 Trust rule 1: red is an open owner ask and nothin… 4 open + 1 closed sampled; 0s ago · trip-to-japan/trip
+ ◆ #61301 D4: one binary for the view and the hub; the old … ISSUES ─────────────────────────────────── example-org/app
+ ◆ #60790 Trust rule 1: red is an open owner ask and nothin… 4 open + 1 closed sampled; 0s ago · example-org/app
  DECISION LOG ─────────────────────────────── recent sample  @alex · 2 open · 2 blocked · 0 closed/24h
  tui-frames #4120 · read 3m ago                              +3 more groups · tab here
  recent log sample (up to 100 events): decisions only        HEALTH ─────────────────────────── hub report · production
- #61301 13:58 D4: one binary for the view and the hub; the … Hub report · trip-to-japan/trip · read 17:46
+ #61301 13:58 D4: one binary for the view and the hub; the … Hub report · example-org/app · read 17:46
                                                              as of 17:42Z 4m ago · deploy live · sentry clean · sha
                                                              0a1b2c3d4e
  ⏎ go to lead   a answer   l open   0-9 panels   H health   / filter   D A F I screens   y copy   s slotr   ? help

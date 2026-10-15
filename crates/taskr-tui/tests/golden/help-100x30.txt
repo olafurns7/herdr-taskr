@@ -25,6 +25,6 @@
 │    7, 9: the campaign last opened with l, as      ● lane   ● ready   · idle   × gone   ‖ parked  │
 │    cached; l or o reads it again, r does not. 8:  ✓ done   ⊘ abandoned   ✗ rejected              │
 │    listed campaigns only; / filters it, not 7 or  ⏎ pane on this machine   ↗ another             │
-│    9. 0: trip-to-japan/trip issues by current     • changed since you looked                     │
+│    9. 0: issues_repo issues by current assignee,  • changed since you looked                     │
 │                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

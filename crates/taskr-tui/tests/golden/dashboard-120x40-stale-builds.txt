@@ -22,18 +22,18 @@ H Health-
  □ #38 DRAFT Sketch the fleet totals line                       checks ? head moved · req ? · none · draft · unres 0  2h
  CAMPAIGNS ───────────────────────────────────────────── 11  SHIPPED ───────────────────────────────────────── observed
  ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃          19s 4 observed merged / rolling 24h
-   Research complete: reports/ranking-options.md compares …  2 sampled; 0s ago · trip-to-japan/trip
- ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█          29s 2 sampled; 0s ago · trip-to-japan/tools
+   Research complete: reports/ranking-options.md compares …  2 sampled; 0s ago · example-org/app
+ ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█          29s 2 sampled; 0s ago · example-org/tools
    Implementation slice: key rollover job, fake-clock test…  @alex · 2 PRs observed
  ○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁          33s @sam · 2 PRs observed
    FYI 61448 from search-index (root 4310): the tokenizer …  BUILD QUEUE ───────────────────────────────────── observed
 •○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂           2m 2 active observed · 0 unknown
-   Hub FYI: keep the page map machine-readable for the fut…  stale 0s; unavailable · trip-to-japan/trip
+   Hub FYI: keep the page map machine-readable for the fut…  stale 0s; unavailable · example-org/app
  ○ checkout-flow       ●●      ▂█▆▄██▄▃▂▁▂▁▃█▄█           3m latest100-run sample · older may be missing
  ◐ ios-widgets         —       ▂█▄▁▁▁▂▂▁▁▁▂▁▂▁    laptop  7m stale/partial · running (in_progress) · Build and test
- ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆           8m   dashboard · 5m · trip-to-japan/trip
+ ◐ tui-frames          ●●●●○○  ▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆           8m   dashboard · 5m · example-org/app
  · infra-layout        —       ▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃          12m stale/partial · queued (queued) · Release checks
- ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁          14m   main · 1m · trip-to-japan/trip
+ ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁          14m   main · 1m · example-org/app
  ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁          54m
  ‖ legacy-importer                                parked  3h
  · 2 quiet

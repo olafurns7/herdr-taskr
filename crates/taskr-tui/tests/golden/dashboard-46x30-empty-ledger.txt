@@ -17,14 +17,14 @@ panels 1+ 2+ 3+ 4+ 5+ 6+ 7- 8- 9- 0- H-
    ✓88+? ✗0+? ◷12+? · req ? · approved · unst…
  +3 more PRs · j k
  SHIPPED ─────────────────────────── observed
- 2 sampled; 0s ago · trip-to-japan/trip
- 2 sampled; 0s ago · trip-to-japan/tools
+ 2 sampled; 0s ago · example-org/app
+ 2 sampled; 0s ago · example-org/tools
  @alex · 2 PRs observed
  @sam · 2 PRs observed
  BUILD QUEUE ─────────────────────── observed
- 6 sampled; 0s ago · trip-to-japan/trip
+ 6 sampled; 0s ago · example-org/app
  latest100-run sample · older may be missing
  running (in_progress) · Build and test
-   dashboard · 5m · trip-to-japan/trip
+   dashboard · 5m · example-org/app
  +1 more run · tab here
  r refresh   D A F I screens   ? help
