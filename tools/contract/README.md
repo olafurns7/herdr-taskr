@@ -75,9 +75,10 @@ never ship a contract build. Process/network cells use real time where needed.
 
 `testdata/contract/tests.tsv` is frozen classification data from the deleted Go
 tests. Families, readiness, groups a/b/c and dependency reasons describe those
-historical tests. The source classifier and adapter test-set checker were deleted.
-No remaining gate calls them; `mapping_check.py` never validated tests.tsv, so no
-replacement classification check is needed.
+historical tests. The source classifier was deleted. `go_set_check.sh`, which
+matched `mapping.tsv`'s Go columns (`go_test`, `go_subtest`, `go_file`, `family`,
+`class`) against the Go test set and `tests.tsv`, was also deleted. Those columns
+are now frozen and unchecked.
 
 `mapping.tsv` retains historical Go test/subtest/file columns and Rust-only rows
 (`go_test` is `-`). Keeping these rows preserves the porting and coverage-loss
