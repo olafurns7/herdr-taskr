@@ -35,11 +35,39 @@ taskr-tui --demo     # invented data: no ledger is read, no key sends anything
 It needs a terminal. In a script, `taskr glance` prints the same snapshot as
 one line of JSON.
 
-## Glance
+## Screens
+
+Four top-level screens, named in a tab line under the header: **D**ashboard,
+**A**sks, **F**leet and Detail (**I**). Their uppercase letters switch to them,
+`[` and `]` cycle them, and a click on a tab is its key. From an overlay (help,
+a campaign, all campaigns, a document, slotr) the overlay closes first. While
+typing a filter or an answer, the letters and brackets are text; the answer
+dialog, its confirm step and a pending `y` question ignore them. Each screen
+keeps its own row (by identity, through snapshots), scroll and filter while
+another is shown. The view starts on the Dashboard; the screen is not saved.
+Switching reads nothing; the ledger snapshot keeps refreshing on every screen.
+
+- **Asks** lists every open owner ask, whatever panel 1 shows on the Dashboard,
+  with the row actions an ask has there (`⏎`, `a`, `l`, `y`, `/`).
+- **Fleet** lists every listed campaign, parked ones last, whatever panel 3
+  shows, with a campaign row's actions (`⏎`, `l`, `p`, `y`, `/`).
+- **Detail** (`I` on a row) shows that row's item in full, at full width:
+  where it came from (`from Asks · NEEDS YOU · row 2`), every field the row
+  has, its source and age, and for a campaign's rows the last four hours of
+  activity. It scrolls with `j` `k`, `g` `G`, `ctrl-d` `ctrl-u`, `PgDn` `PgUp`
+  and the wheel, and nothing is cut off at any width. `esc` or `h` returns to
+  the row, scroll and filter it came from. `⏎`, `a`, `l`, `o`, `p` and `y` act
+  on the item as on its row. Detail makes no read: an item answered, closed,
+  expired or hidden since is shown as no longer listed, and no key acts on
+  another row in its place. With nothing opened yet it says to select a row
+  first.
+
+## Dashboard
 
 ![Glance, dark theme](images/glance-dark.png)
 
-The first screen has eleven switchable panels, top to bottom:
+The Dashboard spans the full width and has eleven switchable panels, top to
+bottom:
 
 - **Needs you:** open owner asks. Red in the header means an open owner ask. `BLOCKING` marks an ask whose work has stopped for your answer.
   `HUB` marks a question the hub relayed from its own dialog
@@ -94,11 +122,14 @@ The first screen has eleven switchable panels, top to bottom:
 
 Press `1` (asks), `2` (checks), `3` (campaigns), `4` (Open PRs), `5` (Shipped), `6` (Build queue),
 `7` (Decisions), `8` (Fleet), `9` (Decision log), `0` (Issues) or uppercase `H`
-(Health) in Glance to show or hide a panel; lowercase `h` stays back. The
+(Health) on the Dashboard to show or hide a panel; lowercase `h` stays back. The
+switches shape the Dashboard only. The
 switch row uses `+` for shown and `-` for hidden. The first six start
 enabled, 7-9, 0 and H hidden; narrow, the hidden five fold into
-`7-9,0,H off`. Hidden owner asks
-remain counted in the header. Hidden rows cannot receive actions. Rows of
+`7-9,0,H off`. Under 32 rows the switches share one line of keys,
+`panels 1+ 2+ … H-`, so the tab line costs the list no row. Hidden owner asks
+remain counted in the header and in the Asks tab. A hidden card's rows cannot
+receive actions on the Dashboard; Asks and Fleet list theirs regardless. Rows of
 7-9 are informational: only `o` acts on them, opening their campaign. `/`
 filters Fleet by name, not 7 or 9. All panels
 can be hidden; `1`–`9`, `0` and `H` restore them. Campaign's `1`–`5` keys still select panes.
@@ -125,9 +156,13 @@ reads or writes no config, and runs no external tool. No private PR data or
 credentials are saved.
 
 Open PRs makes one bounded `gh pr list` invocation per visible repository
-every 60 seconds. `r` can request a refresh after five seconds, but cannot
-bypass failure backoff or a known rate-limit deadline. Hiding the panel or
-leaving Glance stops scheduled reads; an in-flight read can finish. Reads
+every 60 seconds. `r` on the Dashboard can request a refresh after five seconds, but cannot
+bypass failure backoff or a known rate-limit deadline. Hiding the panel,
+switching to another screen or opening an overlay, a dialog or a pending `y`
+question over the Dashboard
+stops scheduled reads; an in-flight read can finish. Coming back keeps each
+source's schedule and backoff: a read that fell due meanwhile may start, once,
+and nothing catches up. Reads
 have a ten-second process deadline and bounded output. Failures retain the
 last good result with its own stale label; a first failure says unavailable.
 Ledger, Open PRs, Shipped and Build queue freshness are independent. Errors show generic messages.
@@ -208,13 +243,10 @@ budget; several TUI instances multiply the traffic. Failure backoff caps at
 15 minutes except when a longer known provider deadline applies.
 
 The header shows which hub the data comes from, how old it is, and the
-verdict: **no owner action**, **N need you** or **N to check**. The pane on
-the right shows the selected row in full. When its text is longer than the
-pane, the title says which lines show (`9-34/34`): `tab` past the last
-section, or a click, focuses the pane, and the keys below scroll it. In a
-terminal under 100 columns there is no right pane; `a` shows an ask's full
-text in the answer dialog, which scrolls with `ctrl-d` `ctrl-u` and `PgDn`
-`PgUp`.
+verdict: **no owner action**, **N need you** or **N to check**. No pane is
+reserved beside the list: `I` shows the selected row in full on Detail, whose
+title says which lines show (`9-34/34`). `a` also shows an ask's full text in
+the answer dialog, which scrolls with `ctrl-d` `ctrl-u` and `PgDn` `PgUp`.
 
 The view refreshes every five seconds. If the ledger stops answering, the
 frame is marked stale and keeps the last data.
@@ -233,11 +265,11 @@ frame is marked stale and keeps the last data.
 4. **PRs:** pull request references the campaign recorded.
 5. **Log:** the newest events.
 
-`c` on the glance lists every campaign, closed ones included.
+`c` on the Dashboard, Asks or Fleet lists every campaign, closed ones included.
 
 ## Slotr
 
-`s` on the glance or a campaign shows slotr, the hub's memory-aware run
+`s` on a top-level screen or a campaign shows slotr, the hub's memory-aware run
 queue, as `taskr slotr` reads it; `s` again closes it. The top lines are the
 machine: free memory, the reserve slotr keeps back, how much more its
 holders may still take, pressure (PSI over 10 s and 60 s), load, and the
@@ -263,15 +295,17 @@ pools stay, dimmed. Runs that wait on the old heavy flock show only as
 | `j` `k`, arrows | Down, up |
 | `g` `G` | First, last row |
 | `ctrl-d` `ctrl-u` | Half a page |
-| `PgDn` `PgUp` | A page (the focused detail, a document, the answer dialog) |
-| `tab`, `shift-tab` | Next or previous section, then the detail pane (glance), or pane (campaign) |
-| `1`-`9`, `0`, `H` | Show/hide a Glance panel (remembered; `0` is Issues, `H` Health) |
+| `PgDn` `PgUp` | A page (Detail, a document, the answer dialog) |
+| `tab`, `shift-tab` | Next or previous card (Dashboard), or pane (campaign) |
+| `D` `A` `F` `I` | Dashboard, Asks, Fleet; Detail of the selected row |
+| `[` `]` | Previous, next screen |
+| `1`-`9`, `0`, `H` | Show/hide a Dashboard panel (remembered; `0` is Issues, `H` Health) |
 | `1`-`5` | Jump to a pane (campaign) |
 | `Enter` | Go to the row's agent pane in Herdr |
 | `l` | Open the campaign |
-| `h`, `esc` | Back, close; from the detail pane, back to the list |
+| `h`, `esc` | Back, close; from Detail, back to its row |
 | `/` | Filter rows by name; search in a document |
-| `c` | All campaigns, closed too (glance) |
+| `c` | All campaigns, closed too (Dashboard, Asks, Fleet) |
 | `s` | Slotr: who holds a slot and who waits; `s` again closes |
 | `a` | Answer the selected ask |
 | `p` | Park or unpark a campaign (asks first) |
@@ -281,15 +315,12 @@ pools stay, dimmed. Runs that wait on the old heavy flock show only as
 | `m` | Mouse on or off |
 | `t` | Theme: dark, light, terminal |
 | `?` | Help |
-| `q` | Close; quits on the glance |
+| `q` | Close; quits on a top-level screen |
 | `space` | Page down (in a document) |
 
-The mouse works too: click selects, double-click is `Enter`, the wheel
-scrolls the pane under it.
-
-With the glance's detail pane focused, `j` `k`, `g` `G`, `ctrl-d` `ctrl-u`
-and `PgDn` `PgUp` scroll it instead of moving the cursor. Moving the cursor
-starts the next row's detail at its top.
+The mouse works too: click selects, double-click is `Enter`, a click on a tab
+switches to it, and the wheel moves the cursor, or scrolls Detail and the
+campaign pane under it.
 
 ### What the keys change
 

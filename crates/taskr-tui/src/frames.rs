@@ -30,7 +30,7 @@ pub fn live_fixture() -> Data {
     serde_json::from_str(include_str!("../fixture-live.json")).expect("the live fixture decodes")
 }
 
-/// The fixture's 12-step ask, longer than the glance's detail pane. It is kept out of the
+/// The fixture's 12-step ask, longer than a Detail screen. It is kept out of the
 /// glance so the other frames do not change.
 pub fn long_ask() -> crate::model::Need {
     let fixture: serde_json::Value =
@@ -55,7 +55,7 @@ pub fn with_structured(app: &mut App) {
 }
 
 fn structured(app: &mut App) {
-    // The single-select selected, so the wide frames show its options in the detail pane.
+    // The single-select selected.
     with_structured(app);
     app.row = 1;
 }
@@ -77,11 +77,39 @@ fn answer_multi(app: &mut App) {
     }
 }
 
+/// The long ask opened with `I`.
 fn detail(app: &mut App) {
-    // The long ask selected, the detail focused and scrolled to its end (`tab` past the
-    // last section, then `G`; the draw stops at the last line).
     app.data.glance.needs_you.push(long_ask());
-    (app.row, app.detail, app.scroll) = (2, true, usize::MAX);
+    app.row = 2;
+    app.inspect();
+}
+
+/// The same scrolled to its end (`G`; the draw stops at the last line).
+fn detail_end(app: &mut App) {
+    detail(app);
+    app.scroll = usize::MAX;
+}
+
+/// `I` on the first row of a kind, on the Dashboard as `setup` leaves it.
+fn inspect(app: &mut App, kind: fn(&crate::glance::RowId) -> bool) {
+    app.row = crate::glance::ids(&app.view())
+        .iter()
+        .position(kind)
+        .expect("a row of that kind");
+    app.inspect();
+}
+
+fn asks(app: &mut App) {
+    glance(app);
+    with_structured(app);
+    app.screen = Screen::Asks;
+    app.row = 1;
+}
+
+fn fleet(app: &mut App) {
+    glance(app);
+    app.screen = Screen::Fleet;
+    app.row = 2;
 }
 
 fn dashboard(app: &mut App) {
@@ -309,19 +337,86 @@ pub fn all() -> Vec<Spec> {
             app.shipped.sources[0].error = Some("GitHub unavailable");
             app.builds.sources[0].error = Some("GitHub authentication required");
         }),
-        spec("dashboard", 120, 40, "-shipped-detail", |app| {
+        spec("dashboard", 80, 30, "", dashboard),
+        spec("dashboard", 46, 20, "", dashboard),
+        spec("dashboard", 30, 10, "", dashboard),
+        spec("detail", 120, 40, "-shipped", |app| {
             dashboard(app);
-            app.row = crate::glance::ids(&app.view())
-                .iter()
-                .position(|r| matches!(r, crate::glance::RowId::Author(_)))
-                .unwrap();
+            inspect(app, |r| matches!(r, crate::glance::RowId::Author(_)));
         }),
-        spec("dashboard", 120, 40, "-build-detail", |app| {
+        spec("detail", 120, 40, "-build", |app| {
             dashboard(app);
-            app.row = crate::glance::ids(&app.view())
-                .iter()
-                .position(|r| matches!(r, crate::glance::RowId::Run(..)))
-                .unwrap();
+            inspect(app, |r| matches!(r, crate::glance::RowId::Run(..)));
+        }),
+        spec("detail", 46, 30, "-pr", |app| {
+            dashboard(app);
+            inspect(app, |r| matches!(r, crate::glance::RowId::Pr(..)));
+        }),
+        spec("detail", 46, 30, "-campaign", |app| {
+            glance(app);
+            inspect(app, |r| matches!(r, crate::glance::RowId::Campaign(_)));
+        }),
+        spec("detail", 80, 30, "-check", |app| {
+            glance(app);
+            inspect(app, |r| matches!(r, crate::glance::RowId::Check(..)));
+        }),
+        spec("detail", 46, 30, "-empty", |app| {
+            app.screen = Screen::Detail
+        }),
+        spec("detail", 46, 30, "-gone", |app| {
+            // The ask was answered elsewhere after I opened it.
+            detail(app);
+            app.data.glance.needs_you.pop();
+        }),
+        spec("detail", 120, 40, "", detail),
+        spec("detail", 120, 40, "-light", detail),
+        spec("detail", 80, 30, "", detail),
+        spec("detail", 46, 30, "", detail),
+        spec("detail", 46, 30, "-light", detail),
+        spec("detail", 46, 30, "-ascii", |app| {
+            detail(app);
+            app.ascii = true;
+            app.theme = theme::PLAIN;
+        }),
+        spec("detail", 46, 20, "", detail),
+        spec("detail", 30, 10, "", detail),
+        spec("asks", 120, 40, "", asks),
+        spec("asks", 120, 40, "-light", asks),
+        spec("asks", 80, 30, "", asks),
+        spec("asks", 46, 30, "", asks),
+        spec("asks", 46, 30, "-light", asks),
+        spec("asks", 46, 30, "-ascii", |app| {
+            asks(app);
+            app.ascii = true;
+            app.theme = theme::PLAIN;
+        }),
+        spec("asks", 46, 20, "", asks),
+        spec("asks", 30, 10, "", asks),
+        spec("asks", 46, 30, "-hidden", |app| {
+            // Panel 1 hidden on the Dashboard: Asks still lists every open ask.
+            asks(app);
+            app.config.panels[0] = false;
+        }),
+        spec("asks", 46, 30, "-empty", |app| {
+            app.screen = Screen::Asks;
+            app.data.glance.needs_you.clear();
+        }),
+        spec("fleet", 120, 40, "", fleet),
+        spec("fleet", 120, 40, "-light", fleet),
+        spec("fleet", 80, 30, "", fleet),
+        spec("fleet", 46, 30, "", fleet),
+        spec("fleet", 46, 30, "-light", fleet),
+        spec("fleet", 46, 30, "-ascii", |app| {
+            fleet(app);
+            app.ascii = true;
+            app.theme = theme::PLAIN;
+        }),
+        spec("fleet", 46, 20, "", fleet),
+        spec("fleet", 30, 10, "", fleet),
+        spec("fleet", 46, 30, "-hidden", |app| {
+            // Panel 3 hidden on the Dashboard: Fleet still lists every listed campaign.
+            fleet(app);
+            app.config.panels[2] = false;
         }),
         spec("issues", 120, 40, "", issues),
         spec("issues", 120, 40, "-light", issues),
@@ -355,6 +450,16 @@ pub fn all() -> Vec<Spec> {
             app.issues.sources[0].total = 100;
             app.issues.sources[0].closed_total = 100;
             first_group(app);
+        }),
+        spec("issues", 120, 40, "-overflow-detail", |app| {
+            // The same group in Detail: its sample says what it may have left out.
+            issues(app);
+            app.config.panels[6..10].fill(true);
+            app.scope.read_at = Some(app.observed_at - 180);
+            app.issues.sources[0].total = 100;
+            app.issues.sources[0].closed_total = 100;
+            first_group(app);
+            app.inspect();
         }),
         spec("issues", 46, 30, "-cap", |app| {
             // Issues alone, both reads at their 100-row cap: the list says so for each.
@@ -451,7 +556,7 @@ pub fn all() -> Vec<Spec> {
         spec("glance", 46, 30, "", glance),
         spec("glance", 70, 30, "", glance),
         spec("glance", 120, 40, "", glance),
-        spec("glance", 120, 40, "-detail", detail),
+        spec("detail", 120, 40, "-end", detail_end),
         spec("glance", 46, 20, "", glance),
         spec("glance", 46, 30, "-stale", stale),
         spec("glance", 24, 1, "", glance),

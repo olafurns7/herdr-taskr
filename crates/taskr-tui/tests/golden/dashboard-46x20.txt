@@ -1,0 +1,20 @@
+ taskr      2s ago   ● 2 need you  3 to check
+ [D Dash]  A Asks 2   F Fleet 11   I Detail
+panels 1+ 2+ 3+ 4+ 5+ 6+ 7- 8- 9- 0- H-
+ 3 notes still carry OWNER items
+ NEEDS YOU ────────────────────────────── 1/2
+▌? ◇ tui-frames           BLOCKING      ⏎  41s
+▌  Frames follow-up is ready: PR #212 (orpha…
+ TO CHECK ─────────────────────────────── 1/3
+ ! map-tiles-polish                laptop   2h
+   lead unregistered and silent
+ OPEN PRS ─────────────────────── observed CI
+CI: 1 fail 1 run 0 ? 1 pass 0 draft
+3 open; 0s ago · trip-to-japan/trip
+ ■ failing #42 Keep pending action labels rea…
+   @alex · 1h · trip-to-japan/trip
+ +2 outside view · j/k to browse
+ CAMPAIGNS ─────────────────────────────── 11
+ ◐ search-index      ●       ▁▁▁▁▁█▃       19s
+ +12 more · c shows all
+ ⏎ go   a answer   l open   ? help

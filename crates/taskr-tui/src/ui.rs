@@ -10,7 +10,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::{App, Hit, theme::Theme};
+use crate::{App, Hit, Screen, theme::Theme};
 
 /// Spinner frames from the spec's glyph set; the braille ones did not render.
 const SPINNER: [&str; 4] = ["◐", "◓", "◑", "◒"];
@@ -436,6 +436,73 @@ pub(crate) fn header(f: &mut Frame, app: &App, area: Rect, crumb: Vec<Span<'stat
     f.render_widget(Paragraph::new(Line::from(spread(left, right, w))), area);
 }
 
+/// The top-level screens under the header, the one shown in brackets. Asks counts the open
+/// owner asks, in the asks colour while any is open; Fleet the listed campaigns. A click on
+/// a tab is its key. Names shorten, then go, as the width runs out.
+pub(crate) fn tabs(f: &mut Frame, app: &App, area: Rect) {
+    let t = &app.theme;
+    let base = match app.screen.peer() {
+        Some(_) => app.screen,
+        None => app.back.first().map_or(Screen::Glance, |b| b.screen),
+    };
+    let (asks, campaigns) = app.listed;
+    let count = |n: usize| {
+        if app.fetch.loaded {
+            format!(" {n}")
+        } else {
+            String::new()
+        }
+    };
+    let tabs = |level: usize| {
+        let mut spans = vec![Span::raw(" ")];
+        let mut keys = vec![];
+        for (screen, key, long, short) in [
+            (Screen::Glance, "D", "Dashboard", "Dash"),
+            (Screen::Asks, "A", "Asks", "Asks"),
+            (Screen::Fleet, "F", "Fleet", "Fleet"),
+            (Screen::Detail, "I", "Detail", "Detail"),
+        ] {
+            let name = [long, short, ""][level];
+            let extra = match screen {
+                Screen::Asks => count(asks),
+                Screen::Fleet => count(campaigns),
+                _ => String::new(),
+            };
+            let on = screen == base;
+            let x = width(&spans);
+            let (open, close) = if on { ("[", "]") } else { (" ", " ") };
+            spans.push(sp(open, t.accent));
+            spans.push(bold(key, t.accent));
+            if !name.is_empty() {
+                spans.push(sp(format!(" {name}"), if on { t.text } else { t.sub }));
+            }
+            let urgent = screen == Screen::Asks && asks > 0 && app.fetch.loaded;
+            spans.push(sp(extra, if urgent { t.need } else { t.sub }));
+            spans.push(sp(format!("{close} "), t.accent));
+            keys.push((x, width(&spans) - 1 - x, key));
+        }
+        (spans, keys)
+    };
+    let w = area.width as usize;
+    let (spans, keys) = (0..3)
+        .map(&tabs)
+        .find(|(spans, _)| width(spans) <= w)
+        .unwrap_or_else(|| tabs(2));
+    for (x, len, key) in keys {
+        if x + len <= w {
+            app.hit(
+                Rect {
+                    x: area.x + x as u16,
+                    width: len as u16,
+                    ..area
+                },
+                Hit::Key(key.to_string()),
+            );
+        }
+    }
+    f.render_widget(Paragraph::new(Line::from(fit(spans, w))), area);
+}
+
 /// The hint line. Hints drop from the right when they do not fit, but the last one
 /// (`? help`) stays.
 pub(crate) fn footer(f: &mut Frame, app: &App, area: Rect, hints: &[(&str, &str)]) {
@@ -451,9 +518,10 @@ pub(crate) fn footer(f: &mut Frame, app: &App, area: Rect, hints: &[(&str, &str)
             .sum::<usize>()
     };
     // At the right, how the view learns of changes: pushed by the hub, or polling.
+    // Its own gap: the hints never run into it.
     let mode = match app.fetch.live {
-        Some(true) => "live ",
-        Some(false) => "polling ",
+        Some(true) => "   live ",
+        Some(false) => "   polling ",
         None => "",
     };
     let room = (area.width as usize).saturating_sub(mode.len());

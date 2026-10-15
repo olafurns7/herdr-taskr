@@ -1,40 +1,40 @@
- taskr ❯ glance                                                           hub atlas · 2s ago   ● 2 need you  3 to check
+ taskr ❯ dashboard                                                        hub atlas · 2s ago   ● 2 need you  3 to check
+ [D Dashboard]  A Asks 2   F Fleet 11   I Detail
 1 asks+ · 2 checks+ · 3 camps+ · 4 PRs+ · 5 Shipped+ · 6 Build+ · 7 Decisions+ · 8 Fleet+ · 9 Log+ · 0 Issues+
 H Health+
  3 notes still carry OWNER items
-╭ Glance ──────────────────────────────────────────────────╮╭ Health · trip-to-japan/trip production ──────────────────╮
-│ ask tui-frames Frames follow-up is ready: PR #212 (orpha…││ Hub report · trip-to-japan/trip · read 17:46             │
-│ ask ios-widgets WIDGET BATCH: 19 of 23 merged (14:02-14:…││                                                          │
-│ check map-tiles-polish lead unregistered and silent      ││ repo trip-to-japan/trip · env production                 │
-│ check infra-layout lead idle with 3 results              ││ sha 0a1b2c3d4e                                           │
-│ check host build-mini host stale: no heartbeat for 12 m  ││ deploy live                                              │
-│ PR failing #42 Keep pending action labels readable @alex ││ sentry clean                                             │
-│ PR running #41 Refresh campaign milestones @sam          ││ checked 2026-10-14T17:42:40Z (4m ago)                    │
-│ PR checks passing #40 Clarify owner answer copy @alex    ││ note #7002 on hub root 2899, written 17:43 UTC           │
-│ Shipped @alex · 2 observed / 24h                         ││ rollback note #7000                                      │
-│ Shipped @sam · 2 observed / 24h                          ││ read 17:46 UTC from the latest 100 hub events            │
-│ Build running (in_progress) Build and test · dashboard ·…││                                                          │
-│ Build queued (queued) Release checks · main · latest100 …││                                                          │
-│ decision #61301 D4: one binary for the view and the hub;…││                                                          │
-│ decision #60790 Trust rule 1: red is an open owner ask a…││                                                          │
-│ fleet search-index · 1 working 0 ready 1 open            ││                                                          │
-│ fleet auth-rotation · 0 working 1 ready 1 open           ││                                                          │
-│ fleet billing-export · 1 working 0 ready 1 open          ││                                                          │
-│ fleet docs-refresh · 1 working 0 ready 1 open            ││                                                          │
-│ fleet checkout-flow · 1 working 1 ready 2 open           ││                                                          │
-│ fleet ios-widgets · 0 working 0 ready 0 open             ││                                                          │
-│ fleet tui-frames · 3 working 1 ready 6 open              ││                                                          │
-│ fleet infra-layout · 0 working 0 ready 0 open            ││                                                          │
-│ fleet model-evals · 5 working 2 ready 9 open             ││                                                          │
-│ fleet api-pagination · 1 working 0 ready 1 open          ││                                                          │
-│ fleet legacy-importer · 0 working 0 ready 0 open         │╰──────────────────────────────────────────────────────────╯
-│ logged decision #61301 13:58 D4: one binary for the view…│
-│ Issues @alex · 2 open · 2 blocked · 0 closed/24h         │
-│ Issues @sam · 2 open · 1 blocked · 0 closed/24h          │
-│ Issues Unassigned · 1 open · 0 blocked · 0 closed/24h    │
-│ Issues @kim · 0 open · 0 blocked · 1 closed/24h          │
-│▌Health · as of 17:42Z 4m ago · deploy live · sentry clea…│
-│ campaign search-index Research complete: reports/ranking…│
-│ campaign auth-rotation Implementation slice: key rollove…│
-╰──────────────────────────────────────────────────────────╯
- 0-9 panels   H health   / filter   s slotr   q quit   ? help
+ ask tui-frames Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns). (A) merge #212 and release v2.4…
+ ask ios-widgets WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). STOPPED, per your rule (conflict on the way): #6…
+ check map-tiles-polish lead unregistered and silent
+ check infra-layout lead idle with 3 results
+ check host build-mini host stale: no heartbeat for 12 m
+ PR failing #42 Keep pending action labels readable @alex
+ PR running #41 Refresh campaign milestones @sam
+ PR checks passing #40 Clarify owner answer copy @alex
+ Shipped @alex · 2 observed / 24h
+ Shipped @sam · 2 observed / 24h
+ Build running (in_progress) Build and test · dashboard · latest100 sample
+ Build queued (queued) Release checks · main · latest100 sample
+ decision #61301 D4: one binary for the view and the hub; the old suite stays the oracle until parity.
+ decision #60790 Trust rule 1: red is an open owner ask and nothing else.
+ fleet search-index · 1 working 0 ready 1 open
+ fleet auth-rotation · 0 working 1 ready 1 open
+ fleet billing-export · 1 working 0 ready 1 open
+ fleet docs-refresh · 1 working 0 ready 1 open
+ fleet checkout-flow · 1 working 1 ready 2 open
+ fleet ios-widgets · 0 working 0 ready 0 open
+ fleet tui-frames · 3 working 1 ready 6 open
+ fleet infra-layout · 0 working 0 ready 0 open
+ fleet model-evals · 5 working 2 ready 9 open
+ fleet api-pagination · 1 working 0 ready 1 open
+ fleet legacy-importer · 0 working 0 ready 0 open
+ logged decision #61301 13:58 D4: one binary for the view and the hub; the old suite stays the oracle until parity.
+ Issues @alex · 2 open · 2 blocked · 0 closed/24h
+ Issues @sam · 2 open · 1 blocked · 0 closed/24h
+ Issues Unassigned · 1 open · 0 blocked · 0 closed/24h
+ Issues @kim · 0 open · 0 blocked · 1 closed/24h
+▌Health · as of 17:42Z 4m ago · deploy live · sentry clean · sha 0a1b2c3d4e
+ campaign search-index Research complete: reports/ranking-options.md compares three scorers on the saved queries
+ campaign auth-rotation Implementation slice: key rollover job, fake-clock tests, installer and operator docs
+ campaign billing-export FYI 61448 from search-index (root 4310): the tokenizer upgrade drops the legacy stemmer
+ 0-9 panels   H health   / filter   D A F I screens   s slotr   q quit   ? help

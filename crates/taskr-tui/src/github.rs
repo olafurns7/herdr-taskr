@@ -1380,7 +1380,6 @@ mod tests {
     fn pr_completion_preserves_unchanged_selection_scroll_and_resets_changed_identity() {
         let mut app = App::new(crate::frames::fixture());
         app.github = demo();
-        app.detail = true;
         app.scroll = 7;
         let mut poller = Poller::default();
         let handle = thread::spawn(|| Ok(Sample::default()));
@@ -1396,7 +1395,6 @@ mod tests {
         });
         assert!(poller.tick(&mut app, Instant::now(), false, false));
         assert_eq!(app.scroll, 7);
-        assert!(app.detail);
         assert!(!poller.tick(&mut app, Instant::now(), false, false));
         assert_eq!(app.scroll, 7);
         let before = glance::ids(&app.view()).get(app.row).cloned();

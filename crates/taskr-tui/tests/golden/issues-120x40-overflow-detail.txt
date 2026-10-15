@@ -1,0 +1,40 @@
+ taskr ❯ detail                                                           hub atlas · 2s ago   ● 2 need you  3 to check
+  D Dashboard   A Asks 2   F Fleet 11  [I Detail]
+╭ Issues · @alex ──────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ from Dashboard · ISSUES · row 1                                                                                      │
+│ 2 open · 2 blocked · 0 closed/24h                                                                                    │
+│                                                                                                                      │
+│ Current assignees on observed, non-atomic samples of trip-to-japan/trip. Groups overlap: an issue with several       │
+│ assignees counts in each, so groups do not sum to the headline. Blocked: open issues labelled blocked or needs-info. │
+│ Closed: closedAt in the rolling 24 hours. Not a global total.                                                        │
+│ 100 open + 100 closed sampled; 0s ago · trip-to-japan/trip; open: first 100, more may exist; closed: first 100, more │
+│ may exist                                                                                                            │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ h back   D A F I screens   s slotr   q quit   ? help

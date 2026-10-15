@@ -504,11 +504,7 @@ pub(crate) fn answer(f: &mut Frame, app: &App) {
     let title = format!("ask {} · {}", a.ask_id, a.campaign);
 
     if f.area().width >= 60 {
-        let mut background = app.clone();
-        background.screen = Screen::Glance;
-        // The glance behind keeps its detail pane's place; `scroll` is this overlay's.
-        background.scroll = app.back.last().map_or(0, |b| b.scroll);
-        glance::draw(f, &background);
+        crate::background(f, app);
         // Nothing under a dialog can be clicked.
         app.seen.borrow_mut().hits.clear();
         let inner = modal(
@@ -671,13 +667,14 @@ fn group(t: &Theme, name: &str, view: u8, width: usize) -> Vec<Line<'static>> {
     }
     let note = match name {
         "Go" => Some(keys::GO_NOTE),
-        "Move" if view == keys::GLANCE => Some(keys::DETAIL_NOTE),
         "Act" if view & (keys::GLANCE | keys::CAMPAIGN) != 0 => Some(keys::ANSWER_NOTE),
         _ => None,
     };
     // The wide help's left column has the room for it.
     let ledger = (name == "Go" && view == keys::GLANCE).then_some(keys::LEDGER_NOTE);
-    for note in note.into_iter().chain(ledger) {
+    let screens = (name == "Go" && view & (keys::GLANCE | keys::LIST | keys::DETAIL) != 0)
+        .then_some(keys::SCREENS_NOTE);
+    for note in note.into_iter().chain(screens).chain(ledger) {
         out.extend(
             wrap(note, width.saturating_sub(2))
                 .into_iter()
@@ -694,7 +691,10 @@ pub(crate) fn help(f: &mut Frame, app: &App) {
         Screen::Campaign => (keys::CAMPAIGN, "campaign"),
         Screen::Pager => (keys::PAGER, "pager"),
         Screen::Slotr => (keys::SLOTR, "slotr"),
-        _ => (keys::GLANCE, "glance"),
+        Screen::Asks => (keys::LIST, "asks"),
+        Screen::Fleet => (keys::LIST, "fleet"),
+        Screen::Detail => (keys::DETAIL, "detail"),
+        _ => (keys::GLANCE, "dashboard"),
     };
     let marks = |mut lines: Vec<Line<'static>>, width: u16| {
         lines.push(Line::from(bold(" Marks", t.sub)));
@@ -706,11 +706,7 @@ pub(crate) fn help(f: &mut Frame, app: &App) {
         lines
     };
     if f.area().width >= 100 {
-        let mut background = app.clone();
-        background.screen = Screen::Glance;
-        // The glance behind keeps its detail pane's place; `scroll` is this overlay's.
-        background.scroll = app.back.last().map_or(0, |b| b.scroll);
-        glance::draw(f, &background);
+        crate::background(f, app);
         // Nothing under a dialog can be clicked or scrolled.
         *app.seen.borrow_mut() = crate::Seen::default();
         let inner = modal(f, t, 100, 30, &format!("Keys · {name}"));

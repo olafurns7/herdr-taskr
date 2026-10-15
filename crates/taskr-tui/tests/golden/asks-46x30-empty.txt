@@ -1,0 +1,30 @@
+ taskr                 2s ago   ! 3 to check
+  D Dash  [A Asks 0]  F Fleet 11   I Detail
+ 3 notes still carry OWNER items
+
+
+
+
+
+
+
+                       ✓
+
+               Nothing needs you
+      No open owner ask in this snapshot.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ c all campaigns   D A F I screens   ? help

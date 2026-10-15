@@ -1,0 +1,30 @@
+ taskr                                        2s ago   ● 5 need you  3 to check
+  D Dashboard  [A Asks 5]  F Fleet 11   I Detail
+ 3 notes still carry OWNER items
+ NEEDS YOU ────────────────────────────────────────────────────────────────── 5
+ ? ◆ fleet-hub            BLOCKING HUB                                    ⏎  25s
+   Release: Cut the v3.2 release today, or wait for the cache fix? (A) Cut tod…
+▌? ◆ auth-rotation        BLOCKING                                        ⏎   2m
+▌  Tokens: Which signing scheme should the rotated service tokens use? (A) Ed2…
+ ? ◆ docs-refresh                                                         ⏎   4m
+   Translations landed for three of the four locales. Locales: Which locales s…
+ ? ◇ tui-frames           BLOCKING                                        ⏎  41s
+   Frames follow-up is ready: PR #212 (orphaned asks hidden, close warns). (A)…
+ ? ◇ ios-widgets                                                   laptop ↗   6m
+   WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). STOPPED, per your rul…
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ⏎ go   a answer   l open   D A F I screens   ? help

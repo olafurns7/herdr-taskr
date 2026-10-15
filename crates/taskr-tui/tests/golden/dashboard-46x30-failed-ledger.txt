@@ -1,6 +1,6 @@
  taskr                             ! no data
-1 asks+ · 2 checks+ · 3 camps+
-4 PRs+ · 5 Shipped+ · 6 Build+ · 7-9,0,H off
+ [D Dashboard]  A Asks   F Fleet   I Detail
+panels 1+ 2+ 3+ 4+ 5+ 6+ 7- 8- 9- 0- H-
              Cannot reach the hub
 
      taskr: server unreachable (connection
@@ -27,4 +27,4 @@ CI: 1 fail 1 run 0 ? 1 pass 0 draft
 6 sampled; 0s ago · trip-to-japan/trip
 latest100-run sample · older may be missing
  +2 outside view · j/k to browse
- r retry   ? help
+ r retry   D A F I screens   ? help

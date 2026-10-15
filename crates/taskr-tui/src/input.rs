@@ -81,21 +81,7 @@ fn say(app: &mut App, text: impl Into<String>) -> Effect {
     Effect::None
 }
 
-/// The last frame drew the glance's detail pane (wide, with a row selected).
-fn detail_drawn(app: &App) -> bool {
-    app.seen
-        .borrow()
-        .hits
-        .iter()
-        .any(|(_, h)| *h == Hit::Detail)
-}
-
-/// The glance's detail pane has the keys: it is focused and on screen.
-fn on_detail(app: &App) -> bool {
-    app.screen == Screen::Glance && app.detail && detail_drawn(app)
-}
-
-/// Puts the glance cursor on `row`; the detail pane then shows another row from its top.
+/// Puts the cursor of a screen of rows on `row`.
 fn select(app: &mut App, row: usize) {
     if app.row != row {
         (app.row, app.scroll) = (row, 0);
@@ -108,7 +94,7 @@ fn travel(app: &mut App, by: isize) {
         let seen = app.seen.borrow();
         (seen.rows, seen.page)
     };
-    if app.screen == Screen::Glance && !on_detail(app) {
+    if app.screen.rows() {
         let row = app
             .row
             .saturating_add_signed(by)
@@ -128,14 +114,26 @@ fn scroll(app: &mut App, by: isize) -> Effect {
     Effect::None
 }
 
-fn reset(app: &mut App) {
+/// A new filter starts a fresh walk of the list, from the selected row when it still
+/// matches.
+fn reset(app: &mut App, before: Option<glance::RowId>) {
     (app.row, app.lane, app.scroll) = (0, 0, 0);
-    // A new filter starts a fresh walk of the list.
-    app.detail = false;
+    if before.is_some() {
+        app.restore_row(before);
+    }
+}
+
+/// The selected row of a screen of rows, before its filter changes.
+fn selected_id(app: &App) -> Option<glance::RowId> {
+    app.screen
+        .rows()
+        .then(|| glance::ids(&app.view()).get(app.row).cloned())
+        .flatten()
 }
 
 /// Typing in the filter: Enter keeps it, Esc clears it.
 fn filter(app: &mut App, code: KeyCode) -> Effect {
+    let before = selected_id(app);
     match code {
         KeyCode::Enter => app.typing = false,
         KeyCode::Esc => {
@@ -148,15 +146,15 @@ fn filter(app: &mut App, code: KeyCode) -> Effect {
         KeyCode::Char(c) => app.filter.push(c),
         _ => return Effect::None,
     }
-    reset(app);
+    reset(app, before);
     Effect::None
 }
 
 /// The keys every screen but the answer dialog shares, then the screen's own.
 fn view(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
     let page = app.seen.borrow().page.0;
-    let detail = on_detail(app);
-    let lists = (app.screen == Screen::Glance && !detail)
+    let detail = app.screen == Screen::Detail;
+    let lists = app.screen.rows()
         || matches!(app.screen, Screen::AllCampaigns | Screen::Slotr)
         || (app.screen == Screen::Campaign && app.pane == 0);
     let half = if lists { 5 } else { (page / 2).max(1) } as isize;
@@ -164,18 +162,31 @@ fn view(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
         // `q` closes before it quits.
         KeyCode::Char('q') if !app.close() => return Effect::Quit,
         KeyCode::Char('q') => {}
-        // Back from the detail pane to the row it shows.
-        KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left if detail => app.detail = false,
+        // Back from Detail to the row it shows.
+        KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left if detail => app.uninspect(),
         // Esc clears a filter before it closes anything.
         KeyCode::Esc if !app.filter.is_empty() => {
+            let before = selected_id(app);
             app.filter.clear();
-            reset(app);
+            reset(app, before);
         }
         KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => {
             if !app.close() && !app.filter.is_empty() {
+                let before = selected_id(app);
                 app.filter.clear();
-                reset(app);
+                reset(app, before);
             }
+        }
+        // The top-level screens, from any of them or from an overlay, which closes first.
+        // Typing, the answer dialog and a pending `y` never reach here.
+        KeyCode::Char('D') => app.switch(Screen::Glance),
+        KeyCode::Char('A') => app.switch(Screen::Asks),
+        KeyCode::Char('F') => app.switch(Screen::Fleet),
+        KeyCode::Char('I') => app.inspect(),
+        KeyCode::Char(c @ ('[' | ']')) => {
+            let at = app.glance_view().screen.peer().unwrap_or(0);
+            let by = if c == ']' { 1 } else { Screen::PEERS.len() - 1 };
+            app.switch(Screen::PEERS[(at + by) % Screen::PEERS.len()]);
         }
         KeyCode::Char('?') if app.screen == Screen::Help => {
             app.close();
@@ -188,7 +199,7 @@ fn view(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
         {
             app.close();
         }
-        KeyCode::Char('s') if matches!(app.screen, Screen::Glance | Screen::Campaign) => {
+        KeyCode::Char('s') if app.screen.peer().is_some() || app.screen == Screen::Campaign => {
             app.go(Screen::Slotr);
             app.row = 0;
         }
@@ -212,7 +223,11 @@ fn view(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
         KeyCode::Char('/')
             if matches!(
                 app.screen,
-                Screen::Glance | Screen::Campaign | Screen::AllCampaigns
+                Screen::Glance
+                    | Screen::Asks
+                    | Screen::Fleet
+                    | Screen::Campaign
+                    | Screen::AllCampaigns
             ) =>
         {
             app.typing = true;
@@ -228,7 +243,9 @@ fn view(app: &mut App, code: KeyCode, ctrl: bool) -> Effect {
         KeyCode::PageUp if app.screen == Screen::Pager || detail => travel(app, -(page as isize)),
         _ => {
             return match app.screen {
-                Screen::Glance => glance_key(app, code),
+                Screen::Glance | Screen::Asks | Screen::Fleet | Screen::Detail => {
+                    glance_key(app, code)
+                }
                 Screen::Campaign => campaign_key(app, code),
                 Screen::AllCampaigns => all_key(app, code),
                 Screen::Slotr => slotr_key(app, code),
@@ -359,8 +376,9 @@ pub fn paste(app: &mut App, text: &str) {
         .map(|c| if c.is_control() { ' ' } else { c })
         .collect();
     if app.typing {
+        let before = selected_id(app);
         app.filter.push_str(line.trim());
-        reset(app);
+        reset(app, before);
     } else if app.screen == Screen::Answer && app.editing {
         app.edit(|text| text.push_str(&line));
     }
@@ -392,7 +410,9 @@ fn park(app: &mut App, root: i64, name: &str, parked: bool) -> Effect {
 fn glance_key(app: &mut App, code: KeyCode) -> Effect {
     // Key 0 is the tenth panel, Issues; uppercase H the eleventh, Health. Lowercase h is
     // back, on every screen.
+    // The Dashboard's alone: Asks and Fleet list their rows whatever the panels show.
     let panel = match code {
+        _ if app.screen != Screen::Glance => None,
         KeyCode::Char(n @ '0'..='9') => Some((n as usize + 9 - '0' as usize) % 10),
         KeyCode::Char('H') => Some(10),
         _ => None,
@@ -403,19 +423,26 @@ fn glance_key(app: &mut App, code: KeyCode) -> Effect {
         app.restore_row(before);
         return Effect::SaveConfig;
     }
-    if matches!(
+    let view = app.view();
+    let acts = matches!(
         code,
         KeyCode::Enter | KeyCode::Right | KeyCode::Char('a' | 'p' | 'l' | 'o' | 'y')
-    ) && !app
-        .seen
-        .borrow()
-        .hits
-        .iter()
-        .any(|(_, hit)| *hit == Hit::Row(app.row))
+    );
+    // Detail acts on its own item, found by identity; a list on a drawn row only.
+    if acts && app.screen == Screen::Detail {
+        if view.row >= glance::ids(&view).len() {
+            return say(app, "nothing here to act on: esc returns");
+        }
+    } else if acts
+        && !app
+            .seen
+            .borrow()
+            .hits
+            .iter()
+            .any(|(_, hit)| *hit == Hit::Row(app.row))
     {
         return Effect::None;
     }
-    let view = app.view();
     let g = &view.data.glance;
     let (host, pane, root, name) = match glance::selected(&view) {
         Selected::Ask(a) => (&a.host, &a.pane_id, a.root_id, &a.campaign),
@@ -453,22 +480,16 @@ fn glance_key(app: &mut App, code: KeyCode) -> Effect {
         Selected::Nothing => return Effect::None,
     };
     match code {
-        KeyCode::Tab | KeyCode::BackTab => {
-            // Sections, then the detail pane when it is drawn, then round again.
+        // The Dashboard's cards, then round again.
+        KeyCode::Tab | KeyCode::BackTab if app.screen == Screen::Glance => {
             let starts = glance::sections(&view);
-            let (tab, detail) = (code == KeyCode::Tab, on_detail(app));
-            let next = match (detail, tab) {
-                (true, true) => starts.first(),
-                (true, false) => starts.last(),
-                (false, true) => starts.iter().find(|&&s| s > app.row),
-                (false, false) => starts.iter().rev().find(|&&s| s < app.row),
+            let tab = code == KeyCode::Tab;
+            let next = if tab {
+                starts.iter().find(|&&s| s > app.row)
+            } else {
+                starts.iter().rev().find(|&&s| s < app.row)
             };
-            if next.is_none() && !detail && detail_drawn(app) {
-                app.detail = true;
-                return Effect::None;
-            }
             let wrap = if tab { starts.first() } else { starts.last() };
-            app.detail = false;
             select(app, next.or(wrap).copied().unwrap_or(0));
             // A section folded out of reach is not a place to land.
             travel(app, 0);
@@ -873,12 +894,6 @@ pub fn mouse(app: &mut App, event: MouseEvent, now: Instant) -> Effect {
                 Some(Hit::Lane(_)) => 0,
                 _ => app.pane,
             };
-            // On the glance the wheel works the pane under it: the list or the detail.
-            match hit {
-                Some(Hit::Detail) => app.detail = true,
-                Some(Hit::Row(_)) => app.detail = false,
-                _ => {}
-            }
             if app.screen == Screen::Campaign && over != app.pane {
                 pane(app, over);
                 return Effect::None;
@@ -901,10 +916,8 @@ pub fn mouse(app: &mut App, event: MouseEvent, now: Instant) -> Effect {
                     return hint_key(&keys).map_or(Effect::None, |code| press(app, code));
                 }
                 Hit::Pane(i) => pane(app, i),
-                Hit::Detail => app.detail = true,
                 Hit::Row(i) => {
-                    app.detail = false;
-                    if app.screen == Screen::Glance {
+                    if app.screen.rows() {
                         select(app, i);
                     } else {
                         app.row = i;
@@ -916,7 +929,7 @@ pub fn mouse(app: &mut App, event: MouseEvent, now: Instant) -> Effect {
                 }
             }
             // A double-click on a row is Enter.
-            if double && !matches!(hit, Hit::Pane(_) | Hit::Detail) {
+            if double && !matches!(hit, Hit::Pane(_)) {
                 press(app, KeyCode::Enter)
             } else {
                 Effect::None
@@ -1536,109 +1549,479 @@ mod tests {
         assert!(!p.text().contains("LASTWORD"));
     }
 
-    #[test]
-    fn the_detail_pane_takes_focus_and_scrolls() {
-        let mut p = Pane::new(120, 40);
-        p.app.data.glance.needs_you.push(frames::long_ask());
-        let at = |p: &Pane| (p.app.row, p.app.detail);
-        // Tab: asks, checks, campaigns, then the detail, then round; shift-tab the other way.
-        p.keys("\t\t");
-        assert_eq!(at(&p), (6, false));
-        p.keys("\t");
-        assert_eq!(at(&p), (6, true));
-        p.keys("\t");
-        assert_eq!(at(&p), (0, false));
-        p.code(KeyCode::BackTab);
-        assert_eq!(at(&p), (0, true));
-        p.code(KeyCode::BackTab);
-        assert_eq!(at(&p), (6, false));
-        // h, esc and the left arrow return to the row the detail came from.
-        for back in [KeyCode::Char('h'), KeyCode::Esc, KeyCode::Left] {
-            p.keys("\t");
-            assert_eq!(at(&p), (6, true));
-            p.code(back);
-            assert_eq!(at(&p), (6, false), "{back:?}");
-        }
-        assert_eq!(p.app.screen, Screen::Glance);
+    /// The selected row's identity on the screen shown.
+    fn at_row(p: &Pane) -> Option<glance::RowId> {
+        glance::ids(&p.app.view()).get(p.app.row).cloned()
+    }
 
-        // The long ask, then a click in the detail focuses it.
-        p.keys("gjj");
-        assert!(p.text().contains("Release runbook"));
-        p.click(80, 10);
-        assert_eq!(at(&p), (2, true));
+    #[test]
+    fn screen_keys_switch_and_each_screen_keeps_its_place() {
+        let mut p = Pane::new(120, 40);
+        p.keys("jj");
+        let dash = at_row(&p);
+        // Asks lists asks only, Fleet campaigns only; switching runs nothing.
+        assert_eq!(p.keys("A"), Effect::None);
+        assert_eq!(p.app.screen, Screen::Asks);
+        let ids = glance::ids(&p.app.view());
+        assert!(!ids.is_empty() && ids.iter().all(|r| matches!(r, glance::RowId::Ask(_))));
         p.keys("j");
-        assert_eq!(p.app.scroll, 1);
+        let ask = at_row(&p);
+        assert_eq!(p.keys("F"), Effect::None);
+        assert_eq!(p.app.screen, Screen::Fleet);
+        let ids = glance::ids(&p.app.view());
+        assert!(!ids.is_empty() && ids.iter().all(|r| matches!(r, glance::RowId::Campaign(_))));
+        p.keys("/doc\n");
+        let fleet = at_row(&p);
+        assert!(
+            matches!(fleet, Some(glance::RowId::Campaign(4296))),
+            "{fleet:?}"
+        );
+        // A snapshot that reorders every list while they wait keeps each place on its item.
+        let mut next = p.app.data.glance.clone();
+        next.needs_you.reverse();
+        next.attention.reverse();
+        next.campaigns.reverse();
+        p.app.snapshot(next);
+        p.keys("D");
+        assert_eq!((p.app.screen, at_row(&p)), (Screen::Glance, dash));
+        assert!(p.app.filter.is_empty());
+        p.keys("]");
+        assert_eq!((p.app.screen, at_row(&p)), (Screen::Asks, ask));
+        p.keys("]");
+        assert_eq!((p.app.screen, at_row(&p)), (Screen::Fleet, fleet));
+        assert_eq!(p.app.filter, "doc");
+        p.keys("]");
+        assert_eq!(p.app.screen, Screen::Detail);
+        p.keys("]");
+        assert_eq!(p.app.screen, Screen::Glance);
+        p.keys("[");
+        assert_eq!(p.app.screen, Screen::Detail);
+        // A click on a tab is its key; the tab line names the counts.
+        let tabs = p.text().lines().nth(1).unwrap().to_string();
+        assert!(
+            tabs.contains("A Asks 2") && tabs.contains("[I Detail]"),
+            "{tabs}"
+        );
+        p.click_on("A Asks");
+        assert_eq!(p.app.screen, Screen::Asks);
+        // q quits from any top-level screen.
+        assert_eq!(p.keys("q"), Effect::Quit);
+    }
+
+    #[test]
+    fn screen_keys_are_text_while_typing_and_never_switch_behind_a_dialog() {
+        let mut p = Pane::new(46, 30);
+        // In the filter they are letters.
+        p.keys("/DAFI[]");
+        assert_eq!(
+            (p.app.screen, p.app.filter.as_str()),
+            (Screen::Glance, "DAFI[]")
+        );
+        p.keys("\x1b\x1b");
+        // Choosing an answer: ignored, the dialog stays.
+        p.keys("a");
+        p.keys("DAFI[]");
+        assert_eq!(p.app.screen, Screen::Answer);
+        // Writing one: text, a first bracket included.
+        for _ in 0..3 {
+            p.code(KeyCode::Down);
+        }
+        assert_eq!((p.app.text.as_str(), p.app.editing), ("", true));
+        p.keys("[D]AFI");
+        assert_eq!(
+            (p.app.screen, p.app.text.as_str()),
+            (Screen::Answer, "[D]AFI")
+        );
+        // The confirm step ignores them.
+        p.keys("\nDAFI[]");
+        assert_eq!(p.app.screen, Screen::Confirm);
+        p.keys("\x1b");
+        assert_eq!(p.app.screen, Screen::Glance);
+        // A pending park: the key cancels it and does nothing else.
+        p.keys("\t\tp");
+        assert!(p.app.pending.is_some());
+        assert_eq!(p.keys("A"), Effect::None);
+        assert!(p.app.pending.is_none());
+        assert_eq!(p.app.screen, Screen::Glance);
+    }
+
+    #[test]
+    fn screen_keys_close_overlays_first() {
+        let mut p = Pane::new(120, 40);
+        for (open, overlay) in [
+            ("?", Screen::Help),
+            ("c", Screen::AllCampaigns),
+            ("s", Screen::Slotr),
+        ] {
+            for (key, screen) in [
+                ("F", Screen::Fleet),
+                ("A", Screen::Asks),
+                ("D", Screen::Glance),
+            ] {
+                p.keys(open);
+                assert_eq!(p.app.screen, overlay);
+                p.keys(key);
+                assert_eq!(p.app.screen, screen, "{open} {key}");
+                assert!(p.app.back.is_empty(), "{open} {key}");
+            }
+        }
+        // Back from the screen switched to reopens nothing.
+        p.keys("h");
+        assert_eq!(p.app.screen, Screen::Glance);
+    }
+
+    #[test]
+    fn detail_shows_the_selected_item_and_returns_to_its_row() {
+        // Short enough that the long ask scrolls at full width.
+        let mut p = Pane::new(80, 24);
+        p.app.data.glance.needs_you.push(frames::long_ask());
+        p.keys("jj");
+        let ask = at_row(&p);
+        p.keys("I");
+        assert_eq!(p.app.screen, Screen::Detail);
+        let top = p.text();
+        assert!(
+            top.contains("from Dashboard · NEEDS YOU · row 3") && top.contains("Release runbook"),
+            "{top}"
+        );
+        // The full width: nothing is drawn beside it, nothing on it can be clicked as a row.
+        assert!(!top.contains("Glance"));
+        assert!(
+            p.app
+                .seen
+                .borrow()
+                .hits
+                .iter()
+                .all(|(_, h)| matches!(h, Hit::Key(_)))
+        );
+        // It scrolls to its last line and stops there.
         p.keys("G");
         let (h, total) = p.app.seen.borrow().page;
         assert!(total > h, "{h} {total}");
         assert_eq!(p.app.scroll, total - h);
-        let screen = p.text();
+        let end = p.text();
         assert!(
-            screen.contains("12. Close the release")
-                && screen.contains(&format!("{}-{total}/{total}", total - h + 1)),
-            "{screen}"
+            end.contains("12. Close the release")
+                && end.contains(&format!("{}-{total}/{total}", total - h + 1)),
+            "{end}"
         );
-        // It stops at its ends: the last line at the bottom, never past it.
         p.keys("j");
         p.code(KeyCode::PageDown);
         assert_eq!(p.app.scroll, total - h);
         p.keys("g");
-        p.code(KeyCode::Up);
         assert_eq!(p.app.scroll, 0);
-        p.code(KeyCode::PageDown);
-        assert_eq!(p.app.scroll, h.min(total - h));
-        p.code(KeyCode::PageUp);
-        assert_eq!((p.app.scroll, p.app.row), (0, 2));
-
-        // Moving the cursor starts the next row's detail at its top: by key, by click.
-        p.keys("G");
-        p.keys("\x1bj");
-        assert_eq!((p.app.row, p.app.scroll), (3, 0));
-        p.keys("k");
-        p.app.scroll = 4;
-        p.click_on("ios-widgets");
-        assert_eq!((p.app.row, p.app.scroll, p.app.detail), (1, 0, false));
-        // and by a refresh that takes the row away; one that keeps it keeps the place.
-        p.keys("j");
-        p.app.scroll = 4;
-        p.app.snapshot(p.app.data.glance.clone());
-        assert_eq!((p.app.row, p.app.scroll), (2, 4));
-        let mut next = p.app.data.glance.clone();
-        next.needs_you.pop();
-        p.app.snapshot(next);
-        assert_eq!(p.app.scroll, 0);
-    }
-
-    #[test]
-    fn the_wheel_scrolls_the_pane_under_it() {
-        let mut p = Pane::new(120, 40);
+        p.mouse(MouseEventKind::ScrollDown, 60, 10);
+        p.mouse(MouseEventKind::ScrollDown, 60, 10);
+        assert_eq!(p.app.scroll, 2);
+        // h, esc and the left arrow return to the row it came from; I opens it again at
+        // its top.
+        for back in [KeyCode::Char('h'), KeyCode::Esc, KeyCode::Left] {
+            p.code(back);
+            assert_eq!((p.app.screen, at_row(&p)), (Screen::Glance, ask.clone()));
+            p.keys("I");
+            assert_eq!((p.app.screen, p.app.scroll), (Screen::Detail, 0));
+        }
+        // From a filtered Fleet: back to its row under its filter.
+        p.keys("F/doc\nI");
+        let text = p.text();
+        assert!(
+            text.contains("from Fleet · CAMPAIGNS · row 1") && text.contains("docs-refresh"),
+            "{text}"
+        );
+        p.keys("\x1b");
+        assert_eq!(
+            (p.app.screen, p.app.filter.as_str(), at_row(&p)),
+            (Screen::Fleet, "doc", Some(glance::RowId::Campaign(4296)))
+        );
+        // Narrow, the long ask still reaches its last line.
+        let mut p = Pane::new(46, 20);
         p.app.data.glance.needs_you.push(frames::long_ask());
-        p.keys("jj");
-        // Over the detail: it takes focus and scrolls; the cursor stays.
-        p.mouse(MouseEventKind::ScrollDown, 80, 10);
-        p.mouse(MouseEventKind::ScrollDown, 80, 10);
-        assert_eq!((p.app.row, p.app.scroll, p.app.detail), (2, 2, true));
-        p.mouse(MouseEventKind::ScrollUp, 80, 10);
-        assert_eq!(p.app.scroll, 1);
-        // Over the list (its first ask row, under the two-line wide switches): the cursor
-        // moves, and the detail starts at the top.
-        p.mouse(MouseEventKind::ScrollDown, 5, 6);
-        assert_eq!((p.app.row, p.app.scroll, p.app.detail), (3, 0, false));
+        // As in the app, a frame is drawn between keys: G scrolls the page Detail drew.
+        p.keys("jjI");
+        p.text();
+        p.keys("G");
+        let text = p.text();
+        // Its options and its campaign's activity follow the body: the end is the last page.
+        let (h, total) = p.app.seen.borrow().page;
+        assert_eq!(p.app.scroll, total - h);
+        assert!(
+            text.contains("ask 61812")
+                && text.contains(&format!("{}-{total}/{total}", total - h + 1))
+                && text.contains("B tomorrow morning"),
+            "{text}"
+        );
     }
 
     #[test]
-    fn narrow_there_is_no_detail_to_focus() {
+    fn detail_never_retargets_when_its_item_leaves() {
         let mut p = Pane::new(46, 30);
-        p.app.detail = true;
-        // A focus left from a wide terminal does not take the keys of a narrow one.
-        p.keys("j");
-        assert_eq!((p.app.row, p.app.scroll), (1, 0));
-        p.keys("\t\t\t");
-        assert_eq!(p.app.row, 0);
+        let ask = p.app.data.glance.needs_you[0].ask_id;
+        let other = p.app.data.glance.needs_you[1].ask_id;
+        p.keys("I");
+        assert!(p.text().contains(&format!("ask {ask}")));
+        // A snapshot that moves it keeps it.
+        let mut next = p.app.data.glance.clone();
+        next.needs_you.reverse();
+        p.app.snapshot(next.clone());
+        assert!(p.text().contains(&format!("ask {ask}")));
+        // Answered elsewhere: Detail says so, and no key acts on the ask now in its place.
+        next.needs_you.retain(|a| a.ask_id != ask);
+        p.app.snapshot(next);
+        let text = p.text();
+        assert!(
+            text.contains("No longer listed") && !text.contains(&format!("ask {other}")),
+            "{text}"
+        );
+        for key in ["a", "p", "l", "o", "y", "\n"] {
+            assert_eq!(p.keys(key), Effect::None, "{key:?}");
+            assert_eq!(p.app.screen, Screen::Detail);
+            assert!(p.app.pending.is_none() && p.app.ask.is_none());
+        }
+        assert!(!p.text().lines().last().unwrap().contains("answer"));
+        p.keys("\x1b");
+        assert_eq!(p.app.screen, Screen::Glance);
+        // With nothing ever opened, Detail says how to fill it.
+        let mut p = Pane::new(46, 30);
+        p.keys("[");
+        let text = p.text();
+        assert_eq!(p.app.screen, Screen::Detail);
+        assert!(text.contains("Select a row first"), "{text}");
     }
 
-    /// Under 100 columns there is no detail pane; an ask's full text is read in the answer
-    /// dialog, which scrolls it.
+    #[test]
+    fn detail_keeps_every_row_kind_whole_and_acts_on_its_own_item() {
+        let mut p = Pane::new(120, 200);
+        let now = 1_792_000_000;
+        p.app.observed_at = now;
+        p.app.github = crate::github::demo();
+        p.app.shipped = crate::github::demo_shipped(now);
+        p.app.builds = crate::github::demo_builds(now);
+        p.app.issues = crate::github::demo_issues(now);
+        p.app.health = crate::health::sample(now, crate::health::CLEAN);
+        p.app.config.panels = [true; 11];
+        p.app.scope.read_at = Some(now - 180);
+        let ids = glance::ids(&p.app.view());
+        let mut kinds = vec![];
+        for (i, id) in ids.iter().enumerate() {
+            p.app.row = i;
+            p.keys("I");
+            let text = p.text();
+            // What the row's old detail pane said, each with its source's age or sample.
+            let (card, field) = match id {
+                glance::RowId::Ask(n) => ("NEEDS YOU", format!("ask {n}")),
+                glance::RowId::Check(..) => ("TO CHECK", "check · ".into()),
+                glance::RowId::Campaign(n) => ("CAMPAIGNS", format!("#{n}")),
+                glance::RowId::Pr(..) => ("OPEN PRS", "Observed checks only".into()),
+                glance::RowId::Author(_) => ("SHIPPED", "Observed cached sample".into()),
+                glance::RowId::Run(..) => ("BUILD QUEUE", "Latest100-run sample".into()),
+                glance::RowId::Decision(..) => ("DECISIONS", "cached read".into()),
+                glance::RowId::Fleet(_) => ("FLEET", "as the glance reported them".into()),
+                glance::RowId::Logged(..) => ("DECISION LOG", "recent log sample".into()),
+                glance::RowId::Assignee(..) => ("ISSUES", "Current assignees".into()),
+                glance::RowId::Health(..) => ("HEALTH", "Health · ".into()),
+            };
+            assert!(
+                text.contains(&format!("from Dashboard · {card} · row"))
+                    && text.contains(&field)
+                    && !text.contains("No longer listed"),
+                "{id:?}:\n{text}"
+            );
+            // Detail admits no GitHub read: no `r` is offered for what it cannot refresh.
+            let foot = text.lines().last().unwrap_or_default().to_string();
+            if matches!(
+                id,
+                glance::RowId::Pr(..) | glance::RowId::Author(_) | glance::RowId::Run(..)
+            ) {
+                assert!(!foot.contains("r refresh"), "{id:?}: {foot}");
+                p.keys("h");
+                let foot = p.text().lines().last().unwrap_or_default().to_string();
+                assert!(foot.contains("r refresh"), "{id:?} row: {foot}");
+                p.keys("I");
+            }
+            // A campaign's own lead and note are said once, not again under its activity.
+            if matches!(id, glance::RowId::Campaign(_) | glance::RowId::Fleet(_)) {
+                assert!(
+                    text.contains("last 4 h") && !text.contains("│ last "),
+                    "{text}"
+                );
+            }
+            // A PR says the read it came from, as Shipped and Build do.
+            if matches!(id, glance::RowId::Pr(..)) {
+                assert!(text.contains("open; 0s ago · trip-to-japan/trip"), "{text}");
+            }
+            kinds.push(card);
+            p.keys("h");
+            assert_eq!((p.app.screen, p.app.row), (Screen::Glance, i));
+        }
+        // A failed read: the PR's Detail says stale, not current.
+        p.app.github.sources[0].error = Some("GitHub unavailable");
+        p.app.row = ids
+            .iter()
+            .position(|r| matches!(r, glance::RowId::Pr(..)))
+            .unwrap();
+        p.keys("I");
+        let text = p.text();
+        assert!(
+            text.contains("stale 0s; unavailable · trip-to-japan/trip"),
+            "{text}"
+        );
+        p.keys("h");
+        p.app.github.sources[0].error = None;
+        kinds.dedup();
+        assert_eq!(kinds.len(), 11, "{kinds:?}");
+        // On Detail the row keys act on its item as on its row: a to-check row opens its
+        // campaign, an informational row has o only.
+        p.app.row = ids
+            .iter()
+            .position(|r| matches!(r, glance::RowId::Campaign(_)))
+            .unwrap();
+        p.keys("I");
+        let c = match glance::selected(&p.app.view()) {
+            Selected::Campaign(c) => (c.id, c.name.clone()),
+            _ => panic!("Detail is not on a campaign"),
+        };
+        p.keys("p");
+        assert!(matches!(&p.app.pending, Some(Job::Park { root, .. }) if *root == c.0));
+        p.keys("x");
+        p.app.row = 0;
+        p.keys("hgI");
+        assert!(matches!(glance::selected(&p.app.view()), Selected::Ask(_)));
+        p.keys("a");
+        assert_eq!(p.app.screen, Screen::Answer);
+        p.keys("\x1b");
+        assert_eq!(p.app.screen, Screen::Detail);
+    }
+
+    #[test]
+    fn hidden_asks_and_campaigns_are_reached_on_their_own_screens_only() {
+        let mut p = Pane::new(46, 30);
+        p.keys("13");
+        let only = |p: &Pane, ask: bool| {
+            glance::ids(&p.app.view()).iter().any(|r| {
+                if ask {
+                    matches!(r, glance::RowId::Ask(_))
+                } else {
+                    matches!(r, glance::RowId::Campaign(_))
+                }
+            })
+        };
+        assert!(!only(&p, true) && !only(&p, false));
+        p.keys("A");
+        assert_eq!(
+            glance::ids(&p.app.view()).len(),
+            p.app.data.glance.needs_you.len()
+        );
+        p.keys("a");
+        assert_eq!(p.app.screen, Screen::Answer);
+        p.keys("\x1b");
+        assert_eq!(p.app.screen, Screen::Asks);
+        // The panel keys are the Dashboard's.
+        assert_eq!(p.keys("1"), Effect::None);
+        assert!(!p.app.config.panels[0]);
+        assert!(!p.text().contains("1 asks"));
+        p.keys("F");
+        assert!(only(&p, false));
+        p.keys("p");
+        assert!(matches!(p.app.pending, Some(Job::Park { .. })));
+        p.keys("x");
+        p.keys("D");
+        assert!(!only(&p, true) && !only(&p, false));
+    }
+
+    #[test]
+    fn sources_are_admitted_only_on_the_dashboard_with_nothing_over_it() {
+        let mut p = Pane::new(120, 40);
+        p.app.config.panels = [true; 11];
+        let sources = [3, 4, 5, 9, 10];
+        let all = |app: &App| sources.iter().all(|&i| app.admits(i));
+        let none = |app: &App| sources.iter().all(|&i| !app.admits(i));
+        assert!(all(&p.app));
+        for (keys, screen) in [
+            ("A", Screen::Asks),
+            ("F", Screen::Fleet),
+            ("I", Screen::Detail),
+            ("D?", Screen::Help),
+            ("Dc", Screen::AllCampaigns),
+            ("Ds", Screen::Slotr),
+            ("Dga", Screen::Answer),
+            ("Dga\n", Screen::Confirm),
+        ] {
+            assert!(!matches!(p.keys(keys), Effect::Refresh | Effect::Run(_)));
+            assert_eq!(p.app.screen, screen, "{keys}");
+            assert!(none(&p.app), "{keys}");
+            while p.app.close() {}
+            p.app.switch(Screen::Glance);
+            assert!(all(&p.app), "{keys}");
+        }
+        // A hidden card admits nothing, on the Dashboard too.
+        p.keys("4");
+        assert!(!p.app.admits(3) && p.app.admits(4));
+        // A pending park question is a modal on the Dashboard: nothing reads under it,
+        // and the key that cancels it gives the schedule back.
+        let mut p = Pane::new(46, 30);
+        let all = |app: &App| [3, 4, 5].iter().all(|&i| app.admits(i));
+        let none = |app: &App| [3, 4, 5].iter().all(|&i| !app.admits(i));
+        p.keys("\t\t");
+        campaign(&p.app);
+        assert!(all(&p.app));
+        assert_eq!(p.keys("p"), Effect::None);
+        assert!(p.app.pending.is_some() && p.app.screen == Screen::Glance);
+        assert!(none(&p.app));
+        assert_eq!(p.keys("j"), Effect::None);
+        assert!(p.app.pending.is_none() && all(&p.app));
+    }
+
+    #[test]
+    fn the_fleet_tab_and_the_campaigns_rule_count_the_same_rows() {
+        let mut p = Pane::new(120, 40);
+        let listed = p.app.data.glance.campaigns.len();
+        assert!(p.app.data.glance.campaigns.iter().any(|c| c.parked));
+        for key in ["D", "F"] {
+            p.keys(key);
+            let text = p.text();
+            let rule = text.lines().find(|l| l.contains("CAMPAIGNS")).unwrap();
+            assert!(
+                text.contains(&format!("F Fleet {listed}"))
+                    && rule.trim_end().ends_with(&format!(" {listed}")),
+                "{key}:\n{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn tab_cycles_cards_and_never_stops_on_a_pane() {
+        for width in [46, 120] {
+            let mut p = Pane::new(width, 40);
+            p.keys("\t");
+            assert_eq!(p.app.row, 2);
+            p.keys("\t");
+            assert_eq!(p.app.row, 5);
+            p.keys("\t");
+            assert_eq!(p.app.row, 0);
+            p.code(KeyCode::BackTab);
+            assert_eq!((p.app.row, p.app.screen), (5, Screen::Glance));
+            // The footer names no pane keys and the screens off the Dashboard no panels.
+            let foot = |p: &mut Pane| p.text().lines().last().unwrap().to_string();
+            assert!(!foot(&mut p).contains("list"));
+            for key in ["A", "F"] {
+                p.keys(key);
+                let f = foot(&mut p);
+                assert!(!f.contains("0-9") && !f.contains("health"), "{key}: {f}");
+            }
+            p.keys("D[");
+            let f = foot(&mut p);
+            assert!(
+                f.contains("h back")
+                    && !f.contains("answer")
+                    && !f.contains("copy")
+                    && !f.contains("filter")
+                    && !f.contains("scroll"),
+                "{f}"
+            );
+        }
+    }
+
+    /// An ask's full text is read in the answer dialog too, which scrolls it.
     #[test]
     fn narrow_the_answer_dialog_scrolls_a_long_ask_to_its_end() {
         let mut p = Pane::new(46, 30);
@@ -1715,7 +2098,7 @@ mod tests {
             assert!(text.contains("1-9"), "recovery hint at {height}: {text}");
             if height >= 8 {
                 assert!(
-                    text.contains("4 PRs-"),
+                    text.contains("panels 1- 2- 3- 4- 5- 6-"),
                     "all four switches at {height}: {text}"
                 );
             }
@@ -1858,7 +2241,6 @@ mod tests {
             .unwrap()
             .0;
         p.app.click = Some((Instant::now(), Hit::Row(p.app.row)));
-        p.app.detail = true;
         p.app.scroll = 4;
         assert!(p.app.advance_time(now + 1, Instant::now()));
         assert!(p.app.click.is_none());
@@ -2626,10 +3008,17 @@ mod tests {
         p.keys("/auth\n");
         assert!(p.text().contains("filtered: 1 listed"));
         p.keys("\x1b");
+        assert!(p.app.filter.is_empty());
         p.app.fetch.error = Some("hub unreachable".into());
         assert!(p.text().contains("! ledger stale"));
+        // No read: its Fleet rows go, and the cursor with them as a snapshot would move it.
         p.app.fetch = crate::Fetch::default();
-        assert!(p.text().contains("Ledger not read yet; counts unknown"));
+        p.app.row = 0;
+        let text = p.text();
+        assert!(
+            text.contains("Ledger not read yet; counts unknown"),
+            "{text}"
+        );
         p.app.fetch.loaded = true;
         p.app.data.glance.campaigns.clear();
         p.app.data.glance.quiet = Default::default();
@@ -2650,11 +3039,9 @@ mod tests {
             .collect();
         let text = p.text();
         // Owner asks and checks keep every row; 7-9 preview three rows each, and all show.
-        // The wide list is the left 60 columns; the detail pane shares its lines.
         for rule in ["NEEDS YOU", "TO CHECK"] {
             let line = text.lines().find(|l| l.contains(rule)).unwrap();
-            let list: String = line.chars().take(60).collect();
-            assert!(!list.contains('/'), "{rule} is windowed:\n{text}");
+            assert!(!line.contains('/'), "{rule} is windowed:\n{text}");
         }
         for rule in ["DECISIONS · PLAN", "FLEET", "DECISION LOG"] {
             assert!(text.contains(rule), "{rule} missing:\n{text}");
@@ -2698,22 +3085,33 @@ mod tests {
 
     #[test]
     fn hidden_ledger_switches_cost_the_narrow_glance_no_row() {
-        let mut p = Pane::new(46, 30);
         let lines = |p: &mut Pane| p.text().lines().map(String::from).collect::<Vec<_>>();
+        // Short, every switch shares one line under the tab line, labels left to the help.
+        let mut p = Pane::new(46, 30);
         let text = lines(&mut p);
         assert_eq!(
-            text[2], "4 PRs+ · 5 Shipped+ · 6 Build+ · 7-9,0,H off",
+            text[2], "panels 1+ 2+ 3+ 4+ 5+ 6+ 7- 8- 9- 0- H-",
             "{text:?}"
         );
-        assert!(!text[3].contains("Fleet"), "{text:?}");
+        assert!(!text[3].contains('+'), "{text:?}");
+        assert_eq!(p.code(KeyCode::Char('8')), Effect::SaveConfig);
+        assert_eq!(lines(&mut p)[2], "panels 1+ 2+ 3+ 4+ 5+ 6+ 7- 8+ 9- 0- H-");
+        // Taller, the named switches: the hidden five fold into one entry.
+        let mut p = Pane::new(46, 32);
+        let text = lines(&mut p);
+        assert_eq!(
+            text[3], "4 PRs+ · 5 Shipped+ · 6 Build+ · 7-9,0,H off",
+            "{text:?}"
+        );
+        assert!(!text[4].contains("Fleet"), "{text:?}");
         assert_eq!(p.code(KeyCode::Char('8')), Effect::SaveConfig);
         let text = lines(&mut p);
         assert_eq!(
-            text[3], "7 Decisions- · 8 Fleet+ · 9 Log- · 0 Issues-",
+            text[4], "7 Decisions- · 8 Fleet+ · 9 Log- · 0 Issues-",
             "{text:?}"
         );
         // H wraps to a line of its own at 46 columns: no hidden switch reads as enabled.
-        assert_eq!(text[4], "H Health-", "{text:?}");
+        assert_eq!(text[5], "H Health-", "{text:?}");
     }
 
     #[test]
@@ -2787,12 +3185,12 @@ mod tests {
             p.app.builds = crate::github::demo_builds(p.app.observed_at);
             p.app.issues = crate::github::demo_issues(p.app.observed_at);
         };
-        // Default narrow: Issues hidden, the switches keep their two lines.
+        // Default narrow: Issues hidden, the switches on their one short line.
         let mut p = Pane::new(46, 30);
         issues(&mut p);
         let text = p.text();
         assert!(
-            text.contains("7-9,0,H off") && !text.contains("ISSUES"),
+            text.contains("7- 8- 9- 0- H-") && !text.contains("ISSUES"),
             "{text}"
         );
         assert!(
@@ -2805,7 +3203,7 @@ mod tests {
         // Shown, but below the earlier panels' priority in a full narrow pane: its rows
         // are identities the cursor reaches (checked below), not a guaranteed preview.
         let text = p.text();
-        assert!(text.contains("0 Issues+"), "{text}");
+        assert!(text.contains("9- 0+ H-"), "{text}");
         assert!(
             glance::ids(&p.app.view())
                 .iter()
@@ -2927,7 +3325,7 @@ mod tests {
         // Default off, folded with 7-9 and 0; lowercase h stays back and toggles nothing.
         let mut p = Pane::new(46, 30);
         health(&mut p);
-        assert!(p.text().contains("7-9,0,H off") && !glance::ids(&p.app.view()).contains(&row));
+        assert!(p.text().contains("7- 8- 9- 0- H-") && !glance::ids(&p.app.view()).contains(&row));
         // The help names H: its View keys are on the help's last page.
         p.keys("?G");
         assert_eq!(p.app.screen, Screen::Help);
@@ -2948,10 +3346,7 @@ mod tests {
                 && p.app.config.panels[..10] == crate::config::DEFAULT_PANELS[..10]
         );
         let text = p.text();
-        assert!(
-            text.contains("H Health+") && !text.contains("H off"),
-            "{text}"
-        );
+        assert!(text.contains("0- H+"), "{text}");
         // Its row comes after Issues' and before the campaigns.
         p.app.config.panels[9] = true;
         let ids = glance::ids(&p.app.view());
@@ -3021,11 +3416,15 @@ mod tests {
         health(&mut p);
         p.app.config.panels[10] = true;
         p.app.row = row_of(&p, &row);
+        // Detail names the report; esc returns to its row.
+        p.keys("I");
         let text = p.text();
         assert!(
             text.contains("Health · trip-to-japan/trip production"),
             "{text}"
         );
+        p.keys("\x1b");
+        assert_eq!(glance::ids(&p.app.view())[p.app.row], row);
         assert_eq!(p.click_on("as of "), Effect::None);
         assert_eq!(p.click_on("as of "), Effect::None);
         assert!(p.app.ask.is_none() && p.app.pending.is_none() && p.app.status.is_none());
@@ -3082,13 +3481,15 @@ mod tests {
             assert!(drawn(&p, p.app.row), "{height}:\n{text}");
             assert!(text.contains("as of "), "{height}:\n{text}");
         }
-        // The wide default view cuts the row to one line: it ends in `…`, not a bare key.
+        // The wide default view keeps the row to one line: cut with `…`, or whole to the sha,
+        // never a bare key.
         for name in ["health-120x40", "health-120x40-new"] {
             let spec = frames::all().into_iter().find(|s| s.name == name).unwrap();
             let text = frames::text(&frames::render(&spec));
             let row = text.lines().find(|l| l.contains("as of ")).unwrap();
+            let end = row.trim_end_matches([' ', '│']);
             assert!(
-                row.trim_end_matches([' ', '│']).ends_with('…'),
+                end.ends_with('…') || end.ends_with("sha 0a1b2c3d4e"),
                 "{name}:\n{text}"
             );
         }

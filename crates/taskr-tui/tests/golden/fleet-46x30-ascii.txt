@@ -1,0 +1,30 @@
+ taskr      2s ago   * 2 need you  3 to check
+  D Dash   A Asks 2  [F Fleet 11]  I Detail
+ 3 notes still carry OWNER items
+ CAMPAIGNS ------------------------------- 11
+ * search-index      *       _____#.       19s
+   Research complete: reports/ranking-option.
+ * auth-rotation     *       ___--_#       29s
+   Implementation slice: key rollover job, f.
+|o billing-export    *       _.__-#_       33s
+|  FYI 61448 from search-index (root 4310): .
+.o docs-refresh      *       _____#.        2m
+   Hub FYI: keep the page map machine-readab.
+ o checkout-flow     **      _._.#-#        3m
+   FIX: three P2 findings in the review of t.
+ * ios-widgets       -       __#-#- laptop  7m
+   Widget batch approved (asks 61199, 61367).
+ * tui-frames        ****oo  _.-_.##        8m
+   NOW: plan rev 3.1 sent; the trust rules a.
+ . infra-layout      -       .._#_..       12m
+   cache-audit lead root=4040 pane=w41:p1: c.
+ * model-evals       ******+ ###_##_       14m
+   matrix run A finished
+ o api-pagination    *       ___#-__       54m
+   S4 cursor split merged; contract tests gr.
+ | legacy-importer                  parked  3h
+ . 2 quiet
+
+
+
+ > go   l open   p park   ? help

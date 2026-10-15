@@ -1,0 +1,20 @@
+ taskr      2s ago   ● 3 need you  3 to check
+  D Dash   A Asks 3   F Fleet 11  [I Detail]
+╭ ask 61812 · infra-layout · 1-15/48 ────────╮
+│ from Dashboard · NEEDS YOU · row 3         │
+│ BLOCKING · asker waiting · 3m ago · atlas  │
+│ w62:p1                                     │
+│                                            │
+│ Release runbook for v2.5, ready to run     │
+│ once you pick the window. Each step waits  │
+│ for the one before:                        │
+│ 1. Freeze the release branch and post the  │
+│ freeze note in the team channel.           │
+│ 2. Tag the release candidate from the head │
+│ of the release branch.                     │
+│ 3. Build the server, the client and the    │
+│ daemon for both architectures.             │
+│ 4. Run the full suite on the build host    │
+│ with the slow tests switched on.           │
+╰────────────────────────────────────────────╯
+ j k scroll   h back   ⏎ go   ? help

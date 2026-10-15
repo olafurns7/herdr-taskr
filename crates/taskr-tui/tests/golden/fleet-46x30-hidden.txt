@@ -1,0 +1,30 @@
+ taskr      2s ago   ● 2 need you  3 to check
+  D Dash   A Asks 2  [F Fleet 11]  I Detail
+ 3 notes still carry OWNER items
+ CAMPAIGNS ─────────────────────────────── 11
+ ◐ search-index      ●       ▁▁▁▁▁█▃       19s
+   Research complete: reports/ranking-option…
+ ◐ auth-rotation     ●       ▁▁▁▄▄▁█       29s
+   Implementation slice: key rollover job, f…
+▌○ billing-export    ●       ▁▂▁▁▄█▁       33s
+▌  FYI 61448 from search-index (root 4310): …
+•○ docs-refresh      ●       ▁▁▁▁▁█▂        2m
+   Hub FYI: keep the page map machine-readab…
+ ○ checkout-flow     ●●      ▁▂▁▃█▄█        3m
+   FIX: three P2 findings in the review of t…
+ ◐ ios-widgets       —       ▁▁█▄█▄ laptop  7m
+   Widget batch approved (asks 61199, 61367)…
+ ◐ tui-frames        ●●●●○○  ▁▂▄▁▂██        8m
+   NOW: plan rev 3.1 sent; the trust rules a…
+ · infra-layout      —       ▂▂▁█▁▃▃       12m
+   cache-audit lead root=4040 pane=w41:p1: c…
+ ◐ model-evals       ●●●●●●+ ███▁██▁       14m
+   matrix run A finished
+ ○ api-pagination    ●       ▁▁▁█▄▁▁       54m
+   S4 cursor split merged; contract tests gr…
+ ‖ legacy-importer                  parked  3h
+ · 2 quiet
+
+
+
+ ⏎ go   l open   p park   ? help
