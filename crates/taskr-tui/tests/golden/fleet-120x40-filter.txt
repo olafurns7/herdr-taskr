@@ -1,0 +1,40 @@
+ taskr ❯ fleet  filter: doc                                               hub atlas · 2s ago   ● 2 need you  3 to check
+  D Dashboard   A Asks 2  [F Fleet 11]  I Detail
+ 3 notes still carry OWNER items
+ lead state  campaign     lanes w/r/o activity 4h              last milestone                                        age
+▌○ waiting   docs-refresh 1/0/1       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂ Hub FYI: keep the page map machine-readable for the…   2m
+ quiet 2: cache-audit · font-swap · folded, not listed · c lists them
+ totals  working 1 · ready 0 · open 1 lanes in 1 of 11 listed campaigns matching "doc" (listed only, not every host)
+
+ LANES · tui-frames #4120 ──────────────────────────────────────────────────────────────────────────────── read 40s ago
+ ◐ tui-frames                                                        lead     —                atlas  w31:p1  14s
+ │ ◐ sub-list-core                                                   sub-orch opus 5.5 high    laptop w07:p1   4m
+ │ │ ○ rev-list-harness                                              review   opus 5.5 medium  laptop         21m
+ │ ╰ ◐ impl-list-harness                                             impl     gpt-6.1-sol high laptop w08:p2   4m
+ │ ◐ impl-frames                                                     impl     opus 5.5 medium  atlas  w02:p1  40s
+ │ ◐ impl-trust-rules                                                impl     gpt-6.1-sol high atlas  w00:p4   2m
+ ╰ ● arch-plan-counter2                                              research fable 5.1 xhigh  atlas  w82:p2   9m report
+ 6 of 29 lanes, open shown
+ Lanes show only after l reads a campaign; moving the cursor never reads.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ⏎ go to lead   l open (reads lanes)   p park   c closed too   a asks   / filter   D A F I screens   y copy   ? help

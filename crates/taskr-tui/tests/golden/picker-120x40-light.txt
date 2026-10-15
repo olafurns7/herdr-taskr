@@ -1,29 +1,29 @@
  taskr ❯ fleet                                                            hub atlas · 2s ago   ● 5 need you  3 to check
   D Dashboard   A Asks 5  [F Fleet 11]  I Detail
  3 notes still carry OWNER items
- CAMPAIGNS ───────────────────────────────────────────────────────────────────────────────────────────────────────── 11
- ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃                                                                      19s
-   Research complete: reports/ranking-options.md compares three scorers on the saved queries
- ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█                                                                      29s
-   Implementation slice: key rollover job, fake-clock tests, installer and operator docs
-▌○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁                                                                      33s
-▌  FYI 61448 from search-index (root 4310): the tokenizer upgrade drops the legacy stemmer
-•○ docs-refresh        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂                                                                       2m
-   Hub FYI: keep the page map machine-readable for the future link checker
- ○ checkout-flow       ●●  ╭ Asks · 5 open owner asks ──────────────────────────────────────╮                         3m
-   FIX: three P2 findings i│                                                                │
- ◐ ios-widgets         —   │   ? ◆ fleet-hub            BLOCKING HUB                ⏎  25s  │                 laptop  7m
-   Widget batch approved (a│     Release: Cut the v3.2 release today, or wait for the ca…   │
- ◐ tui-frames          ●●●●│  ▌? ◆ auth-rotation        BLOCKING                    ⏎   2m  │                         8m
-   NOW: plan rev 3.1 sent; │  ▌  Tokens: Which signing scheme should the rotated service…   │
- · infra-layout        —   │   ? ◆ docs-refresh                                     ⏎   4m  │                        12m
-   cache-audit lead root=40│     Translations landed for three of the four locales. Loca…   │
- ◐ model-evals         ●●●●│   ? ◇ tui-frames           BLOCKING                    ⏎  41s  │                        14m
-   matrix run A finished   │     Frames follow-up is ready: PR #212 (orphaned asks hidde…   │
- ○ api-pagination      ●   │   ? ◇ ios-widgets                               laptop ↗   6m  │                        54m
-   S4 cursor split merged; │     WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…   │
- ‖ legacy-importer         │                                                                │                 parked  3h
- · 2 quiet                 │   j k choose    ⏎ answer    A Asks    esc close                │
+ lead state  campaign        host    lanes w/r/o activity 4h              last milestone                             age
+ ◐ working   search-index            1/0/1       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃ Research complete: reports/ranking-optio…  19s
+ ◐ working   auth-rotation           0/1/1       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█ Implementation slice: key rollover job, …  29s
+▌○ waiting   billing-export          1/0/1       ▁▆▁▂▁▁██▁▂▁█▁▁▂▁█▁▂▁▁▄█▁ FYI 61448 from search-index (root 4310):…  33s
+•○ waiting   docs-refresh            1/0/1       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▂ Hub FYI: keep the page map machine-reada…   2m
+ ○ waiting   checkout-flow           1/1/2       ▃▁▁▂▄▁▁▁▂█▆▄██▄▃▂▁▂▁▃█▄█ FIX: three P2 findings in the review of …   3m
+ ◐ working   ios-widgets     laptop  0/0/0       ▃▆▁▁▅▄▂▇▃▂█▄▁▁▁▂▂▁▁▁▂▁▂▁ Widget batch approved (asks 61199, 61367…   7m
+ ◐ working   tui-frames              3/1/6       ▁▁▃█▁▁▃█▃▆▄▁█▄▁▁█▁▂▃▁▂▆▆ NOW: plan rev 3.1 sent; the trust rules …   8m
+ · idle      infra-layout            0/0/0       █▁▁█▆▃▁▆▃▆▄▆▂▁▁▁▁▂▂▁█▁▃▃ cache-audit lead root=4040 pane=w41:p1: …  12m
+ ◐ working   model-evals   ╭ Asks · 5 open owner asks ──────────────────────────────────────╮ed                      14m
+ ○ waiting   api-pagination│                                                                │ged; contract tests g…  54m
+ ‖ parked    legacy-importe│   ? ◆ fleet-hub            BLOCKING HUB                ⏎  25s  │ntil the import budge…   3h
+ quiet 2: cache-audit · fon│     Release: Cut the v3.2 release today, or wait for the ca…   │
+ totals  working 13 · ready│  ▌? ◆ auth-rotation        BLOCKING                    ⏎   2m  │host)
+                           │  ▌  Tokens: Which signing scheme should the rotated service…   │
+ LANES ────────────────────│   ? ◆ docs-refresh                                     ⏎   4m  │───────── nothing read yet
+ l opens the selected campa│     Translations landed for three of the four locales. Loca…   │e cursor never reads.
+                           │   ? ◇ tui-frames           BLOCKING                    ⏎  41s  │
+                           │     Frames follow-up is ready: PR #212 (orphaned asks hidde…   │
+                           │   ? ◇ ios-widgets                               laptop ↗   6m  │
+                           │     WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…   │
+                           │                                                                │
+                           │   j k choose    ⏎ answer    A Asks    esc close                │
                            │                                                                │
                            ╰────────────────────────────────────────────────────────────────╯
 
@@ -37,4 +37,4 @@
 
 
 
- ⏎ go to lead   l open   p park   a asks   / filter   D A F I screens   y copy   s slotr   q quit   ? help
+ ⏎ go to lead   l open (reads lanes)   p park   c closed too   a asks   / filter   D A F I screens   y copy   ? help

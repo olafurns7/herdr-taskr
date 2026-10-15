@@ -1,29 +1,29 @@
  taskr                                        2s ago   ● 5 need you  3 to check
   D Dashboard   A Asks 5  [F Fleet 11]  I Detail
  3 notes still carry OWNER items
- CAMPAIGNS ───────────────────────────────────────────────────────────────── 11
- ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃                              19s
-   Research complete: reports/ranking-options.md compares three scorers on the…
- ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█                              29s
-   Impl╭ Asks · 5 open owner asks ──────────────────────────────────────╮d ope…
-▌○ bill│                                                                │    33s
-▌  FYI │   ? ◆ fleet-hub            BLOCKING HUB                ⏎  25s  │he le…
-•○ docs│     Release: Cut the v3.2 release today, or wait for the ca…   │     2m
-   Hub │  ▌? ◆ auth-rotation        BLOCKING                    ⏎   2m  │r
- ○ chec│  ▌  Tokens: Which signing scheme should the rotated service…   │     3m
-   FIX:│   ? ◆ docs-refresh                                     ⏎   4m  │w com…
- ◐ ios-│     Translations landed for three of the four locales. Loca…   │top  7m
-   Widg│   ? ◇ tui-frames           BLOCKING                    ⏎  41s  │ait f…
- ◐ tui-│     Frames follow-up is ready: PR #212 (orphaned asks hidde…   │     8m
-   NOW:│   ? ◇ ios-widgets                               laptop ↗   6m  │ight.
- · infr│     WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…   │    12m
-   cach│                                                                │ged
- ◐ mode│   j k choose    ⏎ answer    A Asks    esc close                │    14m
-   matr│                                                                │
- ○ api-╰────────────────────────────────────────────────────────────────╯    54m
-   S4 cursor split merged; contract tests green on both hosts
- ‖ legacy-importer                                                    parked  3h
- · 2 quiet
+ lead state  campaign        host    lanes w/r/o last milestone              age
+ ◐ working   search-index            1/0/1       Research complete: report…  19s
+ ◐ working   auth-rotation           0/1/1       Implementation slice: key…  29s
+▌○ waiting   billing-export          1/0/1       FYI 61448 from search-ind…  33s
+•○ wait╭ Asks · 5 open owner asks ──────────────────────────────────────╮a…   2m
+ ○ wait│                                                                │n…   3m
+ ◐ work│   ? ◆ fleet-hub            BLOCKING HUB                ⏎  25s  │s…   7m
+ ◐ work│     Release: Cut the v3.2 release today, or wait for the ca…   │t…   8m
+ · idle│  ▌? ◆ auth-rotation        BLOCKING                    ⏎   2m  │4…  12m
+ ◐ work│  ▌  Tokens: Which signing scheme should the rotated service…   │    14m
+ ○ wait│   ? ◆ docs-refresh                                     ⏎   4m  │c…  54m
+ ‖ park│     Translations landed for three of the four locales. Loca…   │t…   3h
+ quiet │   ? ◇ tui-frames           BLOCKING                    ⏎  41s  │
+ 11 lis│     Frames follow-up is ready: PR #212 (orphaned asks hidde…   │
+       │   ? ◇ ios-widgets                               laptop ↗   6m  │
+ LANES │     WIDGET BATCH: 19 of 23 merged (14:02-14:09Z, squash). S…   │ad yet
+ l open│                                                                │it clo…
+       │   j k choose    ⏎ answer    A Asks    esc close                │
+       │                                                                │
+       ╰────────────────────────────────────────────────────────────────╯
+
+
+
 
 
 

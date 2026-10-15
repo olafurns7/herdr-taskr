@@ -1,29 +1,29 @@
  taskr                                                   2s ago   ! 3 to check
   D Dashboard   A Asks 0  [F Fleet 11]  I Detail
  3 notes still carry OWNER items
- CAMPAIGNS ───────────────────────────────────────────────────────────────── 11
- ◐ search-index        ●       ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃                              19s
-   Research complete: reports/ranking-options.md compares three scorers on the…
- ◐ auth-rotation       ●       ▁▁▁▁▁▁▁▁▁▁▁▁▄▄▁█                              29s
-   Implementation slice: key rollover job, fake-clock tests, installer and ope…
-▌○ billing-export      ●       ▁▂▁█▁▁▂▁█▁▂▁▁▄█▁                              33s
-▌  FYI 61448 from search-index (root 4310): the tokenizer upgrade drops the le…
-•○ docs╭ Asks ──────────────────────────────────────────────────────────╮     2m
-   Hub │                                                                │r
- ○ chec│  Nothing needs you                                             │     3m
-   FIX:│  No open owner ask in this snapshot.                           │w com…
- ◐ ios-│                                                                │top  7m
-   Widg│                                                                │ait f…
- ◐ tui-│                                                                │     8m
-   NOW:│   A Asks    esc close                                          │ight.
- · infr│                                                                │    12m
-   cach╰────────────────────────────────────────────────────────────────╯ged
- ◐ model-evals         ●●●●●●+ ▂▇█▅▂▁▁▂▁▁▁▁▁▁▁▁                              14m
-   matrix run A finished
- ○ api-pagination      ●       ▁▁▁█▁▂▁▁▂▁▁▁▂▁▁▁                              54m
-   S4 cursor split merged; contract tests green on both hosts
- ‖ legacy-importer                                                    parked  3h
- · 2 quiet
+ lead state  campaign        host    lanes w/r/o last milestone              age
+ ◐ working   search-index            1/0/1       Research complete: report…  19s
+ ◐ working   auth-rotation           0/1/1       Implementation slice: key…  29s
+▌○ waiting   billing-export          1/0/1       FYI 61448 from search-ind…  33s
+•○ waiting   docs-refresh            1/0/1       Hub FYI: keep the page ma…   2m
+ ○ waiting   checkout-flow           1/1/2       FIX: three P2 findings in…   3m
+ ◐ working   ios-widgets     laptop  0/0/0       Widget batch approved (as…   7m
+ ◐ work╭ Asks ──────────────────────────────────────────────────────────╮t…   8m
+ · idle│                                                                │4…  12m
+ ◐ work│  Nothing needs you                                             │    14m
+ ○ wait│  No open owner ask in this snapshot.                           │c…  54m
+ ‖ park│                                                                │t…   3h
+ quiet │                                                                │
+ 11 lis│                                                                │
+       │   A Asks    esc close                                          │
+ LANES │                                                                │ad yet
+ l open╰────────────────────────────────────────────────────────────────╯it clo…
+
+
+
+
+
+
 
 
 

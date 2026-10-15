@@ -2246,16 +2246,24 @@ mod tests {
         let mut p = Pane::new(120, 40);
         let listed = p.app.data.glance.campaigns.len();
         assert!(p.app.data.glance.campaigns.iter().any(|c| c.parked));
-        for key in ["D", "F"] {
-            p.keys(key);
-            let text = p.text();
-            let rule = text.lines().find(|l| l.contains("CAMPAIGNS")).unwrap();
-            assert!(
-                text.contains(&format!("F Fleet {listed}"))
-                    && rule.trim_end().ends_with(&format!(" {listed}")),
-                "{key}:\n{text}"
-            );
-        }
+        p.keys("D");
+        let text = p.text();
+        let rule = text.lines().find(|l| l.contains("CAMPAIGNS")).unwrap();
+        assert!(
+            text.contains(&format!("F Fleet {listed}"))
+                && rule.trim_end().ends_with(&format!(" {listed}")),
+            "D:\n{text}"
+        );
+        // Fleet's totals line counts the same listed campaigns, and says they are only those.
+        p.keys("F");
+        let text = p.text();
+        assert!(
+            text.contains(&format!("F Fleet {listed}"))
+                && text.contains(&format!(
+                    "in {listed} listed campaigns (listed only, not every host)"
+                )),
+            "F:\n{text}"
+        );
     }
 
     #[test]
@@ -5083,5 +5091,462 @@ mod tests {
         p.keys("Fa");
         p.click_on("esc close");
         assert_eq!(p.app.screen, Screen::Fleet);
+    }
+
+    /// Puts the Fleet cursor on campaign `id`.
+    fn fleet_at(p: &mut Pane, id: i64) {
+        p.app.row = glance::ids(&p.app.view())
+            .iter()
+            .position(|r| *r == glance::RowId::Campaign(id))
+            .unwrap();
+    }
+
+    /// The screen line the cursor's row is drawn on, when it is drawn as a hit target.
+    fn cursor_line(p: &mut Pane) -> Option<String> {
+        let text = p.text();
+        let y = p
+            .app
+            .seen
+            .borrow()
+            .hits
+            .iter()
+            .find(|(_, h)| *h == Hit::Row(p.app.row))
+            .map(|(r, _)| r.y)?;
+        text.lines().nth(y as usize).map(str::to_string)
+    }
+
+    #[test]
+    fn fleet_reaches_every_listed_campaign_at_every_size() {
+        for (w, h) in [(120, 40), (80, 30), (46, 30), (46, 20), (40, 12), (30, 10)] {
+            let mut p = Pane::new(w, h);
+            p.keys("F");
+            let ids = glance::ids(&p.app.view());
+            assert_eq!(ids.len(), p.app.data.glance.campaigns.len(), "{w}x{h}");
+            // Active first, the parked one last.
+            assert_eq!(ids.last(), Some(&glance::RowId::Campaign(3254)));
+            p.keys("g");
+            for (i, id) in ids.iter().enumerate() {
+                assert_eq!(p.app.row, i, "{w}x{h}");
+                let name = p
+                    .app
+                    .data
+                    .glance
+                    .campaigns
+                    .iter()
+                    .find(|c| glance::RowId::Campaign(c.id) == *id)
+                    .unwrap()
+                    .name
+                    .clone();
+                let Some(line) = cursor_line(&mut p) else {
+                    panic!("{w}x{h}: row {i} is not drawn:\n{}", p.text());
+                };
+                assert!(
+                    line.starts_with('▌') && line.contains(&name[..name.len().min(8)]),
+                    "{w}x{h}: {line}"
+                );
+                // Listed only: the totals stay on screen, whatever the cursor's window.
+                assert!(p.text().contains("listed"), "{w}x{h}:\n{}", p.text());
+                assert!(!matches!(
+                    press(&mut p.app, KeyCode::Char('j')),
+                    Effect::Run(_) | Effect::Refresh
+                ));
+            }
+            assert_eq!(p.app.row, ids.len() - 1, "{w}x{h}");
+        }
+    }
+
+    #[test]
+    fn fleet_keeps_its_row_through_reorder_park_removal_and_filter() {
+        let mut p = Pane::new(120, 40);
+        p.keys("F");
+        fleet_at(&mut p, 4120);
+        let mut next = p.app.data.glance.clone();
+        next.campaigns.reverse();
+        p.app.snapshot(next);
+        assert_eq!(at_row(&p), Some(glance::RowId::Campaign(4120)));
+        assert!(cursor_line(&mut p).unwrap().contains("tui-frames"));
+        // Parked, it moves among the parked ones, and the cursor with it.
+        let mut next = p.app.data.glance.clone();
+        next.campaigns
+            .iter_mut()
+            .find(|c| c.id == 4120)
+            .unwrap()
+            .parked = true;
+        p.app.snapshot(next);
+        assert_eq!(at_row(&p), Some(glance::RowId::Campaign(4120)));
+        let line = cursor_line(&mut p).unwrap();
+        assert!(
+            line.contains("tui-frames") && line.contains("parked"),
+            "{line}"
+        );
+        let ids = glance::ids(&p.app.view());
+        let first_parked = ids
+            .iter()
+            .position(|r| *r == glance::RowId::Campaign(3254))
+            .unwrap()
+            .min(p.app.row);
+        assert!(
+            ids[first_parked..].iter().all(|r| p
+                .app
+                .data
+                .glance
+                .campaigns
+                .iter()
+                .any(|c| glance::RowId::Campaign(c.id) == *r && c.parked)),
+            "parked last: {ids:?}"
+        );
+        let mut next = p.app.data.glance.clone();
+        next.campaigns
+            .iter_mut()
+            .find(|c| c.id == 4120)
+            .unwrap()
+            .parked = false;
+        p.app.snapshot(next);
+        assert_eq!(at_row(&p), Some(glance::RowId::Campaign(4120)));
+        // Removed: the cursor lands on a drawn row, never on nothing.
+        let mut next = p.app.data.glance.clone();
+        next.campaigns.retain(|c| c.id != 4120);
+        p.app.snapshot(next);
+        assert!(matches!(at_row(&p), Some(glance::RowId::Campaign(_))));
+        assert!(cursor_line(&mut p).is_some());
+        // Filtered: the matching subset, its totals named as such.
+        p.keys("/doc\n");
+        assert_eq!(at_row(&p), Some(glance::RowId::Campaign(4296)));
+        let text = p.text();
+        assert!(
+            text.contains("in 1 of 10 listed campaigns matching \"doc\" (listed only"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn fleet_shows_a_missing_count_as_unknown_never_as_zero() {
+        for (w, row, total) in [
+            (
+                120,
+                "1/?/1",
+                "working 13 · ready 5+? · open 22 lanes in 11 listed campaigns",
+            ),
+            (46, "1/?/1", "13/5+?/22 lanes w/r/o"),
+        ] {
+            let mut p = Pane::new(w, 30);
+            p.app.data.glance.campaigns[0].lanes.known = [true, false, true];
+            p.keys("F");
+            let text = p.text();
+            let line = text.lines().find(|l| l.contains("search-index")).unwrap();
+            assert!(line.contains(row), "{w}: {line}");
+            assert!(
+                text.contains(total) && text.contains("listed only"),
+                "{w}:\n{text}"
+            );
+        }
+        let mut p = Pane::new(120, 40);
+        p.app.data.glance.campaigns[0].lanes.known = [true, false, true];
+        p.keys("F");
+        assert!(
+            p.text()
+                .contains("(listed only, not every host) · ? not reported")
+        );
+    }
+
+    #[test]
+    fn fleet_is_its_own_table_and_the_dashboard_keeps_its_card() {
+        let mut p = Pane::new(120, 40);
+        // Panel 3 hidden on the Dashboard: Fleet still lists every campaign.
+        p.keys("3F");
+        let text = p.text();
+        for column in [
+            "lead state",
+            "campaign",
+            "host",
+            "lanes w/r/o",
+            "activity 4h",
+            "last milestone",
+            "age",
+        ] {
+            assert!(text.contains(column), "{column}:\n{text}");
+        }
+        assert!(text.contains("quiet 2: cache-audit · font-swap"), "{text}");
+        let at = |name: &str| text.lines().position(|l| l.contains(name)).unwrap();
+        assert!(
+            at("api-pagination") < at("legacy-importer") && at("legacy-importer") < at("quiet 2")
+        );
+        // The owner note leads, `OWNER: nothing.` stripped; a note of only that gives way.
+        let tui = text.lines().find(|l| l.contains("tui-frames")).unwrap();
+        assert!(
+            tui.contains("NOW: plan rev 3.1") && !tui.contains("OWNER"),
+            "{tui}"
+        );
+        let api = text.lines().find(|l| l.contains("api-pagination")).unwrap();
+        assert!(
+            api.contains("S4 cursor split merged") && !api.contains("OWNER"),
+            "{api}"
+        );
+        // Before any deliberate read the lanes say how to get them.
+        assert!(
+            text.contains("nothing read yet") && text.contains("l opens the selected campaign")
+        );
+        p.keys("D3");
+        let text = p.text();
+        assert!(
+            text.contains("CAMPAIGNS") && !text.contains("lead state") && !text.contains("LANES"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn fleet_with_no_listed_campaign_claims_no_idle_fleet() {
+        let mut p = Pane::new(80, 30);
+        p.app.data.glance.campaigns.clear();
+        p.keys("F");
+        let text = p.text();
+        assert!(
+            text.contains("No listed campaigns; not a fleet-wide idle claim")
+                && text.contains("quiet 2"),
+            "{text}"
+        );
+        for code in [KeyCode::Enter, KeyCode::Char('p'), KeyCode::Char('l')] {
+            assert_eq!(p.code(code), Effect::None);
+        }
+        assert!(p.app.pending.is_none() && p.app.screen == Screen::Fleet);
+    }
+
+    #[test]
+    fn fleet_lanes_show_the_last_explicit_read_and_never_follow_the_cursor() {
+        let mut p = Pane::new(120, 40);
+        p.keys("F");
+        // Moving the cursor reads nothing.
+        for key in ['j', 'j', 'k', 'G', 'g'] {
+            p.text();
+            assert_eq!(press(&mut p.app, KeyCode::Char(key)), Effect::None);
+        }
+        // `l` on tui-frames reads it and opens the campaign; esc returns to its row.
+        fleet_at(&mut p, 4120);
+        p.keys("l");
+        assert_eq!(p.app.screen, Screen::Campaign);
+        p.keys("\x1b");
+        assert_eq!(
+            (p.app.screen, at_row(&p)),
+            (Screen::Fleet, Some(glance::RowId::Campaign(4120)))
+        );
+        let text = p.text();
+        assert!(
+            text.contains("LANES · tui-frames #4120")
+                && text.contains("read 0s ago")
+                && text.contains("impl-frames")
+                && text.contains(" report")
+                && text.contains("6 of 29 lanes, open shown")
+                && text.contains("read 0s ago · l re-reads")
+                && text.contains("l opens all"),
+            "{text}"
+        );
+        // The cursor on another campaign: the lanes stay tui-frames', nothing is read, and
+        // no hint promises that `l` here re-reads them.
+        p.text();
+        assert_eq!(press(&mut p.app, KeyCode::Char('g')), Effect::None);
+        assert_eq!(at_row(&p), Some(glance::RowId::Campaign(4310)));
+        let text = p.text();
+        assert!(
+            text.contains("LANES · tui-frames #4120")
+                && !text.contains("l re-reads")
+                && !text.contains("l opens all"),
+            "{text}"
+        );
+        // `l` there: until its read lands, the lanes on hand stay, by their own name.
+        p.text();
+        let Effect::Run(job) = press(&mut p.app, KeyCode::Char('l')) else {
+            panic!("l reads the campaign")
+        };
+        assert!(matches!(
+            job,
+            Job::Campaign {
+                root: 4310,
+                open: true,
+                ..
+            }
+        ));
+        let text = p.text();
+        assert!(
+            text.contains("reading search-index…") && text.contains("LANES · tui-frames #4120"),
+            "{text}"
+        );
+        // The ledger sends another campaign: refused; the cached identity stays.
+        let wrong = p.app.data.campaign.clone();
+        done(&mut p.app, &job, Ok(Done::Campaign(Box::new(wrong))));
+        let text = p.text();
+        assert!(
+            text.contains("LANES · tui-frames #4120")
+                && text.contains("the ledger sent campaign 4120 · showing the last good read")
+                && !text.contains("reading search-index…"),
+            "{text}"
+        );
+        // A late reply to an older read is dropped: nothing retargets.
+        let late = Job::Campaign {
+            root: 4310,
+            name: "search-index".into(),
+            open: true,
+            seq: 0,
+        };
+        let mut other = p.app.data.campaign.clone();
+        (other.root.id, other.root.name) = (4310, "search-index".into());
+        done(&mut p.app, &late, Ok(Done::Campaign(Box::new(other))));
+        assert_eq!(p.app.data.campaign.root.id, 4120);
+        assert!(p.text().contains("LANES · tui-frames #4120"));
+        // A failed re-read keeps the last good read and its age.
+        fleet_at(&mut p, 4120);
+        p.text();
+        let Effect::Run(job) = press(&mut p.app, KeyCode::Char('l')) else {
+            panic!("l re-reads the campaign")
+        };
+        done(&mut p.app, &job, Err("hub unreachable".into()));
+        p.keys("\x1b");
+        p.app.observed_at += 90;
+        let text = p.text();
+        assert!(
+            text.contains("LANES · tui-frames #4120")
+                && text.contains("read 1m ago")
+                && text.contains(
+                    "reading tui-frames failed: hub unreachable · showing the last good read"
+                ),
+            "{text}"
+        );
+        assert_eq!(at_row(&p), Some(glance::RowId::Campaign(4120)));
+    }
+
+    #[test]
+    fn short_fleet_keeps_one_honest_line_for_the_lanes() {
+        let mut p = Pane::new(40, 12);
+        p.keys("F");
+        assert!(p.text().contains("l opens a campaign"), "{}", p.text());
+        fleet_at(&mut p, 4120);
+        p.keys("l\x1b");
+        assert_eq!(p.app.screen, Screen::Fleet);
+        let text = p.text();
+        assert!(text.contains("LANES tui-frames #4120"), "{text}");
+        assert!(cursor_line(&mut p).unwrap().contains("tui-fram"));
+    }
+
+    #[test]
+    fn fleet_detail_says_what_a_narrow_row_drops() {
+        let mut p = Pane::new(46, 30);
+        let c = p
+            .app
+            .data
+            .glance
+            .campaigns
+            .iter_mut()
+            .find(|c| c.id == 4087)
+            .unwrap();
+        c.lanes.known = [true, false, true];
+        p.keys("F");
+        fleet_at(&mut p, 4087);
+        p.keys("I");
+        let text = p.text();
+        assert!(
+            text.contains("ios-widgets")
+                && text.contains("laptop")
+                && text.contains("0/?/0")
+                && !text.contains("lanes —"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn fleet_lanes_keep_root_and_age_for_a_long_name() {
+        for (w, h) in [(46, 30), (40, 12)] {
+            let mut p = Pane::new(w, h);
+            p.keys("F");
+            fleet_at(&mut p, 4120);
+            p.keys("l\x1b");
+            let long = "warehouse-inventory-reconciliation-tui";
+            p.app.data.campaign.root.name = long.into();
+            let c = p
+                .app
+                .data
+                .glance
+                .campaigns
+                .iter_mut()
+                .find(|c| c.id == 4120)
+                .unwrap();
+            c.name = long.into();
+            let text = p.text();
+            assert!(
+                text.contains("read 0s ago")
+                    && text.contains("#4120")
+                    && text.contains("warehouse"),
+                "{w}x{h}:\n{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn fleet_lanes_hang_an_open_lane_under_a_closed_one_from_the_lead() {
+        let mut p = Pane::new(120, 40);
+        p.keys("F");
+        fleet_at(&mut p, 4120);
+        p.keys("l\x1b");
+        p.app
+            .data
+            .campaign
+            .lanes
+            .iter_mut()
+            .find(|l| l.id == 4190)
+            .unwrap()
+            .status = "closed".into();
+        let text = p.text();
+        assert!(
+            text.contains("rev-list-harness")
+                && text.contains("impl-list-harness")
+                && !text.contains("sub-list-core")
+                && text.contains("5 of 29 lanes, open shown"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn fleet_rows_and_hints_answer_the_mouse() {
+        let mut p = Pane::new(120, 40);
+        p.keys("F");
+        p.click_on("model-evals");
+        assert_eq!(at_row(&p), Some(glance::RowId::Campaign(4215)));
+        // A double-click is ⏎: the lead's pane, on this machine.
+        assert!(matches!(
+            p.click_on("model-evals"),
+            Effect::Run(Job::Focus { .. })
+        ));
+        // The column names, the quiet line, the totals and the lanes are not rows.
+        for text in ["lead state", "quiet 2", "totals", "nothing read yet"] {
+            p.click_on(text);
+            assert_eq!(at_row(&p), Some(glance::RowId::Campaign(4215)), "{text}");
+        }
+        p.click_on("c closed too");
+        assert_eq!(p.app.screen, Screen::AllCampaigns);
+        p.keys("\x1b");
+        assert_eq!(
+            (p.app.screen, at_row(&p)),
+            (Screen::Fleet, Some(glance::RowId::Campaign(4215)))
+        );
+    }
+
+    #[test]
+    fn fleet_detail_and_asks_return_to_the_same_row() {
+        let mut p = Pane::new(80, 30);
+        p.keys("F");
+        fleet_at(&mut p, 4215);
+        p.keys("I");
+        assert!(p.text().contains("from Fleet · CAMPAIGNS"), "{}", p.text());
+        p.keys("\x1b");
+        assert_eq!(
+            (p.app.screen, at_row(&p)),
+            (Screen::Fleet, Some(glance::RowId::Campaign(4215)))
+        );
+        p.keys("a");
+        assert_eq!(p.app.screen, Screen::Picker);
+        p.keys("\x1b");
+        assert_eq!(
+            (p.app.screen, at_row(&p)),
+            (Screen::Fleet, Some(glance::RowId::Campaign(4215)))
+        );
+        assert!(cursor_line(&mut p).unwrap().contains("model-evals"));
     }
 }

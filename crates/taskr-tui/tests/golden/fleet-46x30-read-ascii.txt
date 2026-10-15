@@ -1,0 +1,30 @@
+ taskr      2s ago   * 2 need you  3 to check
+  D Dash   A Asks 2  [F Fleet 11]  I Detail
+ 3 notes still carry OWNER items
+   campaign        w/r/o    last mileston  age
+ * search-index    1/0/1    Research com.  19s
+ * auth-rotation   0/1/1    Implementati.  29s
+|o billing-export  1/0/1    FYI 61448 fr.  33s
+.o docs-refresh    1/0/1    Hub FYI: kee.   2m
+ o checkout-flow   1/1/2    FIX: three P.   3m
+ * ios-widgets     0/0/0    Widget batch.   7m
+ * tui-frames      3/1/6    NOW: plan re.   8m
+ . infra-layout    0/0/0    cache-audit .  12m
+ * model-evals     5/2/9    matrix run A.  14m
+ o api-pagination  1/0/1    S4 cursor sp.  54m
+ | legacy-importer 0/0/0    Held by the .   3h
+ quiet 2: cache-audit . font-swap . folded, n.
+ 11 listed only . 13/5/22 lanes w/r/o
+
+ LANES . tui-frames #4120 ------ read 40s ago
+ * tui-frames            lead              14s
+ | * sub-list-core       opus 5.5 high      4m
+ | | o rev-list-harness  opus 5.5 medium   21m
+ | + * impl-list-harness gpt-6.1-sol high   4m
+ | * impl-frames         opus 5.5 medium   40s
+ | * impl-trust-rules    gpt-6.1-sol high   2m
+ + * arch-plan-counter2  fable 5.1 xhigh    9m
+ 6 of 29 lanes, open shown
+ Lanes show only after l reads a campaign; mo.
+
+ > go   l open   p park   ? help

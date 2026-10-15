@@ -1,0 +1,12 @@
+ taskr           2s ago   ● 2 need you
+  D   A 2  [F 11]  I
+   campaign        w/r/o     age
+ ◐ search-index    1/0/1     19s
+ ◐ auth-rotation   0/1/1     29s
+▌○ billing-export  1/0/1     33s
+•○ docs-refresh    1/0/1      2m
+ ○ checkout-flow   1/1/2      3m
+ quiet 2: cache-audit · font-swap · fol…
+ 1-5/11 · 11 listed only · 13/5/22 lane…
+ l opens a campaign and reads its lanes…
+ ⏎ go   l open   p park   ? help

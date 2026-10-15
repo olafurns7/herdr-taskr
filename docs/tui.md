@@ -56,8 +56,25 @@ Switching reads nothing; the ledger snapshot keeps refreshing on every screen.
   the selected one on Detail. Wherever the selected ask shows in full, `⏎`
   answers it, as `a` does. Under the list, **ANSWERED HERE** lists the answers
   sent from this view, newest first, with what is known of each.
-- **Fleet** lists every listed campaign, parked ones last, whatever panel 3
-  shows, with a campaign row's actions (`⏎`, `l`, `p`, `y`, `/`).
+- **Fleet** is a full-width table of every listed campaign, parked ones last,
+  whatever panel 3 shows: lead state, campaign, host, working/ready/open lanes
+  (`w/r/o`, `?` where the snapshot left a count out), four hours of activity,
+  the latest owner note or milestone, and age. Narrower terminals drop the
+  activity, then the host, then the lead's word, then the milestone; Detail
+  keeps the lead's state, the host when remote, `w/r/o` (with `?`), the age,
+  and the owner note or milestone in full. Quiet campaigns fold into one `quiet N: …` line (`c` lists
+  them). The totals line counts the listed campaigns only (`listed only, not
+  every host`, `+?` for missing counts); with a filter it says how many of the
+  listed match. An empty list is never a fleet-wide idle claim. Under the
+  table, **LANES** shows the lead and open lanes of the campaign last read on
+  purpose with `l` (or `o`), named by its own root and read age, after its
+  overlay closes; a long name gives way before the root and the read age.
+  Moving the cursor never reads and never changes it; `l re-reads` and `l
+  opens all` show only while the cursor is on that campaign. A read on its way
+  says `reading NAME…`, and a failed read keeps the last good one with the
+  error. An open lane under a closed one hangs from the lead. Short of rows it
+  is one line. Row actions are a campaign
+  row's (`⏎`, `l`, `p`, `y`, `c`, `/`); the lanes are not rows.
 - **Detail** (`I` on a row) shows that row's item in full, at full width:
   where it came from (`from Asks · NEEDS YOU · row 2`), every field the row
   has, its source and age, and for a campaign's rows the last four hours of
