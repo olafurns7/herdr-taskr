@@ -104,7 +104,8 @@ fn is_false(value: &bool) -> bool {
     !value
 }
 
-// Field order and omission match rpcDocPayload in rpc.go, not sorted map order.
+// Field order and omission match the retired Go implementation's document payload,
+// rather than sorted map order.
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Document {

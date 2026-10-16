@@ -520,9 +520,6 @@ def main():
     args=golden.parse(ap, __file__)
     with tempfile.TemporaryDirectory(prefix='taskr-net-cell-') as tmp:
         go=args.go
-        if go is None:
-            go=Path(tmp).resolve()/'taskr-go'
-            subprocess.run(['go','build','-tags','taskr_contract','-o',str(go),'.'],cwd=ROOT,check=True)
         cell=Cell(go.resolve(),args.rust.resolve(),tmp)
         try:
             results=run(cell)

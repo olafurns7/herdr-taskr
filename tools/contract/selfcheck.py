@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Check fixture cloning and logical row/FTS comparison without any taskr binary."""
 from pathlib import Path
-import shutil
+import argparse
+import contextlib
+import io
 import sqlite3
+import sys
+from unittest.mock import patch
 import tempfile
 import run as contract
 import golden
@@ -90,7 +94,7 @@ with tempfile.TemporaryDirectory(prefix='taskr-contract-check-') as scratch:
         pass
     else:
         raise AssertionError('missing observation was accepted')
-    golden.session = golden.Session('run', True, directory, Path(shutil.which('true')).resolve(), binary)
+    golden.session = golden.Session('run', True, directory, binary, binary)
     assert golden.normalize(golden.LOCAL_HOST) == golden.LOCAL_HOST
     assert golden.normalize('{"server_host":"'+golden.LOCAL_HOST+'"}') == '{"server_host":"<local-host>"}'
     golden.observe('gzip bytes', (0, b'dev\n', b''))
@@ -100,19 +104,28 @@ with tempfile.TemporaryDirectory(prefix='taskr-contract-check-') as scratch:
     lines = gzip.decompress(packed).splitlines()
     assert len(lines) == len(golden.session.observations)+3
     assert all('provenance' in json.loads(line.rstrip(b',')) for line in lines[2:-1])
-    assert golden.session.observations[0]['provenance'] == 'Go oracle'
+    assert golden.session.observations[0]['provenance'] == 'Rust rerecord'
+    # Preserve historical producer provenance when a Rust rerecord is unchanged.
+    legacy = json.loads(gzip.decompress(packed))
+    legacy['observations'][0]['provenance'] = 'historical producer'
+    golden.session = golden.Session('run', True, directory, binary, binary)
+    golden.session.expected[0]['provenance'] = 'historical producer'
+    golden.observe('gzip bytes', (0, b'dev\n', b''))
+    golden.finish()
+    historical = (directory / 'run.json.gz').read_bytes()
+    assert json.loads(gzip.decompress(historical)) == legacy
     golden.session = golden.Session('run', True, directory, binary, binary)
     golden.observe('gzip bytes', (0, b'dev\n', b''))
     golden.finish()
-    assert packed == (directory / 'run.json.gz').read_bytes()
-    assert golden.session.observations[0]['provenance'] == 'Go oracle'
+    assert historical == (directory / 'run.json.gz').read_bytes()
+    assert golden.session.observations[0]['provenance'] == 'historical producer'
     golden.session = golden.Session('run', False, directory, binary, binary)
     golden.observe('gzip bytes', (0, b'dev\n', b''))
     golden.finish()
     with sqlite3.connect(copy) as db:
         db.execute("update tasks set name='changed again' where id=1")
     assert golden.digest(contract.logical(copy, normalized=True)) != golden.digest(before)
-    golden.session = golden.Session('replay', True, directory, Path(shutil.which('true')).resolve(), binary)
+    golden.session = golden.Session('replay', True, directory, binary, binary)
     record = {'v': 1, 'lock': '42\n', 'identity': {'pid': 42, 'uid': 1000, 'start_time': '99'}}
     golden.observe('Go records', record)
     golden.finish()
@@ -132,5 +145,22 @@ with tempfile.TemporaryDirectory(prefix='taskr-contract-check-') as scratch:
         pass
     else:
         raise AssertionError('JSON boolean was accepted as an integer version')
+    for argv in ([], ['--expect', str(directory), '--go', str(binary)],
+                 ['--record', str(directory / 'missing')]):
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--go', type=Path)
+        parser.add_argument('--rust', type=Path, default=binary)
+        with patch.object(sys, 'argv', ['selfcheck', *argv]), contextlib.redirect_stderr(io.StringIO()):
+            try:
+                golden.parse(parser, __file__)
+            except SystemExit as error:
+                assert error.code == 2
+            else:
+                raise AssertionError(f'unsupported CLI mode accepted: {argv}')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--rust', type=Path, default=binary)
+    with patch.object(sys, 'argv', ['selfcheck', '--record', str(binary)]):
+        args = golden.parse(parser, __file__)
+    assert args.go == args.rust == binary and golden.session.oracle_is_rust
     golden.session = None
 print('fixture clone, row mismatch, visible FTS, shadow exclusion: PASS')
