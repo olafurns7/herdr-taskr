@@ -157,9 +157,9 @@ fn forwarded_calls_store_nothing_and_log_nothing() {
         }
     }
     let mut line = String::new();
-    BufReader::new(hub.stdout.take().unwrap())
-        .read_line(&mut line)
-        .unwrap();
+    let mut output = BufReader::new(hub.stdout.take().unwrap());
+    output.read_line(&mut line).unwrap();
+    std::thread::spawn(move || std::io::copy(&mut output, &mut std::io::sink()));
     let _hub = Kill(hub);
     assert!(line.starts_with("http://[::1]:"), "{line}");
     fs::create_dir_all(h.home.join("client/.local/state/taskr")).unwrap();
