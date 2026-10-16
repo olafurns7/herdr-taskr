@@ -28,7 +28,7 @@ Roots communicate with `taskr prompt TARGET --as SENDER_ROOT --text TEXT` (up to
 
 Root only: owner notes (`note --owner`) and `taskr notes`: see [orchestrator](references/orchestrator.md).
 Every current owner action is an owner ask, blocking only when it stops work;
-notes summarize context and link ask IDs. A choice is a structured ask, not prose and not the agent's own question tool:
+notes summarize context and link ask IDs. A choice is a structured ask, not prose and not the agent's own question tool unless the owner explicitly asks for it:
 `taskr ask --owner --as ROOT --question '{"question":"Merge #12?","options":[{"label":"Merge","recommended":true},{"label":"Hold","description":"wait for CI"}]}'`
 (2-4 options, labels up to 60 characters, at most one recommended, optional `header` and
 `multiSelect`). The owner picks in taskr-tui; the answer arrives as text, `A: Merge — note`. Glance red means open owner asks
