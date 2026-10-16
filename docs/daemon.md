@@ -261,3 +261,20 @@ For authors of Herdr plugins. The daemon publishes:
 
 A client daemon publishes these from the hub's reply; an older or unreachable
 hub leaves the client's tokens unchanged.
+
+Herdr's sidebar is the **herdr-radar plugin**. Find its settings directory
+with `herdr plugin config-dir hhdebb.herdr-radar`. In that directory's
+`config.toml`, add missing top-level keys before any TOML table, preserving
+existing values:
+
+```toml
+parent_token = "taskr_parent"
+parent_label_token = "taskr_campaign"
+attention_token = "taskr_owner_ask"
+space_owner = false
+```
+
+The installer adds these only with explicit `TASKR_HERDR_CONFIG=1`, inside
+Herdr (`HERDR_ENV=1`), and after config-dir succeeds. Otherwise it prints
+the manual step. It never changes Herdr's main config.toml or restarts a
+plugin or server.

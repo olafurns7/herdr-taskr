@@ -8,6 +8,69 @@ fail() {
 	exit 1
 }
 
+manual_herdr_sidebar() {
+	printf '%s\n' 'MANUAL: find the herdr-radar settings directory: herdr plugin config-dir hhdebb.herdr-radar'
+	printf '%s\n' 'MANUAL: add missing top-level keys to its config.toml; preserve existing values:' \
+		'parent_token = "taskr_parent"' 'parent_label_token = "taskr_campaign"' \
+		'attention_token = "taskr_owner_ask"' 'space_owner = false'
+}
+
+# Isolate fail's exit and clean staging files so sidebar refusal cannot abort installation.
+configure_herdr_sidebar() (
+	install_tmp=
+	trap 'if [ -n "$install_tmp" ]; then rm -f "$install_tmp"; fi' 0
+	if [ "${TASKR_HERDR_CONFIG:-}" != 1 ] || [ "${HERDR_ENV:-}" != 1 ] ||
+		! radar_dir=$(herdr plugin config-dir hhdebb.herdr-radar 2>/dev/null) || [ -z "$radar_dir" ]; then
+		manual_herdr_sidebar
+		return
+	fi
+	mkdir -p "$radar_dir" || fail 'could not create herdr-radar settings directory'
+	radar_config=$radar_dir/config.toml
+	[ ! -L "$radar_config" ] || fail 'herdr-radar config.toml is a symlink; configure it manually'
+	if [ -e "$radar_config" ] && [ ! -f "$radar_config" ]; then
+		fail 'herdr-radar config.toml is not a regular file'
+	fi
+	install_tmp=$(mktemp "$radar_dir/.taskr-config.XXXXXX") || fail 'could not stage herdr-radar settings'
+	radar_input=/dev/null
+	if [ -f "$radar_config" ]; then
+		radar_input=$radar_config
+		cp -p "$radar_config" "$install_tmp" || fail 'could not preserve herdr-radar settings'
+	fi
+	# Missing root keys precede tables; leave complex TOML for manual setup.
+	awk '
+		function missing( i) {
+			for (i = 1; i <= 4; i++) if (!seen[key[i]]) print key[i] " = " value[i]
+		}
+		BEGIN {
+			key[1] = "parent_token"; value[1] = "\"taskr_parent\""
+			key[2] = "parent_label_token"; value[2] = "\"taskr_campaign\""
+			key[3] = "attention_token"; value[3] = "\"taskr_owner_ask\""
+			key[4] = "space_owner"; value[4] = "false"
+		}
+		/"""|\047\047\047/ { exit 1 }
+		!table && /=[[:space:]]*\[/ && !/\][[:space:]]*(#.*)?$/ { exit 1 }
+		!table && /^[[:space:]]*\[/ { missing(); table = 1 }
+		!table && /^[[:space:]]*[^#[:space:]][^=]*=/ {
+			name = $0
+			sub(/=.*/, "", name)
+			gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+			if (name ~ /^[^"\047]*\./) exit 1
+			if (name ~ /\\/) exit 1
+			gsub(/^["\047]|["\047]$/, "", name)
+			seen[name] = 1
+		}
+		{ print }
+		END { if (!table) missing() }
+	' "$radar_input" > "$install_tmp" || fail 'could not stage herdr-radar settings; configure complex TOML manually'
+	if [ -f "$radar_config" ] && cmp -s "$radar_config" "$install_tmp"; then
+		rm -f "$install_tmp"
+	else
+		mv -f "$install_tmp" "$radar_config" || fail 'could not save herdr-radar settings'
+	fi
+	install_tmp=
+	printf 'sidebar: herdr-radar settings: %s\n' "$radar_config"
+)
+
 kernel=$(uname -s)
 case $kernel in
 	Darwin) OS=darwin ;;
@@ -290,6 +353,9 @@ if [ "$with_plugin" -eq 1 ]; then
 	else
 		printf '%s\n' "$manual"
 	fi
+fi
+if ! configure_herdr_sidebar; then
+	manual_herdr_sidebar
 fi
 case ":${PATH:-}:" in
 	*":$DIR:"*) ;;

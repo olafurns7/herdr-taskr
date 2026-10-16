@@ -153,6 +153,24 @@ herdr plugin list --json | grep -q '"olafurns7.taskr"' ||
 taskr daemon --restart   # start it now instead of at the next agent detection
 ```
 
+The sidebar is the **herdr-radar plugin**. Its `config.toml` needs these
+top-level keys for campaign grouping and owner-ask attention:
+
+```toml
+parent_token = "taskr_parent"
+parent_label_token = "taskr_campaign"
+attention_token = "taskr_owner_ask"
+space_owner = false
+```
+
+Find that file with `herdr plugin config-dir hhdebb.herdr-radar`; preserve
+every existing value and put missing keys before the first TOML table.
+With approval, set `TASKR_HERDR_CONFIG=1` on the installer command in step 2
+to add only missing keys. It writes only inside Herdr (`HERDR_ENV=1`) and
+after config-dir succeeds; otherwise it prints the manual step. By default
+it prints instructions without editing. It never writes Herdr's main
+`~/.config/herdr/config.toml` or installs/restarts herdr-radar.
+
 **Linux, at boot.** Use the systemd user unit in
 [install.md, step 4](docs/install.md#start-the-ledger-host-at-boot-linux)
 (`ExecStart=... taskr daemon --stay`, `loginctl enable-linger`). It keeps the

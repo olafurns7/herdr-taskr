@@ -49,8 +49,11 @@ Expect checksum verification for the binary, the `taskr-tui` binary, the skill a
 | `TASKR_INSTALL_DIR` | Binary directory; default `$HOME/.local/bin`. Export it before installing; use that directory in PATH and Herdr's plugin environment. |
 | `TASKR_VERSION` | Release tag; unset selects `releases/latest`, which skips prereleases and may lag behind the newest one (it has given v0.18.0, without `taskr-tui`). A prerelease installs only when `TASKR_VERSION` names its tag. |
 | `TASKR_LINK_SKILLS=1` | Link the installed skill into existing agent config directories; preserve conflicts. |
+| `TASKR_HERDR_CONFIG=1` | Inside Herdr, add missing sidebar keys to herdr-radar's config.toml after `herdr plugin config-dir hhdebb.herdr-radar` succeeds; preserve existing values. Default: print manual instructions without editing. See [sidebar settings](daemon.md#pane-and-workspace-tokens). |
 | `TASKR_SKILL_DIR` | Skill directory; default `$HOME/.agents/skills/taskr`. |
 | `TASKR_NO_SKILL=1` / `TASKR_NO_PLUGIN=1` | Skip the corresponding archive and setup. |
+
+The sidebar step leaves symlinked configs and complex TOML (multiline strings, multiline arrays, escaped root keys or unquoted dotted root keys) for manual setup, without changing the file. A refused sidebar edit prints its reason and the manual steps; installation continues.
 
 ## 3. Set PATH
 
@@ -123,8 +126,29 @@ After approval, merge command entries into existing Claude Code settings.json or
 [ -n "${TASKR_LAUNCH:-}" ] && taskr hook claude UserPromptSubmit >/dev/null 2>&1; true
 ```
 For Claude Code, an entry is `{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"[ -n \"${TASKR_LAUNCH:-}\" ] && taskr hook claude UserPromptSubmit >/dev/null 2>&1; true","async":true}]}]}}`; add the other events with matching arguments.
-OpenCode needs a custom plugin invoking `taskr hook opencode EVENT`, writing one JSON object to stdin, then closing it. Forward session.created/session.idle/session.error objects; for chat.message use `{"input": input, "output": output}`. No OpenCode hook plugin is shipped.
-pi needs a custom extension invoking `taskr hook pi EVENT` for session_start, input, and agent_settled, writing one JSON object to stdin, then closing it. Each object is `{"type": EVENT, "sessionId": ctx.sessionManager.getSessionId(), "sessionFile": ctx.sessionManager.getSessionFile()}` (omit sessionFile unless absolute) plus `reason` for session_start, `text` and `source` for input, and for agent_settled `"message": {"stopReason", "diagnostics"}` from the branch's last assistant message (a stopReason of `error` records an error stall). Spawn it detached from the event handlers only when TASKR_LAUNCH is set, and never throw. No pi hook extension is shipped.
+For Codex, an entry is `{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"[ -n \"${TASKR_LAUNCH:-}\" ] && taskr hook codex UserPromptSubmit >/dev/null 2>&1; true","timeout":2}]}]}}`; add SessionStart and Stop with matching arguments. Codex runs these synchronously with a two-second timeout; Claude uses `async:true`. Use a quoted absolute binary path in place of `taskr` if the harness PATH does not contain your install directory.
+
+OpenCode and pi hook adapters ship in this repository; the installer does not copy them. From the root of a trusted checkout of the taskr release you installed, after approval, copy the adapter for the harness you use. These commands stop if a destination already exists; inspect and merge an existing adapter instead of overwriting it.
+
+OpenCode:
+```sh
+mkdir -p "$HOME/.config/opencode/plugins" &&
+  test ! -e "$HOME/.config/opencode/plugins/taskr-hook.js" &&
+  test ! -L "$HOME/.config/opencode/plugins/taskr-hook.js" &&
+  cp adapters/opencode/taskr-hook.js "$HOME/.config/opencode/plugins/taskr-hook.js"
+```
+The plugin forwards session.created/session.idle/session.error objects to `taskr hook opencode EVENT`; chat.message sends `{"input": input, "output": output}`.
+
+pi:
+```sh
+mkdir -p "$HOME/.pi/agent/extensions" &&
+  test ! -e "$HOME/.pi/agent/extensions/taskr-hook.ts" &&
+  test ! -L "$HOME/.pi/agent/extensions/taskr-hook.ts" &&
+  cp adapters/pi/taskr-hook.ts "$HOME/.pi/agent/extensions/taskr-hook.ts"
+```
+The extension forwards session_start, input, and agent_settled to `taskr hook pi EVENT`. Each payload contains its type, available sessionId, and sessionFile only when absolute; it adds reason for session_start, text/source for input, and the branch's last assistant message reduced to stopReason and diagnostic type/error name/code for agent_settled. An error stopReason records an error stall.
+
+Both adapters run only when TASKR_LAUNCH is set, write JSON to the child's stdin and close it, spawn detached, and swallow delivery errors. They use `$HOME/.local/bin/taskr`; if you installed elsewhere, change that path in the copied adapter. Start a new harness session to load the copied plugin/extension. pi's hook extension is separate from the [push extension](push.md#pi); either can be used independently.
 Verify `taskr hook --help` succeeds and inspect the merged entries against the event list. Expect valid harness config; runtime receipts require HERDR_ENV=1 and a registered TASKR_LAUNCH, configured before worker startup. Workers still run got and ready/done/fail explicitly. A receipt is acknowledgment, not completion; a stall is a signal to investigate.
 
 ## 7. Multiple machines
