@@ -1,7 +1,10 @@
-"""A real full refresh with every panel toggled on must respect all three scopes."""
+"""A real full refresh with every panel toggled on must respect all three scopes.
+
+Health reads only with both health_repo and health_root; a configured repos list with no
+saved panels starts with My PRs, Shipped and Build shown."""
 import fcntl, json, os, pathlib, pty, select, struct, subprocess, sys, tempfile, termios, time
 
-for configured in [False, True]:
+for configured, health_root in [(False, None), (True, 4242), ('repo_only', None)]:
     with tempfile.TemporaryDirectory(prefix='taskr-repo-scopes-') as temp:
         root = pathlib.Path(temp)
         tools = root / 'bin'
@@ -32,8 +35,11 @@ esac
         if configured:
             config = root / '.config/taskr/tui.json'
             config.parent.mkdir(parents=True)
-            config.write_text(json.dumps({'repos': ['example-org/app', 'example-org/tools'],
-                'issues_repo': 'separate/issues', 'health_repo': 'separate/health'}))
+            settings = {'repos': ['example-org/app', 'example-org/tools'],
+                'issues_repo': 'separate/issues', 'health_repo': 'separate/health'}
+            if health_root:
+                settings['health_root'] = health_root
+            config.write_text(json.dumps(settings))
         env = os.environ.copy()
         for key in ['TASKR_TASK', 'TASKR_LAUNCH', 'TASKR_DB', 'NO_COLOR']:
             env.pop(key, None)
@@ -68,10 +74,13 @@ esac
             if predicate is not None:
                 assert predicate(), (configured, child.poll(), repr(bytes(output[-4000:])))
         try:
-            pump(5, lambda: b'4 PRs-' in output and b'H Health-' in output)
-            assert log.read_text() == '', 'fresh hidden panels called gh'
-            # Toggle every optional panel, then refresh twice through the real event loop.
-            os.write(master, b'4567890Hr\x0c')
+            # Configured repos with no saved panels show 4-6 at start.
+            repo_panels = b'4 PRs+' if configured else b'4 PRs-'
+            pump(5, lambda: repo_panels in output and b'H Health-' in output)
+            if not configured:
+                assert log.read_text() == '', 'fresh hidden panels called gh'
+            # Toggle every optional panel on, then refresh twice through the real event loop.
+            os.write(master, (b'' if configured else b'456') + b'7890Hr\x0c')
             pump(5, lambda: b'4 PRs+' in output and b'H Health+' in output)
             os.write(master, b'r\x0c')
             if configured:
@@ -86,14 +95,22 @@ esac
                 issues = [line for line in calls if line.startswith('issue list ')]
                 assert len(issues) == 2 and all('--repo separate/issues ' in line for line in issues), calls
                 assert any('--state open' in line for line in issues) and any('--state closed' in line for line in issues), calls
-                pump(5, lambda: '--json log 2899 --limit 100' in taskr_log.read_text())
+                if health_root:
+                    pump(5, lambda: '--json log 4242 --limit 100' in taskr_log.read_text())
+                    # Toggle saves keep the root.
+                    saved = json.loads(config.read_text())
+                    assert saved['health_root'] == 4242 and saved['panels'][10], saved
+                else:
+                    pump(0.6)
+                    assert '--json log ' not in taskr_log.read_text(), taskr_log.read_text()
+                    assert b'set "health_repo" and "health_root" in ~/.config/taskr/tui.json' in output
             else:
                 # Drain multiple polling ticks after both manual refreshes.
                 pump(0.6)
                 assert log.read_text() == '', log.read_text()
                 assert '--json log ' not in taskr_log.read_text(), taskr_log.read_text()
-                for key in [b'repos', b'issues_repo', b'health_repo']:
-                    assert b'set "' + key + b'" in ~/.config/taskr/tui.json' in output, (key, repr(bytes(output[-6000:])))
+                for hint in [b'"repos"', b'"issues_repo"', b'"health_repo" and "health_root"']:
+                    assert b'set ' + hint + b' in ~/.config/taskr/tui.json' in output, (hint, repr(bytes(output[-6000:])))
             os.write(master, b'q')
             pump(5, lambda: child.poll() is not None)
             assert child.wait(timeout=5) == 0
@@ -102,4 +119,4 @@ esac
                 child.kill()
                 child.wait()
             os.close(master)
-print('PASS: fresh defaults and all-panel manual refreshes make zero gh calls; configured PR, Shipped, Build, Issues and Health scopes are used')
+print('PASS: fresh defaults and all-panel manual refreshes make zero gh calls; configured PR, Shipped, Build, Issues and Health scopes are used; Health needs its root')

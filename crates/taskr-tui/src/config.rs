@@ -9,7 +9,7 @@ use std::{
 
 pub const REPOS_HINT: &str = "set \"repos\" in ~/.config/taskr/tui.json";
 pub const ISSUES_HINT: &str = "set \"issues_repo\" in ~/.config/taskr/tui.json";
-pub const HEALTH_HINT: &str = "set \"health_repo\" in ~/.config/taskr/tui.json";
+pub const HEALTH_HINT: &str = "set \"health_repo\" and \"health_root\" in ~/.config/taskr/tui.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -21,6 +21,8 @@ pub struct Config {
     pub repos: Vec<String>,
     pub issues_repo: Option<String>,
     pub health_repo: Option<String>,
+    /// The hub root whose HEALTH notes Health reads; Health needs it and `health_repo`.
+    pub health_root: Option<i64>,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -29,6 +31,7 @@ impl Default for Config {
             repos: vec![],
             issues_repo: None,
             health_repo: None,
+            health_root: None,
         }
     }
 }
@@ -78,6 +81,11 @@ impl Config {
             })
             && self.issues_repo.as_deref().is_none_or(repo_valid)
             && self.health_repo.as_deref().is_none_or(repo_valid)
+            && self.health_root.is_none_or(|root| root > 0)
+    }
+    /// Health reads only with both its repository and its hub root set.
+    pub fn health(&self) -> Option<(String, i64)> {
+        self.health_repo.clone().zip(self.health_root)
     }
     pub fn load(path: &Path) -> (Self, Option<String>) {
         let read = || -> io::Result<Vec<u8>> {
@@ -88,13 +96,26 @@ impl Config {
         };
         match read() {
             Err(e) if e.kind() == io::ErrorKind::NotFound => (Self::default(), None),
-            Ok(bytes) if bytes.len() <= 16_384 => match serde_json::from_slice::<Self>(&bytes) {
-                Ok(c) if c.valid() => (c, None),
-                _ => (
-                    Self::default(),
-                    Some("TUI config invalid; using defaults".into()),
-                ),
-            },
+            Ok(bytes) if bytes.len() <= 16_384 => {
+                match serde_json::from_slice::<serde_json::Value>(&bytes).and_then(|v| {
+                    Ok((
+                        v.get("panels").is_none(),
+                        serde_json::from_value::<Self>(v)?,
+                    ))
+                }) {
+                    Ok((no_panels, mut c)) if c.valid() => {
+                        // Configured repos with no saved panel choice show their panels (4-6).
+                        if no_panels && !c.repos.is_empty() {
+                            c.panels[3..6].fill(true);
+                        }
+                        (c, None)
+                    }
+                    _ => (
+                        Self::default(),
+                        Some("TUI config invalid; using defaults".into()),
+                    ),
+                }
+            }
             _ => (
                 Self::default(),
                 Some("TUI config unreadable; using defaults".into()),
@@ -152,7 +173,7 @@ mod tests {
             ]
         );
         assert_eq!(c.repos, ["kept/private"]);
-        assert!(c.issues_repo.is_none() && c.health_repo.is_none());
+        assert!(c.issues_repo.is_none() && c.health_repo.is_none() && c.health_root.is_none());
         let read: Config = serde_json::from_slice(&serde_json::to_vec(&c).unwrap()).unwrap();
         assert_eq!(read.panels, c.panels);
         assert_eq!(
@@ -221,10 +242,43 @@ mod tests {
         for json in [
             r#"{}"#,
             r#"{"repos":[],"issues_repo":null,"health_repo":null}"#,
-            r#"{"repos":["example-org/app"],"issues_repo":"other/issues","health_repo":"other/health"}"#,
+            r#"{"repos":["example-org/app"],"issues_repo":"other/issues","health_repo":"other/health","health_root":4242}"#,
+            r#"{"health_root":null}"#,
         ] {
             fs::write(&path, json).unwrap();
             assert!(Config::load(&path).1.is_none(), "{json}");
+        }
+        // Health needs both its repository and its root.
+        for (json, health) in [
+            (r#"{"health_repo":"other/health"}"#, None),
+            (r#"{"health_root":4242}"#, None),
+            (
+                r#"{"health_repo":"other/health","health_root":4242}"#,
+                Some(("other/health".to_string(), 4242)),
+            ),
+        ] {
+            fs::write(&path, json).unwrap();
+            assert_eq!(Config::load(&path).0.health(), health, "{json}");
+        }
+        for bad in ["0", "-1", "1.5", "\"4242\"", "true", "9223372036854775808"] {
+            fs::write(&path, format!(r#"{{"health_root":{bad}}}"#)).unwrap();
+            let (config, warning) = Config::load(&path);
+            assert!(warning.is_some() && config.health_root.is_none(), "{bad}");
+        }
+        // Repos with no saved panel choice show 4-6; an explicit choice or no repos does not.
+        for (json, shown) in [
+            (r#"{"repos":["example-org/app"]}"#, true),
+            (r#"{"repos":[]}"#, false),
+            (r#"{}"#, false),
+            (
+                r#"{"repos":["example-org/app"],"panels":[true,true,true,false,false,false]}"#,
+                false,
+            ),
+        ] {
+            fs::write(&path, json).unwrap();
+            let panels = Config::load(&path).0.panels;
+            assert_eq!(panels[3..6], [shown; 3], "{json}");
+            assert_eq!(panels[..3], [true; 3], "{json}");
         }
         for key in ["repos", "issues_repo", "health_repo"] {
             for bad in ["", "--bad/repo", "a/b/c", "a/..", "a/b\n"] {
@@ -260,6 +314,7 @@ mod tests {
             repos: vec!["owner/other.repo".into()],
             issues_repo: Some("example-org/issues".into()),
             health_repo: Some("example-org/health".into()),
+            health_root: Some(4242),
         };
         c.save(&path).unwrap();
         let (read, warning) = Config::load(&path);
@@ -268,6 +323,7 @@ mod tests {
         assert_eq!(read.repos, c.repos);
         assert_eq!(read.issues_repo, c.issues_repo);
         assert_eq!(read.health_repo, c.health_repo);
+        assert_eq!(read.health_root, c.health_root);
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(
             fs::metadata(&path).unwrap().permissions().mode() & 0o777,

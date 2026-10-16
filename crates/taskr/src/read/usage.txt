@@ -14,7 +14,7 @@ documents:    doc set ID goal|plan [--name NAME] --file PATH (any host) | doc ls
 handover:     handover --as ID [--note TEXT] [--out PATH] | adopt ID [--workspace W --tab T --pane P]   (Markdown on stdout)
 inbox:        wait [--as ID] [--for KIND[,KIND...]] [--from NAME|ID]... [--ack EVENT_ID] [--timeout MS] [--scan-quota] [--fence N [--session GEN]] | ack EVENT_ID --as ID [--fence N [--session GEN]]
 inbox read:   inbox [--as ID] [--limit N]   (raw and non-consuming: the caller's events after its ack cursor, oldest first, default 20, 1 to 200; never offers, receipts or acks, no coalescing or --for/--from, so the first row is not necessarily what wait returns next)
-mcp:          mcp | mcp --as ID --session GEN   (a local stdio MCP server, revision 2025-06-18, bound at start to TASKR_TASK/TASKR_LAUNCH or to a root's pinned generation; tools run this binary)
+mcp:          mcp [--channel] | mcp --as ID --session GEN [--channel]   (a local stdio MCP server, revision 2025-06-18, bound at start to TASKR_TASK/TASKR_LAUNCH or to a root's pinned generation; tools run this binary)
 push:         push codex [--codex-bin PATH] | push codex --as ID --session GEN --codex-thread UUID --codex-home PATH [--codex-bin PATH]   (a local sidecar: holds the inbox lease and queues each event into the bound Codex thread with `codex queue`; stdin EOF stops it)
 hooks:        hook <harness> <event> (JSON on stdin)
 read:         status [--tree ID] [--all] | asks [--open] [--tree ID] [--owner] [--limit N] [--all] | log ID [--tree] [--since EVENT_ID] [--before EVENT_ID] [--limit N]
