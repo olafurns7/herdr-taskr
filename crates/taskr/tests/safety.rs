@@ -12,7 +12,13 @@ use std::{
 use support::*;
 use taskr_core::db::params;
 
-fn rejected(h: &Harness, env: &[(String, String)], args: &[&str], code: i32, message: &str) {
+fn rejected(
+    h: &Harness,
+    env: &[(String, String)],
+    args: &[&str],
+    code: i32,
+    message: &str,
+) -> Value {
     let before: i64 = h
         .conn()
         .query_row("select count(*) from events", [], |r| r.get(0))
@@ -29,6 +35,7 @@ fn rejected(h: &Harness, env: &[(String, String)], args: &[&str], code: i32, mes
         .query_row("select count(*) from events", [], |r| r.get(0))
         .unwrap();
     assert_eq!(after, before, "rejected call wrote: {args:?}");
+    value
 }
 
 fn new_task(h: &Harness, name: &str, role: &str, parent: i64) -> i64 {
@@ -112,6 +119,13 @@ fn root_as_rejects_worker_launch_mismatch_closed_and_missing_identities() {
             message,
         );
     }
+    rejected(
+        &h,
+        &[],
+        &["ask", "--as", &worker.to_string(), "x", "--owner"],
+        6,
+        "has parent",
+    );
     rejected(&h, &[], &["note", "--as", "-3", "x"], 2, "");
     h.ok(&env, &["note", "still works"]);
 }
@@ -121,39 +135,41 @@ fn owner_notes_refuse_every_worker_identity_without_writing() {
     let h = Harness::new();
     let (_, _, env) = h.lane("claude", "implementer");
     let sub = new_task(&h, "sub", "sub-orchestrator", 1);
-    for (identity, target) in [
-        (env.clone(), None),
+    let owner_message = "--owner: only a root orchestrator's own note";
+    for (identity, target, message) in [
+        (env.clone(), None, owner_message.to_string()),
         (
-            vec![
-                ("TASKR_TASK".into(), sub.to_string()),
-                ("TASKR_LAUNCH".into(), "0".into()),
-            ],
+            vec![("TASKR_TASK".into(), sub.to_string())],
             None,
+            owner_message.to_string(),
         ),
-        (vec![], Some(sub)),
         (
-            vec![
-                ("TASKR_TASK".into(), "1".into()),
-                ("TASKR_LAUNCH".into(), "0".into()),
-            ],
+            vec![],
+            Some(sub),
+            format!("--as is only for a root orchestrator: task {sub} has parent 1"),
+        ),
+        (
+            vec![("TASKR_TASK".into(), "1".into())],
             Some(1),
+            owner_message.to_string(),
         ),
         (
-            vec![
-                ("TASKR_TASK".into(), "1".into()),
-                ("TASKR_LAUNCH".into(), "0".into()),
-            ],
+            vec![("TASKR_TASK".into(), "1".into())],
             None,
+            owner_message.to_string(),
         ),
-        (env.clone(), Some(1)),
-        (vec![], None),
+        (env.clone(), Some(1), owner_message.to_string()),
+        (vec![], None, owner_message.to_string()),
     ] {
         let target = target.map(|id| id.to_string());
         let mut args = vec!["note", "for owner", "--owner"];
         if let Some(target) = &target {
             args.extend(["--as", target]);
         }
-        rejected(&h, &identity, &args, 6, "");
+        assert_eq!(
+            rejected(&h, &identity, &args, 6, &message)["error"],
+            message
+        );
     }
     h.ok(&env, &["note", "ordinary progress"]);
 }
@@ -175,7 +191,11 @@ fn owner_note_keys_cannot_change_owner_semantics_or_overwrite_text() {
         if !owner {
             changed.push("--owner");
         }
-        rejected(&h, &[], &changed, 6, "--owner");
+        let message = format!(
+            "event key \"note-key\" is a note {} --owner",
+            if owner { "with" } else { "without" }
+        );
+        assert_eq!(rejected(&h, &[], &changed, 6, &message)["error"], message);
         let text: String = h
             .conn()
             .query_row(
@@ -1194,4 +1214,112 @@ fn bounded_asks_keep_every_open_question_and_the_newest_answered_suffix() {
     assert!(trailer.is_none());
     assert_eq!(ask_ids(&h, &[], true).len(), 52);
     assert_eq!(ask_ids(&h, &["--limit", "10"], true).len(), 12);
+}
+
+#[test]
+fn reused_task_names_reject_closed_stale_and_missing_launch_ready_events() {
+    let h = Harness::new();
+    let (old, _, old_env) = h.lane("claude", "implementer");
+    h.ok(&old_env, &["note", "working"]);
+    h.ok(&[], &["close", &old.to_string()]);
+    let fresh = new_task(&h, "impl", "implementer", 1);
+    let fresh_env = launch(&h, fresh);
+    rejected(&h, &old_env, &["ready", "late report"], 6, "is closed");
+    let mut stale_env = old_env.clone();
+    stale_env[0].1 = fresh.to_string();
+    rejected(
+        &h,
+        &stale_env,
+        &["ready", "old launch on the new task"],
+        6,
+        "is not the current launch",
+    );
+    rejected(
+        &h,
+        &[("TASKR_TASK".into(), fresh.to_string())],
+        &["ready", "no launch id"],
+        6,
+        "TASKR_LAUNCH is not set",
+    );
+    let event = h.ok(&fresh_env, &["ready", "new worker"])["event_id"].clone();
+    assert_eq!(
+        h.ok(&[], &["wait", "--as", "1", "--timeout", "0"])["event"]["id"],
+        event
+    );
+}
+
+#[test]
+fn status_keeps_every_open_row_past_the_read_cap() {
+    let h = Harness::new();
+    new_task(&h, "top", "orchestrator", 0);
+    let next = "n".repeat(400);
+    for n in 0..150 {
+        let task = new_task(&h, &format!("lane{n:03}"), "implementer", 1);
+        h.ok(&[], &["next", &task.to_string(), &next]);
+    }
+    let out = h.output(&[], &["status", "--tree", "1"], b"");
+    assert!(out.status.success() && out.stderr.is_empty(), "{out:?}");
+    assert!(out.stdout.len() > 32 * 1024, "fixture did not overflow");
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(
+        text.lines().filter(|line| line.starts_with("j1 ")).count(),
+        152
+    );
+    assert!(!text.lines().any(|line| line.starts_with("m1 ")));
+}
+
+#[test]
+fn client_owner_notes_are_rejected_before_spooling_or_rpc() {
+    let worker = vec![
+        ("TASKR_TASK".into(), "2".into()),
+        ("TASKR_LAUNCH".into(), "1".into()),
+    ];
+    for (mut identity, target) in [(worker.clone(), false), (worker, true), (vec![], false)] {
+        let h = Harness::new();
+        let state = h.home.join(".local/state/taskr");
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(state.join("server.url"), "http://127.0.0.1:1\n").unwrap();
+        identity.push(("TASKR_DB".into(), "".into()));
+        identity.push(("TASKR_CONTRACT_RETRY_MS".into(), "30".into()));
+        let mut args = vec!["--json", "note", "owner text", "--owner"];
+        if target {
+            args.extend(["--as", "1"]);
+        }
+        let out = h.output(&identity, &args, b"");
+        assert_eq!(out.status.code(), Some(6), "{out:?}");
+        let value: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(
+            value["error"],
+            "--owner: only a root orchestrator's own note"
+        );
+        for kind in ["queue", "refused", "bad"] {
+            let path = state.join("spool").join(kind);
+            if path.exists() {
+                assert_eq!(
+                    std::fs::read_dir(path).unwrap().count(),
+                    0,
+                    "{kind} contains rejected note"
+                );
+            }
+        }
+        assert!(!h.db.exists(), "client command created a local ledger");
+        assert!(
+            !state.join("taskr.db").exists(),
+            "client command created the default local ledger"
+        );
+    }
+}
+
+#[test]
+fn daemon_restart_and_status_are_rejected_before_starting() {
+    let h = Harness::new();
+    let out = h.output(&[], &["--json", "daemon", "--restart", "--status"], b"");
+    assert_eq!(out.status.code(), Some(2), "{out:?}");
+    let value: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        value["error"],
+        "daemon: --once, --status and --restart are exclusive"
+    );
+    assert!(!h.db.exists());
+    assert!(!h.home.join(".local/state/taskr").exists());
 }

@@ -166,7 +166,7 @@ impl SafetyDir {
 }
 impl Drop for SafetyDir {
     fn drop(&mut self) {
-        fs::remove_dir_all(&self.0).unwrap();
+        let _ = fs::remove_dir_all(&self.0);
     }
 }
 
@@ -263,18 +263,19 @@ fn daemon_identity_rejects_lookalike_executable_argv_and_reused_pid() {
     set_meta(&db, "daemon_proc_start", "impossible-start").unwrap();
     identity_refused(Some(&db), &dir.0, record.pid, "reused pid");
     set_meta(&db, "daemon_proc_start", &record.start_time).unwrap();
-    let other = std::process::Command::new("/bin/sleep")
-        .arg("30")
-        .spawn()
-        .unwrap();
-    let proc = identity::proc_identity(other.id() as i32).unwrap();
+    let other = IdentityChild(
+        std::process::Command::new("/bin/sleep")
+            .arg("30")
+            .spawn()
+            .unwrap(),
+    );
+    let proc = identity::proc_identity(other.0.id() as i32).unwrap();
     let other_record = identity::Record {
-        pid: other.id() as i32,
+        pid: other.0.id() as i32,
         executable: fs::canonicalize(proc.exe).unwrap().to_str().unwrap().into(),
         start_time: proc.start,
         ..Default::default()
     };
-    let other = IdentityChild(other);
     identity_refused(
         Some(&identity_db(&other_record)),
         &dir.0,
