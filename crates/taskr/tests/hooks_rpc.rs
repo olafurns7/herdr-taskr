@@ -76,8 +76,10 @@ mod rpc {
         let stdout = hub.0.stdout.take().unwrap();
         std::thread::spawn(move || {
             let mut line = String::new();
-            BufReader::new(stdout).read_line(&mut line).unwrap();
+            let mut output = BufReader::new(stdout);
+            output.read_line(&mut line).unwrap();
             send.send(line).unwrap();
+            std::io::copy(&mut output, &mut std::io::sink()).unwrap();
         });
         let url = recv.recv_timeout(Duration::from_secs(15)).unwrap();
         assert!(url.starts_with("http://[::1]:"));

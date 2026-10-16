@@ -158,9 +158,9 @@ fn a_client_subscribes_lists_and_waits_through_the_hub() {
         .spawn()
         .unwrap());
     let mut url = String::new();
-    std::io::BufReader::new(hub.0.stdout.take().unwrap())
-        .read_line(&mut url)
-        .unwrap();
+    let mut output = std::io::BufReader::new(hub.0.stdout.take().unwrap());
+    output.read_line(&mut url).unwrap();
+    std::thread::spawn(move || std::io::copy(&mut output, &mut std::io::sink()));
     assert!(url.starts_with("http://[::1]:"), "{url:?}");
     std::fs::create_dir_all(h.home.join("client/.local/state/taskr")).unwrap();
     std::fs::write(h.home.join("client/.local/state/taskr/server.url"), &url).unwrap();
