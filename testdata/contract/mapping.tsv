@@ -6,18 +6,18 @@ TestAmbiguousPromptRecordedWithoutResend		scenarios_test.go	write:prompt	a	todo	
 TestAnswerPromptReceiptRouting		receipts_test.go	write:answer	a	todo		cmd:answer		
 TestAnswerRecipientAndHandoverOutputContracts		contract_test.go	write:answer	a	todo		cmd:answer;cmd:handover		
 TestAnswerWakesSubOrchestratorWait		scenarios_test.go	write:answer	a	todo		cmd:wait;cmd:ack;cmd:answer		
-TestAsRejections		as_test.go	write:new	a	todo		cmd:close;cmd:note;cmd:ask		
-TestAsksHideOrphans		orphan_asks_test.go	read:asks	a	todo		cmd:answer;cmd:close;cmd:ask;cmd:asks		
-TestAsksHideOrphans	fmt.Sprintf("%s/json=%v", tc.name, jsonMode)	orphan_asks_test.go	read:asks	a	todo		cmd:answer;cmd:close;cmd:ask;cmd:asks		
+TestAsRejections		as_test.go	write:new	a	blackbox	cargo:safety:root_as_rejects_worker_launch_mismatch_closed_and_missing_identities	cmd:close;cmd:note;cmd:ask		pending
+TestAsksHideOrphans		orphan_asks_test.go	read:asks	a	blackbox	cargo:safety:orphan_asks_are_hidden_without_destroying_them_or_their_answers	cmd:answer;cmd:close;cmd:ask;cmd:asks		pending
+TestAsksHideOrphans	fmt.Sprintf("%s/json=%v", tc.name, jsonMode)	orphan_asks_test.go	read:asks	a	blackbox	cargo:safety:orphan_asks_are_hidden_without_destroying_them_or_their_answers	cmd:answer;cmd:close;cmd:ask;cmd:asks		pending
 TestAsyncNoReceiptExactlyOnce		receipts_test.go	write:new	c	todo		cmd:prompt;cmd:wait		
 TestAsyncReceiptOnTimeIsSilent		receipts_test.go	write:new	c	todo		cmd:prompt		
 TestBlockingAskRoundTrip		receipts_test.go	write:ask	a	todo		cmd:answer		
-TestBoundedAsksBudget		bounded_read_test.go	read:asks	a	todo		cmd:answer;cmd:asks		
+TestBoundedAsksBudget		bounded_read_test.go	read:asks	a	blackbox	cargo:safety:bounded_asks_keep_every_open_question_and_the_newest_answered_suffix	cmd:answer;cmd:asks		pending
 TestBoundedBudgetSubset		bounded_read_test.go	read:log	a	todo		cmd:log		
 TestBoundedLogCap150		bounded_read_test.go	read:log	a	todo		cmd:close;cmd:log		
 TestBoundedLogCapKeepsClosedRowsWhenEventsFit		bounded_read_test.go	read:log	a	todo		cmd:close;cmd:log		
 TestBoundedLogCapReportsDroppedLaunchOnly		bounded_read_test.go	read:log	a	todo		cmd:close;cmd:log		
-TestBoundedLogForwardCapDoesNotSkip		bounded_read_test.go	read:log	a	todo		cmd:log		
+TestBoundedLogForwardCapDoesNotSkip		bounded_read_test.go	read:log	a	blackbox	cargo:safety:forward_log_budget_cursor_never_skips_or_duplicates_an_event	cmd:log		pending
 TestBoundedLogLaunchRows		bounded_read_test.go	read:log	a	todo		cmd:close;cmd:log		
 TestBoundedLogPaging		bounded_read_test.go	read:log	a	todo		cmd:log		
 TestBoundedStatusOpenRowsOverCap		bounded_read_test.go	read:status	a	todo		cmd:next;cmd:status		
@@ -67,14 +67,14 @@ TestClientBackfillTwoPagesAndHostScope		documents_upload_test.go	read:doc	b	todo
 TestClientBackfillUsesMissSourceHost		documents_upload_test.go	read:doc	b	todo		rpc:/api/rpc		
 TestClientDaemonIdentityFailureDoesNotStopDaemon		client_restart_test.go	net:daemon	b	todo		cmd:daemon;daemon:--restart		
 TestClientDaemonRestart		client_restart_test.go	net:daemon	b	todo		cmd:daemon;daemon:--status;daemon:--restart		
-TestClientDaemonRestartRefusesUnverifiedRecord		client_restart_test.go	net:daemon	b	todo		cmd:daemon;daemon:--status;daemon:--restart		
-TestClientDaemonRestartRefusesUnverifiedRecord	tc.name	client_restart_test.go	net:daemon	b	todo		cmd:daemon;daemon:--status;daemon:--restart		
+TestClientDaemonRestartRefusesUnverifiedRecord		client_restart_test.go	net:daemon	b	rust-unit	cargo:taskr:daemon::tests::client_identity_requires_a_complete_matching_record	cmd:daemon;daemon:--status;daemon:--restart		pending
+TestClientDaemonRestartRefusesUnverifiedRecord	tc.name	client_restart_test.go	net:daemon	b	rust-unit	cargo:taskr:daemon::tests::client_identity_requires_a_complete_matching_record	cmd:daemon;daemon:--status;daemon:--restart		pending
 TestClientDaemonStatusUsesIdentityRecord		client_restart_test.go	net:daemon	b	todo		cmd:daemon;daemon:--status		
 TestClientDaemonStayUsageError		daemon_stay_test.go	net:daemon	b	todo		cmd:daemon;daemon:--stay		
 TestClientHostFilePromptCarriesWorkerContract		contract_test.go	write:prompt	b	todo		cmd:prompt		
-TestCloseMidLevelKeepsDescendantAsks		orphan_asks_test.go	read:asks	a	todo		cmd:close		
-TestCloseOrphanOwnerAsks		orphan_asks_test.go	read:asks	a	todo		cmd:ask;cmd:answer;cmd:close		
-TestCloseOrphanOwnerAsks	fmt.Sprintf("%s/json=%v", target, jsonMode)	orphan_asks_test.go	read:asks	a	todo		cmd:ask;cmd:answer;cmd:close		
+TestCloseMidLevelKeepsDescendantAsks		orphan_asks_test.go	read:asks	a	blackbox	cargo:safety:closing_an_intermediate_task_keeps_its_open_descendants_asks_live	cmd:close		pending
+TestCloseOrphanOwnerAsks		orphan_asks_test.go	read:asks	a	blackbox	cargo:safety:close_warns_once_about_new_orphans_and_never_answers_them	cmd:ask;cmd:answer;cmd:close		pending
+TestCloseOrphanOwnerAsks	fmt.Sprintf("%s/json=%v", target, jsonMode)	orphan_asks_test.go	read:asks	a	blackbox	cargo:safety:close_warns_once_about_new_orphans_and_never_answers_them	cmd:ask;cmd:answer;cmd:close		pending
 TestCloseOrphanWarningRPC		orphan_asks_test.go	net:rpc-client	a	todo		rpc:/api/rpc		
 TestCloseOutcomeInvalid		close_outcome_test.go	write:close	a	todo		cmd:close		
 TestCloseOutcomeQueuedDelivery		close_outcome_test.go	write:close	b	todo		cmd:close;cmd:log		
@@ -100,7 +100,7 @@ TestCompactTransportDiagnostics	fmt.Sprintf("%s/%s/json=%t", tc.name, command, l
 TestCompactWaitInterruptClearsWaiting		wait_filter_test.go	write:wait	b	todo		cmd:wait		
 TestCompactWaitTimeoutAndJSONPin		compact_test.go	write:wait	a	todo		cmd:wait		
 TestCompactWaitTimeoutAndJSONPin	fmt.Sprintf("%s/filter=%t/timeout=%s", mode.name, filtered, timeout)	compact_test.go	write:wait	a	todo		cmd:wait		
-TestCompactWaitTimeoutCleanupFailure		wait_filter_test.go	write:wait	a	todo		cmd:wait		
+TestCompactWaitTimeoutCleanupFailure		wait_filter_test.go	write:wait	a	blackbox	cargo:safety:timeout_cleanup_failure_is_a_database_error_with_the_marker_retained	cmd:wait		pending
 TestCompactWaitTimeoutCountsOwedAndDue		compact_test.go	write:wait	a	todo		cmd:prompt;cmd:wait		
 TestConcurrentLivenessNoDuplicateHerdrEvents		scenarios_test.go	write:new	c	todo		cmd:prompt;cmd:close		
 TestContractClassification		classification_adapter_test.go	core	c	dropped			Go-internal: classification guard over tests.tsv and contractGuard; mapping.tsv and mapping_check replace it	sol:rev-s3-mapping
@@ -133,7 +133,7 @@ TestDaemonFailedWorkspaceListRetriesOnFallback		daemon_campaign_token_test.go	ne
 TestDaemonFailedWorkspaceListRetryGate		daemon_campaign_token_test.go	net:daemon	c	todo		cmd:daemon		
 TestDaemonFailedWorkspaceListRetryGate	map[bool]string{false: "nothing-wanted", true: "wanted"}[wanted]	daemon_campaign_token_test.go	net:daemon	c	todo		cmd:daemon		
 TestDaemonHeartbeatBeforeBlockedWorkspaceList		daemon_campaign_token_test.go	net:daemon	b	todo		cmd:daemon		
-TestDaemonLockRefusesSecondInstance		daemon_test.go	net:daemon	b-conv	todo		cmd:daemon		
+TestDaemonLockRefusesSecondInstance		daemon_test.go	net:daemon	b-conv	shell	cell:daemon_cell	cmd:daemon		pending
 TestDaemonNoHerdrCallsWithoutServer		daemon_test.go	net:daemon	b	todo		cmd:daemon		
 TestDaemonOnceDoesNotServe		dashboard_test.go	net:daemon	a	todo		cmd:daemon;daemon:--once		
 TestDaemonOnceMatchesWaitPoll		daemon_test.go	net:daemon	a	todo		cmd:wait;cmd:daemon;daemon:--once;daemon:--status		
@@ -148,9 +148,9 @@ TestDaemonPerPaneSubscriptions		daemon_test.go	net:daemon	b-conv	todo		cmd:close
 TestDaemonReconnects		daemon_test.go	net:daemon	b-conv	todo		cmd:daemon		
 TestDaemonRestartAfterBinaryReplaced		daemon_restart_test.go	net:daemon	b	todo		cmd:daemon;daemon:--restart		
 TestDaemonRestartKeepsStay		daemon_restart_test.go	net:daemon	b	todo		cmd:daemon;daemon:--status;daemon:--restart		
-TestDaemonRestartRefusesLookalike		daemon_restart_test.go	net:daemon	b	todo		cmd:daemon		
-TestDaemonRestartRefusesNonTaskrPID		daemon_restart_test.go	net:daemon	b	todo		cmd:daemon;daemon:--status;daemon:--restart		
-TestDaemonRestartRefusesReusedPID		daemon_restart_test.go	net:daemon	b	todo		cmd:daemon		
+TestDaemonRestartRefusesLookalike		daemon_restart_test.go	net:daemon	b	rust-unit	cargo:taskr:daemon::tests::daemon_identity_refuses_non_taskr_missing_self_and_invalid_pids;cargo:taskr:daemon::tests::daemon_identity_rejects_lookalike_executable_argv_and_reused_pid	cmd:daemon		pending
+TestDaemonRestartRefusesNonTaskrPID		daemon_restart_test.go	net:daemon	b	rust-unit	cargo:taskr:daemon::tests::daemon_identity_refuses_non_taskr_missing_self_and_invalid_pids	cmd:daemon;daemon:--status;daemon:--restart		pending
+TestDaemonRestartRefusesReusedPID		daemon_restart_test.go	net:daemon	b	rust-unit	cargo:taskr:daemon::tests::daemon_identity_rejects_lookalike_executable_argv_and_reused_pid	cmd:daemon		pending
 TestDaemonRestartReplacesWithMinimalEnv		daemon_restart_test.go	net:daemon	b	todo		cmd:daemon;daemon:--status;daemon:--restart		
 TestDaemonRestartWithoutDaemonStartsOne		daemon_restart_test.go	net:daemon	b	todo		cmd:daemon;daemon:--restart		
 TestDaemonSetupErrorWithID		daemon_test.go	net:daemon	b-conv	todo		cmd:daemon		
@@ -164,7 +164,7 @@ TestDaemonStayHerdrMissingStatus	strconv.FormatBool(missing)	daemon_stay_test.go
 TestDaemonStayListenerRetries		daemon_stay_test.go	net:daemon	b	todo		cmd:daemon;rpc:/api/rpc		
 TestDaemonStayLockWaitCanBeStopped		daemon_restart_test.go	net:daemon	b	todo		cmd:daemon		
 TestDaemonStayOfflineRPCAndDashboard		daemon_stay_test.go	net:rpc-client	c	todo		cmd:daemon;cmd:ask;cmd:wait;rpc:/api/rpc;daemon:--stay;daemon:--status		
-TestDaemonStayRestartStaleIdentityNamesFile		daemon_restart_test.go	net:daemon	b	todo		cmd:daemon;daemon:--status;daemon:--restart		
+TestDaemonStayRestartStaleIdentityNamesFile		daemon_restart_test.go	net:daemon	b	rust-unit	cargo:taskr:daemon::tests::local_identity_rejects_a_stale_or_corrupt_sidecar	cmd:daemon;daemon:--status;daemon:--restart		pending
 TestDaemonStayResubscribeBeforeAckWritesAllPanes		daemon_stay_test.go	net:daemon	b	todo		cmd:daemon		
 TestDaemonStayResubscribeWritesOnlyNewPane		daemon_stay_test.go	net:daemon	c	todo		cmd:daemon		
 TestDaemonStayWaitsForLockAndTakesOver		daemon_restart_test.go	net:daemon	b	todo		cmd:daemon;daemon:--status		
@@ -392,9 +392,9 @@ TestNotesWindowsOrderAndBounds		owner_notes_test.go	write:note	a	todo		cmd:note;
 TestOwes		owed_test.go	write:new	c	todo		cmd:new		
 TestOwnerAsksRouteToRoot		contract_test.go	read:asks	a	todo		cmd:asks;cmd:answer;cmd:wait		
 TestOwnerNoteClientRejectsBeforeSpoolOrRPC		owner_notes_test.go	net:spool	a	todo		cmd:note;spool		
-TestOwnerNoteKeyMatchesOwnerFlag		owner_notes_test.go	write:note	a	todo		cmd:note;cmd:ask		
-TestOwnerNoteKeyMatchesOwnerFlag	fmt.Sprint(storedOwner)	owner_notes_test.go	write:note	a	todo		cmd:note;cmd:ask		
-TestOwnerNoteRejectsWorkersWithoutWriting		owner_notes_test.go	write:note	a	todo		cmd:note		
+TestOwnerNoteKeyMatchesOwnerFlag		owner_notes_test.go	write:note	a	blackbox	cargo:safety:owner_note_keys_cannot_change_owner_semantics_or_overwrite_text	cmd:note;cmd:ask		pending
+TestOwnerNoteKeyMatchesOwnerFlag	fmt.Sprint(storedOwner)	owner_notes_test.go	write:note	a	blackbox	cargo:safety:owner_note_keys_cannot_change_owner_semantics_or_overwrite_text	cmd:note;cmd:ask		pending
+TestOwnerNoteRejectsWorkersWithoutWriting		owner_notes_test.go	write:note	a	blackbox	cargo:safety:owner_notes_refuse_every_worker_identity_without_writing	cmd:note		pending
 TestOwnerNoteStoredAndWhole		owner_notes_test.go	write:note	b	todo		cmd:note;cmd:notes		
 TestOwnerNoteTrustWarning		glance_trust_test.go	write:note	a	todo		cmd:note;cmd:close		
 TestParseAfterDoubleDash		contract_test.go	write:new	a	todo		cmd:new		
@@ -419,7 +419,7 @@ TestRPCMigration		rpc_test.go	net:rpc-client	c	todo		cmd:note;cmd:status;rpc:/ap
 TestRPCMigration	"v0.9.1 binary compatibility"	rpc_test.go	net:rpc-client	c	todo		cmd:note;cmd:status;rpc:/api/rpc;migration		
 TestRPCModes		rpc_test.go	net:rpc-client	a	todo		cmd:status;cmd:help;rpc:/api/rpc		
 TestRPCRepeatedFlagTokens		rpc_test.go	net:rpc-client	c	todo		rpc:/api/rpc		
-TestReceiptIdempotentAndWrongLaunchRejected		receipts_test.go	write:launch	a	todo		cmd:prompt;cmd:got;cmd:note;cmd:ask;cmd:start		
+TestReceiptIdempotentAndWrongLaunchRejected		receipts_test.go	write:launch	a	blackbox	cargo:safety:receipts_are_once_only_bound_to_the_task_launch_and_prompt_kind	cmd:prompt;cmd:got;cmd:note;cmd:ask;cmd:start		pending
 TestReceiptTimeoutFlag		receipts_test.go	write:new	a	todo		cmd:prompt		
 TestRelaunchOrCloseDropsReceipt		receipts_test.go	write:close	c	todo		cmd:prompt;cmd:close		
 TestRelayAsyncReceipt		receipts_test.go	write:new	b	todo		cmd:new		
@@ -449,7 +449,7 @@ TestRenderGlanceUncertainHeadersNeverGreen		glance_watch_test.go	read:glance	c	t
 TestRenderGlanceUnregisteredAndMissingSince		glance_watch_test.go	read:glance	c	todo		cmd:glance		
 TestReplacedExe		daemon_restart_test.go	net:daemon	c	todo		cmd:daemon		
 TestReplayAfterWaitProcessDies		scenarios_test.go	write:wait	a	todo		cmd:wait;cmd:ack		
-TestReservedEventKeyPrefixes		receipts_test.go	write:new	a	todo		cmd:note		
+TestReservedEventKeyPrefixes		receipts_test.go	write:new	a	blackbox	cargo:safety:reserved_receipt_and_capacity_keys_never_write_ordinary_events	cmd:note		pending
 TestRestoredPaneReRegisteredByLaunch		scenarios_test.go	write:launch	a	todo		cmd:launch;cmd:log;cmd:status		
 TestRetryDeadline		rpc_retry_test.go	net:rpc-client	a	todo		cmd:wait;rpc:/api/rpc		
 TestRetryHealthyWaitTimeout		rpc_retry_test.go	write:wait	b-conv	todo		cmd:wait;rpc:/api/rpc		
@@ -506,7 +506,7 @@ TestSpoolCompactQueuedContract		spool_test.go	net:spool	c	todo		spool
 TestSpoolConcurrentProcessesAllocateOrderedSequences		spool_test.go	net:spool	a	todo		spool		
 TestSpoolConcurrentSendersUseSendLock		spool_test.go	net:spool	a	todo		spool		
 TestSpoolDoneUploadsServerRequestedReport		spool_test.go	net:spool	a	todo		cmd:spool-send;spool		
-TestSpoolFileBound		spool_test.go	net:spool	a	todo		cmd:note;spool		
+TestSpoolFileBound		spool_test.go	net:spool	a	blackbox	cargo:safety:full_spool_refuses_new_records_with_a_retry_and_preserves_all_500	cmd:note;spool		pending
 TestSpoolForbiddenHeadStaysQueuedAndNotifiesOnce		spool_test.go	net:spool	a	todo		spool		
 TestSpoolHTTPErrorUsesJSONErrorAndLimitsBody		spool_test.go	net:spool	a	todo		spool		
 TestSpoolHTTPProxyErrorsKeepOrRefuse		spool_test.go	net:spool	a	todo		spool		
@@ -550,23 +550,23 @@ TestTailscaleSelf		hub_test.go	write:new	c	todo		cmd:daemon
 TestTwoIndependentParentInboxes		scenarios_test.go	write:new	a	todo		cmd:wait;cmd:ack		
 TestTwoOpenAsksOneAnswered		scenarios_test.go	read:asks	a	todo		cmd:status;cmd:answer;cmd:asks		
 TestValidateNameAndHerdrIDShapes		validate_test.go	write:new	c	todo		cmd:new		
-TestWaitAckCleanupFailureRetainsBothIDs		wait_filter_test.go	write:ack	a	todo		cmd:answer;cmd:wait		
-TestWaitBypassStaysNarrow		wait_filter_test.go	write:wait	a	todo		cmd:wait		
-TestWaitCapacityFilterReplay		wait_filter_test.go	write:wait	a	todo		cmd:wait		
-TestWaitCapacityFilterReplay	tc.name	wait_filter_test.go	write:wait	a	todo		cmd:wait		
-TestWaitCleanupFailureKeepsEventPending		receipts_test.go	write:wait	a	todo		cmd:answer		
+TestWaitAckCleanupFailureRetainsBothIDs		wait_filter_test.go	write:ack	a	blackbox	cargo:safety:combined_ack_cleanup_failure_reports_both_ids_and_replays_only_the_next	cmd:answer;cmd:wait		pending
+TestWaitBypassStaysNarrow		wait_filter_test.go	write:wait	a	blackbox	cargo:safety:ordinary_herdr_hints_do_not_bypass_wait_filters	cmd:wait		pending
+TestWaitCapacityFilterReplay		wait_filter_test.go	write:wait	a	blackbox	cargo:safety:capacity_quota_and_stall_bypass_filters_and_replay_until_acked	cmd:wait		pending
+TestWaitCapacityFilterReplay	tc.name	wait_filter_test.go	write:wait	a	blackbox	cargo:safety:capacity_quota_and_stall_bypass_filters_and_replay_until_acked	cmd:wait		pending
+TestWaitCleanupFailureKeepsEventPending		receipts_test.go	write:wait	a	blackbox	cargo:safety:cleanup_failure_keeps_the_offered_answer_pending_for_replay	cmd:answer		pending
 TestWaitCountsIgnoreClosedChild		wait_filter_test.go	write:close	a	todo		cmd:prompt;cmd:close;cmd:wait;cmd:ack		
-TestWaitFilterDeadlinePreservesBacklog		wait_filter_test.go	write:wait	a	todo		cmd:wait		
+TestWaitFilterDeadlinePreservesBacklog		wait_filter_test.go	write:wait	a	blackbox	cargo:safety:filtered_wait_deadline_retains_the_unscanned_backlog	cmd:wait		pending
 TestWaitFilterInterruptClearsWaiting		wait_filter_test.go	write:wait	b	todo		cmd:wait		
 TestWaitFilterObservedEventAndTimeout		wait_filter_test.go	write:wait	a	todo		cmd:prompt;cmd:wait		
-TestWaitFilterSkipAckReplay		wait_filter_test.go	write:ack	a	todo		cmd:wait;cmd:ack		
+TestWaitFilterSkipAckReplay		wait_filter_test.go	write:ack	a	blackbox	cargo:safety:filtered_wait_skips_without_deleting_and_validates_before_ack	cmd:wait;cmd:ack		pending
 TestWaitHeartbeatGating		daemon_test.go	write:wait	a	todo		cmd:prompt;cmd:status;cmd:wait;cmd:ack		
 TestWaitLivenessEmitsAndThrottles		contract_test.go	write:wait	b	todo		cmd:prompt;cmd:wait;cmd:ack		
 TestWaitObservesWhenHeartbeatGoesStale		daemon_test.go	write:wait	a	todo		cmd:prompt;cmd:wait		
 TestWaitTimeoutOutputForms		compact_test.go	write:wait	c	todo		cmd:wait		
 TestWaitTimeoutOutputForms	tc.name	compact_test.go	write:wait	c	todo		cmd:wait		
 TestWaitTimeoutZeroMaterializesAlarm		receipts_test.go	write:wait	a	todo		cmd:prompt		
-TestWaitWorkerIdentity		wait_filter_test.go	write:wait	a	todo		cmd:answer;cmd:wait		
+TestWaitWorkerIdentity		wait_filter_test.go	write:wait	a	blackbox	cargo:safety:worker_wait_cannot_read_another_inbox_or_use_a_stale_launch	cmd:answer;cmd:wait		pending
 TestWaitWorkerIdentityClientMode		wait_filter_test.go	write:wait	b	todo		cmd:wait		
 TestWatchAgesAndAttentionKinds		glance_watch_test.go	read:glance	c	todo		cmd:glance		
 TestWithTxPanicReleasesWriterLock		db_test.go	write:new	c	todo		cmd:new		
