@@ -107,7 +107,8 @@ Mach-O type, tag for `taskr` only, no test-only hook) before the gate.
 On the Linux host: `git`, Rust from `rust-toolchain.toml` (1.99.0 with the
 musl and darwin targets), `zig` and `cargo-zigbuild` (user-space install in
 `tools/contract/README.md`), `python3`, `file`, `strings`, `sha256sum`, `tar`,
-`ssh`. Publishing needs an authenticated `gh`. On the Mac: Rust from `rust-toolchain.toml` with both darwin targets, and
+`ssh`. Publishing needs an authenticated `gh`. On the Mac: Rust from
+`rust-toolchain.toml` with both darwin targets, and
 `python3` (the command-line tools).
 
 ### Rollback

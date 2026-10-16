@@ -1,6 +1,6 @@
 //! The typed ledger reads the view draws from. Field names follow `taskr --json glance`
-//! (glance.go) and `taskr --json campaign ID` (cmd_campaign.go, P1b). [`RootRow`] has no
-//! read behind it yet: the view builds those rows from the glance.
+//! and `taskr --json campaign ID` (P1b). [`RootRow`] has no read behind it yet:
+//! the view builds those rows from the glance.
 //!
 //! Every struct is `#[serde(default)]`: a hub that is one release behind or ahead must
 //! still decode.
