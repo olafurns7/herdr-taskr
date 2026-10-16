@@ -8,13 +8,20 @@ fail() {
 	exit 1
 }
 
-configure_herdr_sidebar() {
+manual_herdr_sidebar() {
+	printf '%s\n' 'MANUAL: find the herdr-radar settings directory: herdr plugin config-dir hhdebb.herdr-radar'
+	printf '%s\n' 'MANUAL: add missing top-level keys to its config.toml; preserve existing values:' \
+		'parent_token = "taskr_parent"' 'parent_label_token = "taskr_campaign"' \
+		'attention_token = "taskr_owner_ask"' 'space_owner = false'
+}
+
+# Isolate fail's exit and clean staging files so sidebar refusal cannot abort installation.
+configure_herdr_sidebar() (
+	install_tmp=
+	trap 'if [ -n "$install_tmp" ]; then rm -f "$install_tmp"; fi' 0
 	if [ "${TASKR_HERDR_CONFIG:-}" != 1 ] || [ "${HERDR_ENV:-}" != 1 ] ||
 		! radar_dir=$(herdr plugin config-dir hhdebb.herdr-radar 2>/dev/null) || [ -z "$radar_dir" ]; then
-		printf '%s\n' 'MANUAL: find the herdr-radar settings directory: herdr plugin config-dir hhdebb.herdr-radar'
-		printf '%s\n' 'MANUAL: add missing top-level keys to its config.toml; preserve existing values:' \
-			'parent_token = "taskr_parent"' 'parent_label_token = "taskr_campaign"' \
-			'attention_token = "taskr_owner_ask"' 'space_owner = false'
+		manual_herdr_sidebar
 		return
 	fi
 	mkdir -p "$radar_dir" || fail 'could not create herdr-radar settings directory'
@@ -41,14 +48,16 @@ configure_herdr_sidebar() {
 			key[4] = "space_owner"; value[4] = "false"
 		}
 		/"""|\047\047\047/ { exit 1 }
+		!table && /=[[:space:]]*\[/ && !/\][[:space:]]*(#.*)?$/ { exit 1 }
 		!table && /^[[:space:]]*\[/ { missing(); table = 1 }
-		!table {
+		!table && /^[[:space:]]*[^#[:space:]][^=]*=/ {
 			name = $0
 			sub(/=.*/, "", name)
 			gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+			if (name ~ /^[^"\047]*\./) exit 1
 			if (name ~ /\\/) exit 1
 			gsub(/^["\047]|["\047]$/, "", name)
-			if ($0 ~ /=/) seen[name] = 1
+			seen[name] = 1
 		}
 		{ print }
 		END { if (!table) missing() }
@@ -60,7 +69,7 @@ configure_herdr_sidebar() {
 	fi
 	install_tmp=
 	printf 'sidebar: herdr-radar settings: %s\n' "$radar_config"
-}
+)
 
 kernel=$(uname -s)
 case $kernel in
@@ -345,7 +354,9 @@ if [ "$with_plugin" -eq 1 ]; then
 		printf '%s\n' "$manual"
 	fi
 fi
-configure_herdr_sidebar
+if ! configure_herdr_sidebar; then
+	manual_herdr_sidebar
+fi
 case ":${PATH:-}:" in
 	*":$DIR:"*) ;;
 	*) printf 'install.sh: add %s to PATH\n' "$DIR" >&2 ;;

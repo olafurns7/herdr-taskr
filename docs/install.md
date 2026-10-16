@@ -53,7 +53,7 @@ Expect checksum verification for the binary, the `taskr-tui` binary, the skill a
 | `TASKR_SKILL_DIR` | Skill directory; default `$HOME/.agents/skills/taskr`. |
 | `TASKR_NO_SKILL=1` / `TASKR_NO_PLUGIN=1` | Skip the corresponding archive and setup. |
 
-The sidebar step leaves symlinked configs and complex TOML (multiline strings or escaped root keys) for manual setup, without changing the file.
+The sidebar step leaves symlinked configs and complex TOML (multiline strings, multiline arrays, escaped root keys or unquoted dotted root keys) for manual setup, without changing the file. A refused sidebar edit prints its reason and the manual steps; installation continues.
 
 ## 3. Set PATH
 
